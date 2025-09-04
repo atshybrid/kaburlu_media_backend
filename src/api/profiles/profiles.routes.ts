@@ -1,0 +1,177 @@
+
+import { Router } from 'express';
+import passport from 'passport';
+import { validationMiddleware } from '../middlewares/validation.middleware';
+import { getProfileByUserId, createProfile, updateProfile } from './profiles.service';
+import { CreateProfileDto, UpdateProfileDto } from './profiles.dto';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Profiles
+ *   description: User profile management
+ */
+
+/**
+ * @swagger
+ * /api/profiles/me:
+ *   get:
+ *     summary: Get the authenticated user's own profile (Best Practice)
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Your profile was retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserProfile'
+ *       404:
+ *         description: Profile not found. You can create one via POST /api/profiles/me.
+ *       401:
+ *         description: Unauthorized.
+ */
+router.get('/me', passport.authenticate('jwt', { session: false }), async (req: any, res) => {
+  try {
+    const profile = await getProfileByUserId(req.user.id);
+    res.status(200).json(profile);
+  } catch (error: any) {
+    if (error.message.includes('not found')) {
+        res.status(404).json({ error: error.message });
+    } else {
+        res.status(500).json({ error: 'Failed to retrieve profile.' });
+    }
+  }
+});
+
+/**
+ * @swagger
+ * /api/profiles/me:
+ *   post:
+ *     summary: Create a profile for the authenticated user
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UserProfileDto'
+ *     responses:
+ *       201:
+ *         description: Your profile was created successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserProfile'
+ *       400:
+ *         description: Invalid input or profile already exists.
+ *       401:
+ *         description: Unauthorized.
+ */
+router.post('/me', passport.authenticate('jwt', { session: false }), validationMiddleware(CreateProfileDto), async (req: any, res) => {
+  try {
+    const newProfile = await createProfile(req.user.id, req.body);
+    res.status(201).json(newProfile);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/profiles/me:
+ *   put:
+ *     summary: Update the authenticated user's own profile
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UserProfileDto'
+ *     responses:
+ *       200:
+ *         description: Your profile was updated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserProfile'
+ *       404:
+ *         description: Profile not found. You should create one first.
+ *       401:
+ *         description: Unauthorized.
+ */
+router.put('/me', passport.authenticate('jwt', { session: false }), validationMiddleware(UpdateProfileDto), async (req: any, res) => {
+  try {
+    const updatedProfile = await updateProfile(req.user.id, req.body);
+    res.status(200).json(updatedProfile);
+  } catch (error: any) {
+    if (error.message.includes('not found')) {
+        res.status(404).json({ error: error.message });
+    } else {
+        res.status(400).json({ error: error.message });
+    }
+  }
+});
+
+/**
+ * @swagger
+ * /api/profiles/{userId}:
+ *   get:
+ *     summary: Get a user's profile by ID (Admin Only)
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the user to retrieve.
+ *     responses:
+ *       200:
+ *         description: The user's profile was retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserProfile'
+ *       403:
+ *         description: Forbidden. You do not have permission to access this resource.
+ *       404:
+ *         description: Profile not found for the specified user.
+ *       401:
+ *         description: Unauthorized.
+ */
+router.get('/:userId', passport.authenticate('jwt', { session: false }), async (req: any, res) => {
+  const authenticatedUser = req.user;
+  const requestedUserId = req.params.userId;
+
+  // Check if the user is an admin
+  const isAdmin = authenticatedUser.role.name === 'SUPER_ADMIN' || authenticatedUser.role.name === 'LANGUAGE_ADMIN';
+
+  // Admins can access any profile. Regular users can only access their own (covered by /me).
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to access this resource.' });
+  }
+  
+  try {
+    const profile = await getProfileByUserId(requestedUserId);
+    res.status(200).json(profile);
+  } catch (error: any) {
+     if (error.message.includes('not found')) {
+        res.status(404).json({ error: error.message });
+    } else {
+        res.status(500).json({ error: 'Failed to retrieve profile.' });
+    }
+  }
+});
+
+export default router;

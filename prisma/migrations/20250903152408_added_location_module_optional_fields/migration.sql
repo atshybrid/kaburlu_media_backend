@@ -1,0 +1,1 @@
+--This is an empty migration file created to resolve a migration conflict.
