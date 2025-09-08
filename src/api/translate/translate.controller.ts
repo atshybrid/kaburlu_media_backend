@@ -4,12 +4,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize the Google AI client
 if (!process.env.GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY environment variable is not set.');
+  console.warn('GEMINI_API_KEY environment variable is not set. Translation services will not work.');
 }
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
 export const translateTextController = async (req: Request, res: Response) => {
   try {
+    if(!genAI) {
+      return res.status(500).json({
+        success: false,
+        message: 'Translation services are not configured.',
+      });
+    }
     const { text, targetLanguage } = req.body;
 
     if (!text || !targetLanguage) {

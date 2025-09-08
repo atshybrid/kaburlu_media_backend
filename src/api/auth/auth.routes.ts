@@ -1,6 +1,8 @@
 
 import { Router } from 'express';
-import { loginController, refreshController } from './auth.controller';
+import { loginController, refreshController, registerGuestController } from './auth.controller';
+import { validationMiddleware } from '../middlewares/validation.middleware';
+import { GuestRegistrationDto } from './guest-registration.dto';
 
 const router = Router();
 
@@ -82,5 +84,32 @@ router.post('/login', loginController);
  *                           type: string
  */
 router.post('/refresh', refreshController);
+
+/**
+ * @swagger
+ * /api/auth/guest:
+ *   post:
+ *     summary: Register a guest user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GuestRegistrationDto'
+ *     responses:
+ *       "200":
+ *         description: JWT + Refresh Token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 jwt:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ */
+router.post('/guest', validationMiddleware(GuestRegistrationDto), registerGuestController);
 
 export default router;

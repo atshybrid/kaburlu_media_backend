@@ -79,7 +79,7 @@ export const deleteCategoryController = async (req: Request, res: Response) => {
 export const getCategoriesController = async (req: Request, res: Response) => {
   const languageId = req.query.languageId as string | undefined;
   try {
-    const categories = await getCategoriesService(languageId);
+    const categories = await getCategoriesService(languageId ?? null);
     res.status(200).json(categories);
   } catch (error) {
     console.error("Error fetching categories:", error);

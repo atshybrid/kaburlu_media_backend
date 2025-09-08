@@ -1,7 +1,8 @@
 
 import { findUserByMobileNumber } from '../users/users.service';
 import { MpinLoginDto } from './mpin-login.dto';
-import { RefreshDto } from './refresh.dto'; 
+import { RefreshDto } from './refresh.dto';
+import { GuestRegistrationDto } from './guest-registration.dto';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
@@ -24,6 +25,9 @@ export const login = async (loginDto: MpinLoginDto) => {
   // Securely compare the provided mpin with the hashed mpin from the database
   console.log("Provided mpin:", loginDto.mpin);
   console.log("Hashed mpin from DB:", user.mpin);
+  if (!user.mpin) {
+    return null;
+  }
   const isMpinValid = await bcrypt.compare(loginDto.mpin, user.mpin);
   console.log("isMpinValid:", isMpinValid);
   if (!isMpinValid) {
@@ -87,4 +91,52 @@ export const refresh = async (refreshDto: RefreshDto) => {
   } catch (error) {
     return null;
   }
+};
+
+export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
+    const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
+    if (!guestRole) {
+        throw new Error('Guest role not found');
+    }
+
+    const user = await prisma.user.create({
+        data: {
+            languageId: guestDto.languageId,
+            roleId: guestRole.id,
+            status: 'ACTIVE',
+        },
+    });
+
+    await prisma.device.create({
+        data: {
+            userId: user.id,
+            deviceId: guestDto.deviceDetails.deviceId,
+            deviceModel: guestDto.deviceDetails.deviceModel,
+            pushToken: guestDto.pushToken,
+        },
+    });
+
+    if (guestDto.location) {
+        await prisma.location.create({
+            data: {
+                userId: user.id,
+                latitude: guestDto.location.latitude,
+                longitude: guestDto.location.longitude,
+            }
+        });
+    }
+
+    const payload = {
+        sub: user.id,
+        role: guestRole.name,
+        permissions: guestRole.permissions,
+    };
+
+    const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
+    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
+
+    return {
+        jwt: jwtToken,
+        refreshToken: refreshToken,
+    };
 };

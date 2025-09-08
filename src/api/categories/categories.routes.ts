@@ -157,7 +157,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), validationMid
  *                 $ref: '#/components/schemas/Category'
  */
 router.get('/', (req, res, next) => {
-    passport.authenticate('jwt', { session: false }, (err, user, info) => {
+    passport.authenticate('jwt', { session: false }, (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (user) req.user = user;
       next();

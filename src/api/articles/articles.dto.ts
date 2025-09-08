@@ -4,16 +4,16 @@ import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray } from 'class-vali
 export class CreateArticleDto {
   @IsString()
   @IsNotEmpty()
-  title: string;
+  title!: string;
 
   @IsString()
   @IsNotEmpty()
-  content: string;
+  content!: string;
 
   @IsArray()
   @IsString({ each: true })
   @IsNotEmpty()
-  categoryIds: string[];
+  categoryIds!: string[];
 
   @IsOptional()
   @IsBoolean()

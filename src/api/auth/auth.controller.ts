@@ -1,9 +1,10 @@
 
 import { Request, Response } from 'express';
-import { login, refresh } from './auth.service';
+import { login, refresh, registerGuestUser } from './auth.service';
 import { MpinLoginDto } from './mpin-login.dto';
 import { RefreshDto } from './refresh.dto';
 import { validate } from 'class-validator';
+import { GuestRegistrationDto } from './guest-registration.dto';
 
 export const loginController = async (req: Request, res: Response) => {
   try {
@@ -45,3 +46,13 @@ export const refreshController = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
+
+export const registerGuestController = async (req: Request, res: Response) => {
+    try {
+      const guestDto = req.body as GuestRegistrationDto;
+      const result = await registerGuestUser(guestDto);
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  };

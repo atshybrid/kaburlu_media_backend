@@ -11,7 +11,7 @@ export const createArticle = async (dto: CreateArticleDto, authorId: string) => 
       title,
       content,
       authorId,
-      isPublished: isPublished ?? false,
+      publishedAt: isPublished ? new Date() : undefined,
       isBreaking: isBreaking ?? false,
       isFeatured: isFeatured ?? false,
       categories: {

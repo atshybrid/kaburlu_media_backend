@@ -28,7 +28,7 @@ const app = express();
 const whitelist = [
     'http://localhost:3000',
     'http://localhost:8080',
-    'https://3000-firebase-kaburlu-1756890240371.cluster-edb2jv34dnhjisxuq5m7l37ccy.cloudworkstations.dev',
+    'https://3000-firebase-khabarxbackend-1757330578765.cluster-6dx7corvpngoivimwvvljgokdw.cloudworkstations.dev',
     'https://app.kaburlumedia.com'
 ];
 
