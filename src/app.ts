@@ -1,4 +1,4 @@
-
+// src/app.ts
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -25,36 +25,63 @@ import profileRoutes from './api/profiles/profiles.routes';
 
 const app = express();
 
-const whitelist = [
-    'http://localhost:3000',
-    'http://localhost:8080',
-    'https://3000-firebase-kaburlu-1756890240371.cluster-edb2jv34dnhjisxuq5m7l37ccy.cloudworkstations.dev',
-    'https://3001-firebase-khabarxbackend-1757330578765.cluster-6dx7corvpngoivimwvvljgokdw.cloudworkstations.dev',
-    'https://app.kaburlumedia.com'
+/**
+ * CORS configuration
+ *
+ * - You can set CORS_ORIGINS as a comma-separated list of allowed origins.
+ *   Example: CORS_ORIGINS="https://app.kaburlumedia.com,http://localhost:3000"
+ *
+ * - Or set CORS_ALLOW_ALL=true to allow all origins (only for dev/testing).
+ */
+const defaultWhitelist = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+  'https://app.kaburlumedia.com'
 ];
+
+const envOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : [];
+
+const whitelist = Array.from(new Set([...defaultWhitelist, ...envOrigins]));
+
+const allowAll = String(process.env.CORS_ALLOW_ALL).toLowerCase() === 'true';
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin || whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.error(`Origin not allowed by CORS: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+    // If no origin (e.g., server-to-server, curl, or Postman), allow it
+    if (!origin) return callback(null, true);
+
+    if (allowAll) {
+      return callback(null, true);
     }
+
+    if (whitelist.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+
+    console.warn(`CORS blocked origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
   },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   credentials: true,
-  allowedHeaders: 'Content-Type, Authorization',
+  allowedHeaders: 'Content-Type, Authorization'
 };
 
+// Middlewares
 app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Passport JWT strategy
 app.use(passport.initialize());
-jwtStrategy(passport);
+try {
+  jwtStrategy(passport);
+} catch (e) {
+  console.error('Failed to initialize JWT strategy:', e);
+}
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -75,13 +102,32 @@ app.use('/api/locations', locationsRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/profiles', profileRoutes);
 
-app.get('/api/protected', passport.authenticate('jwt', { session: false }), (req, res) => {
-  res.json({ message: 'You are authorized to see this message' });
-});
+// Protected sample route
+app.get(
+  '/api/protected',
+  passport.authenticate('jwt', { session: false }),
+  (_req, res) => {
+    res.json({ message: 'You are authorized to see this message' });
+  }
+);
 
 // Root route
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send('Welcome to the API. Visit /api/docs for documentation.');
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// Error handler (must be 4 args)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled error:', err && (err.stack || err.message || err));
+  const status = err && err.status && Number(err.status) >= 400 ? Number(err.status) : 500;
+  res.status(status).json({
+    error: err && err.message ? err.message : 'Internal Server Error'
+  });
 });
 
 export default app;
