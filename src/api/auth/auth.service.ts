@@ -7,6 +7,15 @@ import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 
+// A simple exception class for HTTP errors
+class HttpException extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+    }
+}
+
 // This is a placeholder. In a real app, you would have a robust OTP system.
 const validateOtp = async (mobileNumber: string, otp: string): Promise<boolean> => {
   console.log(`Validating OTP ${otp} for ${mobileNumber}`);
@@ -97,49 +106,127 @@ export const refresh = async (refreshDto: RefreshDto) => {
 };
 
 export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
-    const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
-    if (!guestRole) {
-        throw new Error('Guest role not found');
-    }
-
-    const user = await prisma.user.create({
-        data: {
-            languageId: guestDto.languageId,
-            roleId: guestRole.id,
-            status: 'ACTIVE',
-        },
-    });
-
-    await prisma.device.create({
-        data: {
-            userId: user.id,
-            deviceId: guestDto.deviceDetails.deviceId,
-            deviceModel: guestDto.deviceDetails.deviceModel,
-            pushToken: guestDto.pushToken,
-        },
-    });
-
-    if (guestDto.location) {
-        await prisma.userLocation.create({
-            data: {
-                userId: user.id,
-                latitude: guestDto.location.latitude,
-                longitude: guestDto.location.longitude,
-            }
+    try {
+        const language = await prisma.language.findUnique({
+            where: { code: guestDto.languageCode },
         });
+
+        if (!language) {
+            throw new HttpException(400, `Invalid languageCode: '${guestDto.languageCode}'.`);
+        }
+
+        const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
+        if (!guestRole) {
+            throw new Error('Critical server error: GUEST role not found.');
+        }
+
+        let user;
+        let effectiveRole;
+
+        const device = await prisma.device.findFirst({
+            where: { deviceId: guestDto.deviceDetails.deviceId },
+            include: { user: { include: { role: true } } },
+        });
+
+        if (device) {
+            if (device.user) {
+                user = device.user;
+                effectiveRole = device.user.role;
+
+                if (!effectiveRole) {
+                    console.error(`Data integrity issue: User ${user.id} has a missing role. Treating as GUEST.`);
+                    effectiveRole = guestRole;
+                }
+
+                if (effectiveRole.name === 'GUEST') {
+                    user = await prisma.user.update({
+                        where: { id: user.id },
+                        data: { languageId: language.id },
+                    });
+                    await prisma.device.update({
+                        where: { id: device.id },
+                        data: { pushToken: guestDto.deviceDetails.pushToken },
+                    });
+
+                    // CRITICAL FIX: Replace `upsert` with a manual find/update/create logic
+                    if (guestDto.deviceDetails.location) {
+                        const existingLocation = await prisma.userLocation.findFirst({
+                            where: { userId: user.id },
+                        });
+
+                        if (existingLocation) {
+                            await prisma.userLocation.update({
+                                where: { id: existingLocation.id },
+                                data: { ...guestDto.deviceDetails.location },
+                            });
+                        } else {
+                            await prisma.userLocation.create({
+                                data: {
+                                    userId: user.id,
+                                    ...guestDto.deviceDetails.location,
+                                },
+                            });
+                        }
+                    }
+                }
+            } else {
+                await prisma.device.delete({ where: { id: device.id } });
+            }
+        }
+
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    languageId: language.id,
+                    roleId: guestRole.id,
+                    status: 'ACTIVE',
+                },
+            });
+
+            await prisma.device.create({
+                data: {
+                    userId: user.id,
+                    deviceId: guestDto.deviceDetails.deviceId,
+                    deviceModel: guestDto.deviceDetails.deviceModel,
+                    pushToken: guestDto.deviceDetails.pushToken,
+                },
+            });
+
+            if (guestDto.deviceDetails.location) {
+                await prisma.userLocation.create({
+                    data: {
+                        userId: user.id,
+                        ...guestDto.deviceDetails.location,
+                    },
+                });
+            }
+            effectiveRole = guestRole;
+        }
+
+        if (!user || !effectiveRole) {
+            throw new Error('Internal logic error: User or role became undefined before token generation.');
+        }
+
+        const payload = {
+            sub: user.id,
+            role: effectiveRole.name,
+            permissions: effectiveRole.permissions,
+        };
+
+        const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
+        const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
+
+        return {
+            jwt: jwtToken,
+            refreshToken: refreshToken,
+            user: {
+                userId: user.id,
+                role: effectiveRole.name,
+                languageId: user.languageId,
+            },
+        };
+    } catch (error) {
+        console.error("[FATAL] Unhandled error in registerGuestUser:", error);
+        throw error;
     }
-
-    const payload = {
-        sub: user.id,
-        role: guestRole.name,
-        permissions: guestRole.permissions,
-    };
-
-    const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
-    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
-
-    return {
-        jwt: jwtToken,
-        refreshToken: refreshToken,
-    };
 };

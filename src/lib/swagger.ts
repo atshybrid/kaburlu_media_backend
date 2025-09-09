@@ -1,5 +1,6 @@
 
 import swaggerJSDoc from 'swagger-jsdoc';
+import { userSwagger } from '../api/users/users.swagger';
 
 const swaggerDefinition = {
   openapi: '3.0.0',
@@ -37,6 +38,9 @@ const swaggerDefinition = {
     { name: 'Translate' },
     { name: 'Profiles' },
   ],
+  paths: {
+    ...userSwagger.paths,
+  },
   components: {
     securitySchemes: {
       bearerAuth: {
@@ -58,6 +62,19 @@ const swaggerDefinition = {
           parentId: { type: 'string', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+       DeviceDetailsDto: {
+        type: 'object',
+        properties: {
+          pushToken: { type: 'string', description: 'The push token of the user\'s device.' },
+          location: {
+            type: 'object',
+            properties: {
+              latitude: { type: 'number', format: 'float', description: 'The latitude of the user\'s location.' },
+              longitude: { type: 'number', format: 'float', description: 'The longitude of the user\'s location.' },
+            },
+          },
         },
       },
       CreateLocationDto: {

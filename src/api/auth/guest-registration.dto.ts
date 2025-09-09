@@ -6,28 +6,6 @@ import { Type } from 'class-transformer';
  * @swagger
  * components:
  *   schemas:
- *     DeviceDetailsDto:
- *       type: object
- *       properties:
- *         deviceId:
- *           type: string
- *         deviceModel:
- *           type: string
- */
-class DeviceDetailsDto {
-  @IsString()
-  @IsNotEmpty()
-  deviceId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  deviceModel!: string;
-}
-
-/**
- * @swagger
- * components:
- *   schemas:
  *     LocationDto:
  *       type: object
  *       properties:
@@ -48,29 +26,26 @@ class LocationDto {
  * @swagger
  * components:
  *   schemas:
- *     GuestRegistrationDto:
+ *     DeviceDetailsGuestDto:
  *       type: object
- *       required:
- *         - languageId
- *         - deviceDetails
  *       properties:
- *         languageId:
+ *         deviceId:
  *           type: string
- *         deviceDetails:
- *           $ref: '#/components/schemas/DeviceDetailsDto'
+ *         deviceModel:
+ *           type: string
  *         pushToken:
  *           type: string
  *         location:
  *           $ref: '#/components/schemas/LocationDto'
  */
-export class GuestRegistrationDto {
+class DeviceDetailsDto {
   @IsString()
   @IsNotEmpty()
-  languageId!: string;
+  deviceId!: string;
 
-  @ValidateNested()
-  @Type(() => DeviceDetailsDto)
-  deviceDetails!: DeviceDetailsDto;
+  @IsString()
+  @IsNotEmpty()
+  deviceModel!: string;
 
   @IsString()
   @IsOptional()
@@ -80,4 +55,31 @@ export class GuestRegistrationDto {
   @Type(() => LocationDto)
   @IsOptional()
   location?: LocationDto;
+}
+
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     GuestRegistrationDto:
+ *       type: object
+ *       required:
+ *         - languageCode
+ *         - deviceDetails
+ *       properties:
+ *         languageCode:
+ *           type: string
+ *           description: The BCP-47 language code for the user's preferred language (e.g., 'en', 'te').
+ *         deviceDetails:
+ *           $ref: '#/components/schemas/DeviceDetailsGuestDto'
+ */
+export class GuestRegistrationDto {
+  @IsString()
+  @IsNotEmpty()
+  languageCode!: string;
+
+  @ValidateNested()
+  @Type(() => DeviceDetailsDto)
+  deviceDetails!: DeviceDetailsDto;
 }

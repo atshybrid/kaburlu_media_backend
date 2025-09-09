@@ -9,6 +9,7 @@ import {
   IsObject,
   ValidateNested,
   IsEnum,
+  IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UserStatus } from '@prisma/client';
@@ -120,4 +121,30 @@ export class UpdateUserDto {
   @ValidateNested()
   @Type(() => UserProfileDto)
   profile?: UserProfileDto;
+}
+
+class LocationDto {
+    @IsNumber()
+    latitude: number;
+
+    @IsNumber()
+    longitude: number;
+}
+
+export class UpgradeGuestDto {
+    @IsString()
+    @IsNotEmpty()
+    mobileNumber: string;
+
+    @IsString()
+    @IsNotEmpty()
+    name: string;
+
+    @IsString()
+    @IsNotEmpty()
+    languageId: string;
+
+    @ValidateNested()
+    @Type(() => LocationDto)
+    location: LocationDto;
 }

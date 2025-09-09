@@ -1,7 +1,6 @@
-
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url = env("DATABASE_URL")
 }
 
 generator client {
@@ -9,270 +8,169 @@ generator client {
 }
 
 model User {
-  id               String      @id @default(cuid())
-  mobileNumber     String?      @unique
-  mpin             String?
-  name             String?
-  email            String?     @unique
-  roleId           String
-  languageId       String?
-  status           UserStatus  @default(ACTIVE)
-  isVerified       Boolean     @default(false)
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  role             Role        @relation(fields: [roleId], references: [id])
-  language         Language?   @relation(fields: [languageId], references: [id])
-  profile          UserProfile?
-  articles         Article[]
-  articleHistories ArticleHistory[]
-  likes            Like[]
-  devices          Device[]
-  locations        UserLocation[]
-}
-
-model UserProfile {
-  id                     String    @id @default(cuid())
-  userId                 String    @unique
-  dob                    DateTime?
-  maritalStatus          String?
-  emergencyContactNumber String?
-  address                Json?
-  stateId                String?
-  districtId             String?
-  assemblyId             String?
-  mandalId               String?
-  villageId              String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  user                   User      @relation(fields: [userId], references: [id])
-  state                  State?    @relation(fields: [stateId], references: [id])
-  district               Location? @relation("DistrictProfile", fields: [districtId], references: [id])
-  assembly               Location? @relation("AssemblyProfile", fields: [assemblyId], references: [id])
-  mandal                 Location? @relation("MandalProfile", fields: [mandalId], references: [id])
-  village                Location? @relation("VillageProfile", fields: [villageId], references: [id])
+  id              String         @id @default(cuid())
+  mobileNumber    String?        @unique
+  mpin            String?
+  email           String?        @unique
+  role            Role           @relation(fields: [roleId], references: [id])
+  roleId          String
+  language        Language       @relation(fields: [languageId], references: [id])
+  languageId      String
+  status          String         @default("PENDING") // PENDING, ACTIVE, INACTIVE, SUSPENDED
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  devices         Device[]
+  articles        Article[]
+  likes           Like[]
+  comments        Comment[]
+  location        UserLocation? 
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  name        RoleName @unique
-  permissions Json
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String    @id @default(cuid())
+  name        String    @unique
+  permissions String[]
   users       User[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Language {
-  id                 String               @id @default(cuid())
-  code               String               @unique
-  name               String
-  isRtl              Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  users              User[]
-  states             State[]
-  categoryTranslations CategoryTranslation[]
+  id        String    @id @default(cuid())
+  name      String    @unique
+  code      String    @unique
+  isDeleted Boolean   @default(false)
+  users     User[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
-model Country {
+model Device {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  deviceId    String   @unique
+  deviceModel String
+  pushToken   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model UserLocation {
   id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @unique
+  latitude  Float
+  longitude Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  states    State[]
 }
+
+
 
 model State {
-  id                 String               @id @default(cuid())
-  code               String               @unique
-  name               String
-  countryId          String
-  languageId         String
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  country            Country              @relation(fields: [countryId], references: [id])
-  language           Language             @relation(fields: [languageId], references: [id])
-  locations          Location[]
-  userProfiles       UserProfile[]
+  id        String    @id @default(cuid())
+  name      String    @unique
+  country   String
+  isDeleted Boolean   @default(false)
+  districts District[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
-model Location {
-  id          String       @id @default(cuid())
+model District {
+  id        String    @id @default(cuid())
+  name      String
+  state     State     @relation(fields: [stateId], references: [id])
+  stateId   String
+  isDeleted Boolean   @default(false)
+  mandals   Mandal[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Mandal {
+  id          String    @id @default(cuid())
   name        String
-  code        String       @unique
-  type        LocationType
-  level       Int
-  stateId     String
-  parentId    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  state       State        @relation(fields: [stateId], references: [id])
-  parent      Location?    @relation("LocationHierarchy", fields: [parentId], references: [id])
-  children    Location[]   @relation("LocationHierarchy")
-  districts   UserProfile[] @relation("DistrictProfile")
-  assemblies  UserProfile[] @relation("AssemblyProfile")
-  mandals     UserProfile[] @relation("MandalProfile")
-  villages    UserProfile[] @relation("VillageProfile")
+  district    District  @relation(fields: [districtId], references: [id])
+  districtId  String
+  isDeleted   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  slug        String    @unique
-  iconUrl     String?
-  isActive    Boolean   @default(true)
-  order       Int
-  parentId    String?   
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryHierarchy")
+  id          String               @id @default(cuid())
+  name        String
+  slug        String               @unique
+  isDeleted   Boolean              @default(false)
+  parent      Category?            @relation("SubCategories", fields: [parentId], references: [id])
+  parentId    String?
+  children    Category[]           @relation("SubCategories")
   translations CategoryTranslation[]
-  articles    ArticleCategory[]
+  articles    Article[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 }
 
 model CategoryTranslation {
-  id         String   @id @default(cuid())
-  categoryId String
-  languageId String
-  name       String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  language   Language @relation(fields: [languageId], references: [id])
+  id          String   @id @default(cuid())
+  category    Category @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  language    String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@unique([categoryId, languageId])
+  @@unique([categoryId, language])
 }
+
 
 model Article {
-  id              String            @id @default(cuid())
-  title           String
-  content         String
-  authorId        String
-  status          ArticleStatus     @default(PENDING)
-  scheduledAt     DateTime?
-  publishedAt     DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  author          User              @relation(fields: [authorId], references: [id])
-  categories      ArticleCategory[]
-  history         ArticleHistory[]
-  likes           Like[]
-  comments        Comment[]
-}
-
-model ArticleCategory {
-  articleId  String
-  categoryId String
-  createdAt  DateTime @default(now())
-  article    Article  @relation(fields: [articleId], references: [id])
-  category   Category @relation(fields: [categoryId], references: [id])
-
-  @@id([articleId, categoryId])
-}
-
-model ArticleHistory {
-  id        String        @id @default(cuid())
-  articleId String
-  userId    String
-  action    HistoryAction
-  details   Json?
-  createdAt DateTime      @default(now())
-  article   Article       @relation(fields: [articleId], references: [id])
-  user      User          @relation(fields: [userId], references: [id])
+  id                String       @id @default(cuid())
+  title             String
+  content           String
+  author            User         @relation(fields: [authorId], references: [id])
+  authorId          String
+  status            String       @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  categories        Category[]
+  tags              String[]
+  images            String[]
+  scheduledAt       DateTime?
+  isBreakingNews    Boolean      @default(false)
+  isTrending        Boolean      @default(false)
+  viewCount         Int          @default(0)
+  likes             Like[]
+  comments          Comment[]
+  relatedArticles   Article[]    @relation("RelatedArticles")
+  relatedArticlesTo Article[]    @relation("RelatedArticles")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 }
 
 model Like {
   id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
   userId    String
+  article   Article  @relation(fields: [articleId], references: [id])
   articleId String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-  article   Article  @relation(fields: [articleId], references: [id])
 
   @@unique([userId, articleId])
 }
 
 model Comment {
   id        String   @id @default(cuid())
-  content   String
+  user      User     @relation(fields: [userId], references: [id])
   userId    String
+  article   Article  @relation(fields: [articleId], references: [id])
   articleId String
+  content   String
+  parent    Comment? @relation("Replies", fields: [parentId], references: [id])
   parentId  String?
+  replies   Comment[] @relation("Replies")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  article   Article  @relation(fields: [articleId], references: [id])
-  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id])
-  replies   Comment[] @relation("CommentReplies")
 }
 
-model OtpLog {
-  id           String   @id @default(cuid())
-  mobileNumber String
-  otp          String
-  expiresAt    DateTime
-  isVerified   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model Device {
-  id          String    @id @default(cuid())
-  userId      String
-  deviceId    String
-  deviceModel String
-  pushToken   String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  user        User      @relation(fields: [userId], references: [id])
-
-  @@unique([userId, deviceId])
-}
-
-model UserLocation {
-  id        String   @id @default(cuid())
-  userId    String
-  latitude  Float
-  longitude Float
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-}
-
-enum RoleName {
-  SUPER_ADMIN
-  LANGUAGE_ADMIN
-  ADMIN
-  NEWS_DESK
-  REPORTER
-  CITIZEN_REPORTER
-  GUEST
-}
-
-enum LocationType {
-  country
-  state
-  district
-  assembly
-  mandal
-  village
-}
-
-enum ArticleStatus {
-  DRAFT
-  PENDING
-  APPROVED
-  REJECTED
-  PUBLISHED
-}
-
-enum UserStatus {
-  ACTIVE
-  INACTIVE
-  BLOCKED
-}
-
-enum HistoryAction {
-  CREATED
-  UPDATED
-  STATUS_CHANGED
-}

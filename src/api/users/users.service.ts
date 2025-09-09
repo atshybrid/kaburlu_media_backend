@@ -1,163 +1,105 @@
-
-import { Prisma } from '@prisma/client';
 import prisma from '../../lib/prisma';
-import { CreateUserDto, UpdateUserDto } from './users.dto';
-import * as bcrypt from 'bcrypt';
+import { hashMpin } from '../auth/auth.service';
 
-// Updated function to handle the new nested profile structure and role relation.
-export const createUser = async (user: CreateUserDto) => {
-  // Destructure roleId to handle it as a relation.
-  const { profile, mpin, roleId, ...userData } = user;
-
-  const data: Prisma.UserCreateInput = {
-    ...userData,
-    // Correctly connect the user to a role using the ID.
-    role: {
-      connect: { id: roleId },
-    },
-  };
-
-  if (mpin) {
-    const saltRounds = 10;
-    data.mpin = await bcrypt.hash(mpin, saltRounds);
-  } else {
-    data.mpin = null;
-  }
-
-  // If profile data is provided, prepare it for a nested write.
-  if (profile) {
-    data.profile = {
-      create: profile,
-    };
-  }
-
-  const newUser = await prisma.user.create({
-    data,
-    include: {
-      profile: true, // Ensure the new profile is returned.
-      role: true, // Also include role information.
-    },
-  });
-
-  return newUser;
-};
-
-// Update to include the user's profile in the response.
-export const getUsers = async (filters: { role?: string; languageId?: string; page: number; limit: number }) => {
-  const { role, languageId, page, limit } = filters;
-  const where: Prisma.UserWhereInput = {}; // Use Prisma's own type for better safety.
-
-  if (role) {
-    where.role = { name: role as any }; // RoleName enum could be used here for more safety.
-  }
-
-  if (languageId) {
-    where.languageId = languageId;
-  }
-
-  const [users, total] = await prisma.$transaction([
-    prisma.user.findMany({
-      where,
-      include: {
-        profile: true, // Include the profile in the list.
-        role: true,
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.user.count({ where }),
-  ]);
-
-  return {
-    success: true,
-    message: 'Users retrieved successfully',
-    data: users,
-    meta: {
-      total,
-      page,
-      limit,
-    },
-  };
-};
-
-// Update to include the user's profile and role in the response.
-export const findUserByMobileNumber = async (mobileNumber: string) => {
-  return await prisma.user.findUnique({
-    where: {
-      mobileNumber,
-    },
-    include: {
-      profile: true,
-      role: true,
+export const createUser = async (data: any) => {
+  const { mpin, ...userData } = data;
+  const hashedMpin = await hashMpin(mpin);
+  return prisma.user.create({
+    data: {
+      ...userData,
+      mpin: hashedMpin,
     },
   });
 };
 
-// Update to include the user's profile and role in the response.
+export const findAllUsers = async () => {
+  return prisma.user.findMany({ include: { role: true } });
+};
+
 export const findUserById = async (id: string) => {
-  return await prisma.user.findUnique({
-    where: {
-      id: id,
-    },
-    include: {
-      profile: true,
-      role: true,
-    },
-  });
+    return prisma.user.findUnique({ where: { id }, include: { role: true } });
 };
 
-// Updated function to handle nested profile updates and role relation.
-export const updateUser = async (id: string, user: UpdateUserDto) => {
-  // Destructure roleId to handle it as a relation.
-  const { profile, roleId, ...userData } = user;
-
-  const data: Prisma.UserUpdateInput = {
-    ...userData,
-  };
-
-  // If a new roleId is provided, connect to the new role.
-  if (roleId) {
-    data.role = {
-      connect: { id: roleId },
-    };
-  }
-
-  // If profile data is provided, use upsert to create or update it.
-  if (profile) {
-    data.profile = {
-      upsert: {
-        create: profile,
-        update: profile,
-      },
-    };
-  }
-
-  return await prisma.user.update({
-    where: {
-      id: id,
-    },
-    data,
-    include: {
-      profile: true, // Return the updated profile.
-      role: true,
-    },
-  });
+export const findUserByMobileNumber = async (mobileNumber: string) => {
+  return prisma.user.findUnique({ where: { mobileNumber }, include: { role: true } });
 };
 
-// Make delete operation more robust with a transaction.
-export const deleteUser = async (id: string) => {
-  return await prisma.$transaction(async (tx) => {
-    // Check if a profile exists to avoid errors on deletion.
-    const userProfile = await tx.userProfile.findUnique({
-      where: { userId: id },
-    });
-    if (userProfile) {
-      await tx.userProfile.delete({ where: { userId: id } });
+export const updateUser = async (id: string, data: any) => {
+    const { roleId, languageId, ...rest } = data;
+    const updateData: any = { ...rest };
+
+    if (roleId) {
+        updateData.role = {
+            connect: { id: roleId },
+        };
     }
 
-    // Then, delete the user.
-    return await tx.user.delete({
-      where: { id: id },
+    if (languageId) {
+        updateData.language = {
+            connect: { id: languageId },
+        };
+    }
+
+    return prisma.user.update({
+        where: { id },
+        data: updateData,
     });
-  });
+};
+
+export const deleteUser = async (id: string) => {
+    return prisma.user.delete({ where: { id } });
+};
+
+export const upgradeGuest = async (data: any) => {
+    const { mobileNumber, name, languageId, location } = data;
+
+    const guestRole = await prisma.role.findUnique({ where: { name: 'Guest' } });
+    const citizenReporterRole = await prisma.role.findUnique({ where: { name: 'Citizen Reporter' } });
+
+    if (!guestRole || !citizenReporterRole) {
+        throw new Error('Required roles not found');
+    }
+
+    let user = await prisma.user.findFirst({
+        where: {
+            mobileNumber,
+            roleId: guestRole.id,
+        },
+    });
+
+    if (user) {
+        return prisma.user.update({
+            where: { id: user.id },
+            data: {
+                name,
+                languageId,
+                roleId: citizenReporterRole.id,
+                deviceDetails: {
+                    create: {
+                        location: {
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                        }
+                    }
+                }
+            },
+        });
+    } else {
+        return prisma.user.create({
+            data: {
+                mobileNumber,
+                name,
+                languageId,
+                roleId: citizenReporterRole.id,
+                deviceDetails: {
+                    create: {
+                        location: {
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                        }
+                    }
+                }
+            },
+        });
+    }
 };

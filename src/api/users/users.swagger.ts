@@ -1,7 +1,14 @@
-
 export const userSwagger = {
   paths: {
     '/api/users': {
+      get: {
+        summary: 'Get all users',
+        tags: ['Users'],
+        responses: {
+          '200': { description: 'A list of users' },
+          '500': { description: 'Internal server error' },
+        },
+      },
       post: {
         summary: 'Create a new user',
         tags: ['Users'],
@@ -12,13 +19,20 @@ export const userSwagger = {
               schema: {
                 type: 'object',
                 properties: {
-                  name: { type: 'string' },
-                  roleId: { type: 'string' },
-                  mobileNumber: { type: 'string' },
-                  mpin: { type: 'string' },
-                  email: { type: 'string', format: 'email' },
+                  name: { type: 'string', example: 'John Doe' },
+                  roleId: { type: 'string', example: 'cmfbu2d9c0000f1h6g3d4e5f6' },
+                  mobileNumber: { type: 'string', example: '1234567890' },
+                  mpin: { type: 'string', example: '1234' },
+                  email: { type: 'string', format: 'email', example: 'john.doe@example.com' },
                 },
                 required: ['name', 'roleId', 'mobileNumber'],
+              },
+              example: {
+                name: 'John Doe',
+                roleId: 'cmfbu2d9c0000f1h6g3d4e5f6',
+                mobileNumber: '1234567890',
+                mpin: '1234',
+                email: 'john.doe@example.com',
               },
             },
           },
@@ -29,64 +43,66 @@ export const userSwagger = {
           '500': { description: 'Internal server error' },
         },
       },
-      get: {
-        summary: 'Get all users',
-        tags: ['Users'],
-        parameters: [
-          {
-            name: 'role',
-            in: 'query',
-            schema: { type: 'string' },
-          },
-          {
-            name: 'languageId',
-            in: 'query',
-            schema: { type: 'string' },
-          },
-          {
-            name: 'page',
-            in: 'query',
-            schema: { type: 'integer' },
-          },
-          {
-            name: 'limit',
-            in: 'query',
-            schema: { type: 'integer' },
-          },
-        ],
-        responses: {
-          '200': { description: 'Users retrieved successfully' },
-          '500': { description: 'Internal server error' },
-        },
-      },
     },
     '/api/users/{id}': {
       get: {
-        summary: 'Get a user by ID',
+        summary: 'Get a single user by ID',
         tags: ['Users'],
         parameters: [
           {
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string' },
+            description: 'The ID of the user to retrieve.',
+            schema: {
+              type: 'string',
+              example: 'cmfc46d9c000sf1jif354shvh',
+            },
           },
         ],
         responses: {
-          '200': { description: 'User retrieved successfully' },
+          '200': {
+            description: 'Successful operation',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ApiResponse',
+                },
+                example: {
+                  success: true,
+                  message: 'User retrieved successfully',
+                  data: {
+                    id: 'cmfc46d9c000sf1jif354shvh',
+                    name: 'John Doe',
+                    email: 'john.doe@example.com',
+                    mobileNumber: '1234567890',
+                    status: 'ACTIVE',
+                    roleId: 'cmfbu2d9c0000f1h6g3d4e5f6',
+                    languageId: 'cmfc46d9c000sf1jif354shvh',
+                    createdAt: '2025-09-09T05:32:34.849Z',
+                    updatedAt: '2025-09-09T05:32:34.849Z',
+                  },
+                },
+              },
+            },
+          },
           '404': { description: 'User not found' },
           '500': { description: 'Internal server error' },
         },
       },
       put: {
-        summary: 'Update a user',
+        summary: 'Update an existing user',
         tags: ['Users'],
         parameters: [
           {
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string' },
+            description: 'The ID of the user to update.',
+            schema: {
+              type: 'string',
+              example: 'cmfc89k010001f10r8rbyhs83',
+            },
           },
         ],
         requestBody: {
@@ -96,14 +112,19 @@ export const userSwagger = {
               schema: {
                 type: 'object',
                 properties: {
-                  name: { type: 'string' },
-                  email: { type: 'string', format: 'email' },
                   roleId: { type: 'string' },
                   languageId: { type: 'string' },
                   stateId: { type: 'string' },
-                  status: { type: 'string' },
+                  status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] },
                   isVerified: { type: 'boolean' },
                 },
+              },
+              example: {
+                roleId: 'cmfc46akq0005f1ji86fzesbv',
+                languageId: 'en',
+                stateId: '',
+                status: 'ACTIVE',
+                isVerified: true,
               },
             },
           },
@@ -116,20 +137,23 @@ export const userSwagger = {
         },
       },
       delete: {
-        summary: 'Delete a user',
+        summary: 'Delete a user by ID',
         tags: ['Users'],
         parameters: [
           {
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string' },
+            description: 'The user ID',
+            schema: {
+              type: 'string',
+              example: 'cmfc46d9c000sf1jif354shvh',
+            },
           },
         ],
         responses: {
           '204': { description: 'User deleted successfully' },
           '404': { description: 'User not found' },
-          '500': { description: 'Internal server error' },
         },
       },
     },
