@@ -10,9 +10,9 @@ generator client {
 
 model User {
   id               String      @id @default(cuid())
-  mobileNumber     String      @unique
+  mobileNumber     String?      @unique
   mpin             String?
-  name             String
+  name             String?
   email            String?     @unique
   roleId           String
   languageId       String?
@@ -26,6 +26,8 @@ model User {
   articles         Article[]
   articleHistories ArticleHistory[]
   likes            Like[]
+  devices          Device[]
+  locations        UserLocation[]
 }
 
 model UserProfile {
@@ -212,6 +214,28 @@ model OtpLog {
   isVerified   Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model Device {
+  id          String    @id @default(cuid())
+  userId      String
+  deviceId    String
+  deviceModel String
+  pushToken   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, deviceId])
+}
+
+model UserLocation {
+  id        String   @id @default(cuid())
+  userId    String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 enum RoleName {

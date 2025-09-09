@@ -14,6 +14,7 @@ const validateOtp = async (mobileNumber: string, otp: string): Promise<boolean> 
 };
 
 export const login = async (loginDto: MpinLoginDto) => {
+    console.log("loginDto", loginDto)
   console.log("Attempting to log in with mobile number:", loginDto.mobileNumber);
   const user = await findUserByMobileNumber(loginDto.mobileNumber);
   if (!user) {
@@ -51,7 +52,7 @@ export const login = async (loginDto: MpinLoginDto) => {
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
   const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
 
-  return {
+  const result =  {
     jwt: accessToken,
     refreshToken: refreshToken,
     user: {
@@ -60,6 +61,8 @@ export const login = async (loginDto: MpinLoginDto) => {
       languageId: user.languageId,
     },
   };
+  console.log("result", result)
+  return result
 };
 
 export const refresh = async (refreshDto: RefreshDto) => {
@@ -117,7 +120,7 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
     });
 
     if (guestDto.location) {
-        await prisma.location.create({
+        await prisma.userLocation.create({
             data: {
                 userId: user.id,
                 latitude: guestDto.location.latitude,

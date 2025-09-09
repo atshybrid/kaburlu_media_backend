@@ -46,7 +46,7 @@ const categoryTranslations: Record<string, Record<string, string>> = {
     SPORTS: { en: 'Sports', te: 'క్రీడలు', hi: 'खेल', ta: 'விளையாட்டு', kn: 'ಕ್ರೀಡೆ', ml: 'കായികം' },
     TECHNOLOGY: { en: 'Technology', te: 'సాంకేతికం', hi: 'प्रौद्योगिकी', ta: 'தொழில்நுட்பம்', kn: 'ತಂತ್ರಜ್ಞಾನ', ml: 'സാങ്കേതികം' },
     ENTERTAINMENT: { en: 'Entertainment', te: 'వినోదం', hi: 'मनोरंजन', ta: 'பொழுதுபோக்கு', kn: 'ಮನರಂಜನೆ', ml: 'വിനോദം' },
-    BUSINESS: { en: 'Business', te: 'వ్యాపారం', hi: 'व्यापार', ta: 'வணிகம்', kn: 'ವ್ಯಾಪಾರ', ml: 'ബിസിനസ്സ്' },
+    BUSINESS: { en: 'Business', te: 'వ్యాపారం', hi: 'व्यापार', ta: 'வணிகം', kn: 'ವ್ಯಾಪಾರ', ml: 'ബിസിനസ്സ്' },
 };
 
 const countries = [{ name: 'India', code: 'IN' }];
@@ -284,8 +284,8 @@ async function main() {
     console.log('Seeding users...');
     const teluguLanguageId = languageMap['te'];
     const usersToCreate = [
-      { mobileNumber: '8282868389', mpin: '1947', roleName: RoleName.SUPER_ADMIN, languageId: null },
-      { mobileNumber: '9502337775', mpin: '1234', roleName: RoleName.LANGUAGE_ADMIN, languageId: teluguLanguageId },
+      { name: 'Super Admin', mobileNumber: '8282868389', mpin: '1947', roleName: RoleName.SUPER_ADMIN, languageId: null },
+      { name: 'Language Admin', mobileNumber: '9502337775', mpin: '1234', roleName: RoleName.LANGUAGE_ADMIN, languageId: teluguLanguageId },
     ];
 
     const saltRounds = 10;
@@ -293,6 +293,7 @@ async function main() {
         const hashedMpin = await bcrypt.hash(userData.mpin, saltRounds);
         await prisma.user.create({
             data: {
+                name: userData.name,
                 mobileNumber: userData.mobileNumber,
                 mpin: hashedMpin,
                 roleId: roleMap[userData.roleName],

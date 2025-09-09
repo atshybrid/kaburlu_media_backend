@@ -10,7 +10,7 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: 'https://3000-firebase-kaburlu-1756890240371.cluster-edb2jv34dnhjisxuq5m7l37ccy.cloudworkstations.dev',
+      url: 'https://3001-firebase-khabarxbackend-1757330578765.cluster-6dx7corvpngoivimwvvljgokdw.cloudworkstations.dev',
       description: 'Development server on Cloud Workstations',
     },
     {
