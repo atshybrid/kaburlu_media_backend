@@ -72,17 +72,17 @@ router.post('/', async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Location'
  */
-router.get('/', async (req, res) => {
+router.post('/api/v1/locations', async (req, res) => {
     const { page, limit } = req.query;
-    const options = {
+router.get('/api/v1/locations', async (req, res) => {
         page: page ? parseInt(page as string, 10) : undefined,
-        limit: limit ? parseInt(limit as string, 10) : undefined,
+router.get('/api/v1/locations/:id', async (req, res) => {
     };
-    const locations = await locationService.findAllLocations(options);
+router.patch('/api/v1/locations/:id', async (req, res) => {
     res.json(locations);
-});
+router.delete('/api/v1/locations/:id', async (req, res) => {
 
-/**
+router.post('/api/v1/locations/bulk-upload', upload.single('file'), async (req, res) => {
  * @swagger
  * /api/locations/{id}:
  *   get:

@@ -17,7 +17,7 @@ const router = Router();
  *       "200":
  *         description: Array of states
  */
-router.get('/', passport.authenticate('jwt', { session: false }), getStatesController);
+router.get('/api/v1/states', passport.authenticate('jwt', { session: false }), getStatesController);
 
 /**
  * @swagger
@@ -39,6 +39,6 @@ router.get('/', passport.authenticate('jwt', { session: false }), getStatesContr
  *       "201":
  *         description: State created
  */
-router.post('/', passport.authenticate('jwt', { session: false }), createStateController);
+router.post('/api/v1/states', passport.authenticate('jwt', { session: false }), createStateController);
 
 export default router;

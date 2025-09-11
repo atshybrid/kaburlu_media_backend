@@ -75,9 +75,9 @@ router.get('/:id', getSingleArticleController);
  *         name: articleId
  *         required: true
  *         schema:
- *           type: string
+router.get('/api/v1/articles', getPaginatedArticleController);
  *     responses:
- *       200:
+router.get('/api/v1/articles/:id', getSingleArticleController);
  *         description: List of comments
  *
  * /api/comments:
@@ -315,7 +315,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
  *         - content
  *         - categoryIds
  *       properties:
- *         title:
+router.post('/api/v1/articles', passport.authenticate('jwt', { session: false }), createArticleController);
  *           type: string
  *           example: 'The Future of AI in Journalism'
  *         content:
