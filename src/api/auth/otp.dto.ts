@@ -24,5 +24,9 @@ export class SetMpinDto {
 
     @IsString()
     @IsNotEmpty()
+    mobileNumber!: string;
+
+    @IsString()
+    @IsNotEmpty()
     mpin!: string;
 }

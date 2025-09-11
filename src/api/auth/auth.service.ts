@@ -1,3 +1,12 @@
+export const logout = async (refreshToken: string, deviceId: string) => {
+  // TODO: Implement token invalidation and device/session tracking if needed
+  // For now, just scaffold (no-op)
+  return true;
+};
+export const checkUserExists = async (mobile: string) => {
+  const user = await prisma.user.findUnique({ where: { mobileNumber: mobile } });
+  return !!user;
+};
 
 import { findUserByMobileNumber } from '../users/users.service';
 import { MpinLoginDto } from './mpin-login.dto';
@@ -107,12 +116,12 @@ export const refresh = async (refreshDto: RefreshDto) => {
 
 export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
     try {
-        const language = await prisma.language.findUnique({
-            where: { code: guestDto.languageCode },
-        });
+    const language = await prisma.language.findUnique({
+      where: { id: guestDto.languageId },
+    });
 
-        if (!language) {
-            throw new HttpException(400, `Invalid languageCode: '${guestDto.languageCode}'.`);
+    if (!language) {
+      throw new HttpException(400, `Invalid languageId: '${guestDto.languageId}'.`);
         }
 
         const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });

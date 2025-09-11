@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 // Create a single location
 export const createLocation = (data: CreateLocationDto) => {
-    return prisma.location.create({ data });
+    return prisma.userLocation.create({ data });
 };
 
 // Get all locations with pagination and filtering
@@ -16,33 +16,25 @@ export const findAllLocations = (options: { page?: number, limit?: number, filte
     const { page = 1, limit = 10, filter = {} } = options;
     const skip = (page - 1) * limit;
 
-    return prisma.location.findMany({
+    return prisma.userLocation.findMany({
         skip,
         take: limit,
-        where: filter,
-        include: { // Include relations if needed, for example:
-            state: true,
-            parent: true,
-            children: true,
-        }
+        where: filter
+        // No relations in UserLocation model
     });
 };
 
 // Get a single location by ID
 export const findLocationById = (id: string) => {
-    return prisma.location.findUnique({
-        where: { id },
-        include: {
-            state: true,
-            parent: true,
-            children: true,
-        }
+    return prisma.userLocation.findUnique({
+        where: { id }
+        // No relations in UserLocation model
     });
 };
 
 // Update a location
 export const updateLocation = (id: string, data: UpdateLocationDto) => {
-    return prisma.location.update({
+    return prisma.userLocation.update({
         where: { id },
         data,
     });
@@ -50,7 +42,7 @@ export const updateLocation = (id: string, data: UpdateLocationDto) => {
 
 // Delete a location
 export const deleteLocation = (id: string) => {
-    return prisma.location.delete({
+    return prisma.userLocation.delete({
         where: { id },
     });
 };
@@ -63,14 +55,14 @@ export const bulkUploadLocations = (filePath: string): Promise<any> => {
             .pipe(csv())
             .on('data', (row) => {
                 // Basic validation for required fields
-                if (!row.name || !row.code || !row.type || !row.level || !row.stateId) {
+                if (!row.userId || !row.latitude || !row.longitude) {
                     // Skip row or handle error
                     return;
                 }
                 locations.push({
-                    ...row,
-                    level: parseInt(row.level, 10),
-                    parentId: row.parentId || null,
+                    userId: row.userId,
+                    latitude: parseFloat(row.latitude),
+                    longitude: parseFloat(row.longitude)
                 });
             })
             .on('end', async () => {
@@ -79,7 +71,7 @@ export const bulkUploadLocations = (filePath: string): Promise<any> => {
                         fs.unlinkSync(filePath);
                         return reject(new Error('CSV file is empty or headers are incorrect.'));
                     }
-                    const result = await prisma.location.createMany({
+                    const result = await prisma.userLocation.createMany({
                         data: locations,
                         skipDuplicates: true,
                     });

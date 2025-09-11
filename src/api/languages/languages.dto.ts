@@ -10,8 +10,13 @@ export class CreateLanguageDto {
   @IsString()
   code: string;
 
-  constructor(name: string, code: string) {
+  @IsNotEmpty()
+  @IsString()
+  nativeName: string;
+
+  constructor(name: string, code: string, nativeName?: string) {
     this.name = name;
     this.code = code;
+    this.nativeName = nativeName || name;
   }
 }

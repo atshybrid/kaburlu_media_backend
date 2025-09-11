@@ -1,4 +1,3 @@
-
 import { PrismaClient } from '@prisma/client';
 import { CreateProfileDto, UpdateProfileDto } from './profiles.dto';
 
@@ -14,65 +13,65 @@ function parseDate(dateString: string): Date | null {
 }
 
 export async function getProfileByUserId(userId: string) {
-  const profile = await prisma.userProfile.findUnique({
-    where: { userId },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
   });
 
-  if (!profile) {
+  if (!user) {
     throw new Error('Profile not found for the specified user.');
   }
 
-  return profile;
+  return user;
 }
 
 export async function createProfile(userId: string, data: CreateProfileDto) {
-  const existingProfile = await prisma.userProfile.findUnique({
-    where: { userId },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
   });
 
-  if (existingProfile) {
-    throw new Error('A profile already exists for this user.');
+  if (!user) {
+    throw new Error('User not found.');
   }
 
   const dob = data.dob ? parseDate(data.dob) : null;
 
-  const profileData: any = {
+  const updateData: any = {
     ...data,
-    userId,
     dob,
   };
 
   // Remove empty string IDs to avoid database errors
   for (const key of ['stateId', 'districtId', 'assemblyId', 'mandalId', 'villageId']) {
-    if (profileData[key] === '') {
-      profileData[key] = null;
+    if (updateData[key] === '') {
+      updateData[key] = null;
     }
   }
 
-  return prisma.userProfile.create({
-    data: profileData,
+  return prisma.user.update({
+    where: { id: userId },
+    data: updateData,
   });
 }
 
 export async function updateProfile(userId: string, data: UpdateProfileDto) {
   const dob = data.dob ? parseDate(data.dob) : undefined;
 
-  const profileData: any = {
+  const updateData: any = {
     ...data,
     dob,
   };
 
   // Remove empty string IDs to avoid database errors
   for (const key of ['stateId', 'districtId', 'assemblyId', 'mandalId', 'villageId']) {
-    if (profileData[key] === '') {
-      profileData[key] = null;
+    if (updateData[key] === '') {
+      updateData[key] = null;
     }
   }
 
   try {
-    return await prisma.userProfile.update({
-      where: { userId },
-      data: profileData,
+    return await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
     });
   } catch (error) {
     throw new Error('Profile not found for the specified user.');

@@ -5,13 +5,9 @@ export class CreateCategoryDto {
   @IsString()
   name!: string;
 
-  @IsString()
-  @IsOptional()
-  iconUrl?: string;
-
   @IsBoolean()
   @IsOptional()
-  isActive?: boolean = true;
+  isDeleted?: boolean = false;
 
   @IsString()
   @IsOptional()
@@ -23,13 +19,9 @@ export class UpdateCategoryDto {
     @IsOptional()
     name?: string;
 
-    @IsString()
-    @IsOptional()
-    iconUrl?: string;
-
-    @IsBoolean()
-    @IsOptional()
-    isActive?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  isDeleted?: boolean;
 
     @IsString()
     @IsOptional()

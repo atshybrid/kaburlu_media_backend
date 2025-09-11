@@ -41,15 +41,14 @@ export const unlikeArticle = async (likeDto: CreateLikeDto) => {
 };
 
 export const getLikesForArticle = async (articleId: string) => {
-    return await prisma.like.findMany({
-        where: { articleId },
-        include: {
-            user: {
-                select: {
-                    id: true,
-                    name: true,
-                }
-            }
+  return await prisma.like.findMany({
+    where: { articleId },
+    include: {
+      user: {
+        select: {
+          id: true,
         }
-    });
+      }
+    }
+  });
 };

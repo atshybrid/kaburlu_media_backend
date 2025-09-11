@@ -93,7 +93,7 @@ router.post('/set-mpin', otpController.setMpin);
 
 /**
  * @swagger
- * /api/auth/mpin-status/{mobileNumber}:
+ * /auth/mpin-status/{mobileNumber}:
  *   get:
  *     summary: Check if a user has an MPIN set
  *     tags: [Auth]
@@ -112,8 +112,24 @@ router.post('/set-mpin', otpController.setMpin);
  *             schema:
  *               type: object
  *               properties:
- *                 hasMpin:
+ *                 mpinStatus:
  *                   type: boolean
+ *                   description: True if MPIN is set, false otherwise.
+ *                 isRegistered:
+ *                   type: boolean
+ *                   description: True if mobile number is registered (only present when mpinStatus is false).
+ *             examples:
+ *               MPIN set:
+ *                 value:
+ *                   mpinStatus: true
+ *               MPIN not set, registered:
+ *                 value:
+ *                   mpinStatus: false
+ *                   isRegistered: true
+ *               MPIN not set, not registered:
+ *                 value:
+ *                   mpinStatus: false
+ *                   isRegistered: false
  *       400:
  *         description: Invalid request
  */

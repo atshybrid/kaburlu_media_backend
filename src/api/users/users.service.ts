@@ -1,15 +1,36 @@
+// Push Notification CRUD
+export const addPushToken = async (userId: string, deviceId: string, deviceModel: string, pushToken: string) => {
+    return prisma.device.upsert({
+        where: { deviceId },
+        update: { pushToken, deviceModel },
+        create: { deviceId, deviceModel, pushToken, userId }
+    });
+};
+
+export const removePushToken = async (userId: string, pushToken: string) => {
+    return prisma.device.deleteMany({
+        where: { deviceId: userId, pushToken }
+    });
+};
+
+// Location CRUD
+export const updateLocation = async (userId: string, latitude: number, longitude: number) => {
+    return prisma.userLocation.upsert({
+        where: { userId },
+        update: { latitude, longitude },
+        create: { userId, latitude, longitude }
+    });
+};
+
+export const getLocation = async (userId: string) => {
+    return prisma.userLocation.findUnique({ where: { userId } });
+};
 import prisma from '../../lib/prisma';
-import { hashMpin } from '../auth/auth.service';
 
 export const createUser = async (data: any) => {
-  const { mpin, ...userData } = data;
-  const hashedMpin = await hashMpin(mpin);
-  return prisma.user.create({
-    data: {
-      ...userData,
-      mpin: hashedMpin,
-    },
-  });
+    return prisma.user.create({
+        data,
+    });
 };
 
 export const findAllUsers = async () => {
@@ -51,10 +72,11 @@ export const deleteUser = async (id: string) => {
 };
 
 export const upgradeGuest = async (data: any) => {
-    const { mobileNumber, name, languageId, location } = data;
+    const { deviceId, deviceModel, pushToken, mobileNumber, mpin, email, languageId } = data;
+    // Ignore any roleId sent by client
 
-    const guestRole = await prisma.role.findUnique({ where: { name: 'Guest' } });
-    const citizenReporterRole = await prisma.role.findUnique({ where: { name: 'Citizen Reporter' } });
+    const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
+    const citizenReporterRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
 
     if (!guestRole || !citizenReporterRole) {
         throw new Error('Required roles not found');
@@ -62,42 +84,55 @@ export const upgradeGuest = async (data: any) => {
 
     let user = await prisma.user.findFirst({
         where: {
-            mobileNumber,
+            devices: { some: { deviceId } },
             roleId: guestRole.id,
         },
+        include: { devices: true }
     });
 
     if (user) {
+        // If device already exists, just update user and mark guest as upgraded
         return prisma.user.update({
             where: { id: user.id },
             data: {
-                name,
-                languageId,
+                mobileNumber,
+                mpin,
+                email,
                 roleId: citizenReporterRole.id,
-                deviceDetails: {
-                    create: {
-                        location: {
-                            latitude: location.latitude,
-                            longitude: location.longitude,
+                status: 'ACTIVE',
+                upgradedAt: new Date(), // If you have this field
+                devices: {
+                    upsert: {
+                        where: { deviceId },
+                        update: {
+                            deviceModel,
+                            pushToken
+                        },
+                        create: {
+                            deviceId,
+                            deviceModel,
+                            pushToken
                         }
                     }
                 }
             },
         });
     } else {
+        // Create user and device together
         return prisma.user.create({
             data: {
                 mobileNumber,
-                name,
-                languageId,
+                mpin,
+                email,
                 roleId: citizenReporterRole.id,
-                deviceDetails: {
-                    create: {
-                        location: {
-                            latitude: location.latitude,
-                            longitude: location.longitude,
-                        }
-                    }
+                languageId,
+                status: 'ACTIVE',
+                devices: {
+                    create: [{
+                        deviceId,
+                        deviceModel,
+                        pushToken
+                    }]
                 }
             },
         });

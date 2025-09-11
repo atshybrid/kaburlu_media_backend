@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/roles:
+ * /roles:
  *   get:
  *     summary: List roles
  *     tags: [Roles]

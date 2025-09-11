@@ -1,3 +1,31 @@
+model ShortNews {
+  id           String   @id @default(cuid())
+  title        String
+  slug         String?
+  summary      String?
+  content      String // ≤60 words
+  language     String?
+  author       User     @relation(fields: [authorId], references: [id])
+  authorId     String
+  categoryId   String
+  tags         String[]
+  featuredImage String?
+  publishDate  DateTime?
+  status       String   @default("PENDING") // PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED
+  seo          Json?
+  allowComments Boolean @default(true)
+  mediaUrls    String[] // array of image/video URLs
+  latitude     Float?
+  longitude    Float?
+  address      String?
+  aiRemark     String?
+  aiPlagiarism Json?
+  aiSensitive  Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  reads        ShortNewsRead[]
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -9,41 +37,49 @@ generator client {
 }
 
 model User {
-  id              String         @id @default(cuid())
-  mobileNumber    String?        @unique
-  mpin            String?
-  email           String?        @unique
-  role            Role           @relation(fields: [roleId], references: [id])
-  roleId          String
-  language        Language       @relation(fields: [languageId], references: [id])
-  languageId      String
-  status          String         @default("PENDING") // PENDING, ACTIVE, INACTIVE, SUSPENDED
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  devices         Device[]
-  articles        Article[]
-  likes           Like[]
-  comments        Comment[]
-  location        UserLocation? 
+  id           String        @id @default(cuid())
+  mobileNumber String?       @unique
+  mpin         String?
+  email        String?       @unique
+  role         Role          @relation(fields: [roleId], references: [id])
+  roleId       String
+  language     Language      @relation(fields: [languageId], references: [id])
+  languageId   String
+  status       String        @default("PENDING") // PENDING, ACTIVE, INACTIVE, SUSPENDED
+  upgradedAt   DateTime?     // Set when guest is upgraded
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  devices      Device[]
+  articles     Article[]
+  likes        Like[]
+  comments     Comment[]
+  location     UserLocation?
+  articleViews ArticleView[]
+  shortNews    ShortNews[]
+  shortNewsReads ShortNewsRead[]
+  dislikes Dislike[]
+  articleReads ArticleRead[]
 }
 
 model Role {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  permissions String[]
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions Json
   users       User[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Language {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  code      String    @unique
-  isDeleted Boolean   @default(false)
-  users     User[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String   @id @default(cuid())
+  name       String   @unique
+  code       String   @unique
+  nativeName String
+  direction  String   @default("ltr")
+  isDeleted  Boolean  @default(false)
+  users      User[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Device {
@@ -67,83 +103,122 @@ model UserLocation {
   updatedAt DateTime @updatedAt
 }
 
+model Country {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String?  @unique
+  states    State[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model State {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  country   String
-  isDeleted Boolean   @default(false)
+  id        String     @id @default(cuid())
+  name      String     @unique
+  country   Country    @relation(fields: [countryId], references: [id])
+  countryId String
+  isDeleted Boolean    @default(false)
   districts District[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model District {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   name      String
-  state     State     @relation(fields: [stateId], references: [id])
+  state     State    @relation(fields: [stateId], references: [id])
   stateId   String
-  isDeleted Boolean   @default(false)
+  isDeleted Boolean  @default(false)
   mandals   Mandal[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Mandal {
-  id          String    @id @default(cuid())
-  name        String
-  district    District  @relation(fields: [districtId], references: [id])
-  districtId  String
-  isDeleted   Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  district   District @relation(fields: [districtId], references: [id])
+  districtId String
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Category {
-  id          String               @id @default(cuid())
-  name        String
-  slug        String               @unique
-  isDeleted   Boolean              @default(false)
-  parent      Category?            @relation("SubCategories", fields: [parentId], references: [id])
-  parentId    String?
-  children    Category[]           @relation("SubCategories")
+  id           String                @id @default(cuid())
+  name         String
+  slug         String                @unique
+  isDeleted    Boolean               @default(false)
+  parent       Category?             @relation("SubCategories", fields: [parentId], references: [id])
+  parentId     String?
+  children     Category[]            @relation("SubCategories")
   translations CategoryTranslation[]
-  articles    Article[]
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  articles     Article[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 }
 
 model CategoryTranslation {
-  id          String   @id @default(cuid())
-  category    Category @relation(fields: [categoryId], references: [id])
-  categoryId  String
-  language    String
-  name        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
+  language   String
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([categoryId, language])
 }
 
 model Article {
-  id                String       @id @default(cuid())
+  id                String        @id @default(cuid())
   title             String
   content           String
-  author            User         @relation(fields: [authorId], references: [id])
+  shortNews         String?
+  longNews          String?
+  headlines         String?
+  type              String // "citizen" or "reporter"
+  author            User          @relation(fields: [authorId], references: [id])
   authorId          String
-  status            String       @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  status            String        @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   categories        Category[]
   tags              String[]
   images            String[]
   scheduledAt       DateTime?
-  isBreakingNews    Boolean      @default(false)
-  isTrending        Boolean      @default(false)
-  viewCount         Int          @default(0)
+  isBreakingNews    Boolean       @default(false)
+  isTrending        Boolean       @default(false)
+  viewCount         Int           @default(0)
   likes             Like[]
   comments          Comment[]
-  relatedArticles   Article[]    @relation("RelatedArticles")
-  relatedArticlesTo Article[]    @relation("RelatedArticles")
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  dislikes          Dislike[]
+  relatedArticles   Article[]     @relation("RelatedArticles")
+  relatedArticlesTo Article[]     @relation("RelatedArticles")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  articleViews      ArticleView[]
+  contentJson       Json?
+    articleReads      ArticleRead[]
+}
+
+model ArticleView {
+  id        String   @id @default(cuid())
+  article   Article  @relation(fields: [articleId], references: [id])
+  articleId String
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  deviceId  String?
+  viewedAt  DateTime @default(now())
+}
+
+model ArticleRead {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  article   Article  @relation(fields: [articleId], references: [id])
+  articleId String
+  readAt    DateTime @default(now())
+
+  @@unique([userId, articleId])
 }
 
 model Like {
@@ -157,16 +232,38 @@ model Like {
   @@unique([userId, articleId])
 }
 
-model Comment {
+model Dislike {
   id        String   @id @default(cuid())
   user      User     @relation(fields: [userId], references: [id])
   userId    String
   article   Article  @relation(fields: [articleId], references: [id])
   articleId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, articleId])
+}
+
+model ShortNewsRead {
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  shortNews   ShortNews @relation(fields: [shortNewsId], references: [id])
+  shortNewsId String
+  readAt      DateTime  @default(now())
+
+  @@unique([userId, shortNewsId])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  article   Article   @relation(fields: [articleId], references: [id])
+  articleId String
   content   String
-  parent    Comment? @relation("Replies", fields: [parentId], references: [id])
+  parent    Comment?  @relation("Replies", fields: [parentId], references: [id])
   parentId  String?
   replies   Comment[] @relation("Replies")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }

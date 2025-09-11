@@ -3,7 +3,6 @@ import { Request, Response } from 'express';
 import { getStates, createState } from './states.service';
 import { CreateStateDto } from './states.dto';
 import { validate } from 'class-validator';
-import { RoleName } from '@prisma/client';
 
 export const getStatesController = async (req: Request, res: Response) => {
   try {
@@ -11,7 +10,7 @@ export const getStatesController = async (req: Request, res: Response) => {
     // @ts-ignore
     const { role } = req.user;
 
-    if (role.name !== RoleName.SUPER_ADMIN && !languageId) {
+  if (role.name !== 'SUPER_ADMIN' && !languageId) {
       return res.status(400).json({ error: 'languageId is required' });
     }
 

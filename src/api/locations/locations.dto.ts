@@ -1,54 +1,27 @@
 
 import { IsString, IsNotEmpty, IsEnum, IsInt, IsOptional } from 'class-validator';
-import { LocationType } from '@prisma/client';
+// Removed LocationType import; not present in Prisma schema
 
 export class CreateLocationDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  userId!: string;
 
-  @IsString()
   @IsNotEmpty()
-  code: string;
+  latitude!: number;
 
-  @IsEnum(LocationType)
   @IsNotEmpty()
-  type: LocationType;
-
-  @IsInt()
-  level: number;
-
-  @IsString()
-  @IsNotEmpty()
-  stateId: string;
-
-  @IsString()
-  @IsOptional()
-  parentId?: string;
+  longitude!: number;
 }
 
 export class UpdateLocationDto {
-    @IsString()
-    @IsOptional()
-    name?: string;
+  @IsString()
+  @IsOptional()
+  userId?: string;
 
-    @IsString()
-    @IsOptional()
-    code?: string;
+  @IsOptional()
+  latitude?: number;
 
-    @IsEnum(LocationType)
-    @IsOptional()
-    type?: LocationType;
-
-    @IsInt()
-    @IsOptional()
-    level?: number;
-
-    @IsString()
-    @IsOptional()
-    stateId?: string;
-
-    @IsString()
-    @IsOptional()
-    parentId?: string;
+  @IsOptional()
+  longitude?: number;
 }

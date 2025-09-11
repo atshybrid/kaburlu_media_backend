@@ -49,10 +49,10 @@ export const createCategory = async (categoryDto: CreateCategoryDto) => {
     data: {
       name: categoryDto.name,
       slug,
-      isActive: typeof categoryDto.isActive === 'boolean' ? categoryDto.isActive : true,
+  isDeleted: typeof categoryDto.isDeleted === 'boolean' ? categoryDto.isDeleted : false,
       parentId: categoryDto.parentId === 'null' || !categoryDto.parentId ? null : categoryDto.parentId,
-      iconUrl: categoryDto.iconUrl === 'null' || !categoryDto.iconUrl ? null : categoryDto.iconUrl,
-      order: 0,
+  // iconUrl removed, not present in DTO or model
+  // order removed, not present in model
     },
   });
 };
@@ -66,7 +66,7 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
 
     if (englishLanguage) {
       await prisma.categoryTranslation.create({
-        data: { categoryId, languageId: englishLanguage.id, name: categoryName },
+      data: { categoryId, language: englishLanguage.code, name: categoryName },
       });
       successfulTranslations++;
     }
@@ -76,7 +76,7 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
       try {
         const translatedName = await translateText(categoryName, lang.name);
         await prisma.categoryTranslation.create({
-          data: { categoryId, languageId: lang.id, name: translatedName },
+          data: { categoryId, language: lang.code, name: translatedName },
         });
         successfulTranslations++;
         console.log(`> Successfully translated '${categoryName}' to ${lang.name}: ${translatedName}`);
@@ -102,7 +102,7 @@ export const getCategories = async (languageContext: string | null | 'all') => {
 
   const allCategories = await prisma.category.findMany({
     include: includeClause,
-    orderBy: { order: 'asc' },
+  // orderBy removed, not present in model
   });
 
   const categoryMap = new Map();

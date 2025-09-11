@@ -84,27 +84,27 @@ try {
 }
 
 // Swagger UI
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API Routes
-app.use('/api/articles', articlesRoutes);
-app.use('/api/likes', likesRoutes);
-app.use('/api/comments', commentsRoutes);
-app.use('/api/categories', categoriesRoutes);
-app.use('/api/languages', languagesRoutes);
-app.use('/api/states', statesRoutes);
-app.use('/api/roles', rolesRoutes);
-app.use('/api/permissions', permissionsRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/auth', otpRoutes);
-app.use('/api/locations', locationsRoutes);
-app.use('/api/translate', translateRoutes);
-app.use('/api/profiles', profileRoutes);
+app.use('/api/v1/articles', articlesRoutes);
+app.use('/api/v1/likes', likesRoutes);
+app.use('/api/v1/comments', commentsRoutes);
+app.use('/api/v1/categories', categoriesRoutes);
+app.use('/api/v1/languages', languagesRoutes);
+app.use('/api/v1/states', statesRoutes);
+app.use('/api/v1/roles', rolesRoutes);
+app.use('/api/v1/permissions', permissionsRoutes);
+app.use('/api/v1/users', usersRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', otpRoutes);
+app.use('/api/v1/locations', locationsRoutes);
+app.use('/api/v1/translate', translateRoutes);
+app.use('/api/v1/profiles', profileRoutes);
 
 // Protected sample route
 app.get(
-  '/api/protected',
+  '/api/v1/protected',
   passport.authenticate('jwt', { session: false }),
   (_req, res) => {
     res.json({ message: 'You are authorized to see this message' });

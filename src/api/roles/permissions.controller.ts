@@ -14,20 +14,17 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
 
     try {
         const role = await prisma.role.findUnique({
-            where: { roleId: id },
+            where: { id },
         });
 
         if (!role) {
             return res.status(404).json({ error: 'Role not found' });
         }
 
-        const currentPermissions = (role.permissions as Record<string, string[]>) || {};
-        
-        currentPermissions[module] = actions;
-
+        // permissions is a string[]; store as array
         const updatedRole = await prisma.role.update({
-            where: { roleId: id },
-            data: { permissions: currentPermissions },
+            where: { id },
+            data: { permissions: actions },
         });
 
         return res.status(201).json(updatedRole.permissions);
@@ -41,7 +38,7 @@ export const getPermissionsForRole = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
         const role = await prisma.role.findUnique({
-            where: { roleId: id },
+            where: { id },
         });
 
         if (!role) {

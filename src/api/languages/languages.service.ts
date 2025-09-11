@@ -10,6 +10,7 @@ export const createLanguage = async (language: CreateLanguageDto) => {
   return await prisma.language.create({
     data: {
       ...language,
+      nativeName: language.nativeName || language.name,
     },
   });
 };

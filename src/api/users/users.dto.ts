@@ -12,7 +12,7 @@ import {
   IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { UserStatus } from '@prisma/client';
+// Removed UserStatus import; not present in Prisma schema
 
 // This DTO will handle the new, optional user profile fields.
 export class UserProfileDto {
@@ -109,8 +109,7 @@ export class UpdateUserDto {
   languageId?: string;
 
   @IsOptional()
-  @IsEnum(UserStatus) // Added Enum validation for status.
-  status?: UserStatus; // Changed type from string to UserStatus enum.
+  status?: string; // Changed type to string as per schema
 
   @IsOptional()
   @IsBoolean()
@@ -124,27 +123,27 @@ export class UpdateUserDto {
 }
 
 class LocationDto {
-    @IsNumber()
-    latitude: number;
+  @IsNumber()
+  latitude!: number;
 
-    @IsNumber()
-    longitude: number;
+  @IsNumber()
+  longitude!: number;
 }
 
 export class UpgradeGuestDto {
-    @IsString()
-    @IsNotEmpty()
-    mobileNumber: string;
+  @IsString()
+  @IsNotEmpty()
+  mobileNumber!: string;
 
-    @IsString()
-    @IsNotEmpty()
-    name: string;
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
 
-    @IsString()
-    @IsNotEmpty()
-    languageId: string;
+  @IsString()
+  @IsNotEmpty()
+  languageId!: string;
 
-    @ValidateNested()
-    @Type(() => LocationDto)
-    location: LocationDto;
+  @ValidateNested()
+  @Type(() => LocationDto)
+  location!: LocationDto;
 }

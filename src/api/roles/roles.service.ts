@@ -1,5 +1,5 @@
 
-import { RoleName } from '@prisma/client';
+// Removed RoleName import
 import prisma from '../../lib/prisma';
 import { CreateRoleDto } from './roles.dto';
 
@@ -11,7 +11,7 @@ export const createRole = async (role: CreateRoleDto) => {
   return await prisma.role.create({
     data: {
       ...role,
-      name: role.name as RoleName
+  name: role.name
     },
   });
 };

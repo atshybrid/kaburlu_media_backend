@@ -1,4 +1,3 @@
-
 import { IsString, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -65,19 +64,19 @@ class DeviceDetailsDto {
  *     GuestRegistrationDto:
  *       type: object
  *       required:
- *         - languageCode
+ *         - languageId
  *         - deviceDetails
  *       properties:
- *         languageCode:
+ *         languageId:
  *           type: string
- *           description: The BCP-47 language code for the user's preferred language (e.g., 'en', 'te').
+ *           description: The unique identifier for the user's selected language (e.g., '1', '2').
  *         deviceDetails:
  *           $ref: '#/components/schemas/DeviceDetailsGuestDto'
  */
 export class GuestRegistrationDto {
   @IsString()
   @IsNotEmpty()
-  languageCode!: string;
+  languageId!: string;
 
   @ValidateNested()
   @Type(() => DeviceDetailsDto)

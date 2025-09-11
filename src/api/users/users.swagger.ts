@@ -1,6 +1,136 @@
+// ...existing code...
 export const userSwagger = {
   paths: {
-    '/api/users': {
+    // ...existing code...
+    '/users/{userId}/push-token': {
+      post: {
+        summary: 'Add or update push notification token for a user',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  pushToken: { type: 'string', example: 'token123' }
+                },
+                required: ['pushToken']
+              },
+              example: { pushToken: 'token123' }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Push token added/updated' },
+          '400': { description: 'Invalid input' }
+        }
+      },
+      delete: {
+        summary: 'Remove push notification token for a user',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  pushToken: { type: 'string', example: 'token123' }
+                },
+                required: ['pushToken']
+              },
+              example: { pushToken: 'token123' }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Push token removed' },
+          '400': { description: 'Invalid input' }
+        }
+      }
+    },
+    '/users/{userId}/location': {
+      put: {
+        summary: 'Update user location (latitude/longitude)',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  latitude: { type: 'number', example: 17.385 },
+                  longitude: { type: 'number', example: 78.4867 }
+                },
+                required: ['latitude', 'longitude']
+              },
+              example: { latitude: 17.385, longitude: 78.4867 }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Location updated' },
+          '400': { description: 'Invalid input' }
+        }
+      },
+      get: {
+        summary: 'Get user location (latitude/longitude)',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'User location',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    latitude: { type: 'number', example: 17.385 },
+                    longitude: { type: 'number', example: 78.4867 }
+                  }
+                },
+                example: { latitude: 17.385, longitude: 78.4867 }
+              }
+            }
+          },
+          '404': { description: 'Location not found' }
+        }
+      }
+    },
+  '/users': {
       get: {
         summary: 'Get all users',
         tags: ['Users'],
@@ -44,7 +174,7 @@ export const userSwagger = {
         },
       },
     },
-    '/api/users/{id}': {
+  '/users/{id}': {
       get: {
         summary: 'Get a single user by ID',
         tags: ['Users'],
@@ -57,7 +187,135 @@ export const userSwagger = {
             schema: {
               type: 'string',
               example: 'cmfc46d9c000sf1jif354shvh',
-            },
+              },
+              '/users/{userId}/push-token': {
+                post: {
+                  summary: 'Add or update push notification token for a user',
+                  tags: ['Users'],
+                  parameters: [
+                    {
+                      name: 'userId',
+                      in: 'path',
+                      required: true,
+                      schema: { type: 'string' },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            pushToken: { type: 'string', example: 'token123' }
+                          },
+                          required: ['pushToken']
+                        },
+                        example: { pushToken: 'token123' }
+                      }
+                    }
+                  },
+                  responses: {
+                    '200': { description: 'Push token added/updated' },
+                    '400': { description: 'Invalid input' }
+                  }
+                },
+                delete: {
+                  summary: 'Remove push notification token for a user',
+                  tags: ['Users'],
+                  parameters: [
+                    {
+                      name: 'userId',
+                      in: 'path',
+                      required: true,
+                      schema: { type: 'string' },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            pushToken: { type: 'string', example: 'token123' }
+                          },
+                          required: ['pushToken']
+                        },
+                        example: { pushToken: 'token123' }
+                      }
+                    }
+                  },
+                  responses: {
+                    '200': { description: 'Push token removed' },
+                    '400': { description: 'Invalid input' }
+                  }
+                }
+              },
+              '/users/{userId}/location': {
+                put: {
+                  summary: 'Update user location (latitude/longitude)',
+                  tags: ['Users'],
+                  parameters: [
+                    {
+                      name: 'userId',
+                      in: 'path',
+                      required: true,
+                      schema: { type: 'string' },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            latitude: { type: 'number', example: 17.385 },
+                            longitude: { type: 'number', example: 78.4867 }
+                          },
+                          required: ['latitude', 'longitude']
+                        },
+                        example: { latitude: 17.385, longitude: 78.4867 }
+                      }
+                    }
+                  },
+                  responses: {
+                    '200': { description: 'Location updated' },
+                    '400': { description: 'Invalid input' }
+                  }
+                },
+                get: {
+                  summary: 'Get user location (latitude/longitude)',
+                  tags: ['Users'],
+                  parameters: [
+                    {
+                      name: 'userId',
+                      in: 'path',
+                      required: true,
+                      schema: { type: 'string' },
+                    },
+                  ],
+                  responses: {
+                    '200': {
+                      description: 'User location',
+                      content: {
+                        'application/json': {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              latitude: { type: 'number', example: 17.385 },
+                              longitude: { type: 'number', example: 78.4867 }
+                            }
+                          },
+                          example: { latitude: 17.385, longitude: 78.4867 }
+                        }
+                      }
+                    },
+                    '404': { description: 'Location not found' }
+                  }
+                }
+              },
           },
         ],
         responses: {
@@ -157,5 +415,133 @@ export const userSwagger = {
         },
       },
     },
-  },
+    },
+    '/users/{userId}/push-token': {
+      post: {
+        summary: 'Add or update push notification token for a user',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  pushToken: { type: 'string', example: 'token123' }
+                },
+                required: ['pushToken']
+              },
+              example: { pushToken: 'token123' }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Push token added/updated' },
+          '400': { description: 'Invalid input' }
+        }
+      },
+      delete: {
+        summary: 'Remove push notification token for a user',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  pushToken: { type: 'string', example: 'token123' }
+                },
+                required: ['pushToken']
+              },
+              example: { pushToken: 'token123' }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Push token removed' },
+          '400': { description: 'Invalid input' }
+        }
+      }
+    },
+    '/users/{userId}/location': {
+      put: {
+        summary: 'Update user location (latitude/longitude)',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  latitude: { type: 'number', example: 17.385 },
+                  longitude: { type: 'number', example: 78.4867 }
+                },
+                required: ['latitude', 'longitude']
+              },
+              example: { latitude: 17.385, longitude: 78.4867 }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Location updated' },
+          '400': { description: 'Invalid input' }
+        }
+      },
+      get: {
+        summary: 'Get user location (latitude/longitude)',
+        tags: ['Users'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'User location',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    latitude: { type: 'number', example: 17.385 },
+                    longitude: { type: 'number', example: 78.4867 }
+                  }
+                },
+                example: { latitude: 17.385, longitude: 78.4867 }
+              }
+            }
+          },
+          '404': { description: 'Location not found' }
+        }
+      }
+    },
 };

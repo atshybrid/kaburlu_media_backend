@@ -17,7 +17,7 @@ const router = Router();
  *       "200":
  *         description: Array of languages
  */
-router.get('/', passport.authenticate('jwt', { session: false }), getLanguagesController);
+router.get('/', getLanguagesController);
 
 /**
  * @swagger

@@ -17,22 +17,36 @@ export const createComment = async (commentDto: CreateCommentDto) => {
 
 export const getCommentsByArticle = async (articleId: string) => {
   // Fetch all comments for a given article
+  // Helper to recursively include replies
+  type RepliesInclude = {
+    include: {
+      user: { select: { id: true } },
+      replies?: RepliesInclude | boolean;
+    };
+    orderBy: { createdAt: 'asc' };
+  } | boolean;
+
+  const recursiveReplies = (depth = 3): RepliesInclude => {
+    if (depth === 0) return false;
+    return {
+      include: {
+        user: { select: { id: true } },
+        replies: recursiveReplies(depth - 1)
+      },
+      orderBy: { createdAt: 'asc' }
+    };
+  };
+
   const comments = await prisma.comment.findMany({
     where: { articleId },
     include: {
-      user: { select: { id: true, name: true } },
-      replies: {
-        include: {
-          user: { select: { id: true, name: true } },
-          // Include nested replies if you want deeper threading
-        },
-        orderBy: { createdAt: 'asc' },
-      },
+      user: { select: { id: true } },
+      replies: recursiveReplies(5) // 5 levels deep
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  // We only return top-level comments, replies are nested within them
+  // Only return top-level comments, replies are nested
   return comments.filter(comment => !comment.parentId);
 };
 

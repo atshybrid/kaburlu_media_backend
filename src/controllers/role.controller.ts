@@ -1,6 +1,6 @@
 
 import { Request, Response } from 'express';
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -14,7 +14,7 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
 
     try {
         const role = await prisma.role.findUnique({
-            where: { roleId: id },
+            where: { id },
         });
 
         if (!role) {
@@ -26,7 +26,7 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
         currentPermissions[module] = actions;
 
         const updatedRole = await prisma.role.update({
-            where: { roleId: id },
+            where: { id },
             data: { permissions: currentPermissions },
         });
 
@@ -41,7 +41,7 @@ export const getPermissionsForRole = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
         const role = await prisma.role.findUnique({
-            where: { roleId: id },
+            where: { id },
         });
 
         if (!role) {

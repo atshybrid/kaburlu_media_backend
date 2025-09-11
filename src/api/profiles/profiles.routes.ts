@@ -16,7 +16,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/profiles/me:
+ * /api/v1/profiles/me:
  *   get:
  *     summary: Get the authenticated user's own profile (Best Practice)
  *     tags: [Profiles]
@@ -49,7 +49,7 @@ router.get('/me', passport.authenticate('jwt', { session: false }), async (req: 
 
 /**
  * @swagger
- * /api/profiles/me:
+ * /api/v1/profiles/me:
  *   post:
  *     summary: Create a profile for the authenticated user
  *     tags: [Profiles]
@@ -84,7 +84,7 @@ router.post('/me', passport.authenticate('jwt', { session: false }), validationM
 
 /**
  * @swagger
- * /api/profiles/me:
+ * /api/v1/profiles/me:
  *   put:
  *     summary: Update the authenticated user's own profile
  *     tags: [Profiles]
@@ -123,7 +123,7 @@ router.put('/me', passport.authenticate('jwt', { session: false }), validationMi
 
 /**
  * @swagger
- * /api/profiles/{userId}:
+ * /api/v1profiles/{userId}:
  *   get:
  *     summary: Get a user's profile by ID (Admin Only)
  *     tags: [Profiles]

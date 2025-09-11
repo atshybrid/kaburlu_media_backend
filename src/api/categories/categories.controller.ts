@@ -14,7 +14,7 @@ export const createCategoryController = async (req: Request, res: Response) => {
   const createCategoryDto = new CreateCategoryDto();
   createCategoryDto.name = req.body.name;
   createCategoryDto.parentId = req.body.parentId;
-  createCategoryDto.iconUrl = req.body.iconUrl;
+  // ...existing code...
 
   const errors = await validate(createCategoryDto);
   if (errors.length > 0) {
@@ -46,7 +46,7 @@ export const updateCategoryController = async (req: Request, res: Response) => {
   const updateCategoryDto = new UpdateCategoryDto();
   updateCategoryDto.name = req.body.name;
   updateCategoryDto.parentId = req.body.parentId;
-  updateCategoryDto.iconUrl = req.body.iconUrl;
+  // ...existing code...
 
   const errors = await validate(updateCategoryDto);
   if (errors.length > 0) {

@@ -21,7 +21,7 @@ async function start() {
 
     server.listen(port, () => {
       console.log(`Server is running on http://localhost:${port}`);
-      console.log(`Swagger is running on http://localhost:${port}/api/docs`);
+  console.log(`Swagger is running on http://localhost:${port}/api/v1/docs`);
     });
 
     // graceful shutdown
