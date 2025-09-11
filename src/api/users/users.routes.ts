@@ -14,22 +14,40 @@ router.post('/:userId/push-token', async (req, res) => {
 });
 
 router.post('/api/v1/users/:userId/push-token', async (req, res) => {
-	const { pushToken } = req.body;
+	const { userId } = req.params;
+	const { deviceId, deviceModel, pushToken } = req.body;
+	const result = await addPushToken(userId, deviceId, deviceModel, pushToken);
+	res.json(result);
+});
+
 router.delete('/api/v1/users/:userId/push-token', async (req, res) => {
+	const { userId } = req.params;
+	const { pushToken } = req.body;
 	const result = await removePushToken(userId, pushToken);
+	res.json(result);
+});
+
 router.put('/api/v1/users/:userId/location', async (req, res) => {
-});
-router.get('/api/v1/users/:userId/location', async (req, res) => {
-// Location APIs
-router.post('/api/v1/users', userController.createUser);
+	const { userId } = req.params;
 	const { latitude, longitude } = req.body;
-router.get('/api/v1/users', userController.getAllUsers);
 	const result = await updateLocation(userId, latitude, longitude);
-router.get('/api/v1/users/:id', userController.getUserById);
+	res.json(result);
 });
+
+router.get('/api/v1/users/:userId/location', async (req, res) => {
+	const { userId } = req.params;
+	const result = await getLocation(userId);
+	res.json(result);
+});
+
+router.post('/api/v1/users', userController.createUser);
+router.get('/api/v1/users', userController.getAllUsers);
+router.get('/api/v1/users/:id', userController.getUserById);
 router.put('/api/v1/users/:id', userController.updateUser);
-router.get('/:userId/location', async (req, res) => {
 router.delete('/api/v1/users/:id', userController.deleteUser);
+
+router.get('/:userId/location', async (req, res) => {
+	const { userId } = req.params;
 	const result = await getLocation(userId);
 	res.json(result);
 });
@@ -158,4 +176,5 @@ router.put('/:id', userController.updateUser);
  */
 router.delete('/:id', userController.deleteUser);
 
+// ...existing code...
 export default router;

@@ -29,14 +29,8 @@ const upload = multer({ dest: 'uploads/' });
  *     responses:
  *       201:
  *         description: The created location.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Location'
- *       400:
- *         description: Bad request
- */
-router.post('/', async (req, res) => {
+// Removed non-v1 route
+
     try {
         const location = await locationService.createLocation(req.body as CreateLocationDto);
         res.status(201).json(location);
@@ -44,6 +38,8 @@ router.post('/', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+export default router;
+
 
 /**
  * @swagger
@@ -51,6 +47,7 @@ router.post('/', async (req, res) => {
  *   get:
  *     summary: Get all locations
  *     tags: [Locations]
+    export default router;
  *     parameters:
  *       - in: query
  *         name: page
@@ -72,17 +69,55 @@ router.post('/', async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Location'
  */
-router.post('/api/v1/locations', async (req, res) => {
-    const { page, limit } = req.query;
 router.get('/api/v1/locations', async (req, res) => {
+    const { page, limit } = req.query;
+    const options = {
         page: page ? parseInt(page as string, 10) : undefined,
-router.get('/api/v1/locations/:id', async (req, res) => {
+        limit: limit ? parseInt(limit as string, 10) : undefined,
     };
-router.patch('/api/v1/locations/:id', async (req, res) => {
+    const locations = await locationService.findAllLocations(options);
     res.json(locations);
+});
+
+router.get('/api/v1/locations/:id', async (req, res) => {
+    const location = await locationService.findLocationById(req.params.id);
+    if (location) {
+        res.json(location);
+    } else {
+        res.status(404).send('Location not found');
+    }
+});
+
+router.patch('/api/v1/locations/:id', async (req, res) => {
+    try {
+        const location = await locationService.updateLocation(req.params.id, req.body as UpdateLocationDto);
+        res.json(location);
+    } catch (error) {
+        res.status(404).send('Location not found');
+    }
+});
+
 router.delete('/api/v1/locations/:id', async (req, res) => {
+    try {
+        await locationService.deleteLocation(req.params.id);
+        res.status(204).send();
+    } catch (error) {
+        res.status(404).send('Location not found');
+    }
+});
 
 router.post('/api/v1/locations/bulk-upload', upload.single('file'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).send('No file uploaded.');
+    }
+    try {
+        const result = await locationService.bulkUploadLocations(req.file.path);
+        res.status(200).json({ message: 'Locations uploaded successfully', result });
+    } catch (error: any) {
+        res.status(400).json({ error: error.message });
+    }
+});
+/**
  * @swagger
  * /api/locations/{id}:
  *   get:
@@ -112,13 +147,11 @@ router.get('/:id', async (req, res) => {
     } else {
         res.status(404).send('Location not found');
     }
-});
+})
 
 /**
- * @swagger
- * /api/locations/{id}:
  *   patch:
- *     summary: Update a location
+ *     summary: Update a location by ID
  *     tags: [Locations]
  *     parameters:
  *       - in: path
@@ -146,13 +179,11 @@ router.patch('/:id', async (req, res) => {
     } catch (error) {
         res.status(404).send('Location not found');
     }
-});
+})
 
 /**
- * @swagger
- * /api/locations/{id}:
  *   delete:
- *     summary: Delete a location
+ *     summary: Delete a location by ID
  *     tags: [Locations]
  *     parameters:
  *       - in: path
@@ -175,32 +206,10 @@ router.delete('/:id', async (req, res) => {
         res.status(404).send('Location not found');
     }
 });
-
 /**
- * @swagger
- * /api/locations/bulk-upload:
  *   post:
- *     summary: Bulk upload locations from a CSV file
+ *     summary: Bulk upload locations via CSV file
  *     tags: [Locations]
- *     description: >
- *       Upload a CSV file to bulk create locations. 
- * 
- *       ### CSV File Format Example:
- *       ```csv
- *       name,code,type,level,stateId,parentId
- *       Adilabad,ADL,district,1,clxys930c0000vc11h2g5g4g3,
- *       Boath,BTH,assembly,2,clxys930c0000vc11h2g5g4g3,clxyz12340001vc11abcd_ADL
- *       Nirmal,NRL,district,1,clxys930c0000vc11h2g5g4g3,
- *       Mudhole,MDH,assembly,2,clxys930c0000vc11h2g5g4g3,clxyz56780002vc11efgh_NRL
- *       ```
- * 
- *       **Field Explanations:**
- *       - `name`: The name of the location (e.g., "Adilabad").
- *       - `code`: A unique code for the location (e.g., "ADL").
- *       - `type`: The type of location. Must be one of: `country`, `state`, `district`, `assembly`, `mandal`, `village`.
- *       - `level`: The hierarchical level of the location (e.g., 1 for district, 2 for assembly).
- *       - `stateId`: The ID of the state this location belongs to.
- *       - `parentId`: The ID of the parent location (optional).
  *     requestBody:
  *       required: true
  *       content:
@@ -217,6 +226,19 @@ router.delete('/:id', async (req, res) => {
  *         description: Locations uploaded successfully.
  *       400:
  *         description: Bad request, please check the file format.
+ *     x-csv-example:
+ *       name,code,type,level,stateId,parentId
+ *       Adilabad,ADL,district,1,clxys930c0000vc11h2g5g4g3,
+ *       Boath,BTH,assembly,2,clxys930c0000vc11h2g5g4g3,clxyz12340001vc11abcd_ADL
+ *       Nirmal,NRL,district,1,clxys930c0000vc11h2g5g4g3,
+ *       Mudhole,MDH,assembly,2,clxys930c0000vc11h2g5g4g3,clxyz56780002vc11efgh_NRL
+ *     x-field-explanations:
+ *       - name: The name of the location (e.g., "Adilabad").
+ *       - code: A unique code for the location (e.g., "ADL").
+ *       - type: The type of location. Must be one of: country, state, district, assembly, mandal, village.
+ *       - level: The hierarchical level of the location (e.g., 1 for district, 2 for assembly).
+ *       - stateId: The ID of the state this location belongs to.
+ *       - parentId: The ID of the parent location (optional).
  */
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
@@ -230,6 +252,4 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
-
-
 export default router;
