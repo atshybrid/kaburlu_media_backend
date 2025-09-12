@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/states:
+ * /api/v1/states:
  *   get:
  *     summary: List states
  *     tags: [States]
@@ -21,7 +21,7 @@ router.get('/api/v1/states', passport.authenticate('jwt', { session: false }), g
 
 /**
  * @swagger
- * /api/states:
+ * /api/v1/states:
  *   post:
  *     summary: Create state
  *     tags: [States]

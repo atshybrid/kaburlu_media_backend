@@ -55,7 +55,7 @@ router.get('/:userId/location', async (req, res) => {
 
 /**
  * @swagger
- * /users:
+ * /api/v1/users:
  *   post:
  *     summary: Create a new user
  *     tags: [Users]
@@ -67,7 +67,7 @@ router.post('/', userController.createUser);
 
 /**
  * @swagger
- * /users:
+ * /api/v1/users:
  *   get:
  *     summary: Get all users
  *     tags: [Users]
@@ -79,7 +79,7 @@ router.get('/', userController.getAllUsers);
 
 /**
  * @swagger
- * /users/{id}:
+ * /api/v1/users/{id}:
  *   get:
  *     summary: Get user by ID
  *     tags:
@@ -100,7 +100,7 @@ router.get('/:id', userController.getUserById);
 
 /**
  * @swagger
- * /users/{id}:
+ * /api/v1/users/{id}:
  *   put:
  *     summary: Update an existing user
  *     tags:
@@ -157,7 +157,7 @@ router.put('/:id', userController.updateUser);
 
 /**
  * @swagger
- * /users/{id}:
+ * /api/v1/users/{id}:
  *   delete:
  *     summary: Delete a user
  *     tags:

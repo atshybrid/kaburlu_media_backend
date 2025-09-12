@@ -16,7 +16,7 @@ const upload = multer({ dest: 'uploads/' });
 
 /**
  * @swagger
- * /api/locations:
+ * /api/v1/locations:
  *   post:
  *     summary: Create a new location
  *     tags: [Locations]
@@ -43,7 +43,7 @@ export default router;
 
 /**
  * @swagger
- * /api/locations:
+ * /api/v1/locations:
  *   get:
  *     summary: Get all locations
  *     tags: [Locations]
@@ -119,7 +119,7 @@ router.post('/api/v1/locations/bulk-upload', upload.single('file'), async (req, 
 });
 /**
  * @swagger
- * /api/locations/{id}:
+ * /api/v1/locations/{id}:
  *   get:
  *     summary: Get a location by ID
  *     tags: [Locations]

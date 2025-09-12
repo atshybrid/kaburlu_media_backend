@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /roles:
+ * /api/v1/roles:
  *   get:
  *     summary: List roles
  *     tags: [Roles]
@@ -21,7 +21,7 @@ router.get('/api/v1/roles', passport.authenticate('jwt', { session: false }), ge
 
 /**
  * @swagger
- * /api/roles:
+ * /api/v1/roles:
  *   post:
  *     summary: Create role
  *     tags: [Roles]

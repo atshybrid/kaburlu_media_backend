@@ -101,7 +101,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/categories:
+ * /api/v1/categories:
  *   post:
  *     summary: Create a new category
  *     tags: [Categories]
@@ -135,7 +135,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), validationMid
 
 /**
  * @swagger
- * /api/categories:
+ * /api/v1/categories:
  *   get:
  *     summary: Retrieve categories
  *     description: >
@@ -181,7 +181,7 @@ router.get('/', (req, res, next) => {
 
 /**
  * @swagger
- * /api/categories/{id}:
+ * /api/v1/categories/{id}:
  *   patch:
  *     summary: Update a category
  *     tags: [Categories]
@@ -222,7 +222,7 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), validatio
 
 /**
  * @swagger
- * /api/categories/{id}:
+ * /api/v1/categories/{id}:
  *   delete:
  *     summary: Delete a category
  *     tags: [Categories]

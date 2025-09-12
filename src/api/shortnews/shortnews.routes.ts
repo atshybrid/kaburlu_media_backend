@@ -5,7 +5,7 @@ const router = Router();
 
 /**
  * @swagger
- * /shortnews:
+ * /api/v1/shortnews:
  *   post:
  *     summary: Submit short news (citizen reporter)
  *     tags: [ShortNews]
@@ -46,7 +46,7 @@ const router = Router();
  *       200:
  *         description: List of short news
  *
- * /shortnews/{id}/status:
+ * /api/v1/shortnews/{id}/status:
  *   patch:
  *     summary: Update status (AI/desk approval)
  *     tags: [ShortNews]

@@ -1,3 +1,10 @@
+model OtpLog {
+  id           String   @id @default(cuid())
+  mobileNumber String
+  otp          String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
 model ShortNews {
   id           String   @id @default(cuid())
   title        String

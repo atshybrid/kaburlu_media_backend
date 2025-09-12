@@ -8,7 +8,7 @@ const auth = passport.authenticate('jwt', { session: false });
 
 /**
  * @swagger
- * /api/translate:
+ * /api/v1/translate:
  *   post:
  *     summary: Translate text using Gemini
  *     tags: [Translate]

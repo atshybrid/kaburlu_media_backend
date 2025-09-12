@@ -26,7 +26,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
 
 /**
  * @swagger
- * /api/articles:
+ * /api/v1/articles:
  *   get:
  *     summary: Get paginated articles (for swipe UI)
  *     tags: [Articles]
@@ -46,7 +46,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
  *       200:
  *         description: Paginated article(s) and next cursor
  *
- * /api/articles/{id}:
+ * /api/v1/articles/{id}:
  *   get:
  *     summary: Get single article by ID
  *     tags: [Articles]
@@ -66,7 +66,7 @@ router.get('/:id', getSingleArticleController);
 
 /**
  * @swagger
- * /api/comments/article/{articleId}:
+ * /api/v1/comments/article/{articleId}:
  *   get:
  *     summary: Get all comments for an article
  *     tags: [Engagement, Engagement - Comments]
@@ -80,7 +80,7 @@ router.get('/api/v1/articles', getPaginatedArticleController);
 router.get('/api/v1/articles/:id', getSingleArticleController);
  *         description: List of comments
  *
- * /api/comments:
+ * /api/v1/comments:
  *   post:
  *     summary: Add a comment to an article
  *     tags: [Engagement, Engagement - Comments]
@@ -101,7 +101,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       201:
  *         description: Comment added
  *
- * /api/comments/{id}:
+ * /api/v1/comments/{id}:
  *   put:
  *     summary: Update a comment
  *     tags: [Engagement, Engagement - Comments]
@@ -140,7 +140,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Comment deleted
  *
- * /api/likes/{articleId}:
+ * /api/v1/likes/{articleId}:
  *   get:
  *     summary: Get all likes for an article
  *     tags: [Engagement, Engagement - Likes]
@@ -154,7 +154,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: List of likes
  *
- * /api/likes:
+ * /api/v1/likes:
  *   post:
  *     summary: Like an article
  *     tags: [Engagement, Engagement - Likes]
@@ -190,7 +190,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Article unliked
  *
- * /api/dislikes/{articleId}:
+ * /api/v1/dislikes/{articleId}:
  *   get:
  *     summary: Get all dislikes for an article
  *     tags: [Engagement, Engagement - Dislikes]
@@ -204,7 +204,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: List of dislikes
  *
- * /api/dislikes:
+ * /api/v1/dislikes:
  *   post:
  *     summary: Dislike an article
  *     tags: [Engagement, Engagement - Dislikes]
@@ -240,7 +240,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Dislike removed
  *
- * /api/articles/read:
+ * /api/v1/articles/read:
  *   post:
  *     summary: Mark article as read
  *     tags: [Engagement, Engagement - Reads]
@@ -259,7 +259,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       201:
  *         description: Article marked as read
  *
- * /api/articles/read/{articleId}:
+ * /api/v1/articles/read/{articleId}:
  *   get:
  *     summary: Get read status for an article
  *     tags: [Engagement, Engagement - Reads]
@@ -278,7 +278,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
 
 /**
  * @swagger
- * /api/articles:
+ * /api/v1/articles:
  *   post:
  *     summary: Create a new article
  *     tags: [Articles]

@@ -123,7 +123,7 @@ router.put('/me', passport.authenticate('jwt', { session: false }), validationMi
 
 /**
  * @swagger
- * /api/v1profiles/{userId}:
+ * /api/v1/profiles/{userId}:
  *   get:
  *     summary: Get a user's profile by ID (Admin Only)
  *     tags: [Profiles]

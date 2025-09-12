@@ -7,13 +7,21 @@ const prisma = new PrismaClient();
 
 export class OtpService {
     async requestOtp(data: RequestOtpDto) {
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+            const otp = Math.floor(1000 + Math.random() * 9000).toString();
+            const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // TODO: Implement OTP logic using a valid model/table
-    // In a real application, you would send the OTP via SMS here.
-    console.log(`OTP for ${data.mobileNumber} is ${otp}`);
-    return { success: true };
+            // Save OTP log to DB
+    const otpLog = await prisma.otpLog.create({
+                data: {
+                    mobileNumber: data.mobileNumber,
+                    otp,
+                    expiresAt,
+                },
+            });
+
+            // In a real application, you would send the OTP via SMS here.
+            console.log(`OTP for ${data.mobileNumber} is ${otp}`);
+            return { success: true, id: otpLog.id };
     }
 
     async verifyOtp(data: VerifyOtpDto) {
