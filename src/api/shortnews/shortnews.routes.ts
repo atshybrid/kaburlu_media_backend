@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import passport from 'passport';
 import * as shortNewsController from './shortnews.controller';
 
 const router = Router();
@@ -74,7 +75,7 @@ const router = Router();
  *       200:
  *         description: Status updated
  */
-router.post('/', shortNewsController.createShortNews);
+router.post('/', passport.authenticate('jwt', { session: false }), shortNewsController.createShortNews);
 router.get('/', shortNewsController.listShortNews);
 router.patch('/:id/status', shortNewsController.updateShortNewsStatus);
 

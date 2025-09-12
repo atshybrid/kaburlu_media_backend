@@ -30,29 +30,19 @@ export class OtpService {
     }
 
     async setMpin(data: SetMpinDto) {
-        // TODO: Implement setMpin logic using a valid model/table
+        // Hash the MPIN from the request
+        const saltRounds = 10;
+        const hashedMpin = await bcrypt.hash(data.mpin, saltRounds);
         const user = await prisma.user.findUnique({
-            where: {
-                mobileNumber: data.mobileNumber,
-            },
+            where: { mobileNumber: data.mobileNumber },
         });
-
         if (!user) {
             throw new Error('User not found');
         }
-
-        const saltRounds = 10;
-        const hashedMpin = await bcrypt.hash(data.mpin, saltRounds);
-
         await prisma.user.update({
-            where: {
-                id: user.id,
-            },
-            data: {
-                mpin: hashedMpin,
-            },
+            where: { id: user.id },
+            data: { mpin: hashedMpin },
         });
-
         return { success: true };
     }
 

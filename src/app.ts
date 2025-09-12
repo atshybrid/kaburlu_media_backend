@@ -22,6 +22,7 @@ import commentsRoutes from './api/comments/comments.routes';
 import locationsRoutes from './api/locations/locations.routes';
 import translateRoutes from './api/translate/translate.routes';
 import profileRoutes from './api/profiles/profiles.routes';
+import shortNewsRoutes from './api/shortnews/shortnews.routes';
 
 const app = express();
 
@@ -88,6 +89,7 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API Routes
 app.use('/api/v1/articles', articlesRoutes);
+app.use('/api/v1/shortnews', shortNewsRoutes);
 app.use('/api/v1/likes', likesRoutes);
 app.use('/api/v1/comments', commentsRoutes);
 app.use('/api/v1/categories', categoriesRoutes);

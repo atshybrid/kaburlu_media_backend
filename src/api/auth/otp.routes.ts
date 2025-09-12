@@ -39,7 +39,7 @@ router.post('/request-otp', otpController.requestOtp);
 
 /**
  * @swagger
- * /api/v1auth/verify-otp:
+ * /api/v1/auth/verify-otp:
  *   post:
  *     summary: Verify an OTP
  *     tags: [Auth]
@@ -80,6 +80,9 @@ router.post('/verify-otp', otpController.verifyOtp);
  *               id:
  *                 type: string
  *                 description: The ID of the OTP log entry from the verify-otp step.
+ *               mobileNumber:
+ *                 type: string
+ *                 example: "9392010248"
  *               mpin:
  *                 type: string
  *                 example: "1234"
