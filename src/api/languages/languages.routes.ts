@@ -17,7 +17,7 @@ const router = Router();
  *       "200":
  *         description: Array of languages
  */
-router.get('/api/v1/languages', getLanguagesController);
+router.get('/', getLanguagesController);
 
 /**
  * @swagger
@@ -40,6 +40,6 @@ router.get('/api/v1/languages', getLanguagesController);
  *       "201":
  *         description: Language created
  */
-router.post('/api/v1/languages', passport.authenticate('jwt', { session: false }), createLanguageController);
+router.post('/', passport.authenticate('jwt', { session: false }), createLanguageController);
 
 export default router;
