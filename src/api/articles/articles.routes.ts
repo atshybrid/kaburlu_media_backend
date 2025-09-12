@@ -12,8 +12,6 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
  * tags:
  *   - name: Articles
  *     description: "APIs for fetching articles, including paginated and single article endpoints for swipeable UI."
- *   - name: Engagement
- *     description: "APIs for article engagement: comments, replies, likes, dislikes, reads."
  *   - name: Engagement - Comments
  *     description: "Comment and reply APIs."
  *   - name: Engagement - Likes
