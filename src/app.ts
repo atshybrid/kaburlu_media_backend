@@ -91,6 +91,8 @@ try {
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Alias to support legacy/external links pointing to /api/v1/docs
+app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API Routes (no version prefix)
 app.use('/articles', articlesRoutes);

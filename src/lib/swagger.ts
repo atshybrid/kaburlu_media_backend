@@ -12,7 +12,11 @@ const swaggerDefinition = {
   servers: [
     {
       url: 'http://localhost:3001',
-      description: 'Development server'
+      description: 'Local server'
+    },
+    {
+      url: 'https://ai-kaburlu-backend.onrender.com/api/v1',
+      description: 'Render server'
     },
     {
       url: 'https://app.hrcitodaynews.in',
