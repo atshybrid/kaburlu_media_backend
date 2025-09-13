@@ -115,6 +115,27 @@ app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 
+// API Routes (versioned alias: /api/v1)
+app.use('/api/v1/articles', articlesRoutes);
+app.use('/api/v1/shortnews', shortNewsRoutes);
+app.use('/api/v1/likes', likesRoutes);
+app.use('/api/v1/comments', commentsRoutes);
+app.use('/api/v1/categories', categoriesRoutes);
+app.use('/api/v1/languages', languagesRoutes);
+app.use('/api/v1/states', statesRoutes);
+app.use('/api/v1/roles', rolesRoutes);
+app.use('/api/v1/permissions', permissionsRoutes);
+app.use('/api/v1/users', usersRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', otpRoutes);
+app.use('/api/v1/locations', locationsRoutes);
+app.use('/api/v1/translate', translateRoutes);
+app.use('/api/v1/profiles', profileRoutes);
+app.use('/api/v1/media', mediaRoutes);
+app.use('/api/v1/devices', devicesRoutes);
+app.use('/api/v1/notifications', notificationsRoutes);
+app.use('/api/v1/prompts', promptsRoutes);
+
 // Protected sample route
 app.get(
   '/protected',
