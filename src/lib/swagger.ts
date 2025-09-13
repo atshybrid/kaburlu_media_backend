@@ -11,7 +11,7 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: 'http://localhost:3001',
+      url: 'http://localhost:3001/api/v1',
       description: 'Local server'
     },
     {
@@ -19,7 +19,7 @@ const swaggerDefinition = {
       description: 'Render server'
     },
     {
-      url: 'https://app.hrcitodaynews.in',
+      url: 'https://app.hrcitodaynews.in/api/v1',
       description: 'Production server'
     }
   ],

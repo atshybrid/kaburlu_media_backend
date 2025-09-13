@@ -27,6 +27,7 @@ import mediaRoutes from './api/media/media.routes';
 import devicesRoutes from './api/devices/devices.routes';
 import notificationsRoutes from './api/notifications/notifications.routes';
 import promptsRoutes from './api/prompts/prompts.routes';
+import { Router } from 'express';
 
 const app = express();
 
@@ -91,10 +92,10 @@ try {
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-// Alias to support legacy/external links pointing to /api/v1/docs
+// Also expose docs under the versioned base for convenience
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// API Routes (no version prefix)
+// API Routes (no version prefix) - legacy support
 app.use('/articles', articlesRoutes);
 app.use('/shortnews', shortNewsRoutes);
 app.use('/likes', likesRoutes);
@@ -115,26 +116,28 @@ app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 
-// API Routes (versioned alias: /api/v1)
-app.use('/api/v1/articles', articlesRoutes);
-app.use('/api/v1/shortnews', shortNewsRoutes);
-app.use('/api/v1/likes', likesRoutes);
-app.use('/api/v1/comments', commentsRoutes);
-app.use('/api/v1/categories', categoriesRoutes);
-app.use('/api/v1/languages', languagesRoutes);
-app.use('/api/v1/states', statesRoutes);
-app.use('/api/v1/roles', rolesRoutes);
-app.use('/api/v1/permissions', permissionsRoutes);
-app.use('/api/v1/users', usersRoutes);
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/auth', otpRoutes);
-app.use('/api/v1/locations', locationsRoutes);
-app.use('/api/v1/translate', translateRoutes);
-app.use('/api/v1/profiles', profileRoutes);
-app.use('/api/v1/media', mediaRoutes);
-app.use('/api/v1/devices', devicesRoutes);
-app.use('/api/v1/notifications', notificationsRoutes);
-app.use('/api/v1/prompts', promptsRoutes);
+// API Routes mounted under /api/v1 (preferred)
+const apiV1: Router = Router();
+apiV1.use('/articles', articlesRoutes);
+apiV1.use('/shortnews', shortNewsRoutes);
+apiV1.use('/likes', likesRoutes);
+apiV1.use('/comments', commentsRoutes);
+apiV1.use('/categories', categoriesRoutes);
+apiV1.use('/languages', languagesRoutes);
+apiV1.use('/states', statesRoutes);
+apiV1.use('/roles', rolesRoutes);
+apiV1.use('/permissions', permissionsRoutes);
+apiV1.use('/users', usersRoutes);
+apiV1.use('/auth', authRoutes);
+apiV1.use('/auth', otpRoutes);
+apiV1.use('/locations', locationsRoutes);
+apiV1.use('/translate', translateRoutes);
+apiV1.use('/profiles', profileRoutes);
+apiV1.use('/media', mediaRoutes);
+apiV1.use('/devices', devicesRoutes);
+apiV1.use('/notifications', notificationsRoutes);
+apiV1.use('/prompts', promptsRoutes);
+app.use('/api/v1', apiV1);
 
 // Protected sample route
 app.get(
@@ -147,7 +150,7 @@ app.get(
 
 // Root route
 app.get('/', (_req, res) => {
-  res.send('Welcome to the API. Visit /api/docs for documentation.');
+  res.send('Welcome to the API. Visit /api/v1/docs for documentation.');
 });
 
 // 404 handler
