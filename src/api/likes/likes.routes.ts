@@ -12,7 +12,7 @@ const auth = passport.authenticate('jwt', { session: false });
 
 /**
  * @swagger
- * /api/v1/likes/{articleId}:
+ * /likes/{articleId}:
  *   get:
  *     summary: Get all likes for an article
  *     tags: [Likes]
@@ -30,7 +30,7 @@ router.get('/:articleId', getLikesForArticleController);
 
 /**
  * @swagger
- * /api/v1/likes:
+ * /likes:
  *   post:
  *     summary: Like an article
  *     tags: [Likes]
@@ -53,7 +53,7 @@ router.post('/', auth, likeArticleController);
 
 /**
  * @swagger
- * /api/v1/likes:
+ * /likes:
  *   delete:
  *     summary: Unlike an article
  *     tags: [Likes]

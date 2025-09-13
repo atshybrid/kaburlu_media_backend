@@ -7,7 +7,7 @@ const otpController = new OtpController();
 
 /**
  * @swagger
- * /api/v1/auth/request-otp:
+ * /auth/request-otp:
  *   post:
  *     summary: Request an OTP for a given mobile number
  *     tags: [Auth]
@@ -39,7 +39,7 @@ router.post('/request-otp', otpController.requestOtp);
 
 /**
  * @swagger
- * /api/v1/auth/verify-otp:
+ * /auth/verify-otp:
  *   post:
  *     summary: Verify an OTP
  *     tags: [Auth]
@@ -66,7 +66,7 @@ router.post('/verify-otp', otpController.verifyOtp);
 
 /**
  * @swagger
- * /api/v1/auth/set-mpin:
+ * /auth/set-mpin:
  *   post:
  *     summary: Set a new MPIN for the user
  *     tags: [Auth]
@@ -96,7 +96,7 @@ router.post('/set-mpin', otpController.setMpin);
 
 /**
  * @swagger
- * /auth/v1/mpin-status/{mobileNumber}:
+ * /auth/mpin-status/{mobileNumber}:
  *   get:
  *     summary: Check if a user has an MPIN set
  *     tags: [Auth]

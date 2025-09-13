@@ -13,38 +13,7 @@ router.post('/:userId/push-token', async (req, res) => {
 	res.json(result);
 });
 
-router.post('/api/v1/users/:userId/push-token', async (req, res) => {
-	const { userId } = req.params;
-	const { deviceId, deviceModel, pushToken } = req.body;
-	const result = await addPushToken(userId, deviceId, deviceModel, pushToken);
-	res.json(result);
-});
-
-router.delete('/api/v1/users/:userId/push-token', async (req, res) => {
-	const { userId } = req.params;
-	const { pushToken } = req.body;
-	const result = await removePushToken(userId, pushToken);
-	res.json(result);
-});
-
-router.put('/api/v1/users/:userId/location', async (req, res) => {
-	const { userId } = req.params;
-	const { latitude, longitude } = req.body;
-	const result = await updateLocation(userId, latitude, longitude);
-	res.json(result);
-});
-
-router.get('/api/v1/users/:userId/location', async (req, res) => {
-	const { userId } = req.params;
-	const result = await getLocation(userId);
-	res.json(result);
-});
-
-router.post('/api/v1/users', userController.createUser);
-router.get('/api/v1/users', userController.getAllUsers);
-router.get('/api/v1/users/:id', userController.getUserById);
-router.put('/api/v1/users/:id', userController.updateUser);
-router.delete('/api/v1/users/:id', userController.deleteUser);
+// Mounted at /users in app.ts; keep all paths relative under this router
 
 router.get('/:userId/location', async (req, res) => {
 	const { userId } = req.params;
@@ -55,7 +24,7 @@ router.get('/:userId/location', async (req, res) => {
 
 /**
  * @swagger
- * /api/v1/users:
+ * /users:
  *   post:
  *     summary: Create a new user
  *     tags: [Users]
@@ -67,7 +36,7 @@ router.post('/', userController.createUser);
 
 /**
  * @swagger
- * /api/v1/users:
+ * /users:
  *   get:
  *     summary: Get all users
  *     tags: [Users]
@@ -79,7 +48,7 @@ router.get('/', userController.getAllUsers);
 
 /**
  * @swagger
- * /api/v1/users/{id}:
+ * /users/{id}:
  *   get:
  *     summary: Get user by ID
  *     tags:
@@ -100,7 +69,7 @@ router.get('/:id', userController.getUserById);
 
 /**
  * @swagger
- * /api/v1/users/{id}:
+ * /users/{id}:
  *   put:
  *     summary: Update an existing user
  *     tags:
@@ -157,7 +126,7 @@ router.put('/:id', userController.updateUser);
 
 /**
  * @swagger
- * /api/v1/users/{id}:
+ * /users/{id}:
  *   delete:
  *     summary: Delete a user
  *     tags:

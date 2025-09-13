@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/auth/login:
+ * /auth/login:
  *   post:
  *     summary: Login with mobile number and MPIN
  *     tags:
@@ -24,10 +24,19 @@ const router = Router();
  *                 example: "9392010248"
  *               mpin:
  *                 type: string
- *                 example: "1947"
+ *                 example: "1234"
  *     responses:
  *       200:
  *         description: JWT + Refresh Token
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Operation successful
+ *               data:
+ *                 jwt: <token>
+ *                 refreshToken: <refresh>
+ *                 expiresIn: 86400
  *       401:
  *         description: Invalid credentials
  */
@@ -35,7 +44,7 @@ router.post('/login', loginController);
 
 /**
  * @swagger
- * /api/v1/auth/refresh:
+ * /auth/refresh:
  *   post:
  *     summary: Refresh JWT token
  *     tags:
@@ -53,6 +62,14 @@ router.post('/login', loginController);
  *     responses:
  *       200:
  *         description: New JWT + Refresh Token
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Operation successful
+ *               data:
+ *                 jwt: <token>
+ *                 expiresIn: 86400
  *       401:
  *         description: Invalid refresh token
  */
@@ -60,7 +77,7 @@ router.post('/refresh', refreshController);
 
 /**
  * @swagger
- * /api/v1/auth/logout:
+ * /auth/logout:
  *   post:
  *     summary: Logout user
  *     tags:
@@ -77,7 +94,7 @@ router.post('/logout', logoutController);
 
 /**
  * @swagger
- * /api/v1/auth/upgrade-guest:
+ * /auth/upgrade-guest:
  *   post:
  *     summary: Upgrade guest user to citizen
  *     tags:
@@ -125,7 +142,7 @@ router.post('/upgrade-guest', upgradeGuestController);
 
 /**
  * @swagger
- * /api/v1/auth/guest:
+ * /auth/guest:
  *   post:
  *     summary: Register a guest user
  *     tags:
@@ -139,6 +156,12 @@ router.post('/upgrade-guest', upgradeGuestController);
  *     responses:
  *       200:
  *         description: JWT + Refresh Token
+ *         content:
+ *           application/json:
+ *             example:
+ *               jwt: <token>
+ *               refreshToken: <refresh>
+ *               expiresIn: 86400
  */
 router.post('/guest', validationMiddleware(GuestRegistrationDto), registerGuestController);
 

@@ -6,7 +6,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/shortnews:
+ * /shortnews:
  *   post:
  *     summary: Submit short news (citizen reporter)
  *     tags: [ShortNews]
@@ -16,13 +16,24 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - title
+ *               - content
+ *               - categoryId
+ *               - latitude
+ *               - longitude
  *             properties:
  *               title:
  *                 type: string
+ *                 description: Required. The server will auto-generate the slug from this title.
  *                 example: "Local Event in Hyderabad"
  *               content:
  *                 type: string
  *                 example: "A new park was inaugurated today..."
+ *               categoryId:
+ *                 type: string
+ *                 description: Required. Category to file this short news under.
+ *                 example: "clx123abc456def"
  *               mediaUrls:
  *                 type: array
  *                 items:
@@ -31,23 +42,100 @@ const router = Router();
  *               latitude:
  *                 type: number
  *                 example: 17.385044
+ *                 description: Required. Latitude between -90 and 90.
  *               longitude:
  *                 type: number
  *                 example: 78.486671
+ *                 description: Required. Longitude between -180 and 180.
  *               address:
  *                 type: string
  *                 example: "Hyderabad, Telangana"
  *     responses:
  *       201:
  *         description: Short news submitted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     slug:
+ *                       type: string
+ *                     transliteratedSlug:
+ *                       type: string
+ *                       description: ASCII transliteration of slug for URL usage
+ *                     status:
+ *                       type: string
+ *                       description: Initial moderation status (AI_APPROVED, DESK_PENDING, or REJECTED)
+ *                     languageId:
+ *                       type: string
+ *                     languageName:
+ *                       type: string
+ *                     languageCode:
+ *                       type: string
+ *                     canonicalUrl:
+ *                       type: string
+ *                     seo:
+ *                       type: object
+ *                       properties:
+ *                         metaTitle:
+ *                           type: string
+ *                         metaDescription:
+ *                           type: string
+ *                         tags:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                         altTexts:
+ *                           type: object
+ *                           additionalProperties:
+ *                             type: string
+ *                           description: Map of image URL to generated alt text (in the same language)
+ *                         jsonLd:
+ *                           type: object
+ *                           description: Structured data for embedding
+ *                     languageInfo:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         code:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         nativeName:
+ *                           type: string
  *   get:
- *     summary: List all short news
+ *     summary: List short news (cursor-based)
  *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 10
+ *         description: Number of items to return
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *           example: eyJpZCI6IjEyMyIsImRhdGUiOiIyMDI1LTA5LTEzVDA3OjAwOjAwLjAwMFoifQ==
+ *         description: Base64-encoded JSON { id, date } to get next items after this cursor
  *     responses:
  *       200:
- *         description: List of short news
+ *         description: List of short news with pageInfo { nextCursor, hasMore }. Each item includes languageId, languageName, languageCode.
  *
- * /api/v1/shortnews/{id}/status:
+ * /shortnews/{id}/status:
  *   patch:
  *     summary: Update status (AI/desk approval)
  *     tags: [ShortNews]
@@ -76,7 +164,87 @@ const router = Router();
  *         description: Status updated
  */
 router.post('/', passport.authenticate('jwt', { session: false }), shortNewsController.createShortNews);
-router.get('/', shortNewsController.listShortNews);
+router.get('/', passport.authenticate('jwt', { session: false }), shortNewsController.listShortNews);
 router.patch('/:id/status', shortNewsController.updateShortNewsStatus);
+
+/**
+ * @swagger
+ * /shortnews/{id}/jsonld:
+ *   get:
+ *     summary: Get JSON-LD for a ShortNews item
+ *     tags: [ShortNews]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: JSON-LD object for embedding in pages
+ */
+router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
+
+/**
+ * @swagger
+ * /shortnews/public:
+ *   get:
+ *     summary: Public feed - approved only
+ *     tags: [ShortNews]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           minimum: 1
+ *           maximum: 50
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Base64-encoded JSON { id, date }
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *         description: Optional language code filter (e.g., te, hi, en)
+ *     responses:
+ *       200:
+ *         description: Approved short news list
+ */
+router.get('/public', shortNewsController.listApprovedShortNews);
+
+/**
+ * @swagger
+ * /shortnews/moderation:
+ *   get:
+ *     summary: Moderation queue/status-wise listing
+ *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED]
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           minimum: 1
+ *           maximum: 50
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Base64-encoded JSON { id, date }
+ *     responses:
+ *       200:
+ *         description: Items by status for current user/desk
+ */
+router.get('/moderation', passport.authenticate('jwt', { session: false }), shortNewsController.listShortNewsByStatus);
 
 export default router;

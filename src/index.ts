@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import 'reflect-metadata';
 import app from './app';
 import { PrismaClient } from '@prisma/client';
@@ -21,7 +22,7 @@ async function start() {
 
     server.listen(port, () => {
       console.log(`Server is running on http://localhost:${port}`);
-  console.log(`Swagger is running on http://localhost:${port}/api/v1/docs`);
+  console.log(`Swagger is running on http://localhost:${port}/api/docs`);
     });
 
     // graceful shutdown

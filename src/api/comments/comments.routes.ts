@@ -13,7 +13,7 @@ const auth = passport.authenticate('jwt', { session: false });
 
 /**
  * @swagger
- * /api/v1/comments/article/{articleId}:
+ * /comments/article/{articleId}:
  *   get:
  *     summary: Get all comments for a specific article
  *     tags: [Comments]
@@ -38,7 +38,7 @@ router.get('/article/:articleId', getCommentsByArticleController);
 
 /**
  * @swagger
- * /api/v1/comments:
+ * /comments:
  *   post:
  *     summary: Create a new comment
  *     tags: [Comments]
@@ -58,7 +58,7 @@ router.post('/', auth, createCommentController);
 
 /**
  * @swagger
- * /api/v1/comments/{id}:
+ * /comments/{id}:
  *   put:
  *     summary: Update a comment
  *     tags: [Comments]

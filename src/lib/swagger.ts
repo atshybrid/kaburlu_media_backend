@@ -17,10 +17,6 @@ const swaggerDefinition = {
     {
       url: 'https://app.hrcitodaynews.in',
       description: 'Production server'
-    },
-    {
-      url: 'https://ai-kaburlu-backend.onrender.com',
-      description: 'Render Dev2 server'
     }
   ],
   tags: [
@@ -34,7 +30,9 @@ const swaggerDefinition = {
     { name: 'Languages' },
     { name: 'Roles' },
     { name: 'States' },
-    { name: 'Translate' }
+    { name: 'Translate' },
+    { name: 'Media' },
+    { name: 'Prompts' }
   ],
   components: {
     securitySchemes: {

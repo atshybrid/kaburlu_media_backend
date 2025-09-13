@@ -1,11 +1,18 @@
 
 import { Router } from 'express';
 import passport from 'passport';
-import { createCategory, getCategories, updateCategory, deleteCategory, translateAndSaveCategoryInBackground } from './categories.service';
+import { createCategory, getCategories, updateCategory, deleteCategory, translateAndSaveCategoryInBackground, retranslateCategory } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 import { validationMiddleware } from '../middlewares/validation.middleware';
 
 const router = Router();
+
+// Role guard: only SUPER_ADMIN can create/update categories
+function requireSuperAdmin(req: any, res: any, next: any) {
+  const roleName = (req.user?.role?.name || '').toUpperCase();
+  if (roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN') return next();
+  return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN only' });
+}
 
 /**
  * @swagger
@@ -101,7 +108,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/categories:
+ * /categories:
  *   post:
  *     summary: Create a new category
  *     tags: [Categories]
@@ -123,7 +130,7 @@ const router = Router();
  *       400:
  *         description: Invalid input or category already exists.
  */
-router.post('/', passport.authenticate('jwt', { session: false }), validationMiddleware(CreateCategoryDto), async (req, res) => {
+router.post('/', passport.authenticate('jwt', { session: false }), requireSuperAdmin, validationMiddleware(CreateCategoryDto), async (req, res) => {
   try {
     const newCategory = await createCategory(req.body);
     void translateAndSaveCategoryInBackground(newCategory.id, newCategory.name);
@@ -135,17 +142,13 @@ router.post('/', passport.authenticate('jwt', { session: false }), validationMid
 
 /**
  * @swagger
- * /api/v1/categories:
+ * /categories:
  *   get:
  *     summary: Retrieve categories
- *     description: >
- *       Retrieves a nested list of categories. This endpoint is public.
- *       - If an authenticated user makes the request, it uses their `languageId` to return translated names.
- *       - If the user's `languageId` is null, it returns all categories with all available translations.
- *       - If the request is made anonymously (no JWT), it also returns all categories with all translations.
+ *     description: Retrieves a nested list of categories using the caller's language context.
  *     tags: [Categories]
  *     security:
- *       - bearerAuth: [] # Optional
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: A nested list of categories.
@@ -156,22 +159,16 @@ router.post('/', passport.authenticate('jwt', { session: false }), validationMid
  *               items:
  *                 $ref: '#/components/schemas/Category'
  */
-router.get('/', (req, res, next) => {
-    passport.authenticate('jwt', { session: false }, (err: any, user: any, info: any) => {
-      if (err) return next(err);
-      if (user) req.user = user;
-      next();
-    })(req, res, next);
-  }, async (req: any, res) => {
+router.get('/', passport.authenticate('jwt', { session: false }), async (req: any, res) => {
     try {
       let languageContext: string | 'all';
-  
       if (req.user && req.user.languageId) {
         languageContext = req.user.languageId;
       } else {
+        // If user has no languageId, default to 'all' to return all translations
         languageContext = 'all';
       }
-  
+
       const categories = await getCategories(languageContext);
       res.status(200).json(categories);
     } catch (error: any) {
@@ -181,7 +178,7 @@ router.get('/', (req, res, next) => {
 
 /**
  * @swagger
- * /api/v1/categories/{id}:
+ * /categories/{id}:
  *   patch:
  *     summary: Update a category
  *     tags: [Categories]
@@ -210,7 +207,7 @@ router.get('/', (req, res, next) => {
  *       404:
  *         description: Category not found.
  */
-router.patch('/:id', passport.authenticate('jwt', { session: false }), validationMiddleware(UpdateCategoryDto), async (req, res) => {
+router.patch('/:id', passport.authenticate('jwt', { session: false }), requireSuperAdmin, validationMiddleware(UpdateCategoryDto), async (req, res) => {
   try {
     const updatedCategory = await updateCategory(req.params.id, req.body);
     res.status(200).json(updatedCategory);
@@ -222,7 +219,7 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), validatio
 
 /**
  * @swagger
- * /api/v1/categories/{id}:
+ * /categories/{id}:
  *   delete:
  *     summary: Delete a category
  *     tags: [Categories]
@@ -243,7 +240,7 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), validatio
  *       404:
  *         description: Category not found.
  */
-router.delete('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
+router.delete('/:id', passport.authenticate('jwt', { session: false }), requireSuperAdmin, async (req, res) => {
   try {
     await deleteCategory(req.params.id);
     res.status(204).send();
@@ -257,3 +254,35 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), async (r
 });
 
 export default router;
+
+/**
+ * @swagger
+ * /categories/{id}/retranslate:
+ *   post:
+ *     summary: Retranslate category into all active languages
+ *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Retranslation triggered
+ *       404:
+ *         description: Category not found
+ */
+router.post('/:id/retranslate', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    await retranslateCategory(req.params.id);
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    if ((error?.message || '').includes('not found')) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    res.status(500).json({ error: 'Failed to retranslate category' });
+  }
+});

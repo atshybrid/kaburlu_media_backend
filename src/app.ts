@@ -23,6 +23,10 @@ import locationsRoutes from './api/locations/locations.routes';
 import translateRoutes from './api/translate/translate.routes';
 import profileRoutes from './api/profiles/profiles.routes';
 import shortNewsRoutes from './api/shortnews/shortnews.routes';
+import mediaRoutes from './api/media/media.routes';
+import devicesRoutes from './api/devices/devices.routes';
+import notificationsRoutes from './api/notifications/notifications.routes';
+import promptsRoutes from './api/prompts/prompts.routes';
 
 const app = express();
 
@@ -37,6 +41,7 @@ const app = express();
 const defaultWhitelist = [
   'http://localhost:3000',
   'http://localhost:8080',
+  'https://ai-kaburlu-backend.onrender.com',
   'https://app.kaburlumedia.com'
 ];
 
@@ -85,28 +90,32 @@ try {
 }
 
 // Swagger UI
-app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// API Routes
-app.use('/api/v1/articles', articlesRoutes);
-app.use('/api/v1/shortnews', shortNewsRoutes);
-app.use('/api/v1/likes', likesRoutes);
-app.use('/api/v1/comments', commentsRoutes);
-app.use('/api/v1/categories', categoriesRoutes);
-app.use('/api/v1/languages', languagesRoutes);
-app.use('/api/v1/states', statesRoutes);
-app.use('/api/v1/roles', rolesRoutes);
-app.use('/api/v1/permissions', permissionsRoutes);
-app.use('/api/v1/users', usersRoutes);
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/auth', otpRoutes);
-app.use('/api/v1/locations', locationsRoutes);
-app.use('/api/v1/translate', translateRoutes);
-app.use('/api/v1/profiles', profileRoutes);
+// API Routes (no version prefix)
+app.use('/articles', articlesRoutes);
+app.use('/shortnews', shortNewsRoutes);
+app.use('/likes', likesRoutes);
+app.use('/comments', commentsRoutes);
+app.use('/categories', categoriesRoutes);
+app.use('/languages', languagesRoutes);
+app.use('/states', statesRoutes);
+app.use('/roles', rolesRoutes);
+app.use('/permissions', permissionsRoutes);
+app.use('/users', usersRoutes);
+app.use('/auth', authRoutes);
+app.use('/auth', otpRoutes);
+app.use('/locations', locationsRoutes);
+app.use('/translate', translateRoutes);
+app.use('/profiles', profileRoutes);
+app.use('/media', mediaRoutes);
+app.use('/devices', devicesRoutes);
+app.use('/notifications', notificationsRoutes);
+app.use('/prompts', promptsRoutes);
 
 // Protected sample route
 app.get(
-  '/api/v1/protected',
+  '/protected',
   passport.authenticate('jwt', { session: false }),
   (_req, res) => {
     res.json({ message: 'You are authorized to see this message' });

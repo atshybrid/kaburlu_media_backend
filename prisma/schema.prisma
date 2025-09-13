@@ -66,6 +66,17 @@ model User {
   shortNewsReads ShortNewsRead[]
   dislikes Dislike[]
   articleReads ArticleRead[]
+  media        Media[]
+}
+
+/// Stores editable AI prompts by key. Allows changing prompts without code changes.
+model Prompt {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g., SEO_GENERATION, MODERATION, CATEGORY_TRANSLATION
+  content     String   // the prompt template content; supports {{placeholders}}
+  description String?  // optional human-friendly description
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 }
 
 model Role {
@@ -85,6 +96,7 @@ model Language {
   direction  String   @default("ltr")
   isDeleted  Boolean  @default(false)
   users      User[]
+  articles   Article[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -187,6 +199,9 @@ model Article {
   type              String // "citizen" or "reporter"
   author            User          @relation(fields: [authorId], references: [id])
   authorId          String
+  // Article language (from author's language at creation time)
+  language          Language?     @relation(fields: [languageId], references: [id])
+  languageId        String?
   status            String        @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   categories        Category[]
   tags              String[]
@@ -273,4 +288,19 @@ model Comment {
   replies   Comment[] @relation("Replies")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+model Media {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  url         String
+  name        String
+  contentType String
+  size        Int
+  kind        String   // image | video | other
+  folder      String?
+  owner       User?    @relation(fields: [ownerId], references: [id])
+  ownerId     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

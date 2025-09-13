@@ -130,7 +130,7 @@ export const userSwagger = {
         }
       }
     },
-  '/api/v1/users': {
+  '/users': {
       get: {
         summary: 'Get all users',
         tags: ['Users'],
@@ -174,7 +174,7 @@ export const userSwagger = {
         },
       },
     },
-  '/api/v1/users/{id}': {
+  '/users/{id}': {
       get: {
         summary: 'Get a single user by ID',
         tags: ['Users'],
@@ -416,7 +416,7 @@ export const userSwagger = {
       },
     },
     },
-  '/api/v1/users/{userId}/push-token': {
+  '/users/{userId}/push-token': {
       post: {
         summary: 'Add or update push notification token for a user',
         tags: ['Users'],
@@ -480,7 +480,7 @@ export const userSwagger = {
         }
       }
     },
-  '/api/v1/users/{userId}/location': {
+  '/users/{userId}/location': {
       put: {
         summary: 'Update user location (latitude/longitude)',
         tags: ['Users'],

@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/states:
+ * /states:
  *   get:
  *     summary: List states
  *     tags: [States]
@@ -17,11 +17,11 @@ const router = Router();
  *       "200":
  *         description: Array of states
  */
-router.get('/api/v1/states', passport.authenticate('jwt', { session: false }), getStatesController);
+router.get('/', passport.authenticate('jwt', { session: false }), getStatesController);
 
 /**
  * @swagger
- * /api/v1/states:
+ * /states:
  *   post:
  *     summary: Create state
  *     tags: [States]
@@ -39,6 +39,6 @@ router.get('/api/v1/states', passport.authenticate('jwt', { session: false }), g
  *       "201":
  *         description: State created
  */
-router.post('/api/v1/states', passport.authenticate('jwt', { session: false }), createStateController);
+router.post('/', passport.authenticate('jwt', { session: false }), createStateController);
 
 export default router;

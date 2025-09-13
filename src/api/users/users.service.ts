@@ -38,7 +38,7 @@ export const findAllUsers = async () => {
 };
 
 export const findUserById = async (id: string) => {
-    return prisma.user.findUnique({ where: { id }, include: { role: true } });
+    return prisma.user.findUnique({ where: { id }, include: { role: true, language: true } });
 };
 
 export const findUserByMobileNumber = async (mobileNumber: string) => {

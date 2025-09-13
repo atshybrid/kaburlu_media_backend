@@ -24,7 +24,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
 
 /**
  * @swagger
- * /api/v1/articles:
+ * /articles:
  *   get:
  *     summary: Get paginated articles (for swipe UI)
  *     tags: [Articles]
@@ -44,7 +44,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
  *       200:
  *         description: Paginated article(s) and next cursor
  *
- * /api/v1/articles/{id}:
+ * /articles/{id}:
  *   get:
  *     summary: Get single article by ID
  *     tags: [Articles]
@@ -64,7 +64,69 @@ router.get('/:id', getSingleArticleController);
 
 /**
  * @swagger
- * /api/v1/comments/article/{articleId}:
+ * /articles:
+ *   post:
+ *     summary: Create a new article
+ *     tags: [Articles]
+ *     description: >
+ *       Creates a new article and associates it with one or more categories. The author will be the currently authenticated user.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateArticleDto'
+ *     responses:
+ *       201:
+ *         description: Article created successfully.
+ *       400:
+ *         description: Bad request (e.g., validation error or non-existent category).
+ *       401:
+ *         description: Unauthorized.
+ */
+router.post('/', passport.authenticate('jwt', { session: false }), createArticleController);
+
+
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     CreateArticleDto:
+ *       type: object
+ *       required:
+ *         - title
+ *         - content
+ *         - categoryIds
+ *       properties:
+	*         title:
+	*           type: string
+	*           example: 'The Future of AI in Journalism'
+	*         content:
+	*           type: string
+	*           example: 'In this article, we explore the transformative impact of AI...'
+	*         categoryIds:
+	*           type: array
+	*           items:
+	*             type: string
+	*           example: ["clq9zsm0d0000vcwz1z2z3z4z", "clq9zsm0e0001vcwzabcdefgh"]
+	*         isPublished:
+	*           type: boolean
+	*           example: true
+	*         isBreaking:
+	*           type: boolean
+	*           example: false
+	*         isFeatured:
+	*           type: boolean
+	*           example: true
+ */
+
+export default router;
+/**
+ * @swagger
+ * /comments/article/{articleId}:
  *   get:
  *     summary: Get all comments for an article
  *     tags: [Engagement, Engagement - Comments]
@@ -73,12 +135,12 @@ router.get('/:id', getSingleArticleController);
  *         name: articleId
  *         required: true
  *         schema:
-router.get('/api/v1/articles', getPaginatedArticleController);
+ *           type: string
  *     responses:
-router.get('/api/v1/articles/:id', getSingleArticleController);
+ *       200:
  *         description: List of comments
  *
- * /api/v1/comments:
+ * /comments:
  *   post:
  *     summary: Add a comment to an article
  *     tags: [Engagement, Engagement - Comments]
@@ -99,7 +161,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       201:
  *         description: Comment added
  *
- * /api/v1/comments/{id}:
+ * /comments/{id}:
  *   put:
  *     summary: Update a comment
  *     tags: [Engagement, Engagement - Comments]
@@ -138,7 +200,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Comment deleted
  *
- * /api/v1/likes/{articleId}:
+ * /likes/{articleId}:
  *   get:
  *     summary: Get all likes for an article
  *     tags: [Engagement, Engagement - Likes]
@@ -152,7 +214,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: List of likes
  *
- * /api/v1/likes:
+ * /likes:
  *   post:
  *     summary: Like an article
  *     tags: [Engagement, Engagement - Likes]
@@ -188,7 +250,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Article unliked
  *
- * /api/v1/dislikes/{articleId}:
+ * /dislikes/{articleId}:
  *   get:
  *     summary: Get all dislikes for an article
  *     tags: [Engagement, Engagement - Dislikes]
@@ -202,7 +264,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: List of dislikes
  *
- * /api/v1/dislikes:
+ * /dislikes:
  *   post:
  *     summary: Dislike an article
  *     tags: [Engagement, Engagement - Dislikes]
@@ -238,7 +300,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Dislike removed
  *
- * /api/v1/articles/read:
+ * /articles/read:
  *   post:
  *     summary: Mark article as read
  *     tags: [Engagement, Engagement - Reads]
@@ -257,7 +319,7 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       201:
  *         description: Article marked as read
  *
- * /api/v1/articles/read/{articleId}:
+ * /articles/read/{articleId}:
  *   get:
  *     summary: Get read status for an article
  *     tags: [Engagement, Engagement - Reads]
@@ -273,66 +335,3 @@ router.get('/api/v1/articles/:id', getSingleArticleController);
  *       200:
  *         description: Read status
  */
-
-/**
- * @swagger
- * /api/v1/articles:
- *   post:
- *     summary: Create a new article
- *     tags: [Articles]
- *     description: >
- *       Creates a new article and associates it with one or more categories. The author will be the currently authenticated user.
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/CreateArticleDto'
- *     responses:
- *       201:
- *         description: Article created successfully.
- *       400:
- *         description: Bad request (e.g., validation error or non-existent category).
- *       401:
- *         description: Unauthorized.
- */
-router.post('/', passport.authenticate('jwt', { session: false }), createArticleController);
-
-
-
-/**
- * @swagger
- * components:
- *   schemas:
- *     CreateArticleDto:
- *       type: object
- *       required:
- *         - title
- *         - content
- *         - categoryIds
- *       properties:
-router.post('/api/v1/articles', passport.authenticate('jwt', { session: false }), createArticleController);
- *           type: string
- *           example: 'The Future of AI in Journalism'
- *         content:
- *           type: string
- *           example: 'In this article, we explore the transformative impact of AI...'
- *         categoryIds:
- *           type: array
- *           items:
- *             type: string
- *           example: ["clq9zsm0d0000vcwz1z2z3z4z", "clq9zsm0e0001vcwzabcdefgh"]
- *         isPublished:
- *           type: boolean
- *           example: true
- *         isBreaking:
- *           type: boolean
- *           example: false
- *         isFeatured:
- *           type: boolean
- *           example: true
- */
-
-export default router;

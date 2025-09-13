@@ -5,7 +5,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/countries:
+ * /countries:
  *   get:
  *     summary: Get all countries
  *     tags: [Countries]
@@ -32,7 +32,7 @@ const router = Router();
  *       201:
  *         description: Country created
  *
- * /api/v1/countries/{id}:
+ * /countries/{id}:
  *   get:
  *     summary: Get a country by ID
  *     tags: [Countries]

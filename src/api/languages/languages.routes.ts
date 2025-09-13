@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/languages:
+ * /languages:
  *   get:
  *     summary: List languages
  *     tags: [Languages]
@@ -21,7 +21,7 @@ router.get('/', getLanguagesController);
 
 /**
  * @swagger
- * /api/v1/languages:
+ * /languages:
  *   post:
  *     summary: Create language
  *     tags: [Languages]

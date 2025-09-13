@@ -67,12 +67,14 @@ export const login = async (loginDto: MpinLoginDto) => {
     permissions: role?.permissions,
   };
 
-  const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
-  const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
+  // Access token: 1 hour; Refresh token: 30 days
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+  const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
 
   const result =  {
     jwt: accessToken,
     refreshToken: refreshToken,
+  expiresIn: 86400, // seconds (1 day)
     user: {
       userId: user.id,
       role: role?.name,
@@ -104,10 +106,11 @@ export const refresh = async (refreshDto: RefreshDto) => {
       permissions: role?.permissions,
     };
 
-    const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
 
     return {
       jwt: accessToken,
+  expiresIn: 86400, // seconds (1 day)
     };
   } catch (error) {
     return null;
@@ -222,12 +225,14 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
             permissions: effectiveRole.permissions,
         };
 
-        const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1h' });
-        const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '7d' });
+    // Access token: 1 hour; Refresh token: 30 days
+  const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
 
         return {
             jwt: jwtToken,
             refreshToken: refreshToken,
+  expiresIn: 86400, // seconds (1 day)
             user: {
                 userId: user.id,
                 role: effectiveRole.name,

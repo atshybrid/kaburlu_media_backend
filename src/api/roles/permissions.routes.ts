@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/roles/{id}/permissions:
+ * /roles/{id}/permissions:
  *   post:
  *     summary: Assign permissions to a role
  *     tags: [Role Permissions]
@@ -41,7 +41,7 @@ router.post('/roles/:id/permissions', passport.authenticate('jwt', { session: fa
 
 /**
  * @swagger
- * /api/v1/roles/{id}/permissions:
+ * /roles/{id}/permissions:
  *   get:
  *     summary: Get permissions for a role
  *     tags: [Role Permissions]

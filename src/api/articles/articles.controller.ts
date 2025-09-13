@@ -37,23 +37,28 @@ import { validate } from 'class-validator';
 import { CreateArticleDto } from './articles.dto';
 import { createArticle } from './articles.service';
 import { aiGenerateSEO } from './articles.service';
+import { sendToTopic, sendToUser } from '../../lib/fcm';
 
 
 export const createArticleController = async (req: Request, res: Response) => {
   try {
     // Only accept required fields for short news
-    const { categoryId, title, slug, content } = req.body;
-    if (!categoryId || !title || !slug || !content) {
-      return res.status(400).json({ error: 'categoryId, title, slug, and content are required.' });
+      const { categoryId, title, content } = req.body;
+      if (!categoryId || !title || !content) {
+        return res.status(400).json({ error: 'categoryId, title, and content are required.' });
     }
     if (content.split(' ').length > 60) {
       return res.status(400).json({ error: 'Content must be 60 words or less.' });
     }
-    // @ts-ignore - req.user is populated by Passport
-    const authorId = req.user?.sub;
+    // @ts-ignore - req.user is populated by Passport (see jwt.strategy.ts returns full user)
+    const authorId: string | undefined = (req as any).user?.id;
     if (!authorId) {
       return res.status(401).json({ error: 'Authentication error: User ID not found.' });
     }
+  // Determine author's languageId from token (preferred) or DB
+  const tokenLanguageId: string | undefined = (req as any).user?.languageId;
+  const author = await prisma.user.findUnique({ where: { id: authorId }, include: { language: true } });
+  const languageId = tokenLanguageId || author?.languageId || null;
     // Create the article
     const article = await prisma.article.create({
       data: {
@@ -88,13 +93,41 @@ export const createArticleController = async (req: Request, res: Response) => {
         },
       },
     });
-    res.status(201).json({
-      ...article,
-      contentJson: {
-        seoTitle: seoMeta.seoTitle || title,
-        seoDescription: seoMeta.seoDescription || content,
-        seoKeywords: seoMeta.seoKeywords || [],
-      },
+
+    // Build canonical URL and topics
+  const user = author; // already fetched with language
+  const languageCode = author?.language?.code || 'en';
+    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+  const canonicalUrl = `${canonicalDomain}/${languageCode}/${article.id}`;
+
+    // Send notification to language topic and category topic (best-effort)
+    const titleText = seoMeta.seoTitle || title;
+    const bodyText = (seoMeta.seoDescription || content).slice(0, 120);
+    const dataPayload = { type: 'article', articleId: article.id, url: canonicalUrl } as Record<string, string>;
+    try {
+      if (languageCode) {
+        await sendToTopic(`news-lang-${languageCode.toLowerCase()}`,
+          { title: titleText, body: bodyText, data: dataPayload }
+        );
+      }
+      if (categoryId) {
+        await sendToTopic(`news-cat-${String(categoryId).toLowerCase()}`,
+          { title: titleText, body: bodyText, data: dataPayload }
+        );
+      }
+    } catch (e) {
+      console.warn('FCM send failed (non-fatal):', e);
+    }
+  // Reload article for response
+  const articleOut = await prisma.article.findUnique({ where: { id: article.id } });
+  res.status(201).json({
+    ...articleOut,
+    language: author?.language ? { id: author.language.id, code: author.language.code, name: author.language.name } : null,
+    contentJson: {
+          seoTitle: seoMeta.seoTitle || title,
+          seoDescription: seoMeta.seoDescription || content,
+          seoKeywords: seoMeta.seoKeywords || [],
+        },
     });
   } catch (error: any) {
     if (error.code === 'P2025') {

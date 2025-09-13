@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/roles:
+ * /roles:
  *   get:
  *     summary: List roles
  *     tags: [Roles]
@@ -17,11 +17,11 @@ const router = Router();
  *       "200":
  *         description: Array of roles
  */
-router.get('/api/v1/roles', passport.authenticate('jwt', { session: false }), getRolesController);
+router.get('/', passport.authenticate('jwt', { session: false }), getRolesController);
 
 /**
  * @swagger
- * /api/v1/roles:
+ * /roles:
  *   post:
  *     summary: Create role
  *     tags: [Roles]
@@ -40,6 +40,6 @@ router.get('/api/v1/roles', passport.authenticate('jwt', { session: false }), ge
  *       "201":
  *         description: Role created
  */
-router.post('/api/v1/roles', passport.authenticate('jwt', { session: false }), createRoleController);
+router.post('/', passport.authenticate('jwt', { session: false }), createRoleController);
 
 export default router;

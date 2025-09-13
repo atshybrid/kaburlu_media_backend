@@ -2,12 +2,16 @@
 import prisma from '../../lib/prisma';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { aiEnabledFor } from '../../lib/aiConfig';
+import { getPrompt, renderPrompt } from '../../lib/prompts';
+import { aiGenerateText } from '../../lib/aiProvider';
 
 // Initialize the Gemini AI model for translations
-if (!process.env.GEMINI_API_KEY) {
-  console.warn('GEMINI_API_KEY environment variable is not set. Translation services will not work.');
+const GENAI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+if (!GENAI_API_KEY) {
+  console.warn('GEMINI_API_KEY/GOOGLE_GENAI_API_KEY not set. Category translations will fall back to original text.');
 }
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+const genAI = GENAI_API_KEY ? new GoogleGenerativeAI(GENAI_API_KEY) : null;
 const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-pro' }) : null;
 
 /**
@@ -16,20 +20,26 @@ const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-pro' }) : nu
  * @param targetLanguage The language to translate to (e.g., "Spanish").
  * @returns The translated text, or the original text if translation fails.
  */
-const translateText = async (text: string, targetLanguage: string): Promise<string> => {
-  if (!model) {
-    console.error('Gemini model not initialized. Skipping translation.');
-    return text;
-  }
+const translateText = async (text: string, targetLanguageHint: string, isEnglishTarget = false): Promise<string> => {
+  if (!aiEnabledFor('translation')) return text;
   try {
-    // Construct a clear and direct prompt for the model
-    const prompt = `Translate the news category "${text}" into ${targetLanguage}. Provide only the translated text, with no extra explanation or formatting.`;
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text().trim();
+    const tpl = await getPrompt('CATEGORY_TRANSLATION');
+    const prompt = renderPrompt(tpl, { text, targetLanguage: targetLanguageHint, latinGuard: isEnglishTarget ? '' : ' (do NOT use Latin/English letters)' });
+    const out = (await aiGenerateText({ prompt, purpose: 'translation' })).trim();
+    if (!out) return text;
+    const looksLatin = /^[A-Za-z0-9\s\-_.]+$/.test(out);
+    if (!isEnglishTarget && (out.localeCompare(text, undefined, { sensitivity: 'base' }) === 0 || looksLatin)) {
+      // Attempt a second pass using the local Gemini model if available
+      if (model) {
+        const fbPrompt = `Translate the category "${text}" into ${targetLanguageHint} in native script only. Output only the word.`;
+        const fbRes = await model.generateContent(fbPrompt);
+        const fbOut = (await fbRes.response.text()).trim();
+        if (fbOut) return fbOut;
+      }
+    }
+    return out;
   } catch (error) {
-    console.error(`Error translating '${text}' to ${targetLanguage}:`, error);
-    // Fallback to the original text in case of an API error
+    console.error(`Error translating '${text}' to ${targetLanguageHint}:`, error);
     return text;
   }
 };
@@ -61,31 +71,28 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
   console.log(`[Background Job] Starting translations for category: ${categoryName}`);
   let successfulTranslations = 0;
   try {
-    const languages = await prisma.language.findMany();
-    const englishLanguage = languages.find(lang => lang.code.toLowerCase() === 'en');
+    // Only active languages
+    const languages = await prisma.language.findMany({ where: { isDeleted: false } });
 
-    if (englishLanguage) {
-      await prisma.categoryTranslation.create({
-      data: { categoryId, language: englishLanguage.code, name: categoryName },
-      });
-      successfulTranslations++;
-    }
-
-    const otherLanguages = languages.filter(lang => lang.code.toLowerCase() !== 'en');
-    for (const lang of otherLanguages) {
+    for (const lang of languages) {
       try {
-        const translatedName = await translateText(categoryName, lang.name);
-        await prisma.categoryTranslation.create({
-          data: { categoryId, language: lang.code, name: translatedName },
+        const isEnglish = (lang.code || '').toLowerCase() === 'en';
+        const hint = `${lang.name} (${lang.nativeName})`;
+        const translatedName = isEnglish ? categoryName : await translateText(categoryName, hint, false);
+        // Upsert by composite unique (categoryId, language)
+        await prisma.categoryTranslation.upsert({
+          where: { categoryId_language: { categoryId, language: lang.code } },
+          update: { name: translatedName },
+          create: { categoryId, language: lang.code, name: translatedName },
         });
         successfulTranslations++;
-        console.log(`> Successfully translated '${categoryName}' to ${lang.name}: ${translatedName}`);
+        console.log(`> Saved translation '${translatedName}' for ${lang.name} (${lang.code})`);
       } catch (innerError) {
-        console.error(`> Failed to translate '${categoryName}' to ${lang.name}:`, innerError);
+        console.error(`> Failed to upsert translation for '${categoryName}' in ${lang.name} (${lang.code}):`, innerError);
       }
     }
 
-    console.log(`[Background Job] Finished translations for '${categoryName}'. Total successful: ${successfulTranslations}/${languages.length}`);
+    console.log(`[Background Job] Finished translations for '${categoryName}'. Total attempted: ${languages.length}, successful: ${successfulTranslations}`);
   } catch (error) {
     console.error(`[Background Job] A critical error occurred during translation for category '${categoryName}' (ID: ${categoryId}):`, error);
   }
@@ -94,15 +101,22 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
 export const getCategories = async (languageContext: string | null | 'all') => {
   let includeClause: any = {};
 
-  if (languageContext === 'all') {
+  // Map languageId -> language code for CategoryTranslation.language filter
+  if (languageContext === 'all' || !languageContext) {
     includeClause = { translations: true };
-  } else if (languageContext) {
-    includeClause = { translations: { where: { languageId: languageContext } } };
+  } else {
+    const lang = await prisma.language.findUnique({ where: { id: languageContext } });
+    const code = lang?.code;
+    if (code) {
+      includeClause = { translations: { where: { language: code } } };
+    } else {
+      // Fallback to all translations if languageId is unknown
+      includeClause = { translations: true };
+    }
   }
 
   const allCategories = await prisma.category.findMany({
     include: includeClause,
-  // orderBy removed, not present in model
   });
 
   const categoryMap = new Map();
@@ -110,9 +124,9 @@ export const getCategories = async (languageContext: string | null | 'all') => {
     let processedName = cat.name;
     let translationsArray;
 
-    if (languageContext === 'all') {
+    if (languageContext === 'all' || !languageContext) {
       translationsArray = (cat as any).translations;
-    } else if (languageContext && (cat as any).translations?.length > 0) {
+    } else if ((cat as any).translations?.length > 0) {
       processedName = (cat as any).translations[0].name;
     }
 
@@ -122,7 +136,7 @@ export const getCategories = async (languageContext: string | null | 'all') => {
       children: [],
     };
 
-    if (languageContext === 'all') {
+    if (languageContext === 'all' || !languageContext) {
       processed.translations = translationsArray;
     } else if ((processed as any).translations) {
       delete (processed as any).translations;
@@ -153,6 +167,13 @@ export const updateCategory = async (id: string, categoryDto: UpdateCategoryDto)
     data.parentId = null;
   }
   return await prisma.category.update({ where: { id }, data });
+};
+
+export const retranslateCategory = async (id: string) => {
+  const cat = await prisma.category.findUnique({ where: { id } });
+  if (!cat) throw new Error('Category not found');
+  await translateAndSaveCategoryInBackground(id, cat.name);
+  return { ok: true };
 };
 
 export const deleteCategory = async (id: string) => {

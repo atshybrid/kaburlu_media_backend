@@ -16,7 +16,7 @@ const upload = multer({ dest: 'uploads/' });
 
 /**
  * @swagger
- * /api/v1/locations:
+ * /locations:
  *   post:
  *     summary: Create a new location
  *     tags: [Locations]
@@ -29,8 +29,8 @@ const upload = multer({ dest: 'uploads/' });
  *     responses:
  *       201:
  *         description: The created location.
-// Removed non-v1 route
-
+ */
+router.post('/', async (req, res) => {
     try {
         const location = await locationService.createLocation(req.body as CreateLocationDto);
         res.status(201).json(location);
@@ -38,16 +38,14 @@ const upload = multer({ dest: 'uploads/' });
         res.status(400).json({ error: error.message });
     }
 });
-export default router;
 
 
 /**
  * @swagger
- * /api/v1/locations:
+ * /locations:
  *   get:
  *     summary: Get all locations
  *     tags: [Locations]
-    export default router;
  *     parameters:
  *       - in: query
  *         name: page
@@ -69,7 +67,7 @@ export default router;
  *               items:
  *                 $ref: '#/components/schemas/Location'
  */
-router.get('/api/v1/locations', async (req, res) => {
+router.get('/', async (req, res) => {
     const { page, limit } = req.query;
     const options = {
         page: page ? parseInt(page as string, 10) : undefined,
@@ -78,48 +76,9 @@ router.get('/api/v1/locations', async (req, res) => {
     const locations = await locationService.findAllLocations(options);
     res.json(locations);
 });
-
-router.get('/api/v1/locations/:id', async (req, res) => {
-    const location = await locationService.findLocationById(req.params.id);
-    if (location) {
-        res.json(location);
-    } else {
-        res.status(404).send('Location not found');
-    }
-});
-
-router.patch('/api/v1/locations/:id', async (req, res) => {
-    try {
-        const location = await locationService.updateLocation(req.params.id, req.body as UpdateLocationDto);
-        res.json(location);
-    } catch (error) {
-        res.status(404).send('Location not found');
-    }
-});
-
-router.delete('/api/v1/locations/:id', async (req, res) => {
-    try {
-        await locationService.deleteLocation(req.params.id);
-        res.status(204).send();
-    } catch (error) {
-        res.status(404).send('Location not found');
-    }
-});
-
-router.post('/api/v1/locations/bulk-upload', upload.single('file'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).send('No file uploaded.');
-    }
-    try {
-        const result = await locationService.bulkUploadLocations(req.file.path);
-        res.status(200).json({ message: 'Locations uploaded successfully', result });
-    } catch (error: any) {
-        res.status(400).json({ error: error.message });
-    }
-});
 /**
  * @swagger
- * /api/v1/locations/{id}:
+ * /locations/{id}:
  *   get:
  *     summary: Get a location by ID
  *     tags: [Locations]
