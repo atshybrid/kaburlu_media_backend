@@ -28,6 +28,7 @@ const swaggerDefinition = {
     { name: 'Users' },
     { name: 'Profile' },
     { name: 'Articles' },
+    { name: 'ShortNews' },
     { name: 'Engagement' },
     { name: 'Locations' },
     { name: 'Categories' },

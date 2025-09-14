@@ -179,6 +179,11 @@ const router = Router();
  *                       id: { type: string }
  *                       title: { type: string }
  *                       slug: { type: string }
+ *                       mediaUrls:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                         description: "Image/Video URLs (image: .webp, video: .webm preferred)"
  *                       languageId: { type: string, nullable: true }
  *                       languageName: { type: string, nullable: true }
  *                       languageCode: { type: string, nullable: true }
@@ -190,6 +195,11 @@ const router = Router();
  *                       address: { type: string, nullable: true }
  *                       latitude: { type: number, nullable: true }
  *                       longitude: { type: number, nullable: true }
+ *                       accuracyMeters: { type: number, nullable: true }
+ *                       provider: { type: string, nullable: true }
+ *                       timestampUtc: { type: string, format: date-time, nullable: true }
+ *                       placeId: { type: string, nullable: true }
+ *                       source: { type: string, nullable: true }
  *
  * /shortnews/{id}/status:
  *   patch:
@@ -221,6 +231,50 @@ const router = Router();
  */
 router.post('/', passport.authenticate('jwt', { session: false }), shortNewsController.createShortNews);
 router.get('/', passport.authenticate('jwt', { session: false }), shortNewsController.listShortNews);
+/**
+ * @swagger
+ * /shortnews/{id}:
+ *   put:
+ *     summary: Update short news (author or desk/admin)
+ *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string }
+ *               content: { type: string, description: "Must be 60 words or less" }
+ *               categoryId: { type: string }
+ *               tags:
+ *                 type: array
+ *                 items: { type: string }
+ *               mediaUrls:
+ *                 type: array
+ *                 items: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *               address: { type: string }
+ *               accuracyMeters: { type: number }
+ *               provider: { type: string }
+ *               timestampUtc: { type: string, format: date-time }
+ *               placeId: { type: string }
+ *               placeName: { type: string }
+ *               source: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated short news item
+ */
+router.put('/:id', passport.authenticate('jwt', { session: false }), shortNewsController.updateShortNews);
 router.patch('/:id/status', shortNewsController.updateShortNewsStatus);
 
 /**
@@ -261,13 +315,14 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *           type: string
  *         description: Base64-encoded JSON { id, date }
  *       - in: query
- *         name: languageCode
+ *         name: languageId
+ *         required: true
  *         schema:
  *           type: string
- *         description: Optional language code filter (e.g., te, hi, en)
+ *         description: Language ID to filter the public feed. Required.
  *     responses:
  *       200:
- *         description: Approved short news list enriched with categoryName, authorName, place/address, lat/lon
+ *         description: Approved short news list enriched with categoryName, authorName, place/address, lat/lon, canonicalUrl, jsonLd, and primary media
  */
 router.get('/public', shortNewsController.listApprovedShortNews);
 

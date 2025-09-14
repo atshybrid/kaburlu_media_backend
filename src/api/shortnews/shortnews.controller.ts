@@ -362,6 +362,8 @@ export const listShortNews = async (req: Request, res: Response) => {
       const address = i.address ?? (loc as any)?.address ?? null;
       return {
         ...i,
+        // Ensure mediaUrls always present as array
+        mediaUrls: Array.isArray(i.mediaUrls) ? i.mediaUrls : [],
         languageId: i.language ?? null,
         languageName: l?.name ?? null,
         languageCode: l?.code ?? null,
@@ -404,12 +406,101 @@ export const updateShortNewsStatus = async (req: Request, res: Response) => {
   }
 };
 
-// Public feed: only DESK_APPROVED items, optional language filter by code
+// Update short news (author or desk/admin)
+export const updateShortNews = async (req: Request, res: Response) => {
+  try {
+    if (!req.user || typeof req.user !== 'object' || !('id' in req.user)) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    const user = req.user as User & { role?: { name?: string } };
+    const { id } = req.params;
+
+    const existing = await prisma.shortNews.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
+
+    // Authorization: author can edit unless DESK_APPROVED; desk/admin can always edit
+    const roleName = user?.role?.name || '';
+    const isDesk = ['NEWS_DESK', 'NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPERADMIN'].includes(roleName);
+    const isAuthor = existing.authorId === user.id;
+    if (!isDesk && !isAuthor) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+    if (!isDesk && existing.status === 'DESK_APPROVED') {
+      return res.status(400).json({ success: false, error: 'Approved items can only be edited by desk/admin' });
+    }
+
+    const {
+      title,
+      content,
+      categoryId,
+      tags,
+      mediaUrls,
+      latitude,
+      longitude,
+      address,
+      accuracyMeters,
+      provider,
+      timestampUtc,
+      placeId,
+      placeName,
+      source,
+    } = req.body || {};
+
+    // Validate optional lat/lon if provided
+    const hasLat = latitude !== undefined && latitude !== null && latitude !== '';
+    const hasLon = longitude !== undefined && longitude !== null && longitude !== '';
+    if (hasLat || hasLon) {
+      const latNum = typeof latitude === 'string' ? Number(latitude) : latitude;
+      const lonNum = typeof longitude === 'string' ? Number(longitude) : longitude;
+      if (
+        latNum === undefined || lonNum === undefined ||
+        latNum === null || lonNum === null ||
+        Number.isNaN(Number(latNum)) || Number.isNaN(Number(lonNum)) ||
+        Number(latNum) < -90 || Number(latNum) > 90 ||
+        Number(lonNum) < -180 || Number(lonNum) > 180
+      ) {
+        return res.status(400).json({ success: false, error: 'latitude and longitude must be valid coordinates.' });
+      }
+    }
+
+    // Optional: keep slug unchanged on updates
+    const data: any = {};
+    if (typeof title === 'string' && title.trim()) data.title = title.trim();
+    if (typeof content === 'string' && content.trim()) {
+      if (content.trim().split(/\s+/).length > 60) {
+        return res.status(400).json({ success: false, error: 'Content must be 60 words or less.' });
+      }
+      data.content = content.trim();
+    }
+    if (typeof categoryId === 'string' && categoryId.trim()) data.categoryId = categoryId.trim();
+    if (Array.isArray(tags)) data.tags = tags.map((t: any) => String(t));
+    if (Array.isArray(mediaUrls)) data.mediaUrls = mediaUrls.map((u: any) => String(u));
+    if (hasLat) data.latitude = Number(latitude);
+    if (hasLon) data.longitude = Number(longitude);
+    if (address !== undefined) data.address = address || null;
+    if (accuracyMeters !== undefined) data.accuracyMeters = accuracyMeters != null ? Number(accuracyMeters) : null;
+    if (provider !== undefined) data.provider = provider || null;
+    if (timestampUtc !== undefined) data.timestampUtc = timestampUtc ? new Date(timestampUtc) : null;
+    if (placeId !== undefined) data.placeId = placeId || null;
+    if (placeName !== undefined) data.placeName = placeName || null;
+    if (source !== undefined) data.source = source || null;
+
+    const updated = await prisma.shortNews.update({ where: { id }, data });
+    return res.status(200).json({ success: true, data: updated });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: 'Failed to update short news' });
+  }
+};
+
+// Public feed: only DESK_APPROVED items, requires languageId query param
 export const listApprovedShortNews = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
     const cursorRaw = (req.query.cursor as string) || '';
-    const languageCode = (req.query.languageCode as string) || undefined;
+    const languageIdParam = (req.query.languageId as string) || '';
+    if (!languageIdParam || typeof languageIdParam !== 'string') {
+      return res.status(400).json({ success: false, error: 'languageId is required' });
+    }
     let cursor: { id: string; date: string } | null = null;
     if (cursorRaw) {
       try {
@@ -420,13 +511,12 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         }
       } catch {}
     }
-    let languageId: string | undefined;
-    if (languageCode) {
-      const lang = await prisma.language.findUnique({ where: { code: languageCode } });
-      languageId = lang?.id;
+    // Validate languageId exists
+    const langCheck = await prisma.language.findUnique({ where: { id: languageIdParam } });
+    if (!langCheck) {
+      return res.status(400).json({ success: false, error: 'Invalid languageId' });
     }
-    const where: any = { status: 'DESK_APPROVED' };
-    if (languageId) where.language = languageId;
+    const where: any = { status: 'DESK_APPROVED', language: languageIdParam };
     const items = await prisma.shortNews.findMany({
       where,
       include: {
@@ -446,7 +536,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const last = slice[slice.length - 1];
     const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
     // attach language info
-    const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
+  const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
     const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
     const langMap = new Map(langs.map((l) => [l.id, l]));
     // category names (language-aware: use each item's language)
@@ -475,7 +565,53 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
-      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null, categoryName, authorName, placeName, address, latitude: i.latitude ?? null, longitude: i.longitude ?? null, accuracyMeters: i.accuracyMeters ?? null, provider: i.provider ?? null, timestampUtc: i.timestampUtc ?? null, placeId: i.placeId ?? null, source: i.source ?? null } as any;
+      // derive canonical url and primary media
+      const languageCode = l?.code || 'en';
+      const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+      const canonicalUrl = `${canonicalDomain}/${languageCode}/${i.slug}`;
+      const mediaUrls = Array.isArray(i.mediaUrls) ? i.mediaUrls : [];
+      const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
+      const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
+      const primaryImageUrl = imageUrls[0] || null;
+      const primaryVideoUrl = videoUrls[0] || null;
+      // ensure jsonLd exists (fallback build if missing)
+      let jsonLd: any = (i.seo as any)?.jsonLd;
+      if (!jsonLd) {
+        jsonLd = buildNewsArticleJsonLd({
+          headline: i.title,
+          description: ((i.seo as any)?.metaDescription || i.content?.slice(0, 160)),
+          canonicalUrl,
+          imageUrls: imageUrls.slice(0, 5),
+          languageCode,
+          datePublished: i.createdAt,
+          dateModified: i.updatedAt,
+          videoUrl: primaryVideoUrl || undefined,
+          videoThumbnailUrl: primaryImageUrl || undefined,
+        });
+      }
+      return {
+        ...i,
+        // Ensure mediaUrls always present as array
+        mediaUrls,
+        primaryImageUrl,
+        primaryVideoUrl,
+        canonicalUrl,
+        jsonLd,
+        languageId: i.language ?? null,
+        languageName: l?.name ?? null,
+        languageCode: l?.code ?? null,
+        categoryName,
+        authorName,
+        placeName,
+        address,
+        latitude: i.latitude ?? null,
+        longitude: i.longitude ?? null,
+        accuracyMeters: i.accuracyMeters ?? null,
+        provider: i.provider ?? null,
+        timestampUtc: i.timestampUtc ?? null,
+        placeId: i.placeId ?? null,
+        source: i.source ?? null,
+      } as any;
     });
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
   } catch (e) {
@@ -548,7 +684,25 @@ export const listShortNewsByStatus = async (req: Request, res: Response) => {
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
-      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null, categoryName, authorName, placeName, address, latitude: i.latitude ?? null, longitude: i.longitude ?? null, accuracyMeters: i.accuracyMeters ?? null, provider: i.provider ?? null, timestampUtc: i.timestampUtc ?? null, placeId: i.placeId ?? null, source: i.source ?? null } as any;
+      return {
+        ...i,
+        // Ensure mediaUrls always present as array
+        mediaUrls: Array.isArray(i.mediaUrls) ? i.mediaUrls : [],
+        languageId: i.language ?? null,
+        languageName: l?.name ?? null,
+        languageCode: l?.code ?? null,
+        categoryName,
+        authorName,
+        placeName,
+        address,
+        latitude: i.latitude ?? null,
+        longitude: i.longitude ?? null,
+        accuracyMeters: i.accuracyMeters ?? null,
+        provider: i.provider ?? null,
+        timestampUtc: i.timestampUtc ?? null,
+        placeId: i.placeId ?? null,
+        source: i.source ?? null,
+      } as any;
     });
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
   } catch (e) {
