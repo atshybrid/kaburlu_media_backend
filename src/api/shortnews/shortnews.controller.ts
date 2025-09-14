@@ -46,7 +46,8 @@ const prisma = new PrismaClient();
 
 export const createShortNews = async (req: Request, res: Response) => {
   try {
-  const { title, content, mediaUrls, latitude, longitude, address, categoryId, tags } = req.body;
+  const { title, content, mediaUrls, latitude, longitude, address, categoryId, tags,
+    accuracyMeters, provider, timestampUtc, placeId, placeName, source } = req.body;
     if (!req.user || typeof req.user !== 'object' || !('id' in req.user)) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
@@ -195,6 +196,12 @@ export const createShortNews = async (req: Request, res: Response) => {
         latitude: Number(latNum),
         longitude: Number(lonNum),
         address: address || null,
+        accuracyMeters: typeof accuracyMeters === 'number' ? accuracyMeters : (accuracyMeters != null ? Number(accuracyMeters) : null),
+        provider: provider || null,
+        timestampUtc: timestampUtc ? new Date(timestampUtc) : null,
+        placeId: placeId || null,
+        placeName: placeName || null,
+        source: source || null,
         language: languageId,
         status: initialStatus,
         aiRemark,
@@ -279,7 +286,16 @@ export const listShortNews = async (req: Request, res: Response) => {
     // prefetch pool: same language; do not restrict to coords/desk to ensure we include all when no location
     const seed = await prisma.shortNews.findMany({
       where: { language: languageId },
-      include: { author: { include: { role: true } } },
+      include: {
+        author: {
+          select: {
+            id: true,
+            email: true,
+            mobileNumber: true,
+            role: { select: { name: true } },
+          },
+        },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 10, 200),
     });
@@ -319,17 +335,47 @@ export const listShortNews = async (req: Request, res: Response) => {
   const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
   const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
   const langMap = new Map(langs.map((l) => [l.id, l]));
+  // fetch category translations and base names for categoryName
+  const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
+  const [catTranslations, cats] = await Promise.all([
+    prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: languageId as any } }),
+    prisma.category.findMany({ where: { id: { in: categoryIds } } }),
+  ]);
+  const catNameById = new Map<string, string>();
+  for (const ct of catTranslations) catNameById.set(ct.categoryId, ct.name);
+  for (const c of cats) if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+  // fetch authors' latest user location for placeName/address if available
+  const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
+  const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
+  const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
     const last = slice[slice.length - 1];
     const hasMore = afterCursor.length > limit;
     const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
 
-    const data = slice.map((i) => {
+    const data = slice.map((i: any) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
+      const categoryName = i.categoryId ? catNameById.get(i.categoryId) ?? null : null;
+      const author = i.author as any;
+      const authorName = author?.email || author?.mobileNumber || null; // assumption: no explicit name field
+      const loc = authorLocByUser.get(i.authorId) as any;
+      const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
+      const address = i.address ?? (loc as any)?.address ?? null;
       return {
         ...i,
         languageId: i.language ?? null,
         languageName: l?.name ?? null,
         languageCode: l?.code ?? null,
+        categoryName,
+        authorName,
+        placeName,
+        address,
+        latitude: i.latitude ?? null,
+        longitude: i.longitude ?? null,
+        accuracyMeters: i.accuracyMeters ?? null,
+        provider: i.provider ?? null,
+        timestampUtc: i.timestampUtc ?? null,
+        placeId: i.placeId ?? null,
+        source: i.source ?? null,
       } as any;
     });
 
@@ -383,6 +429,9 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     if (languageId) where.language = languageId;
     const items = await prisma.shortNews.findMany({
       where,
+      include: {
+        author: { select: { id: true, email: true, mobileNumber: true } },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 2, 100),
     });
@@ -400,9 +449,33 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
     const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
     const langMap = new Map(langs.map((l) => [l.id, l]));
-    const data = slice.map((i) => {
+    // category names (language-aware: use each item's language)
+    const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
+    const sliceLangIds = Array.from(new Set(slice.map((i: any) => i.language).filter((x: any) => !!x)));
+    const [catTranslations, cats] = await Promise.all([
+      prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: { in: sliceLangIds as any } } }),
+      prisma.category.findMany({ where: { id: { in: categoryIds } } }),
+    ]);
+    const catNameById = new Map<string, string>();
+    const catNameByCatLang = new Map<string, string>();
+    for (const ct of catTranslations) {
+      catNameById.set(ct.categoryId, ct.name);
+      catNameByCatLang.set(`${ct.categoryId}:${ct.language}`, ct.name);
+    }
+    for (const c of cats) if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+    // author locations
+    const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
+    const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
+    const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
+    const data = slice.map((i: any) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
-      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null } as any;
+  const categoryName = i.categoryId ? (catNameByCatLang.get(`${i.categoryId}:${i.language}`) ?? catNameById.get(i.categoryId) ?? null) : null;
+      const author = i.author as any;
+      const authorName = author?.email || author?.mobileNumber || null;
+      const loc = authorLocByUser.get(i.authorId) as any;
+      const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
+      const address = i.address ?? (loc as any)?.address ?? null;
+      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null, categoryName, authorName, placeName, address, latitude: i.latitude ?? null, longitude: i.longitude ?? null, accuracyMeters: i.accuracyMeters ?? null, provider: i.provider ?? null, timestampUtc: i.timestampUtc ?? null, placeId: i.placeId ?? null, source: i.source ?? null } as any;
     });
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
   } catch (e) {
@@ -438,6 +511,7 @@ export const listShortNewsByStatus = async (req: Request, res: Response) => {
     }
     const items = await prisma.shortNews.findMany({
       where,
+      include: { author: { select: { id: true, email: true, mobileNumber: true } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 2, 100),
     });
@@ -454,9 +528,27 @@ export const listShortNewsByStatus = async (req: Request, res: Response) => {
     const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
     const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
     const langMap = new Map(langs.map((l) => [l.id, l]));
-    const data = slice.map((i) => {
+    // categories and authors enrich
+    const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
+    const [catTranslations, cats] = await Promise.all([
+      prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: user.languageId as any } }),
+      prisma.category.findMany({ where: { id: { in: categoryIds } } }),
+    ]);
+    const catNameById = new Map<string, string>();
+    for (const ct of catTranslations) catNameById.set(ct.categoryId, ct.name);
+    for (const c of cats) if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+    const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
+    const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
+    const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
+    const data = slice.map((i: any) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
-      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null } as any;
+      const categoryName = i.categoryId ? catNameById.get(i.categoryId) ?? null : null;
+      const author = i.author as any;
+      const authorName = author?.email || author?.mobileNumber || null;
+      const loc = authorLocByUser.get(i.authorId) as any;
+      const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
+      const address = i.address ?? (loc as any)?.address ?? null;
+      return { ...i, languageId: i.language ?? null, languageName: l?.name ?? null, languageCode: l?.code ?? null, categoryName, authorName, placeName, address, latitude: i.latitude ?? null, longitude: i.longitude ?? null, accuracyMeters: i.accuracyMeters ?? null, provider: i.provider ?? null, timestampUtc: i.timestampUtc ?? null, placeId: i.placeId ?? null, source: i.source ?? null } as any;
     });
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
   } catch (e) {

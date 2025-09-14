@@ -19,6 +19,34 @@ class LocationDto {
 
   @IsNotEmpty()
   longitude!: number;
+
+  // Optional extended metadata
+  @IsOptional()
+  accuracyMeters?: number;
+
+  @IsOptional()
+  @IsString()
+  provider?: string; // fused | gps | network
+
+  @IsOptional()
+  @IsString()
+  timestampUtc?: string; // ISO string; will be converted to Date
+
+  @IsOptional()
+  @IsString()
+  placeId?: string;
+
+  @IsOptional()
+  @IsString()
+  placeName?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  source?: string; // foreground | background | manual
 }
 
 /**

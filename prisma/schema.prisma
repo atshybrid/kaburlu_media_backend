@@ -25,6 +25,12 @@ model ShortNews {
   latitude     Float?
   longitude    Float?
   address      String?
+  accuracyMeters Float?
+  provider       String?
+  timestampUtc   DateTime?
+  placeId        String?
+  placeName      String?
+  source         String?
   aiRemark     String?
   aiPlagiarism Json?
   aiSensitive  Json?
@@ -61,6 +67,7 @@ model User {
   likes        Like[]
   comments     Comment[]
   location     UserLocation?
+  profile      UserProfile?
   articleViews ArticleView[]
   shortNews    ShortNews[]
   shortNewsReads ShortNewsRead[]
@@ -118,6 +125,13 @@ model UserLocation {
   userId    String   @unique
   latitude  Float
   longitude Float
+  accuracyMeters Float?
+  provider       String?
+  timestampUtc   DateTime?
+  placeId        String?
+  placeName      String?
+  address        String?
+  source         String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -138,6 +152,7 @@ model State {
   countryId String
   isDeleted Boolean    @default(false)
   districts District[]
+  userProfiles UserProfile[] @relation("UserProfile_state")
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
@@ -149,6 +164,7 @@ model District {
   stateId   String
   isDeleted Boolean  @default(false)
   mandals   Mandal[]
+  userProfiles UserProfile[] @relation("UserProfile_district")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -159,6 +175,7 @@ model Mandal {
   district   District @relation(fields: [districtId], references: [id])
   districtId String
   isDeleted  Boolean  @default(false)
+  userProfiles UserProfile[] @relation("UserProfile_mandal")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -301,6 +318,37 @@ model Media {
   folder      String?
   owner       User?    @relation(fields: [ownerId], references: [id])
   ownerId     String?
+  profilePhotos UserProfile[] @relation("UserProfile_profilePhotoMedia")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// User profile details separated from the core User
+model UserProfile {
+  id                    String   @id @default(cuid())
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                String   @unique
+  fullName              String?
+  gender                String?
+  dob                   DateTime?
+  maritalStatus         String?
+  bio                   String?
+  profilePhotoUrl       String?
+  profilePhotoMedia     Media?   @relation("UserProfile_profilePhotoMedia", fields: [profilePhotoMediaId], references: [id])
+  profilePhotoMediaId   String?
+  emergencyContactNumber String?
+  address               Json?
+  state                 State?   @relation("UserProfile_state", fields: [stateId], references: [id])
+  stateId               String?
+  district              District? @relation("UserProfile_district", fields: [districtId], references: [id])
+  districtId            String?
+  mandal                Mandal?  @relation("UserProfile_mandal", fields: [mandalId], references: [id])
+  mandalId              String?
+  assemblyId            String?
+  villageId             String?
+  occupation            String?
+  education             String?
+  socialLinks           Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }

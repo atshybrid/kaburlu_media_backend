@@ -1,7 +1,14 @@
-
-import { IsString, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsUrl } from 'class-validator';
 
 export class CreateProfileDto {
+  @IsOptional()
+  @IsString()
+  fullName?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
   @IsOptional()
   @IsString()
   dob?: string;
@@ -9,6 +16,18 @@ export class CreateProfileDto {
   @IsOptional()
   @IsString()
   maritalStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  bio?: string;
+
+  @IsOptional()
+  @IsUrl()
+  profilePhotoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  profilePhotoMediaId?: string;
 
   @IsOptional()
   @IsString()
@@ -37,6 +56,18 @@ export class CreateProfileDto {
   @IsOptional()
   @IsString()
   villageId?: string;
+
+  @IsOptional()
+  @IsString()
+  occupation?: string;
+
+  @IsOptional()
+  @IsString()
+  education?: string;
+
+  @IsOptional()
+  @IsObject()
+  socialLinks?: any;
 }
 
 export class UpdateProfileDto extends CreateProfileDto {}

@@ -8,7 +8,13 @@ const prisma = new PrismaClient();
 
 // Create a single location
 export const createLocation = (data: CreateLocationDto) => {
-    return prisma.userLocation.create({ data });
+    const { timestampUtc, ...rest } = data as any;
+    return prisma.userLocation.create({
+        data: {
+            ...rest,
+            timestampUtc: timestampUtc ? new Date(timestampUtc) : undefined,
+        }
+    });
 };
 
 // Get all locations with pagination and filtering
@@ -34,9 +40,13 @@ export const findLocationById = (id: string) => {
 
 // Update a location
 export const updateLocation = (id: string, data: UpdateLocationDto) => {
+    const { timestampUtc, ...rest } = data as any;
     return prisma.userLocation.update({
         where: { id },
-        data,
+        data: {
+            ...rest,
+            timestampUtc: timestampUtc ? new Date(timestampUtc) : undefined,
+        },
     });
 };
 
@@ -62,7 +72,14 @@ export const bulkUploadLocations = (filePath: string): Promise<any> => {
                 locations.push({
                     userId: row.userId,
                     latitude: parseFloat(row.latitude),
-                    longitude: parseFloat(row.longitude)
+                    longitude: parseFloat(row.longitude),
+                    accuracyMeters: row.accuracyMeters ? parseFloat(row.accuracyMeters) : undefined,
+                    provider: row.provider,
+                    timestampUtc: row.timestampUtc ? new Date(row.timestampUtc) : undefined,
+                    placeId: row.placeId,
+                    placeName: row.placeName,
+                    address: row.address,
+                    source: row.source,
                 });
             })
             .on('end', async () => {

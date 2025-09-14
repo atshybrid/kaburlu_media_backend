@@ -50,6 +50,27 @@ const router = Router();
  *               address:
  *                 type: string
  *                 example: "Hyderabad, Telangana"
+ *               accuracyMeters:
+ *                 type: number
+ *                 example: 12.5
+ *               provider:
+ *                 type: string
+ *                 example: fused
+ *                 description: "fused|gps|network"
+ *               timestampUtc:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2025-09-14T12:30:45Z"
+ *               placeId:
+ *                 type: string
+ *                 example: "ChIJ...abc"
+ *               placeName:
+ *                 type: string
+ *                 example: "Hyderabad"
+ *               source:
+ *                 type: string
+ *                 example: foreground
+ *                 description: "foreground|background|manual"
  *     responses:
  *       201:
  *         description: Short news submitted
@@ -133,7 +154,42 @@ const router = Router();
  *         description: Base64-encoded JSON { id, date } to get next items after this cursor
  *     responses:
  *       200:
- *         description: List of short news with pageInfo { nextCursor, hasMore }. Each item includes languageId, languageName, languageCode.
+ *         description: List of short news with pageInfo { nextCursor, hasMore }.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 pageInfo:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     nextCursor:
+ *                       type: string
+ *                     hasMore:
+ *                       type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       title: { type: string }
+ *                       slug: { type: string }
+ *                       languageId: { type: string, nullable: true }
+ *                       languageName: { type: string, nullable: true }
+ *                       languageCode: { type: string, nullable: true }
+ *                       categoryId: { type: string }
+ *                       categoryName: { type: string, nullable: true }
+ *                       authorId: { type: string }
+ *                       authorName: { type: string, nullable: true, description: "Currently email or mobile number" }
+ *                       placeName: { type: string, nullable: true }
+ *                       address: { type: string, nullable: true }
+ *                       latitude: { type: number, nullable: true }
+ *                       longitude: { type: number, nullable: true }
  *
  * /shortnews/{id}/status:
  *   patch:
@@ -211,7 +267,7 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *         description: Optional language code filter (e.g., te, hi, en)
  *     responses:
  *       200:
- *         description: Approved short news list
+ *         description: Approved short news list enriched with categoryName, authorName, place/address, lat/lon
  */
 router.get('/public', shortNewsController.listApprovedShortNews);
 
@@ -243,7 +299,7 @@ router.get('/public', shortNewsController.listApprovedShortNews);
  *         description: Base64-encoded JSON { id, date }
  *     responses:
  *       200:
- *         description: Items by status for current user/desk
+ *         description: Items by status for current user/desk enriched with categoryName, authorName, place/address, lat/lon
  */
 router.get('/moderation', passport.authenticate('jwt', { session: false }), shortNewsController.listShortNewsByStatus);
 

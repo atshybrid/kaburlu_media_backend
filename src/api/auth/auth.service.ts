@@ -81,6 +81,23 @@ export const login = async (loginDto: MpinLoginDto) => {
       languageId: user.languageId,
     },
   };
+  // Attach last known user location if available
+  try {
+    const loc = await prisma.userLocation.findUnique({ where: { userId: user.id } });
+    if (loc) {
+      (result as any).location = {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        accuracyMeters: (loc as any).accuracyMeters ?? undefined,
+        provider: (loc as any).provider ?? undefined,
+        timestampUtc: (loc as any).timestampUtc ? new Date((loc as any).timestampUtc as any).toISOString() : undefined,
+        placeId: (loc as any).placeId ?? undefined,
+        placeName: (loc as any).placeName ?? undefined,
+        address: (loc as any).address ?? undefined,
+        source: (loc as any).source ?? undefined,
+      };
+    }
+  } catch {}
   console.log("result", result)
   return result
 };
@@ -161,22 +178,40 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
                     });
 
                     // CRITICAL FIX: Replace `upsert` with a manual find/update/create logic
-                    if (guestDto.deviceDetails.location) {
+          if (guestDto.deviceDetails.location) {
                         const existingLocation = await prisma.userLocation.findFirst({
                             where: { userId: user.id },
                         });
 
                         if (existingLocation) {
-                            await prisma.userLocation.update({
+              await prisma.userLocation.update({
                                 where: { id: existingLocation.id },
-                                data: { ...guestDto.deviceDetails.location },
+        data: {
+                  latitude: guestDto.deviceDetails.location.latitude,
+                  longitude: guestDto.deviceDetails.location.longitude,
+                  accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
+                  provider: guestDto.deviceDetails.location.provider,
+                  timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
+                  placeId: guestDto.deviceDetails.location.placeId,
+                  placeName: guestDto.deviceDetails.location.placeName,
+                  address: guestDto.deviceDetails.location.address,
+                  source: guestDto.deviceDetails.location.source,
+        } as any,
                             });
                         } else {
-                            await prisma.userLocation.create({
+              await prisma.userLocation.create({
                                 data: {
                                     userId: user.id,
-                                    ...guestDto.deviceDetails.location,
-                                },
+                  latitude: guestDto.deviceDetails.location.latitude,
+                  longitude: guestDto.deviceDetails.location.longitude,
+                  accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
+                  provider: guestDto.deviceDetails.location.provider,
+                  timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
+                  placeId: guestDto.deviceDetails.location.placeId,
+                  placeName: guestDto.deviceDetails.location.placeName,
+                  address: guestDto.deviceDetails.location.address,
+                  source: guestDto.deviceDetails.location.source,
+                } as any,
                             });
                         }
                     }
@@ -204,14 +239,22 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
                 },
             });
 
-            if (guestDto.deviceDetails.location) {
-                await prisma.userLocation.create({
-                    data: {
-                        userId: user.id,
-                        ...guestDto.deviceDetails.location,
-                    },
-                });
-            }
+      if (guestDto.deviceDetails.location) {
+        await prisma.userLocation.create({
+          data: {
+            userId: user.id,
+            latitude: guestDto.deviceDetails.location.latitude,
+            longitude: guestDto.deviceDetails.location.longitude,
+            accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
+            provider: guestDto.deviceDetails.location.provider,
+            timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
+            placeId: guestDto.deviceDetails.location.placeId,
+            placeName: guestDto.deviceDetails.location.placeName,
+            address: guestDto.deviceDetails.location.address,
+            source: guestDto.deviceDetails.location.source,
+          } as any,
+        });
+      }
             effectiveRole = guestRole;
         }
 
@@ -229,7 +272,9 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
   const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
     const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
 
-        return {
+    // Attach location snapshot
+    const location = await prisma.userLocation.findUnique({ where: { userId: user.id } }).catch(() => null);
+    return {
             jwt: jwtToken,
             refreshToken: refreshToken,
   expiresIn: 86400, // seconds (1 day)
@@ -238,6 +283,17 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
                 role: effectiveRole.name,
                 languageId: user.languageId,
             },
+      location: location ? {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters ?? undefined,
+        provider: (location as any).provider ?? undefined,
+        timestampUtc: (location as any).timestampUtc ? new Date((location as any).timestampUtc as any).toISOString() : undefined,
+        placeId: (location as any).placeId ?? undefined,
+        placeName: (location as any).placeName ?? undefined,
+        address: (location as any).address ?? undefined,
+        source: (location as any).source ?? undefined,
+      } : undefined,
         };
     } catch (error) {
         console.error("[FATAL] Unhandled error in registerGuestUser:", error);
