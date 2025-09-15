@@ -5,6 +5,10 @@ export class CreateCategoryDto {
   @IsString()
   name!: string;
 
+  @IsString()
+  @IsOptional()
+  iconUrl?: string;
+
   @IsBoolean()
   @IsOptional()
   isDeleted?: boolean = false;
@@ -15,15 +19,19 @@ export class CreateCategoryDto {
 }
 
 export class UpdateCategoryDto {
-    @IsString()
-    @IsOptional()
-    name?: string;
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  iconUrl?: string;
 
   @IsBoolean()
   @IsOptional()
   isDeleted?: boolean;
 
-    @IsString()
-    @IsOptional()
-    parentId?: string;
+  @IsString()
+  @IsOptional()
+  parentId?: string;
 }

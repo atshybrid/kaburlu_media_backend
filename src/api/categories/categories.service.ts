@@ -59,10 +59,9 @@ export const createCategory = async (categoryDto: CreateCategoryDto) => {
     data: {
       name: categoryDto.name,
       slug,
-  isDeleted: typeof categoryDto.isDeleted === 'boolean' ? categoryDto.isDeleted : false,
+      iconUrl: categoryDto.iconUrl,
+      isDeleted: typeof categoryDto.isDeleted === 'boolean' ? categoryDto.isDeleted : false,
       parentId: categoryDto.parentId === 'null' || !categoryDto.parentId ? null : categoryDto.parentId,
-  // iconUrl removed, not present in DTO or model
-  // order removed, not present in model
     },
   });
 };
@@ -153,6 +152,9 @@ export const updateCategory = async (id: string, categoryDto: UpdateCategoryDto)
   }
   if (categoryDto.parentId === 'null' || categoryDto.parentId === '' || categoryDto.parentId === null) {
     data.parentId = null;
+  }
+  if (categoryDto.iconUrl !== undefined) {
+    data.iconUrl = categoryDto.iconUrl;
   }
   return await prisma.category.update({ where: { id }, data });
 };

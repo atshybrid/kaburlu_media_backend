@@ -184,6 +184,7 @@ model Category {
   id           String                @id @default(cuid())
   name         String
   slug         String                @unique
+  iconUrl      String?
   isDeleted    Boolean               @default(false)
   parent       Category?             @relation("SubCategories", fields: [parentId], references: [id])
   parentId     String?
