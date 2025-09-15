@@ -98,22 +98,14 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
   }
 };
 
-export const getCategories = async (languageContext: string | null | 'all') => {
-  let includeClause: any = {};
-
+export const getCategories = async (languageContext: string) => {
   // Map languageId -> language code for CategoryTranslation.language filter
-  if (languageContext === 'all' || !languageContext) {
-    includeClause = { translations: true };
-  } else {
-    const lang = await prisma.language.findUnique({ where: { id: languageContext } });
-    const code = lang?.code;
-    if (code) {
-      includeClause = { translations: { where: { language: code } } };
-    } else {
-      // Fallback to all translations if languageId is unknown
-      includeClause = { translations: true };
-    }
+  const lang = await prisma.language.findUnique({ where: { id: languageContext } });
+  const code = lang?.code;
+  if (!code) {
+    return [];
   }
+  const includeClause: any = { translations: { where: { language: code } } };
 
   const allCategories = await prisma.category.findMany({
     include: includeClause,
@@ -124,9 +116,7 @@ export const getCategories = async (languageContext: string | null | 'all') => {
     let processedName = cat.name;
     let translationsArray;
 
-    if (languageContext === 'all' || !languageContext) {
-      translationsArray = (cat as any).translations;
-    } else if ((cat as any).translations?.length > 0) {
+    if ((cat as any).translations?.length > 0) {
       processedName = (cat as any).translations[0].name;
     }
 
@@ -136,9 +126,7 @@ export const getCategories = async (languageContext: string | null | 'all') => {
       children: [],
     };
 
-    if (languageContext === 'all' || !languageContext) {
-      processed.translations = translationsArray;
-    } else if ((processed as any).translations) {
+    if ((processed as any).translations) {
       delete (processed as any).translations;
     }
 

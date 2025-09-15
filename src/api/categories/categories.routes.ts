@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { createCategory, getCategories, updateCategory, deleteCategory, translateAndSaveCategoryInBackground, retranslateCategory } from './categories.service';
+import { getCategoriesController } from './categories.controller';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 import { validationMiddleware } from '../middlewares/validation.middleware';
 
@@ -144,11 +145,16 @@ router.post('/', passport.authenticate('jwt', { session: false }), requireSuperA
  * @swagger
  * /categories:
  *   get:
- *     summary: Retrieve categories
- *     description: Retrieves a nested list of categories using the caller's language context.
+ *     summary: Retrieve categories (public)
+ *     description: Requires languageId and returns a nested list of categories with names translated to that language (from CategoryTranslation).
  *     tags: [Categories]
- *     security:
- *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: languageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Language ID to translate category names.
  *     responses:
  *       200:
  *         description: A nested list of categories.
@@ -159,22 +165,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), requireSuperA
  *               items:
  *                 $ref: '#/components/schemas/Category'
  */
-router.get('/', passport.authenticate('jwt', { session: false }), async (req: any, res) => {
-    try {
-      let languageContext: string | 'all';
-      if (req.user && req.user.languageId) {
-        languageContext = req.user.languageId;
-      } else {
-        // If user has no languageId, default to 'all' to return all translations
-        languageContext = 'all';
-      }
-
-      const categories = await getCategories(languageContext);
-      res.status(200).json(categories);
-    } catch (error: any) {
-      res.status(500).json({ error: 'Failed to retrieve categories.' });
-    }
-  });
+router.get('/', getCategoriesController);
 
 /**
  * @swagger
