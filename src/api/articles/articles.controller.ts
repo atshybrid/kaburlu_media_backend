@@ -10,9 +10,18 @@ export const getPaginatedArticleController = async (req: Request, res: Response)
       skip: cursor ? 1 : 0,
       cursor: cursor ? { id: cursor } : undefined,
       orderBy: { createdAt: 'asc' },
+      include: { language: true },
     });
     const nextId = articles.length === limit ? articles[articles.length - 1].id : null;
-    res.json({ articles, nextId });
+    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+    const articlesOut = articles.map((a) => {
+      const langCode = (a as any).language?.code || 'en';
+      const cj: any = (a as any).contentJson || {};
+      const slugOrId = cj?.slug || a.id;
+      const canonicalUrl = `${canonicalDomain}/${langCode}/${slugOrId}`;
+      return { ...a, canonicalUrl };
+    });
+    res.json({ articles: articlesOut, nextId });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch articles.' });
   }
@@ -22,11 +31,16 @@ export const getPaginatedArticleController = async (req: Request, res: Response)
 export const getSingleArticleController = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const article = await prisma.article.findUnique({ where: { id } });
+    const article = await prisma.article.findUnique({ where: { id }, include: { language: true } });
     if (!article) {
       return res.status(404).json({ error: 'Article not found.' });
     }
-    res.json(article);
+    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+    const langCode = (article as any).language?.code || 'en';
+    const cj: any = (article as any).contentJson || {};
+    const slugOrId = cj?.slug || article.id;
+    const canonicalUrl = `${canonicalDomain}/${langCode}/${slugOrId}`;
+    res.json({ ...article, canonicalUrl });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch article.' });
   }
@@ -128,6 +142,7 @@ export const createArticleController = async (req: Request, res: Response) => {
           seoDescription: seoMeta.seoDescription || content,
           seoKeywords: seoMeta.seoKeywords || [],
         },
+    canonicalUrl,
     });
   } catch (error: any) {
     if (error.code === 'P2025') {

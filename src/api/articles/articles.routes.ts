@@ -28,6 +28,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
  *   get:
  *     summary: Get paginated articles (for swipe UI)
  *     tags: [Articles]
+ *     description: "Each article item includes a computed canonicalUrl field for sharing/deep links."
  *     parameters:
  *       - in: query
  *         name: limit
@@ -48,6 +49,7 @@ import { getPaginatedArticleController, getSingleArticleController } from './art
  *   get:
  *     summary: Get single article by ID
  *     tags: [Articles]
+ *     description: "Response includes canonicalUrl for this article."
  *     parameters:
  *       - in: path
  *         name: id
