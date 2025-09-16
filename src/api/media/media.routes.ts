@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { r2Client, R2_BUCKET, getPublicUrl } from '../../lib/r2';
+import { r2Client, R2_BUCKET, getPublicUrl, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT } from '../../lib/r2';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import multer from 'multer';
@@ -14,6 +14,19 @@ import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 
 const router = Router();
+// Simple configuration guard for R2. Returns a human-readable error if misconfigured.
+function ensureR2Configured(res: any): boolean {
+  const missing: string[] = [];
+  if (!R2_BUCKET) missing.push('R2_BUCKET');
+  if (!R2_ACCOUNT_ID && !R2_ENDPOINT) missing.push('R2_ACCOUNT_ID or R2_ENDPOINT');
+  if (!R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
+  if (!R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
+  if (missing.length > 0) {
+    res.status(500).json({ error: 'Storage not configured', missing });
+    return false;
+  }
+  return true;
+}
 
 // Configure ffmpeg/ffprobe binaries (works on Windows/Linux/Mac)
 try {
@@ -136,6 +149,7 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  */
 router.post('/presign-upload', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (!ensureR2Configured(res)) return;
     const { key, contentType } = req.body as { key: string; contentType?: string };
     if (!key) return res.status(400).json({ error: 'key is required' });
     const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType });
@@ -179,6 +193,7 @@ router.post('/presign-upload', passport.authenticate('jwt', { session: false }),
  */
 router.post('/presign-get', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (!ensureR2Configured(res)) return;
     const { key } = req.body as { key: string };
     if (!key) return res.status(400).json({ error: 'key is required' });
     const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
@@ -239,6 +254,7 @@ export default router;
  */
 router.post('/upload', passport.authenticate('jwt', { session: false }), upload.single('file'), async (req, res) => {
   try {
+    if (!ensureR2Configured(res)) return;
     const file = req.file;
     const { key, filename, kind, folder } = req.body as { key?: string; filename?: string; kind?: 'image' | 'video'; folder?: string };
     if (!file) return res.status(400).json({ error: 'file is required (multipart/form-data)' });
