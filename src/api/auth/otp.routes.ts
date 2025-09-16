@@ -32,6 +32,17 @@ const otpController = new OtpController();
  *                 id:
  *                   type: string
  *                   description: The ID of the OTP log entry.
+ *                 isRegistered:
+ *                   type: boolean
+ *                   description: Indicates whether the mobile number already exists as a registered user.
+ *                 notification:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     successCount:
+ *                       type: number
+ *                     failureCount:
+ *                       type: number
  *       400:
  *         description: Invalid mobile number
  */
