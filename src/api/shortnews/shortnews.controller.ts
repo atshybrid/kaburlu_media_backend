@@ -7,6 +7,7 @@ import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { aiEnabledFor } from '../../lib/aiConfig';
 import { getPrompt, renderPrompt } from '../../lib/prompts';
 import { aiGenerateText } from '../../lib/aiProvider';
+import { sendToTopic } from '../../lib/fcm';
 
 // Optional AI SEO generation using centralized prompts and provider abstraction
 async function generateSeoWithAI(
@@ -378,6 +379,40 @@ export const updateShortNewsStatus = async (req: Request, res: Response) => {
       where: { id },
       data: { status, aiRemark },
     });
+    // Push notification on approval transitions
+    try {
+      const approvedStatuses = new Set(['AI_APPROVED', 'DESK_APPROVED']);
+      if (approvedStatuses.has(String(status))) {
+        // Build notification payload
+        const mediaUrls = Array.isArray((updated as any).mediaUrls) ? (updated as any).mediaUrls : [];
+        const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
+        const primaryImage = imageUrls[0];
+        // Resolve language code for topics and canonical URL
+        let languageCode = 'en';
+        if (updated.language) {
+          const lang = await prisma.language.findUnique({ where: { id: updated.language as any } });
+          if (lang?.code) languageCode = lang.code;
+        }
+        const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+        const canonicalUrl = `${canonicalDomain}/${languageCode}/${updated.slug}`;
+        const titleText = updated.title;
+        const bodyText = (updated.content || '').slice(0, 120);
+        const dataPayload = { type: 'shortnews', shortNewsId: updated.id, url: canonicalUrl } as Record<string, string>;
+        // Send to language topic and category topic (best-effort)
+        try {
+          if (languageCode) {
+            await sendToTopic(`news-lang-${languageCode.toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
+          }
+          if ((updated as any).categoryId) {
+            await sendToTopic(`news-cat-${String((updated as any).categoryId).toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
+          }
+        } catch (e) {
+          console.warn('FCM send failed (non-fatal):', e);
+        }
+      }
+    } catch (e) {
+      console.warn('Notification error (non-fatal):', e);
+    }
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
     res.status(400).json({ success: false, error: 'Failed to update status' });
@@ -476,9 +511,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
     const cursorRaw = (req.query.cursor as string) || '';
     const languageIdParam = (req.query.languageId as string) || '';
-    if (!languageIdParam || typeof languageIdParam !== 'string') {
-      return res.status(400).json({ success: false, error: 'languageId is required' });
-    }
+    // Optional language filter: if provided, validate exists; else show all languages
     let cursor: { id: string; date: string } | null = null;
     if (cursorRaw) {
       try {
@@ -489,32 +522,82 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         }
       } catch {}
     }
-    // Validate languageId exists
-    const langCheck = await prisma.language.findUnique({ where: { id: languageIdParam } });
-    if (!langCheck) {
-      return res.status(400).json({ success: false, error: 'Invalid languageId' });
+    // Validate languageId if provided
+    if (languageIdParam) {
+      const langCheck = await prisma.language.findUnique({ where: { id: languageIdParam } });
+      if (!langCheck) {
+        return res.status(400).json({ success: false, error: 'Invalid languageId' });
+      }
     }
-  const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED'] }, language: languageIdParam };
+    const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED'] } };
+    if (languageIdParam) where.language = languageIdParam;
+
+    // Optional geo filter: if both lat and lon provided, filter within ~30km radius
+    const latStr = (req.query.latitude as string) || '';
+    const lonStr = (req.query.longitude as string) || '';
+    let centerLat: number | null = null;
+    let centerLon: number | null = null;
+    if (latStr && lonStr) {
+      const latNum = Number(latStr);
+      const lonNum = Number(lonStr);
+      if (
+        Number.isFinite(latNum) && Number.isFinite(lonNum) &&
+        latNum >= -90 && latNum <= 90 && lonNum >= -180 && lonNum <= 180
+      ) {
+        centerLat = latNum;
+        centerLon = lonNum;
+      } else {
+        return res.status(400).json({ success: false, error: 'Invalid latitude/longitude' });
+      }
+    }
     const items = await prisma.shortNews.findMany({
       where,
       include: {
         author: { select: { id: true, email: true, mobileNumber: true } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: Math.max(limit * 2, 100),
+      take: Math.max(limit * 10, 200),
     });
+    // apply optional geo-radius filtering (first bounding box for speed, then precise haversine <= 30km)
+    const R_KM = 6371; // Earth radius
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R_KM * c;
+    };
+    let geoFiltered = items;
+    if (centerLat != null && centerLon != null) {
+      const deltaLat = 30 / 111; // ~1 deg lat ~111km
+      const latRad = toRad(centerLat);
+      const cosLat = Math.max(0.000001, Math.cos(latRad));
+      const deltaLon = 30 / (111 * cosLat);
+      const minLat = centerLat - deltaLat;
+      const maxLat = centerLat + deltaLat;
+      const minLon = centerLon - deltaLon;
+      const maxLon = centerLon + deltaLon;
+      geoFiltered = items.filter((i: any) => {
+        const lat = i.latitude;
+        const lon = i.longitude;
+        if (lat == null || lon == null) return false;
+        if (lat < minLat || lat > maxLat || lon < minLon || lon > maxLon) return false;
+        return haversineKm(centerLat!, centerLon!, lat, lon) <= 30;
+      });
+    }
     const filtered = cursor
-      ? items.filter((i) => {
+      ? geoFiltered.filter((i) => {
           const d = i.createdAt instanceof Date ? i.createdAt : new Date(i.createdAt as any);
           const cd = new Date(cursor!.date);
           return d < cd || (d.getTime() === cd.getTime() && i.id < cursor!.id);
         })
-      : items;
+      : geoFiltered;
     const slice = filtered.slice(0, limit);
     const last = slice[slice.length - 1];
     const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
     // attach language info
-  const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
+    const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
     const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
     const langMap = new Map(langs.map((l) => [l.id, l]));
     // category names (language-aware: use each item's language)

@@ -353,6 +353,12 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *     tags: [ShortNews]
  *     parameters:
  *       - in: query
+ *         name: languageId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional language ID filter. If provided, only items in this language are returned.
+ *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
@@ -365,11 +371,19 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *           type: string
  *         description: Base64-encoded JSON { id, date }
  *       - in: query
- *         name: languageId
- *         required: true
+ *         name: latitude
+ *         required: false
  *         schema:
- *           type: string
- *         description: Language ID to filter the public feed. Required.
+ *           type: number
+ *           format: float
+ *         description: Optional latitude. If both latitude and longitude are provided, results are filtered to within ~30 km radius.
+ *       - in: query
+ *         name: longitude
+ *         required: false
+ *         schema:
+ *           type: number
+ *           format: float
+ *         description: Optional longitude. If both latitude and longitude are provided, results are filtered to within ~30 km radius.
  *     responses:
  *       200:
  *         description: Approved short news list enriched with categoryName, authorName, place/address, lat/lon, canonicalUrl, jsonLd, and primary media
