@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { r2Client, R2_BUCKET, getPublicUrl, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT } from '../../lib/r2';
-import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { r2Client, R2_BUCKET, getPublicUrl } from '../../lib/r2';
+import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import multer from 'multer';
 import prisma from '../../lib/prisma';
 import sharp from 'sharp';
@@ -18,9 +17,7 @@ const router = Router();
 function ensureR2Configured(res: any): boolean {
   const missing: string[] = [];
   if (!R2_BUCKET) missing.push('R2_BUCKET');
-  if (!R2_ACCOUNT_ID && !R2_ENDPOINT) missing.push('R2_ACCOUNT_ID or R2_ENDPOINT');
-  if (!R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
-  if (!R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
+  // Endpoint/credentials are configured in the r2 client. We only check bucket here.
   if (missing.length > 0) {
     res.status(500).json({ error: 'Storage not configured', missing });
     return false;
@@ -40,42 +37,39 @@ try {
 } catch {}
 
 // Allowed MIME types for images and videos
-const IMAGE_MIMES = new Set([
+const IMAGE_MIMES = new Set<string>([
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/gif',
-  'image/avif',
-  'image/heic',
-  'image/heif',
 ]);
-const VIDEO_MIMES = new Set([
+
+const VIDEO_MIMES = new Set<string>([
   'video/mp4',
-  'video/webm',
-  'video/ogg',
   'video/quicktime',
+  'video/x-matroska',
+  'video/webm',
+  'video/3gpp',
+  'video/3gpp2',
 ]);
 
-// Basic filter: only accept image/* or video/* files
-const upload = multer({
-  // Allow up to 100 MB to accommodate videos; we'll enforce image limit separately
-  limits: { fileSize: 100 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image/video files are allowed'));
-    }
-  },
-});
-
-function mimeToExt(mime: string, fallback: string): string {
-  const map: Record<string, string> = {
-    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'image/heic': 'heic', 'image/heif': 'heif',
-    'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv', 'video/quicktime': 'mov',
-  };
-  return map[mime] || fallback;
+function mimeToExt(mime: string, fallbackExt: string): string {
+  switch ((mime || '').toLowerCase()) {
+    case 'image/jpeg': return 'jpg';
+    case 'image/png': return 'png';
+    case 'image/webp': return 'webp';
+    case 'image/gif': return 'gif';
+    case 'video/mp4': return 'mp4';
+    case 'video/quicktime': return 'mov';
+    case 'video/x-matroska': return 'mkv';
+    case 'video/webm': return 'webm';
+    case 'video/3gpp': return '3gp';
+    case 'video/3gpp2': return '3g2';
+    default: return fallbackExt || 'bin';
+  }
 }
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
   // Write to temp file and transcode via ffmpeg to WebM (VP9 + Opus)
@@ -98,15 +92,15 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
       .on('end', async () => {
         try {
           const buf = await fs.readFile(outPath);
-          // cleanup
           await Promise.allSettled([fs.unlink(inPath), fs.unlink(outPath)]);
           resolve(buf);
         } catch (e) {
+          await Promise.allSettled([fs.unlink(inPath), fs.unlink(outPath)]);
           reject(e);
         }
       })
       .on('error', async (err: any) => {
-        await Promise.allSettled([fs.unlink(inPath), fs.unlink(outPath).catch(() => {})]);
+        await Promise.allSettled([fs.unlink(inPath), fs.unlink(outPath)]);
         reject(err);
       })
       .save(outPath);
@@ -115,104 +109,10 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
 
 /**
  * @swagger
- * /media/presign-upload:
- *   post:
- *     summary: Get a presigned URL to upload a file to R2
- *     tags: [Media]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               key:
- *                 type: string
- *                 example: "shortnews/2025/09/13/uuid.jpg"
- *               contentType:
- *                 type: string
- *                 example: "image/jpeg"
- *     responses:
- *       200:
- *         description: Presigned URL and public URL
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 uploadUrl:
- *                   type: string
- *                 publicUrl:
- *                   type: string
- */
-router.post('/presign-upload', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  try {
-    if (!ensureR2Configured(res)) return;
-    const { key, contentType } = req.body as { key: string; contentType?: string };
-    if (!key) return res.status(400).json({ error: 'key is required' });
-    const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType });
-    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 60 * 5 }); // 5 min
-    const publicUrl = getPublicUrl(key);
-    res.json({ uploadUrl, publicUrl });
-  } catch (e) {
-    console.error('presign-upload error', e);
-    res.status(500).json({ error: 'Failed to create presigned URL' });
-  }
-});
-
-/**
- * @swagger
- * /media/presign-get:
- *   post:
- *     summary: Get a presigned GET URL to download a private object
- *     tags: [Media]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               key:
- *                 type: string
- *                 example: "shortnews/2025/09/13/uuid.jpg"
- *     responses:
- *       200:
- *         description: Presigned GET URL
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 url:
- *                   type: string
- */
-router.post('/presign-get', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  try {
-    if (!ensureR2Configured(res)) return;
-    const { key } = req.body as { key: string };
-    if (!key) return res.status(400).json({ error: 'key is required' });
-    const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
-    const url = await getSignedUrl(r2Client, command, { expiresIn: 60 * 5 }); // 5 min
-    res.json({ url });
-  } catch (e) {
-    console.error('presign-get error', e);
-    res.status(500).json({ error: 'Failed to create presigned GET URL' });
-  }
-});
-
-export default router;
-
-/**
- * @swagger
  * /media/upload:
  *   post:
  *     summary: Upload a file directly (multipart/form-data)
- *     description: Useful for Swagger testing or admin uploads. For client apps, prefer presigned upload.
+ *     description: Converts images to WebP (except PNG stays PNG) and videos to WebM before storing in R2.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -228,7 +128,7 @@ export default router;
  *                 format: binary
  *               key:
  *                 type: string
- *                 description: Optional destination key. If omitted, server generates shortnews/YYYY/MM/DD/<timestamp-rand>.<ext>
+ *                 description: Optional destination key. If omitted, server generates <kind>/<YYYY>/<MM>/<DD>/<timestamp-rand>.<ext>
  *               filename:
  *                 type: string
  *                 description: Optional base filename (without extension). Server will append an extension based on MIME type.
@@ -432,10 +332,9 @@ router.get('/object', passport.authenticate('jwt', { session: false }), async (r
   try {
     const key = String(req.query.key || '');
     if (!key) return res.status(400).json({ error: 'key is required' });
-    const head = await r2Client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-    // Using GetObject because aws-sdk v3 doesn't expose a separate HeadObject in our imports here; adjusts behavior
+    const head = await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
     const contentType = (head as any).ContentType || 'application/octet-stream';
-    const contentLength = (head as any).ContentLength || 0;
+    const contentLength = Number((head as any).ContentLength || 0);
     const lastModified = (head as any).LastModified || null;
     res.json({ key, contentType, contentLength, lastModified });
   } catch (e) {
@@ -619,3 +518,7 @@ router.put('/rename', passport.authenticate('jwt', { session: false }), async (r
     res.status(500).json({ error: 'Rename failed' });
   }
 });
+
+// Note: The presign endpoints (/media/presign-upload, /media/presign-get) were intentionally removed.
+
+export default router;

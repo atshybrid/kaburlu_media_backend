@@ -152,7 +152,7 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
         let user;
         let effectiveRole;
 
-        const device = await prisma.device.findFirst({
+    const device = await prisma.device.findFirst({
             where: { deviceId: guestDto.deviceDetails.deviceId },
             include: { user: { include: { role: true } } },
         });
@@ -217,7 +217,21 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
                     }
                 }
             } else {
-                await prisma.device.delete({ where: { id: device.id } });
+                // Device exists but not linked to any user yet. Keep it; we'll link after creating user.
+                // Also update pushToken and location metadata on the device itself.
+                await prisma.device.update({
+                  where: { id: device.id },
+                  data: {
+                    pushToken: guestDto.deviceDetails.pushToken,
+                    latitude: guestDto.deviceDetails.location?.latitude,
+                    longitude: guestDto.deviceDetails.location?.longitude,
+                    accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
+                    placeId: guestDto.deviceDetails.location?.placeId,
+                    placeName: guestDto.deviceDetails.location?.placeName,
+                    address: guestDto.deviceDetails.location?.address,
+                    source: guestDto.deviceDetails.location?.source,
+                  } as any,
+                });
             }
         }
 
@@ -230,14 +244,40 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
                 },
             });
 
-            await prisma.device.create({
+            const existingLooseDevice = await prisma.device.findUnique({ where: { deviceId: guestDto.deviceDetails.deviceId } });
+            if (existingLooseDevice) {
+              await prisma.device.update({
+                where: { deviceId: guestDto.deviceDetails.deviceId },
                 data: {
-                    userId: user.id,
-                    deviceId: guestDto.deviceDetails.deviceId,
-                    deviceModel: guestDto.deviceDetails.deviceModel,
-                    pushToken: guestDto.deviceDetails.pushToken,
-                },
-            });
+                  userId: user.id,
+                  deviceModel: guestDto.deviceDetails.deviceModel,
+                  pushToken: guestDto.deviceDetails.pushToken,
+                  latitude: guestDto.deviceDetails.location?.latitude,
+                  longitude: guestDto.deviceDetails.location?.longitude,
+                  accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
+                  placeId: guestDto.deviceDetails.location?.placeId,
+                  placeName: guestDto.deviceDetails.location?.placeName,
+                  address: guestDto.deviceDetails.location?.address,
+                  source: guestDto.deviceDetails.location?.source,
+                } as any,
+              });
+            } else {
+              await prisma.device.create({
+                data: {
+                  userId: user.id,
+                  deviceId: guestDto.deviceDetails.deviceId,
+                  deviceModel: guestDto.deviceDetails.deviceModel,
+                  pushToken: guestDto.deviceDetails.pushToken,
+                  latitude: guestDto.deviceDetails.location?.latitude,
+                  longitude: guestDto.deviceDetails.location?.longitude,
+                  accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
+                  placeId: guestDto.deviceDetails.location?.placeId,
+                  placeName: guestDto.deviceDetails.location?.placeName,
+                  address: guestDto.deviceDetails.location?.address,
+                  source: guestDto.deviceDetails.location?.source,
+                } as any,
+              });
+            }
 
       if (guestDto.deviceDetails.location) {
         await prisma.userLocation.create({

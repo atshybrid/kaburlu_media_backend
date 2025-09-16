@@ -1,9 +1,9 @@
--- AlterTable: add extended fields to UserLocation
+-- AlterTable: add extended fields to UserLocation (idempotent)
 ALTER TABLE "public"."UserLocation"
-ADD COLUMN "accuracyMeters" DOUBLE PRECISION,
-ADD COLUMN "provider" TEXT,
-ADD COLUMN "timestampUtc" TIMESTAMP(3),
-ADD COLUMN "placeId" TEXT,
-ADD COLUMN "placeName" TEXT,
-ADD COLUMN "address" TEXT,
-ADD COLUMN "source" TEXT;
+ADD COLUMN IF NOT EXISTS "accuracyMeters" DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS "provider" TEXT,
+ADD COLUMN IF NOT EXISTS "timestampUtc" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "placeId" TEXT,
+ADD COLUMN IF NOT EXISTS "placeName" TEXT,
+ADD COLUMN IF NOT EXISTS "address" TEXT,
+ADD COLUMN IF NOT EXISTS "source" TEXT;

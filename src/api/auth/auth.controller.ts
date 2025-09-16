@@ -82,6 +82,8 @@ export const registerGuestController = async (req: Request, res: Response) => {
     }
   };
 import * as bcrypt from 'bcrypt';
+import { getAdmin } from '../../lib/firebase';
+import jwtLib from 'jsonwebtoken';
 
 export const upgradeGuestController = async (req: Request, res: Response) => {
   try {
@@ -114,5 +116,431 @@ export const upgradeGuestController = async (req: Request, res: Response) => {
     res.json({ success: true, user: updatedUser });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Create/upgrade citizen reporter by mobile number with mandatory location and full name
+export const createCitizenReporterByMobileController = async (req: Request, res: Response) => {
+  try {
+    const { mobileNumber, mpin, fullName, location, pushToken, deviceId, languageId } = req.body as {
+      mobileNumber: string;
+      mpin: string;
+      fullName: string;
+      location: {
+        latitude: number;
+        longitude: number;
+        accuracyMeters?: number;
+        provider?: string;
+        timestampUtc?: string;
+        placeId?: string;
+        placeName?: string;
+        address?: string;
+        source?: string;
+      };
+      pushToken?: string;
+      deviceId?: string;
+      languageId: string;
+    };
+
+    if (!mobileNumber || !mpin || !fullName || !location || !languageId) {
+      return res.status(400).json({ success: false, message: 'mobileNumber, mpin, fullName, languageId and location are required' });
+    }
+    if (!/^\d{4}$/.test(mpin)) {
+      return res.status(400).json({ success: false, message: 'mpin must be a 4-digit number' });
+    }
+    if (typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+      return res.status(400).json({ success: false, message: 'location.latitude and location.longitude are required numbers' });
+    }
+    const lang = await prisma.language.findUnique({ where: { id: languageId } });
+    if (!lang) {
+      return res.status(400).json({ success: false, message: 'Invalid languageId' });
+    }
+
+    const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+    if (!citizenRole) return res.status(500).json({ success: false, message: 'Citizen reporter role not found' });
+
+    const hashedMpin = await bcrypt.hash(mpin, 10);
+
+    // Try to find an existing user by mobile or a guest user linked via deviceId
+    let user = await prisma.user.findFirst({ where: { mobileNumber } });
+    if (!user && deviceId) {
+      const guestUser = await prisma.user.findFirst({ where: { devices: { some: { deviceId } }, role: { name: 'GUEST' } } });
+      if (guestUser) user = guestUser;
+    }
+
+    if (user) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          mobileNumber,
+          mpin: hashedMpin,
+          roleId: citizenRole.id,
+          languageId: languageId,
+          status: 'ACTIVE',
+          upgradedAt: new Date(),
+        },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          mobileNumber,
+          mpin: hashedMpin,
+          roleId: citizenRole.id,
+          languageId: languageId,
+          status: 'ACTIVE',
+          upgradedAt: new Date(),
+        },
+      });
+    }
+
+    // Upsert profile full name
+    await prisma.userProfile.upsert({
+      where: { userId: user.id },
+      update: { fullName },
+      create: { userId: user.id, fullName },
+    });
+
+    // Upsert user location (mandatory)
+    await prisma.userLocation.upsert({
+      where: { userId: user.id },
+      update: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+      create: {
+        userId: user.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+    });
+
+    // Link/update device if provided
+    if (deviceId) {
+      const existing = await prisma.device.findUnique({ where: { deviceId } });
+      if (existing) {
+        await prisma.device.update({
+          where: { deviceId },
+          data: {
+            userId: user.id,
+            pushToken: pushToken as any,
+            latitude: (location as any).latitude,
+            longitude: (location as any).longitude,
+            accuracyMeters: (location as any).accuracyMeters,
+            placeId: (location as any).placeId,
+            placeName: (location as any).placeName,
+            address: (location as any).address,
+            source: (location as any).source,
+          } as any,
+        });
+      } else {
+        await prisma.device.create({
+          data: {
+            deviceId,
+            deviceModel: 'unknown',
+            userId: user.id,
+            pushToken: pushToken as any,
+            latitude: (location as any).latitude,
+            longitude: (location as any).longitude,
+            accuracyMeters: (location as any).accuracyMeters,
+            placeId: (location as any).placeId,
+            placeName: (location as any).placeName,
+            address: (location as any).address,
+            source: (location as any).source,
+          } as any,
+        });
+      }
+    }
+
+    // Build login-style response
+    const role = await prisma.role.findUnique({ where: { id: user.roleId } });
+    const payload = { sub: user.id, role: role?.name, permissions: role?.permissions } as any;
+    const jwtToken = jwtLib.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+    const refreshToken = jwtLib.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+    const responseData: any = {
+      jwt: jwtToken,
+      refreshToken,
+      expiresIn: 86400,
+      user: { userId: user.id, role: role?.name, languageId: user.languageId },
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+    };
+    return res.status(200).json({ success: true, message: 'Operation successful', data: responseData });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, message: e.message || 'Internal server error' });
+  }
+};
+
+export const upsertDeviceController = async (req: Request, res: Response) => {
+  try {
+    const { deviceId, deviceModel, pushToken, latitude, longitude, accuracyMeters, placeId, placeName, address, source } = req.body;
+    if (!deviceId || !deviceModel) {
+      return res.status(400).json({ success: false, message: 'deviceId and deviceModel are required' });
+    }
+    // Upsert by deviceId; do not create user here
+    const existing = await prisma.device.findUnique({ where: { deviceId } });
+    let device;
+    if (existing) {
+      device = await prisma.device.update({
+        where: { deviceId },
+        data: {
+          deviceModel,
+          pushToken,
+          latitude: latitude as any,
+          longitude: longitude as any,
+          accuracyMeters: accuracyMeters as any,
+          placeId: placeId as any,
+          placeName: placeName as any,
+          address: address as any,
+          source: source as any,
+        } as any,
+      });
+    } else {
+      device = await prisma.device.create({
+        data: {
+          deviceId,
+          deviceModel,
+          pushToken,
+          latitude: latitude as any,
+          longitude: longitude as any,
+          accuracyMeters: accuracyMeters as any,
+          placeId: placeId as any,
+          placeName: placeName as any,
+          address: address as any,
+          source: source as any,
+        } as any,
+      });
+    }
+    res.status(200).json({ success: true, device });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+export const loginWithGoogleController = async (req: Request, res: Response) => {
+  try {
+    const { googleIdToken, deviceId } = req.body;
+    if (!googleIdToken) return res.status(400).json({ success: false, message: 'googleIdToken is required' });
+    const admin = getAdmin();
+    const decoded = await admin.auth().verifyIdToken(googleIdToken);
+    const firebaseUid = decoded.uid;
+
+    // Find user by firebaseUid
+  let user = await prisma.user.findUnique({ where: { firebaseUid } as any });
+    if (!user) {
+      // Not found: return 404 to instruct client to call upgrade
+      return res.status(404).json({ success: false, code: 'USER_NOT_FOUND', message: 'No user for this Google account. Call upgrade.' });
+    }
+
+    // Link device if provided
+    if (deviceId) {
+      await prisma.device.update({ where: { deviceId }, data: { userId: user.id } }).catch(async () => {
+        // create device if missing
+        await prisma.device.create({ data: { deviceId, deviceModel: 'unknown', userId: user.id } });
+      });
+    }
+
+    const role = await prisma.role.findUnique({ where: { id: user.roleId } });
+    const payload = { sub: user.id, role: role?.name, permissions: role?.permissions };
+    const jwtToken = require('jsonwebtoken').sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+    const refreshToken = require('jsonwebtoken').sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+    const result: any = {
+      jwt: jwtToken,
+      refreshToken,
+      expiresIn: 86400,
+      user: { userId: user.id, role: role?.name, languageId: user.languageId },
+    };
+    try {
+      const loc = await prisma.userLocation.findUnique({ where: { userId: user.id } });
+      if (loc) {
+        result.location = {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracyMeters: (loc as any).accuracyMeters ?? undefined,
+          provider: (loc as any).provider ?? undefined,
+          timestampUtc: (loc as any).timestampUtc ? new Date((loc as any).timestampUtc as any).toISOString() : undefined,
+          placeId: (loc as any).placeId ?? undefined,
+          placeName: (loc as any).placeName ?? undefined,
+          address: (loc as any).address ?? undefined,
+          source: (loc as any).source ?? undefined,
+        };
+      }
+    } catch {}
+    return res.json({ success: true, message: 'Operation successful', data: result });
+  } catch (e: any) {
+    return res.status(400).json({ success: false, message: e.message });
+  }
+};
+
+export const upgradeCitizenReporterGoogleController = async (req: Request, res: Response) => {
+  try {
+    const { googleIdToken, email, languageId, pushToken, location } = req.body as {
+      googleIdToken: string;
+      email?: string;
+      languageId: string;
+      pushToken?: string;
+      location: {
+        latitude: number;
+        longitude: number;
+        accuracyMeters?: number;
+        provider?: string;
+        timestampUtc?: string;
+        placeId?: string;
+        placeName?: string;
+        address?: string;
+        source?: string;
+      };
+    };
+    if (!googleIdToken) return res.status(400).json({ success: false, message: 'googleIdToken is required' });
+    if (!languageId) return res.status(400).json({ success: false, message: 'languageId is required' });
+    if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+      return res.status(400).json({ success: false, message: 'location with latitude and longitude is required' });
+    }
+    const lang = await prisma.language.findUnique({ where: { id: languageId } });
+    if (!lang) return res.status(400).json({ success: false, message: 'Invalid languageId' });
+    const admin = getAdmin();
+    const decoded = await admin.auth().verifyIdToken(googleIdToken);
+    const firebaseUid = decoded.uid;
+
+    // If user exists, return conflict
+  let existing = await prisma.user.findUnique({ where: { firebaseUid } as any });
+    if (existing) {
+      // Update language if different
+      if (existing.languageId !== languageId) {
+        existing = await prisma.user.update({ where: { id: existing.id }, data: { languageId } });
+      }
+      // Upsert user location and update device
+      await prisma.userLocation.upsert({
+        where: { userId: existing.id },
+        update: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracyMeters: (location as any).accuracyMeters,
+          provider: (location as any).provider,
+          timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+          placeId: (location as any).placeId,
+          placeName: (location as any).placeName,
+          address: (location as any).address,
+          source: (location as any).source,
+        },
+        create: {
+          userId: existing.id,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracyMeters: (location as any).accuracyMeters,
+          provider: (location as any).provider,
+          timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+          placeId: (location as any).placeId,
+          placeName: (location as any).placeName,
+          address: (location as any).address,
+          source: (location as any).source,
+        },
+      });
+      // Note: pushToken is optional and not stored here without a deviceId. Use /auth/device to upsert a device with pushToken.
+      // Issue tokens like login for existing user
+      const role = await prisma.role.findUnique({ where: { id: existing.roleId } });
+      const payload = { sub: existing.id, role: role?.name, permissions: role?.permissions } as any;
+      const jwtToken = jwtLib.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+      const refreshToken = jwtLib.sign({ sub: existing.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+      const data: any = {
+        jwt: jwtToken,
+        refreshToken,
+        expiresIn: 86400,
+        user: { userId: existing.id, role: role?.name, languageId: languageId },
+        location: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracyMeters: (location as any).accuracyMeters,
+          provider: (location as any).provider,
+          timestampUtc: location.timestampUtc,
+          placeId: (location as any).placeId,
+          placeName: (location as any).placeName,
+          address: (location as any).address,
+          source: (location as any).source,
+        },
+      };
+      return res.status(200).json({ success: true, message: 'Operation successful', data });
+    }
+    const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+    if (!citizenRole) return res.status(500).json({ success: false, message: 'Citizen reporter role not found' });
+
+  const user = await prisma.user.create({ data: { firebaseUid, email: email || decoded.email || null as any, roleId: citizenRole.id, languageId, status: 'ACTIVE' } as any });
+
+    // Upsert user location (mandatory)
+    await prisma.userLocation.upsert({
+      where: { userId: user.id },
+      update: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+      create: {
+        userId: user.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc ? new Date(location.timestampUtc) : undefined,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+    });
+
+    // Note: pushToken is optional and not stored here without a deviceId. Use /auth/device to upsert a device with pushToken.
+    // Issue tokens and return login-style response
+    const role = await prisma.role.findUnique({ where: { id: user.roleId } });
+    const payload = { sub: user.id, role: role?.name, permissions: role?.permissions } as any;
+    const jwtToken = jwtLib.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+    const refreshToken = jwtLib.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+    const data: any = {
+      jwt: jwtToken,
+      refreshToken,
+      expiresIn: 86400,
+      user: { userId: user.id, role: role?.name, languageId: user.languageId },
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: (location as any).accuracyMeters,
+        provider: (location as any).provider,
+        timestampUtc: location.timestampUtc,
+        placeId: (location as any).placeId,
+        placeName: (location as any).placeName,
+        address: (location as any).address,
+        source: (location as any).source,
+      },
+    };
+    return res.json({ success: true, message: 'Operation successful', data });
+  } catch (e: any) {
+    return res.status(400).json({ success: false, message: e.message });
   }
 };
