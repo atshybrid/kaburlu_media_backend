@@ -210,6 +210,23 @@ export const createShortNews = async (req: Request, res: Response) => {
         aiSensitive,
       },
     });
+    // If AI directly approved, push notification immediately
+    try {
+      if (initialStatus === 'AI_APPROVED') {
+        const primaryImage = imageCandidates[0];
+        const titleText = titleToSave;
+        const bodyText = content.slice(0, 120);
+        const dataPayload = { type: 'shortnews', shortNewsId: shortNews.id, url: canonicalUrl } as Record<string, string>;
+        if (languageCode) {
+          await sendToTopic(`news-lang-${languageCode.toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
+        }
+        if (categoryId) {
+          await sendToTopic(`news-cat-${String(categoryId).toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
+        }
+      }
+    } catch (e) {
+      console.warn('FCM send failed on AI approval (non-fatal):', e);
+    }
     res.status(201).json({
       success: true,
       data: {
