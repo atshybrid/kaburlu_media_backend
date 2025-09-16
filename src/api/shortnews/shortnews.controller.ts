@@ -279,11 +279,7 @@ export const listShortNews = async (req: Request, res: Response) => {
     }
 
     const languageId = user.languageId;
-    // get saved location from profile
-    const userLocation = await prisma.userLocation.findUnique({ where: { userId: user.id } });
-    const hasLocation = !!(userLocation && typeof userLocation.latitude === 'number' && typeof userLocation.longitude === 'number');
-
-    // prefetch pool: same language; do not restrict to coords/desk to ensure we include all when no location
+    // Prefetch pool: same language; include all categories and all statuses for this user’s language
     const seed = await prisma.shortNews.findMany({
       where: { language: languageId },
       include: {
@@ -299,26 +295,8 @@ export const listShortNews = async (req: Request, res: Response) => {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 10, 200),
     });
-
-    // in-memory filter: within 20km of saved location OR authored by NEWS_DESK
-    const R = 6371; // km
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const withinRadiusOrDesk = seed.filter((item) => {
-      const isDesk = item.author?.role?.name === 'NEWS_DESK' || item.author?.role?.name === 'NEWS_DESK_ADMIN';
-      const isSelf = item.authorId === user.id;
-      if (!hasLocation) return true; // no location -> keep all (latest by language)
-      if (isDesk || isSelf) return true; // always allow desk or self-authored
-      if (item.latitude == null || item.longitude == null) return false;
-      const dLat = toRad(item.latitude - (userLocation!.latitude as number));
-      const dLon = toRad(item.longitude - (userLocation!.longitude as number));
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(userLocation!.latitude)) * Math.cos(toRad(item.latitude)) * Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distance = R * c;
-      return distance <= 20;
-    });
-
-    // choose collection based on location presence
-    const collection = hasLocation ? withinRadiusOrDesk : seed;
+    // Return all categories and all statuses for this language (no geo-radius filtering)
+    const collection = seed;
 
     // apply cursor (items strictly after cursor in our desc ordering => older than cursor)
     const afterCursor = cursor
@@ -492,7 +470,7 @@ export const updateShortNews = async (req: Request, res: Response) => {
   }
 };
 
-// Public feed: only DESK_APPROVED items, requires languageId query param
+// Public feed: DESK_APPROVED and AI_APPROVED items, requires languageId query param
 export const listApprovedShortNews = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
@@ -516,7 +494,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     if (!langCheck) {
       return res.status(400).json({ success: false, error: 'Invalid languageId' });
     }
-    const where: any = { status: 'DESK_APPROVED', language: languageIdParam };
+  const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED'] }, language: languageIdParam };
     const items = await prisma.shortNews.findMany({
       where,
       include: {
@@ -707,5 +685,135 @@ export const listShortNewsByStatus = async (req: Request, res: Response) => {
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Failed to fetch moderation list' });
+  }
+};
+
+// Admin/Desk wide listing with optional filters and pagination
+export const listAllShortNews = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as User & { role?: { name?: string } };
+    if (!user?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const roleName = (user?.role?.name || '').toUpperCase();
+    const isSuper = roleName === 'SUPERADMIN' || roleName === 'SUPER_ADMIN';
+
+    const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
+    const cursorRaw = (req.query.cursor as string) || '';
+    let cursor: { id: string; date: string } | null = null;
+    if (cursorRaw) {
+      try {
+        const decoded = Buffer.from(cursorRaw, 'base64').toString('utf-8');
+        const parsed = JSON.parse(decoded);
+        if (parsed && typeof parsed.id === 'string' && typeof parsed.date === 'string') {
+          cursor = { id: parsed.id, date: parsed.date };
+        }
+      } catch {}
+    }
+
+    const where: any = {};
+    const qLanguageId = (req.query.languageId as string) || undefined;
+    const qStatus = (req.query.status as string) || undefined;
+    const qCategoryId = (req.query.categoryId as string) || undefined;
+    if (qStatus) where.status = qStatus;
+    if (qCategoryId) where.categoryId = qCategoryId;
+    if (isSuper) {
+      if (qLanguageId) where.language = qLanguageId;
+    } else {
+      // Non-super roles are scoped to their own language
+      where.language = user.languageId as any;
+    }
+
+    const items = await prisma.shortNews.findMany({
+      where,
+      include: {
+        author: {
+          select: { id: true, email: true, mobileNumber: true, role: { select: { name: true } } },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.max(limit * 2, 100),
+    });
+
+    const filtered = cursor
+      ? items.filter((i) => {
+          const d = i.createdAt instanceof Date ? i.createdAt : new Date(i.createdAt as any);
+          const cd = new Date(cursor!.date);
+          return d < cd || (d.getTime() === cd.getTime() && i.id < cursor!.id);
+        })
+      : items;
+
+    const slice = filtered.slice(0, limit);
+    const last = slice[slice.length - 1];
+    const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
+
+    // Enrich language info
+    const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
+    const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
+    const langMap = new Map(langs.map((l) => [l.id, l]));
+
+    // Category names (language-aware best effort): prefer translation in each item's language, fallback to base name
+    const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
+    const sliceLangIds = Array.from(new Set(slice.map((i: any) => i.language).filter((x: any) => !!x)));
+    const [catTranslations, cats] = await Promise.all([
+      prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: { in: sliceLangIds as any } } }),
+      prisma.category.findMany({ where: { id: { in: categoryIds } } }),
+    ]);
+    const catNameById = new Map<string, string>();
+    const catNameByCatLang = new Map<string, string>();
+    for (const ct of catTranslations) {
+      catNameById.set(ct.categoryId, ct.name);
+      catNameByCatLang.set(`${ct.categoryId}:${ct.language}`, ct.name);
+    }
+    for (const c of cats) if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+
+    // Author last known location for placeName/address
+    const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
+    const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
+    const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
+
+    const data = slice.map((i: any) => {
+      const l = i.language ? langMap.get(i.language as any) : undefined;
+      const categoryName = i.categoryId ? (catNameByCatLang.get(`${i.categoryId}:${i.language}`) ?? catNameById.get(i.categoryId) ?? null) : null;
+      const author = i.author as any;
+      const authorName = author?.email || author?.mobileNumber || null;
+      const loc = authorLocByUser.get(i.authorId) as any;
+      const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
+      const address = i.address ?? (loc as any)?.address ?? null;
+      // derive canonical url and primary media for convenience
+      const languageCode = l?.code || 'en';
+      const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+      const canonicalUrl = `${canonicalDomain}/${languageCode}/${i.slug}`;
+      const mediaUrls = Array.isArray(i.mediaUrls) ? i.mediaUrls : [];
+      const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
+      const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
+      const primaryImageUrl = imageUrls[0] || null;
+      const primaryVideoUrl = videoUrls[0] || null;
+      return {
+        ...i,
+        mediaUrls,
+        primaryImageUrl,
+        primaryVideoUrl,
+        canonicalUrl,
+        languageId: i.language ?? null,
+        languageName: l?.name ?? null,
+        languageCode: l?.code ?? null,
+        categoryName,
+        authorName,
+        placeName,
+        address,
+        latitude: i.latitude ?? null,
+        longitude: i.longitude ?? null,
+        accuracyMeters: i.accuracyMeters ?? null,
+        provider: i.provider ?? null,
+        timestampUtc: i.timestampUtc ?? null,
+        placeId: i.placeId ?? null,
+        source: i.source ?? null,
+      } as any;
+    });
+
+    return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
+  } catch (e) {
+    console.error('Failed to fetch all short news:', e);
+    return res.status(500).json({ success: false, error: 'Failed to fetch all short news' });
   }
 };

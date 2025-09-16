@@ -231,6 +231,56 @@ const router = Router();
  */
 router.post('/', passport.authenticate('jwt', { session: false }), shortNewsController.createShortNews);
 router.get('/', passport.authenticate('jwt', { session: false }), shortNewsController.listShortNews);
+
+// Role guard utility for privileged reads
+function requireDeskOrAdmin(req: any, res: any, next: any) {
+	const roleName = (req.user?.role?.name || '').toUpperCase();
+	const allowed = new Set(['SUPERADMIN', 'SUPER_ADMIN', 'LANGUAGE_ADMIN', 'NEWS_DESK', 'NEWS_DESK_ADMIN']);
+	if (allowed.has(roleName)) return next();
+	return res.status(403).json({ error: 'Forbidden: desk/admin access only' });
+}
+
+/**
+ * @swagger
+ * /shortnews/all:
+ *   get:
+ *     summary: List all short news (admin/desk)
+ *     description: Returns all short news across categories and statuses. Optional filters by languageId, status, and categoryId.
+ *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: languageId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED]
+ *       - in: query
+ *         name: categoryId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           minimum: 1
+ *           maximum: 50
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *           example: eyJpZCI6IjEyMyIsImRhdGUiOiIyMDI1LTA5LTEzVDA3OjAwOjAwLjAwMFoifQ==
+ *         description: Base64-encoded JSON { id, date }
+ *     responses:
+ *       200:
+ *         description: List of short news (admin/desk) with pagination.
+ */
+router.get('/all', passport.authenticate('jwt', { session: false }), requireDeskOrAdmin, shortNewsController.listAllShortNews);
 /**
  * @swagger
  * /shortnews/{id}:
@@ -299,7 +349,7 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  * @swagger
  * /shortnews/public:
  *   get:
- *     summary: Public feed - approved only
+ *     summary: Public feed - approved only (AI_APPROVED and DESK_APPROVED)
  *     tags: [ShortNews]
  *     parameters:
  *       - in: query
