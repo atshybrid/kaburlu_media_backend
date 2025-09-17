@@ -132,18 +132,32 @@ router.post('/set-mpin', otpController.setMpin);
  *                 isRegistered:
  *                   type: boolean
  *                   description: True if mobile number is registered (only present when mpinStatus is false).
+ *                 roleId:
+ *                   type: string
+ *                   nullable: true
+ *                   description: User role id if user exists, otherwise null.
+ *                 roleName:
+ *                   type: string
+ *                   nullable: true
+ *                   description: User role name if user exists, otherwise null.
  *             examples:
  *               MPIN set:
  *                 value:
  *                   mpinStatus: true
+ *                   roleId: "<role-id>"
+ *                   roleName: "CITIZEN_REPORTER"
  *               MPIN not set, registered:
  *                 value:
  *                   mpinStatus: false
  *                   isRegistered: true
+ *                   roleId: "<role-id>"
+ *                   roleName: "CITIZEN_REPORTER"
  *               MPIN not set, not registered:
  *                 value:
  *                   mpinStatus: false
  *                   isRegistered: false
+ *                   roleId: null
+ *                   roleName: null
  *       400:
  *         description: Invalid request
  */

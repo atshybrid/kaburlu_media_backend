@@ -80,17 +80,20 @@ export class OtpService {
 
     async getMpinStatus(mobileNumber: string) {
         const user = await prisma.user.findUnique({
-            where: {
-                mobileNumber,
-            },
+            where: { mobileNumber },
+            include: { role: true },
         });
 
         if (!user) {
-            return { mpinStatus: false, isRegistered: false };
+            return { mpinStatus: false, isRegistered: false, roleId: null, roleName: null };
         }
+
+        const roleId = user.roleId || null;
+        const roleName = user.role?.name || null;
+
         if (user.mpin) {
-            return { mpinStatus: true };
+            return { mpinStatus: true, roleId, roleName };
         }
-        return { mpinStatus: false, isRegistered: true };
+        return { mpinStatus: false, isRegistered: true, roleId, roleName };
     }
 }
