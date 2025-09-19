@@ -17,6 +17,7 @@ import usersRoutes from './api/users/users.routes';
 import authRoutes from './api/auth/auth.routes';
 import otpRoutes from './api/auth/otp.routes';
 import articlesRoutes from './api/articles/articles.routes';
+import articleReadRoutes from './api/articles/articleRead.routes';
 import likesRoutes from './api/likes/likes.routes';
 import commentsRoutes from './api/comments/comments.routes';
 import locationsRoutes from './api/locations/locations.routes';
@@ -97,6 +98,7 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API Routes (no version prefix) - legacy support
 app.use('/articles', articlesRoutes);
+app.use('/articles/read', articleReadRoutes);
 app.use('/shortnews', shortNewsRoutes);
 app.use('/likes', likesRoutes);
 app.use('/comments', commentsRoutes);
@@ -119,6 +121,7 @@ app.use('/prompts', promptsRoutes);
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
 apiV1.use('/articles', articlesRoutes);
+apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/shortnews', shortNewsRoutes);
 apiV1.use('/likes', likesRoutes);
 apiV1.use('/comments', commentsRoutes);

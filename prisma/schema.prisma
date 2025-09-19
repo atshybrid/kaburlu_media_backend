@@ -245,7 +245,7 @@ model Article {
   updatedAt         DateTime      @updatedAt
   articleViews      ArticleView[]
   contentJson       Json?
-    articleReads      ArticleRead[]
+  articleReads      ArticleRead[]
 }
 
 model ArticleView {
@@ -265,6 +265,12 @@ model ArticleRead {
   article   Article  @relation(fields: [articleId], references: [id])
   articleId String
   readAt    DateTime @default(now())
+  totalTimeMs      Int      @default(0)
+  maxScrollPercent Float    @default(0)
+  completed        Boolean  @default(false)
+  lastEventAt      DateTime?
+  completedAt      DateTime?
+  sessionsCount    Int      @default(0)
 
   @@unique([userId, articleId])
 }

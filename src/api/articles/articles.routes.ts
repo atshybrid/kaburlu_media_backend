@@ -302,38 +302,4 @@ export default router;
  *       200:
  *         description: Dislike removed
  *
- * /articles/read:
- *   post:
- *     summary: Mark article as read
- *     tags: [Engagement, Engagement - Reads]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               articleId:
- *                 type: string
- *     responses:
- *       201:
- *         description: Article marked as read
- *
- * /articles/read/{articleId}:
- *   get:
- *     summary: Get read status for an article
- *     tags: [Engagement, Engagement - Reads]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: articleId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Read status
  */
