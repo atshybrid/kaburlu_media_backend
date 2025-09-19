@@ -196,6 +196,16 @@ const router = Router();
  *                       categoryName: { type: string, nullable: true }
  *                       authorId: { type: string }
  *                       authorName: { type: string, nullable: true, description: "Currently email or mobile number" }
+ *                       author:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, nullable: true }
+ *                           fullName: { type: string, nullable: true }
+ *                           profilePhotoUrl: { type: string, nullable: true }
+ *                           email: { type: string, nullable: true }
+ *                           mobileNumber: { type: string, nullable: true }
+ *                           roleName: { type: string, nullable: true }
+ *                           reporterType: { type: string, nullable: true, description: "Alias of roleName for clients" }
  *                       isOwner: { type: boolean, description: "True if the authenticated user authored this item" }
  *                       isRead: { type: boolean, description: "True if the authenticated user marked/read this item (ShortNewsRead)" }
  *                       placeName: { type: string, nullable: true }

@@ -309,6 +309,7 @@ export const listShortNews = async (req: Request, res: Response) => {
             email: true,
             mobileNumber: true,
             role: { select: { name: true } },
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
           },
         },
       },
@@ -363,7 +364,7 @@ export const listShortNews = async (req: Request, res: Response) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
       const categoryName = i.categoryId ? catNameById.get(i.categoryId) ?? null : null;
       const author = i.author as any;
-      const authorName = author?.email || author?.mobileNumber || null; // assumption: no explicit name field
+  const authorName = author?.profile?.fullName || author?.email || author?.mobileNumber || null; // prefer fullName
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
@@ -377,7 +378,17 @@ export const listShortNews = async (req: Request, res: Response) => {
         languageName: l?.name ?? null,
         languageCode: l?.code ?? null,
         categoryName,
+        // Backward compatibility: keep authorName at top level
         authorName,
+        author: {
+          id: author?.id || null,
+            fullName: author?.profile?.fullName || null,
+            profilePhotoUrl: author?.profile?.profilePhotoUrl || null,
+            email: author?.email || null,
+            mobileNumber: author?.mobileNumber || null,
+            roleName: author?.role?.name || null,
+            reporterType: author?.role?.name || null,
+        },
         isOwner,
         isRead,
         placeName,
