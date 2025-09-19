@@ -152,6 +152,11 @@ const router = Router();
  *           type: string
  *           example: eyJpZCI6IjEyMyIsImRhdGUiOiIyMDI1LTA5LTEzVDA3OjAwOjAwLjAwMFoifQ==
  *         description: Base64-encoded JSON { id, date } to get next items after this cursor
+ *       - in: query
+ *         name: all
+ *         schema:
+ *           type: boolean
+ *         description: If true, return short news across ALL languages (admin-style global feed) instead of restricting to the authenticated user's language.
  *     responses:
  *       200:
  *         description: List of short news with pageInfo { nextCursor, hasMore }.
@@ -191,6 +196,8 @@ const router = Router();
  *                       categoryName: { type: string, nullable: true }
  *                       authorId: { type: string }
  *                       authorName: { type: string, nullable: true, description: "Currently email or mobile number" }
+ *                       isOwner: { type: boolean, description: "True if the authenticated user authored this item" }
+ *                       isRead: { type: boolean, description: "True if the authenticated user marked/read this item (ShortNewsRead)" }
  *                       placeName: { type: string, nullable: true }
  *                       address: { type: string, nullable: true }
  *                       latitude: { type: number, nullable: true }

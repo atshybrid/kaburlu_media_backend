@@ -297,9 +297,11 @@ export const listShortNews = async (req: Request, res: Response) => {
     }
 
     const languageId = user.languageId;
-    // Prefetch pool: same language; include all categories and all statuses for this user’s language
+    const all = String(req.query.all || '').toLowerCase() === 'true';
+    const where: any = all ? {} : { language: languageId };
+    // Prefetch pool: optionally global when all=true; include author for ownership + future role-based filtering
     const seed = await prisma.shortNews.findMany({
-      where: { language: languageId },
+      where,
       include: {
         author: {
           select: {
@@ -313,7 +315,6 @@ export const listShortNews = async (req: Request, res: Response) => {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 10, 200),
     });
-    // Return all categories and all statuses for this language (no geo-radius filtering)
     const collection = seed;
 
     // apply cursor (items strictly after cursor in our desc ordering => older than cursor)
@@ -344,6 +345,16 @@ export const listShortNews = async (req: Request, res: Response) => {
   const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
   const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
   const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
+    // Pre-fetch read markers for current user (ShortNewsRead)
+    let readSet: Set<string> = new Set();
+    if (slice.length) {
+      const readRows = await prisma.shortNewsRead.findMany({
+        where: { userId: user.id, shortNewsId: { in: slice.map((i: any) => i.id) } },
+        select: { shortNewsId: true },
+      });
+      readSet = new Set(readRows.map(r => r.shortNewsId));
+    }
+
     const last = slice[slice.length - 1];
     const hasMore = afterCursor.length > limit;
     const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
@@ -356,6 +367,8 @@ export const listShortNews = async (req: Request, res: Response) => {
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
+      const isOwner = i.authorId === user.id;
+      const isRead = readSet.has(i.id);
       return {
         ...i,
         // Ensure mediaUrls always present as array
@@ -365,6 +378,8 @@ export const listShortNews = async (req: Request, res: Response) => {
         languageCode: l?.code ?? null,
         categoryName,
         authorName,
+        isOwner,
+        isRead,
         placeName,
         address,
         latitude: i.latitude ?? null,
