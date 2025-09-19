@@ -18,7 +18,8 @@ import authRoutes from './api/auth/auth.routes';
 import otpRoutes from './api/auth/otp.routes';
 import articlesRoutes from './api/articles/articles.routes';
 import articleReadRoutes from './api/articles/articleRead.routes';
-import likesRoutes from './api/likes/likes.routes';
+import likesRoutes from './api/likes/likes.routes'; // deprecated (use reactions)
+import reactionsRoutes from './api/reactions/reactions.routes';
 import commentsRoutes from './api/comments/comments.routes';
 import locationsRoutes from './api/locations/locations.routes';
 import translateRoutes from './api/translate/translate.routes';
@@ -100,7 +101,8 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/articles', articlesRoutes);
 app.use('/articles/read', articleReadRoutes);
 app.use('/shortnews', shortNewsRoutes);
-app.use('/likes', likesRoutes);
+app.use('/likes', likesRoutes); // deprecated
+app.use('/reactions', reactionsRoutes);
 app.use('/comments', commentsRoutes);
 app.use('/categories', categoriesRoutes);
 app.use('/languages', languagesRoutes);
@@ -123,7 +125,8 @@ const apiV1: Router = Router();
 apiV1.use('/articles', articlesRoutes);
 apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/shortnews', shortNewsRoutes);
-apiV1.use('/likes', likesRoutes);
+apiV1.use('/likes', likesRoutes); // deprecated
+apiV1.use('/reactions', reactionsRoutes);
 apiV1.use('/comments', commentsRoutes);
 apiV1.use('/categories', categoriesRoutes);
 apiV1.use('/languages', languagesRoutes);
