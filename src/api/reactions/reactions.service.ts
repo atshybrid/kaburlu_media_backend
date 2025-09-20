@@ -3,7 +3,26 @@ import prisma from '../../lib/prisma';
 export type ReactionType = 'LIKE' | 'DISLIKE' | 'NONE';
 
 export async function setReaction(userId: string, articleId: string, reaction: ReactionType) {
+  // Fast delete path if clearing (NONE)
+  if (reaction === 'NONE') {
+    await prisma.$transaction(async (tx) => {
+      await tx.like.deleteMany({ where: { userId, articleId } });
+      await tx.dislike.deleteMany({ where: { userId, articleId } });
+    });
+    const [likes, dislikes] = await Promise.all([
+      prisma.like.count({ where: { articleId } }),
+      prisma.dislike.count({ where: { articleId } }),
+    ]);
+    return { articleId, reaction: 'NONE' as ReactionType, counts: { likes, dislikes } };
+  }
+
   return await prisma.$transaction(async (tx) => {
+    // Ensure article exists to avoid FK 500
+    const exists = await tx.article.findUnique({ where: { id: articleId }, select: { id: true } });
+    if (!exists) {
+      throw Object.assign(new Error('NOT_FOUND'), { code: 'NOT_FOUND' });
+    }
+
     // Remove both first for idempotency simplicity
     await tx.like.deleteMany({ where: { userId, articleId } });
     await tx.dislike.deleteMany({ where: { userId, articleId } });

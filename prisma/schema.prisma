@@ -37,6 +37,7 @@ model ShortNews {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   reads        ShortNewsRead[]
+  comments     Comment[]
 }
 
 datasource db {
@@ -53,7 +54,7 @@ model User {
   id           String        @id @default(cuid())
   mobileNumber String?       @unique
   mpin         String?
-  firebaseUid  String?       @unique
+  firebaseUid  String?
   email        String?       @unique
   role         Role          @relation(fields: [roleId], references: [id])
   roleId       String
@@ -75,6 +76,8 @@ model User {
   dislikes Dislike[]
   articleReads ArticleRead[]
   media        Media[]
+  contentReads ContentRead[]
+  contentReactions ContentReaction[]
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
@@ -92,6 +95,7 @@ model Role {
   name        String   @unique
   permissions Json
   users       User[]
+  devices     Device[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -105,6 +109,7 @@ model Language {
   isDeleted  Boolean  @default(false)
   users      User[]
   articles   Article[]
+  devices    Device[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -123,6 +128,11 @@ model Device {
   placeName   String?
   address     String?
   source      String?
+  // When a device operates as a guest (no User row) we store role & language here.
+  role        Role?    @relation(fields: [roleId], references: [id])
+  roleId      String?
+  language    Language? @relation(fields: [languageId], references: [id])
+  languageId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -161,6 +171,7 @@ model State {
   isDeleted Boolean    @default(false)
   districts District[]
   userProfiles UserProfile[] @relation("UserProfile_state")
+  contentReads ContentRead[] @relation("ContentRead_state")
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
@@ -173,6 +184,7 @@ model District {
   isDeleted Boolean  @default(false)
   mandals   Mandal[]
   userProfiles UserProfile[] @relation("UserProfile_district")
+  contentReads ContentRead[] @relation("ContentRead_district")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -184,6 +196,7 @@ model Mandal {
   districtId String
   isDeleted  Boolean  @default(false)
   userProfiles UserProfile[] @relation("UserProfile_mandal")
+  contentReads ContentRead[] @relation("ContentRead_mandal")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -304,22 +317,99 @@ model ShortNewsRead {
   shortNews   ShortNews @relation(fields: [shortNewsId], references: [id])
   shortNewsId String
   readAt      DateTime  @default(now())
+  // Added metrics similar to ArticleRead for unified simple tracking
+  totalTimeMs      Int      @default(0)
+  maxScrollPercent Float    @default(0)
+  completed        Boolean  @default(false)
+  lastEventAt      DateTime?
+  completedAt      DateTime?
+  sessionsCount    Int      @default(0)
 
   @@unique([userId, shortNewsId])
 }
 
+/// Unified content read tracking (dual-write while ArticleRead / ShortNewsRead still exist).
+enum ContentType {
+  ARTICLE
+  SHORTNEWS
+}
+
+/// Reaction value for unified content reactions
+enum ReactionValue {
+  LIKE
+  DISLIKE
+}
+
+model ContentRead {
+  id              String       @id @default(cuid())
+  user            User         @relation(fields: [userId], references: [id])
+  userId          String
+  contentId       String       // references Article.id or ShortNews.id depending on contentType
+  contentType     ContentType
+  readAt          DateTime     @default(now())
+  totalTimeMs     Int          @default(0)
+  maxScrollPercent Float       @default(0)
+  completed       Boolean      @default(false)
+  lastEventAt     DateTime?
+  completedAt     DateTime?
+  sessionsCount   Int          @default(0)
+  // Snapshot location & geo context at FIRST record creation
+  latitude        Float?
+  longitude       Float?
+  accuracyMeters  Float?
+  placeId         String?
+  placeName       String?
+  address         String?
+  stateId         String?
+  districtId      String?
+  mandalId        String?
+  state           State?       @relation("ContentRead_state", fields: [stateId], references: [id])
+  district        District?    @relation("ContentRead_district", fields: [districtId], references: [id])
+  mandal          Mandal?      @relation("ContentRead_mandal", fields: [mandalId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([userId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([stateId])
+  @@index([districtId])
+  @@index([mandalId])
+}
+
+/// Unified reactions across Article & ShortNews. Replaces legacy Like/Dislike tables going forward.
+model ContentReaction {
+  id          String        @id @default(cuid())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String
+  contentId   String        // references Article.id or ShortNews.id depending on contentType (no FK for polymorphism)
+  contentType ContentType
+  reaction    ReactionValue
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([userId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([userId])
+}
+
 model Comment {
-  id        String    @id @default(cuid())
-  user      User      @relation(fields: [userId], references: [id])
-  userId    String
-  article   Article   @relation(fields: [articleId], references: [id])
-  articleId String
-  content   String
-  parent    Comment?  @relation("Replies", fields: [parentId], references: [id])
-  parentId  String?
-  replies   Comment[] @relation("Replies")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String     @id @default(cuid())
+  user        User       @relation(fields: [userId], references: [id])
+  userId      String
+  article     Article?   @relation(fields: [articleId], references: [id])
+  articleId   String?
+  shortNews   ShortNews? @relation(fields: [shortNewsId], references: [id])
+  shortNewsId String?
+  content     String
+  parent      Comment?   @relation("Replies", fields: [parentId], references: [id])
+  parentId    String?
+  replies     Comment[]  @relation("Replies")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([articleId])
+  @@index([shortNewsId])
+  @@index([parentId])
 }
 
 model Media {

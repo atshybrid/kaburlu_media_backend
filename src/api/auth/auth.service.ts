@@ -134,209 +134,95 @@ export const refresh = async (refreshDto: RefreshDto) => {
   }
 };
 
-export const registerGuestUser = async (guestDto: GuestRegistrationDto) => {
-    try {
-    const language = await prisma.language.findUnique({
-      where: { id: guestDto.languageId },
-    });
+export const registerGuestUser = async (guestDto: GuestRegistrationDto, existingAnonId?: string) => {
+  try {
+    const language = await prisma.language.findUnique({ where: { id: guestDto.languageId } });
+    if (!language) throw new HttpException(400, `Invalid languageId: '${guestDto.languageId}'.`);
+    const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
+    if (!guestRole) throw new Error('Critical server error: GUEST role not found.');
 
-    if (!language) {
-      throw new HttpException(400, `Invalid languageId: '${guestDto.languageId}'.`);
-        }
-
-        const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
-        if (!guestRole) {
-            throw new Error('Critical server error: GUEST role not found.');
-        }
-
-        let user;
-        let effectiveRole;
-
-    const device = await prisma.device.findFirst({
-            where: { deviceId: guestDto.deviceDetails.deviceId },
-            include: { user: { include: { role: true } } },
-        });
-
-        if (device) {
-            if (device.user) {
-                user = device.user;
-                effectiveRole = device.user.role;
-
-                if (!effectiveRole) {
-                    console.error(`Data integrity issue: User ${user.id} has a missing role. Treating as GUEST.`);
-                    effectiveRole = guestRole;
-                }
-
-                if (effectiveRole.name === 'GUEST') {
-                    user = await prisma.user.update({
-                        where: { id: user.id },
-                        data: { languageId: language.id },
-                    });
-                    await prisma.device.update({
-                        where: { id: device.id },
-                        data: { pushToken: guestDto.deviceDetails.pushToken },
-                    });
-
-                    // CRITICAL FIX: Replace `upsert` with a manual find/update/create logic
-          if (guestDto.deviceDetails.location) {
-                        const existingLocation = await prisma.userLocation.findFirst({
-                            where: { userId: user.id },
-                        });
-
-                        if (existingLocation) {
-              await prisma.userLocation.update({
-                                where: { id: existingLocation.id },
-        data: {
-                  latitude: guestDto.deviceDetails.location.latitude,
-                  longitude: guestDto.deviceDetails.location.longitude,
-                  accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
-                  provider: guestDto.deviceDetails.location.provider,
-                  timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
-                  placeId: guestDto.deviceDetails.location.placeId,
-                  placeName: guestDto.deviceDetails.location.placeName,
-                  address: guestDto.deviceDetails.location.address,
-                  source: guestDto.deviceDetails.location.source,
-        } as any,
-                            });
-                        } else {
-              await prisma.userLocation.create({
-                                data: {
-                                    userId: user.id,
-                  latitude: guestDto.deviceDetails.location.latitude,
-                  longitude: guestDto.deviceDetails.location.longitude,
-                  accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
-                  provider: guestDto.deviceDetails.location.provider,
-                  timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
-                  placeId: guestDto.deviceDetails.location.placeId,
-                  placeName: guestDto.deviceDetails.location.placeName,
-                  address: guestDto.deviceDetails.location.address,
-                  source: guestDto.deviceDetails.location.source,
-                } as any,
-                            });
-                        }
-                    }
-                }
-            } else {
-                // Device exists but not linked to any user yet. Keep it; we'll link after creating user.
-                // Also update pushToken and location metadata on the device itself.
-                await prisma.device.update({
-                  where: { id: device.id },
-                  data: {
-                    pushToken: guestDto.deviceDetails.pushToken,
-                    latitude: guestDto.deviceDetails.location?.latitude,
-                    longitude: guestDto.deviceDetails.location?.longitude,
-                    accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
-                    placeId: guestDto.deviceDetails.location?.placeId,
-                    placeName: guestDto.deviceDetails.location?.placeName,
-                    address: guestDto.deviceDetails.location?.address,
-                    source: guestDto.deviceDetails.location?.source,
-                  } as any,
-                });
-            }
-        }
-
-        if (!user) {
-            user = await prisma.user.create({
-                data: {
-                    languageId: language.id,
-                    roleId: guestRole.id,
-                    status: 'ACTIVE',
-                },
-            });
-
-            const existingLooseDevice = await prisma.device.findUnique({ where: { deviceId: guestDto.deviceDetails.deviceId } });
-            if (existingLooseDevice) {
-              await prisma.device.update({
-                where: { deviceId: guestDto.deviceDetails.deviceId },
-                data: {
-                  userId: user.id,
-                  deviceModel: guestDto.deviceDetails.deviceModel,
-                  pushToken: guestDto.deviceDetails.pushToken,
-                  latitude: guestDto.deviceDetails.location?.latitude,
-                  longitude: guestDto.deviceDetails.location?.longitude,
-                  accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
-                  placeId: guestDto.deviceDetails.location?.placeId,
-                  placeName: guestDto.deviceDetails.location?.placeName,
-                  address: guestDto.deviceDetails.location?.address,
-                  source: guestDto.deviceDetails.location?.source,
-                } as any,
-              });
-            } else {
-              await prisma.device.create({
-                data: {
-                  userId: user.id,
-                  deviceId: guestDto.deviceDetails.deviceId,
-                  deviceModel: guestDto.deviceDetails.deviceModel,
-                  pushToken: guestDto.deviceDetails.pushToken,
-                  latitude: guestDto.deviceDetails.location?.latitude,
-                  longitude: guestDto.deviceDetails.location?.longitude,
-                  accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
-                  placeId: guestDto.deviceDetails.location?.placeId,
-                  placeName: guestDto.deviceDetails.location?.placeName,
-                  address: guestDto.deviceDetails.location?.address,
-                  source: guestDto.deviceDetails.location?.source,
-                } as any,
-              });
-            }
-
-      if (guestDto.deviceDetails.location) {
-        await prisma.userLocation.create({
-          data: {
-            userId: user.id,
-            latitude: guestDto.deviceDetails.location.latitude,
-            longitude: guestDto.deviceDetails.location.longitude,
-            accuracyMeters: guestDto.deviceDetails.location.accuracyMeters,
-            provider: guestDto.deviceDetails.location.provider,
-            timestampUtc: guestDto.deviceDetails.location.timestampUtc ? new Date(guestDto.deviceDetails.location.timestampUtc) : undefined,
-            placeId: guestDto.deviceDetails.location.placeId,
-            placeName: guestDto.deviceDetails.location.placeName,
-            address: guestDto.deviceDetails.location.address,
-            source: guestDto.deviceDetails.location.source,
-          } as any,
-        });
-      }
-            effectiveRole = guestRole;
-        }
-
-        if (!user || !effectiveRole) {
-            throw new Error('Internal logic error: User or role became undefined before token generation.');
-        }
-
-        const payload = {
-            sub: user.id,
-            role: effectiveRole.name,
-            permissions: effectiveRole.permissions,
-        };
-
-    // Access token: 1 hour; Refresh token: 30 days
-  const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
-    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
-
-    // Attach location snapshot
-    const location = await prisma.userLocation.findUnique({ where: { userId: user.id } }).catch(() => null);
-    return {
-            jwt: jwtToken,
-            refreshToken: refreshToken,
-  expiresIn: 86400, // seconds (1 day)
-            user: {
-                userId: user.id,
-                role: effectiveRole.name,
-                languageId: user.languageId,
-            },
-      location: location ? {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        accuracyMeters: (location as any).accuracyMeters ?? undefined,
-        provider: (location as any).provider ?? undefined,
-        timestampUtc: (location as any).timestampUtc ? new Date((location as any).timestampUtc as any).toISOString() : undefined,
-        placeId: (location as any).placeId ?? undefined,
-        placeName: (location as any).placeName ?? undefined,
-        address: (location as any).address ?? undefined,
-        source: (location as any).source ?? undefined,
-      } : undefined,
-        };
-    } catch (error) {
-        console.error("[FATAL] Unhandled error in registerGuestUser:", error);
-        throw error;
+    // Find device precedence: explicit anonId header -> fallback to provided deviceId
+    let device = null as any;
+    if (existingAnonId) {
+      device = await prisma.device.findUnique({ where: { id: existingAnonId } });
     }
+    if (!device) {
+      device = await prisma.device.findUnique({ where: { deviceId: guestDto.deviceDetails.deviceId } });
+    }
+    let linkedUser: any = null;
+    let deviceRole: any = null;
+    if (device?.userId) {
+      linkedUser = await prisma.user.findUnique({ where: { id: device.userId }, include: { role: true } });
+    }
+    if ((device as any)?.roleId) {
+      deviceRole = await prisma.role.findUnique({ where: { id: (device as any).roleId } });
+    }
+
+    // If device linked to a user already => return user token (upgraded flow)
+    if (linkedUser) {
+      const user = linkedUser;
+      const role = user.role;
+      const payload = { sub: user.id, subType: 'user', role: role?.name, permissions: role?.permissions };
+      const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+      const refreshToken = jwt.sign({ sub: user.id, subType: 'user' }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+  return { jwt: jwtToken, refreshToken, expiresIn: 86400, anonId: device.id, user: { userId: user.id, role: role?.name, languageId: user.languageId } };
+    }
+
+    // Create or update a pure guest device (no user row)
+    if (!device) {
+      device = await prisma.device.create({
+        data: {
+          deviceId: guestDto.deviceDetails.deviceId,
+          deviceModel: guestDto.deviceDetails.deviceModel,
+          pushToken: guestDto.deviceDetails.pushToken,
+          roleId: guestRole.id,
+          languageId: language.id,
+          latitude: guestDto.deviceDetails.location?.latitude,
+          longitude: guestDto.deviceDetails.location?.longitude,
+          accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
+          placeId: guestDto.deviceDetails.location?.placeId,
+          placeName: guestDto.deviceDetails.location?.placeName,
+          address: guestDto.deviceDetails.location?.address,
+          source: guestDto.deviceDetails.location?.source,
+        } as any,
+      });
+    } else {
+      device = await prisma.device.update({
+        where: { id: device.id },
+        data: {
+          pushToken: guestDto.deviceDetails.pushToken,
+          roleId: guestRole.id,
+          languageId: language.id,
+          latitude: guestDto.deviceDetails.location?.latitude,
+          longitude: guestDto.deviceDetails.location?.longitude,
+          accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
+          placeId: guestDto.deviceDetails.location?.placeId,
+          placeName: guestDto.deviceDetails.location?.placeName,
+          address: guestDto.deviceDetails.location?.address,
+          source: guestDto.deviceDetails.location?.source,
+        } as any,
+      });
+    }
+
+    // Re-fetch role for payload
+    deviceRole = await prisma.role.findUnique({ where: { id: (device as any).roleId } });
+    const payload = { sub: device.id, subType: 'device', role: deviceRole?.name, permissions: deviceRole?.permissions };
+    const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
+    const refreshToken = jwt.sign({ sub: device.id, subType: 'device' }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+
+    return {
+      jwt: jwtToken,
+      refreshToken,
+      expiresIn: 86400,
+      anonId: device.id,
+      device: {
+        deviceId: device.deviceId,
+        role: deviceRole?.name,
+        languageId: (device as any).languageId ?? null,
+      }
+    };
+  } catch (error) {
+    console.error('[FATAL] Unhandled error in registerGuestUser:', error);
+    throw error;
+  }
 };

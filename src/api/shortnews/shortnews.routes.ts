@@ -6,6 +6,102 @@ const router = Router();
 
 /**
  * @swagger
+ * /shortnews/AIarticle:
+ *   post:
+ *     summary: AI generate short news draft (helper only, no save)
+ *     description: Accept raw field note text (<=500 words) and returns optimized short news draft (title <=35 chars, content <=60 words) plus optional category suggestion. If the suggested category doesn't exist, the server will auto-create a Category and a CategoryTranslation for the user's language and return their IDs.
+ *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rawText]
+ *             properties:
+ *               rawText:
+ *                 type: string
+ *                 description: User raw note text (<=500 words)
+ *                 example: "today morning heavy rain caused water logging near market area traffic slow police managing"
+ *     responses:
+ *       200:
+ *         description: AI draft generated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     title: { type: string, description: "<=35 chars" }
+ *                     content: { type: string, description: "<=60 words" }
+ *                     languageCode: { type: string }
+ *                     suggestedCategoryName: { type: string }
+ *                     suggestedCategoryId: { type: string, nullable: true }
+ *                     matchedCategoryName: { type: string, nullable: true }
+ *                     createdCategory: { type: boolean, description: "True if a new category was created" }
+ *                     categoryTranslationId: { type: string, nullable: true, description: "Translation row id for user's language if created/found" }
+ *       400:
+ *         description: Validation error (missing rawText or >100 words)
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: AI failure or invalid output
+ */
+router.post('/AIarticle', passport.authenticate('jwt', { session: false }), shortNewsController.aiGenerateShortNewsArticle);
+
+/**
+ * @swagger
+ * /shortnews/ai/rewrite:
+ *   post:
+ *     summary: AI rewrite helper for short news (returns professional concise draft)
+ *     tags: [ShortNews]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rawText]
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 description: Optional tentative title supplied by user
+ *                 example: "Road accident update"
+ *               rawText:
+ *                 type: string
+ *                 description: User's raw text / notes to rewrite
+ *                 example: "hi today morning near main circle two cars collision no deaths police arrived"
+ *     responses:
+ *       200:
+ *         description: AI rewrite successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     title: { type: string, description: "<=35 chars optimized title" }
+ *                     content: { type: string, description: "<=60 words rewritten content" }
+ *                     languageCode: { type: string }
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: AI failure or invalid output
+ */
+router.post('/ai/rewrite', passport.authenticate('jwt', { session: false }), shortNewsController.aiRewriteShortNews);
+
+/**
+ * @swagger
  * /shortnews:
  *   post:
  *     summary: Submit short news (citizen reporter)
@@ -403,7 +499,40 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *         description: Optional longitude. If both latitude and longitude are provided, results are filtered to within ~30 km radius.
  *     responses:
  *       200:
- *         description: Approved short news list enriched with categoryName, authorName, place/address, lat/lon, canonicalUrl, jsonLd, and primary media
+ *         description: Approved short news list enriched with categoryName, author (object), authorName (legacy), place/address, lat/lon, canonicalUrl, jsonLd, primary media, and optional isOwner/isRead flags if bearer token supplied.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 pageInfo:
+ *                   type: object
+ *                   properties:
+ *                     limit: { type: integer }
+ *                     nextCursor: { type: string, nullable: true }
+ *                     hasMore: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       title: { type: string }
+ *                       slug: { type: string }
+ *                       authorName: { type: string, nullable: true }
+ *                       author:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, nullable: true }
+ *                           fullName: { type: string, nullable: true }
+ *                           profilePhotoUrl: { type: string, nullable: true }
+ *                           email: { type: string, nullable: true }
+ *                           mobileNumber: { type: string, nullable: true }
+ *                           roleName: { type: string, nullable: true }
+ *                           reporterType: { type: string, nullable: true }
+ *                       isOwner: { type: boolean }
+ *                       isRead: { type: boolean }
  */
 router.get('/public', shortNewsController.listApprovedShortNews);
 

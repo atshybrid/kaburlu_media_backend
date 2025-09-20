@@ -18,13 +18,13 @@ import authRoutes from './api/auth/auth.routes';
 import otpRoutes from './api/auth/otp.routes';
 import articlesRoutes from './api/articles/articles.routes';
 import articleReadRoutes from './api/articles/articleRead.routes';
-import likesRoutes from './api/likes/likes.routes'; // deprecated (use reactions)
 import reactionsRoutes from './api/reactions/reactions.routes';
 import commentsRoutes from './api/comments/comments.routes';
 import locationsRoutes from './api/locations/locations.routes';
 import translateRoutes from './api/translate/translate.routes';
 import profileRoutes from './api/profiles/profiles.routes';
 import shortNewsRoutes from './api/shortnews/shortnews.routes';
+import shortNewsReadRoutes from './api/shortnews/shortNewsRead.routes';
 import mediaRoutes from './api/media/media.routes';
 import devicesRoutes from './api/devices/devices.routes';
 import notificationsRoutes from './api/notifications/notifications.routes';
@@ -101,7 +101,13 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/articles', articlesRoutes);
 app.use('/articles/read', articleReadRoutes);
 app.use('/shortnews', shortNewsRoutes);
-app.use('/likes', likesRoutes); // deprecated
+app.use('/shortnews/read', shortNewsReadRoutes);
+// Deprecated likes routes removed; unified reactions API replaces them.
+app.use('/likes', (_req, res) => {
+  return res.status(410).json({
+    error: 'The /likes API is deprecated. Use PUT /reactions with { reaction: "like" | "dislike" | null } instead.'
+  });
+});
 app.use('/reactions', reactionsRoutes);
 app.use('/comments', commentsRoutes);
 app.use('/categories', categoriesRoutes);
@@ -125,7 +131,12 @@ const apiV1: Router = Router();
 apiV1.use('/articles', articlesRoutes);
 apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/shortnews', shortNewsRoutes);
-apiV1.use('/likes', likesRoutes); // deprecated
+apiV1.use('/shortnews/read', shortNewsReadRoutes);
+apiV1.use('/likes', (_req, res) => {
+  return res.status(410).json({
+    error: 'The /api/v1/likes API is deprecated. Use /api/v1/reactions instead.'
+  });
+});
 apiV1.use('/reactions', reactionsRoutes);
 apiV1.use('/comments', commentsRoutes);
 apiV1.use('/categories', categoriesRoutes);

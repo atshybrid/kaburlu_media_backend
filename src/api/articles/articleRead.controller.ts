@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import { ArticleReadService } from './articleRead.service';
 
+// Narrow error typing helper
+function isNotFound(e: any) {
+  return e && typeof e === 'object' && e.message && /Article not found:/.test(e.message);
+}
+
 export class ArticleReadController {
   private service: ArticleReadService;
 
@@ -57,15 +62,23 @@ export class ArticleReadController {
     try {
       let userId: string | undefined;
       if (req.user && typeof req.user === 'object' && 'id' in req.user) {
-        userId = (req.user as any).id;
+        const principal: any = req.user;
+        // If device principal with linked userId, prefer real userId for FK consistency
+        if (principal.kind === 'device' && principal.userId) userId = principal.userId;
+        else userId = principal.id;
       }
       if (!userId) return res.status(400).json({ error: 'Missing user context' });
       const { articleId, deltaTimeMs, maxScrollPercent, ended } = req.body || {};
       if (!articleId) return res.status(400).json({ error: 'articleId required' });
       const updates = [{ articleId, deltaTimeMs, maxScrollPercent, ended }];
       const result = await this.service.recordProgress(userId, updates);
-      res.json(result);
+      const r: any = result as any;
+      if (r.missing && (!r.updated || r.updated.length === 0) && (!r.shortNewsReads || r.shortNewsReads.length === 0)) {
+        return res.status(404).json({ error: 'Article(s) not found', missing: r.missing });
+      }
+      res.json(r);
     } catch (e) {
+      if (isNotFound(e)) return res.status(404).json({ error: (e as Error).message });
       res.status(500).json({ error: (e as Error).message });
     }
   }
@@ -75,7 +88,8 @@ export class ArticleReadController {
     try {
       let userId: string | undefined;
       if (req.user && typeof req.user === 'object' && 'id' in req.user) {
-        userId = (req.user as any).id;
+        const principal: any = req.user;
+        if (principal.kind === 'device' && principal.userId) userId = principal.userId; else userId = principal.id;
       }
       if (!userId) return res.status(400).json({ error: 'Missing user context' });
       const { reads } = req.body || {};
@@ -90,8 +104,13 @@ export class ArticleReadController {
       })).filter(r => r.articleId);
       if (sanitized.length === 0) return res.status(400).json({ error: 'No valid articleIds' });
       const result = await this.service.recordProgress(userId, sanitized);
-      res.json(result);
+      const r: any = result as any;
+      if (r.missing && (!r.updated || r.updated.length === 0) && (!r.shortNewsReads || r.shortNewsReads.length === 0)) {
+        return res.status(404).json({ error: 'Article(s) not found', missing: r.missing });
+      }
+      res.json(r);
     } catch (e) {
+      if (isNotFound(e)) return res.status(404).json({ error: (e as Error).message });
       res.status(500).json({ error: (e as Error).message });
     }
   }

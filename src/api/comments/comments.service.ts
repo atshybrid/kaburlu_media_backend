@@ -2,69 +2,80 @@
 import prisma from '../../lib/prisma';
 import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 
-export const createComment = async (commentDto: CreateCommentDto) => {
-  const { content, userId, articleId, parentId } = commentDto;
+type RepliesInclude = {
+  include: {
+    user: { select: { id: true } },
+    replies?: RepliesInclude | boolean;
+  };
+  orderBy: { createdAt: 'asc' };
+} | boolean;
 
-  return await prisma.comment.create({
-    data: {
-      content,
-      userId,
-      articleId,
-      parentId,
+const recursiveReplies = (depth = 5): RepliesInclude => {
+  if (depth === 0) return false;
+  return {
+    include: {
+      user: { select: { id: true } },
+      replies: recursiveReplies(depth - 1)
     },
-  });
+    orderBy: { createdAt: 'asc' }
+  };
 };
 
-export const getCommentsByArticle = async (articleId: string) => {
-  // Fetch all comments for a given article
-  // Helper to recursively include replies
-  type RepliesInclude = {
-    include: {
-      user: { select: { id: true } },
-      replies?: RepliesInclude | boolean;
-    };
-    orderBy: { createdAt: 'asc' };
-  } | boolean;
+export const createComment = async (commentDto: CreateCommentDto) => {
+  const { content, userId, articleId, shortNewsId, parentId } = commentDto;
 
-  const recursiveReplies = (depth = 3): RepliesInclude => {
-    if (depth === 0) return false;
-    return {
-      include: {
-        user: { select: { id: true } },
-        replies: recursiveReplies(depth - 1)
-      },
-      orderBy: { createdAt: 'asc' }
-    };
-  };
+  // If replying, ensure parent exists and belongs to same target
+  if (parentId) {
+    const parent = await prisma.comment.findUnique({ where: { id: parentId } });
+    if (!parent) throw new Error('Parent comment not found');
+    if (articleId && parent.articleId !== articleId) {
+      throw new Error('Parent comment belongs to different article');
+    }
+    if (shortNewsId && (parent as any).shortNewsId !== shortNewsId) {
+      throw new Error('Parent comment belongs to different short news');
+    }
+  }
+
+  const data: any = { content, userId };
+  if (articleId) data.articleId = articleId;
+  if (shortNewsId) data.shortNewsId = shortNewsId;
+  if (parentId) data.parentId = parentId;
+
+  return prisma.comment.create({ data });
+};
+
+export interface GetCommentsParams {
+  articleId?: string;
+  shortNewsId?: string;
+  depth?: number;
+}
+
+export const getComments = async ({ articleId, shortNewsId, depth = 5 }: GetCommentsParams) => {
+  const where: any = {};
+  if (articleId) where.articleId = articleId;
+  if (shortNewsId) where.shortNewsId = shortNewsId;
 
   const comments = await prisma.comment.findMany({
-    where: { articleId },
+    where,
     include: {
       user: { select: { id: true } },
-      replies: recursiveReplies(5) // 5 levels deep
+      replies: recursiveReplies(depth)
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: 'desc' }
   });
-
-  // Only return top-level comments, replies are nested
-  return comments.filter(comment => !comment.parentId);
+  return comments.filter(c => !c.parentId);
 };
 
 export const updateComment = async (id: string, commentDto: UpdateCommentDto) => {
-  return await prisma.comment.update({
+  return prisma.comment.update({
     where: { id },
-    data: {
-      content: commentDto.content,
-    },
+    data: { content: commentDto.content }
   });
 };
 
 export const deleteComment = async (id: string) => {
-    // Deleting a comment should also delete its replies in a transaction
-    return prisma.$transaction(async (tx) => {
-        // First, delete all replies to this comment
-        await tx.comment.deleteMany({ where: { parentId: id } });
-        // Then, delete the comment itself
-        return await tx.comment.delete({ where: { id } });
-    });
+  return prisma.$transaction(async (tx) => {
+    await tx.comment.deleteMany({ where: { parentId: id } });
+    return tx.comment.delete({ where: { id } });
+  });
 };

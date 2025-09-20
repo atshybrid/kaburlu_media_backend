@@ -10,9 +10,14 @@ export class CreateCommentDto {
   @IsString()
   userId!: string;
 
-  @IsNotEmpty()
+  // Polymorphic target (exactly one required at runtime)
+  @IsOptional()
   @IsString()
-  articleId!: string;
+  articleId?: string;
+
+  @IsOptional()
+  @IsString()
+  shortNewsId?: string;
 
   @IsOptional()
   @IsString()
@@ -23,4 +28,13 @@ export class UpdateCommentDto {
   @IsOptional()
   @IsString()
   content?: string;
+}
+
+export function validatePolymorphicTarget(dto: CreateCommentDto) {
+  const hasArticle = !!dto.articleId;
+  const hasShort = !!dto.shortNewsId;
+  if ((hasArticle && hasShort) || (!hasArticle && !hasShort)) {
+    return 'Exactly one of articleId or shortNewsId must be provided';
+  }
+  return null;
 }

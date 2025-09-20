@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "public"."ShortNewsRead" ADD COLUMN     "completed" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "completedAt" TIMESTAMP(3),
+ADD COLUMN     "lastEventAt" TIMESTAMP(3),
+ADD COLUMN     "maxScrollPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "sessionsCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalTimeMs" INTEGER NOT NULL DEFAULT 0;

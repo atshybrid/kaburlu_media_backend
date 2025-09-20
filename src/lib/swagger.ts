@@ -26,10 +26,7 @@ const swaggerDefinition = {
   tags: [
     { name: 'Auth' },
     { name: 'Users' },
-    { name: 'Profile' },
-    { name: 'Articles' },
     { name: 'ShortNews' },
-    { name: 'Engagement' },
     { name: 'Locations' },
     { name: 'Categories' },
     { name: 'Languages' },
@@ -37,7 +34,8 @@ const swaggerDefinition = {
     { name: 'States' },
     { name: 'Translate' },
     { name: 'Media' },
-    { name: 'Prompts' }
+    { name: 'Prompts' },
+    { name: 'Engagement - Comments' }
   ],
   components: {
     securitySchemes: {

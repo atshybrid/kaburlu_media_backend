@@ -1,32 +1,31 @@
 
 import { Router } from 'express';
 import passport from 'passport';
-import {
-  createCommentController,
-  getCommentsByArticleController,
-  updateCommentController,
-  deleteCommentController,
-} from './comments.controller';
+import { createCommentController, getCommentsController, updateCommentController, deleteCommentController } from './comments.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 
 /**
  * @swagger
- * /comments/article/{articleId}:
+ * /comments:
  *   get:
- *     summary: Get all comments for a specific article
- *     tags: [Comments]
+ *     summary: Get comments for an Article or ShortNews (nested replies included)
+ *     tags: [Engagement - Comments]
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: articleId
- *         required: true
  *         schema:
  *           type: string
- *         description: The ID of the article.
+ *         description: Article ID (mutually exclusive with shortNewsId)
+ *       - in: query
+ *         name: shortNewsId
+ *         schema:
+ *           type: string
+ *         description: ShortNews ID (mutually exclusive with articleId)
  *     responses:
  *       200:
- *         description: A list of comments for the article.
+ *         description: Top-level comments with nested replies.
  *         content:
  *           application/json:
  *             schema:
@@ -34,14 +33,14 @@ const auth = passport.authenticate('jwt', { session: false });
  *               items:
  *                 $ref: '#/components/schemas/Comment'
  */
-router.get('/article/:articleId', getCommentsByArticleController);
+router.get('/', getCommentsController);
 
 /**
  * @swagger
  * /comments:
  *   post:
  *     summary: Create a new comment
- *     tags: [Comments]
+ *     tags: [Engagement - Comments]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -61,7 +60,7 @@ router.post('/', auth, createCommentController);
  * /comments/{id}:
  *   put:
  *     summary: Update a comment
- *     tags: [Comments]
+ *     tags: [Engagement - Comments]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -82,7 +81,7 @@ router.post('/', auth, createCommentController);
  *         description: Comment updated successfully.
  *   delete:
  *     summary: Delete a comment
- *     tags: [Comments]
+ *     tags: [Engagement - Comments]
  *     security:
  *       - bearerAuth: []
  *     parameters:

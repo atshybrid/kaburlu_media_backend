@@ -73,14 +73,15 @@ export const refreshController = async (req: Request, res: Response) => {
 };
 
 export const registerGuestController = async (req: Request, res: Response) => {
-    try {
-      const guestDto = req.body as GuestRegistrationDto;
-      const result = await registerGuestUser(guestDto);
-      res.status(200).json(result);
-    } catch (error) {
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  };
+  try {
+    const guestDto = req.body as GuestRegistrationDto;
+    const anonHeader = (req.headers['x-anon-id'] as string | undefined) || undefined;
+    const result = await registerGuestUser(guestDto, anonHeader);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
 import * as bcrypt from 'bcrypt';
 import { getAdmin } from '../../lib/firebase';
 import jwtLib from 'jsonwebtoken';

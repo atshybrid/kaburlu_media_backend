@@ -1,6 +1,8 @@
 import { AI_PROVIDER, AI_TIMEOUT_MS, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_OPENAI_MODEL_SEO } from './aiConfig';
 
-export async function aiGenerateText({ prompt, purpose }:{ prompt: string; purpose: 'seo'|'moderation'|'translation' }): Promise<string> {
+type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article';
+
+export async function aiGenerateText({ prompt }: { prompt: string; purpose: AIPurpose }): Promise<string> {
   const provider = AI_PROVIDER;
   if (provider === 'gemini' && GEMINI_KEY) {
     try {

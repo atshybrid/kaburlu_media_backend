@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient, User } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { transliterate } from 'transliteration';
 import type { Language } from '@prisma/client';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
@@ -7,7 +7,153 @@ import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { aiEnabledFor } from '../../lib/aiConfig';
 import { getPrompt, renderPrompt } from '../../lib/prompts';
 import { aiGenerateText } from '../../lib/aiProvider';
+import { generateAiShortNewsFromPrompt } from './shortnews.ai';
 import { sendToTopic } from '../../lib/fcm';
+import prismaClient from '../../lib/prisma';
+import { translateAndSaveCategoryInBackground } from '../categories/categories.service';
+
+// AI article generation (SHORTNEWS_AI_ARTICLE) - helper only, no DB write
+export const aiGenerateShortNewsArticle = async (req: Request, res: Response) => {
+  try {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    const { rawText } = req.body || {};
+    if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
+      return res.status(400).json({ success: false, error: 'rawText is required' });
+    }
+    const wordCount = rawText.trim().split(/\s+/).length;
+    if (wordCount > 500) {
+      return res.status(400).json({ success: false, error: 'rawText must be 500 words or less' });
+    }
+    const languageId = (req.user as any).languageId;
+    if (!languageId) return res.status(400).json({ success: false, error: 'User language not set' });
+    const lang = await prismaClient.language.findUnique({ where: { id: languageId } });
+    const languageCode = lang?.code || 'en';
+    const tpl = await getPrompt('SHORTNEWS_AI_ARTICLE' as any);
+    const prompt = renderPrompt(tpl, { languageCode, content: rawText });
+    const draft = await generateAiShortNewsFromPrompt(rawText, prompt, (p) => aiGenerateText({ prompt: p, purpose: 'shortnews_ai_article' }), { minWords: 58, maxWords: 60, maxAttempts: 3 });
+    let suggestedCategoryName = draft.suggestedCategoryName;
+    if (!suggestedCategoryName) suggestedCategoryName = 'Community';
+    // Optional: attempt to map suggested category to existing category id (case-insensitive match on base or translation name)
+    let matchedCategory: { id: string; name: string } | null = null;
+  let createdCategory = false;
+  let categoryTranslationId: string | null = null;
+  let localizedCategoryName: string | null = null;
+    try {
+      const baseCats = await prismaClient.category.findMany({ select: { id: true, name: true, slug: true } });
+      const lower = suggestedCategoryName.toLowerCase();
+      matchedCategory = baseCats.find(c => c.name.toLowerCase() === lower) || null;
+      if (!matchedCategory) {
+        // try translations in this language (by language code)
+        const translations = await prismaClient.categoryTranslation.findMany({ where: { language: languageCode as any }, select: { categoryId: true, name: true } });
+        const matchT = translations.find(t => t.name.toLowerCase() === lower);
+        if (matchT) {
+          const cat = baseCats.find(c => c.id === matchT.categoryId);
+          if (cat) matchedCategory = cat;
+        }
+      }
+      // If still not matched, create a new category and its translation for this language
+      if (!matchedCategory) {
+        const baseSlugRaw = transliterate(suggestedCategoryName)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 60) || 'category';
+        let slug = baseSlugRaw;
+        const existingSlugs = new Set(baseCats.map(c => c.slug));
+        let attempt = 1;
+        while (existingSlugs.has(slug) && attempt < 50) {
+          slug = `${baseSlugRaw}-${attempt++}`;
+        }
+        const newCat = await prismaClient.category.create({
+          data: { name: suggestedCategoryName, slug },
+          select: { id: true, name: true }
+        });
+        matchedCategory = newCat;
+        createdCategory = true;
+        // Upsert translation for this language code
+        const tr = await prismaClient.categoryTranslation.upsert({
+          where: { categoryId_language: { categoryId: newCat.id, language: languageCode as any } },
+          update: { name: suggestedCategoryName },
+          create: { categoryId: newCat.id, language: languageCode as any, name: suggestedCategoryName },
+          select: { id: true }
+        });
+        categoryTranslationId = tr.id;
+        localizedCategoryName = suggestedCategoryName;
+        // Fire-and-forget background translation for all languages (don't await)
+        translateAndSaveCategoryInBackground(newCat.id, suggestedCategoryName).catch(()=>{});
+      } else {
+        // Ensure a translation exists for this language; upsert with suggested name (does not change base name)
+        const tr = await prismaClient.categoryTranslation.upsert({
+          where: { categoryId_language: { categoryId: matchedCategory.id, language: languageCode as any } },
+          update: { name: suggestedCategoryName },
+          create: { categoryId: matchedCategory.id, language: languageCode as any, name: suggestedCategoryName },
+          select: { id: true }
+        });
+        categoryTranslationId = tr.id;
+        localizedCategoryName = suggestedCategoryName;
+      }
+    } catch {}
+    return res.json({
+      success: true,
+      data: {
+        title: draft.title,
+        content: draft.content,
+        languageCode,
+        suggestedCategoryName,
+        suggestedCategoryId: matchedCategory?.id || null,
+        matchedCategoryName: matchedCategory?.name || null,
+        createdCategory,
+        categoryTranslationId,
+        languageCategoryId: categoryTranslationId,
+        localizedCategoryName,
+        attempts: draft.attempts,
+        fallback: draft.fallbackUsed,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Failed to generate AI article' });
+  }
+};
+
+// AI rewrite helper (SHORTNEWS_REWRITE)
+export const aiRewriteShortNews = async (req: Request, res: Response) => {
+  try {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    const { rawText, title } = req.body || {};
+    if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
+      return res.status(400).json({ success: false, error: 'rawText is required' });
+    }
+    // Determine language from user principal
+    const languageId = (req.user as any).languageId;
+    if (!languageId) return res.status(400).json({ success: false, error: 'User language not set' });
+    const lang = await prismaClient.language.findUnique({ where: { id: languageId } });
+    const languageCode = lang?.code || 'en';
+    const tpl = await getPrompt('SHORTNEWS_REWRITE' as any);
+    const prompt = renderPrompt(tpl, { languageCode, title: title || '', content: rawText });
+  const aiJson = await aiGenerateText({ prompt, purpose: 'rewrite' });
+    if (!aiJson) return res.status(500).json({ success: false, error: 'AI rewrite failed' });
+    let parsed: any;
+    try {
+      const cleaned = aiJson.trim().replace(/^```(json)?/i, '').replace(/```$/,'').trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({ success: false, error: 'AI returned invalid JSON' });
+    }
+    if (!parsed || typeof parsed.title !== 'string' || typeof parsed.content !== 'string') {
+      return res.status(500).json({ success: false, error: 'AI output malformed' });
+    }
+    // Enforce limits after AI output
+    const wordCount = parsed.content.trim().split(/\s+/).length;
+    if (parsed.title.length > 35) parsed.title = parsed.title.slice(0, 35).trim();
+    if (wordCount > 60) {
+      const trimmedWords = parsed.content.trim().split(/\s+/).slice(0, 60);
+      parsed.content = trimmedWords.join(' ');
+    }
+    return res.json({ success: true, data: { title: parsed.title, content: parsed.content, languageCode } });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Failed to rewrite short news' });
+  }
+};
 
 // Optional AI SEO generation using centralized prompts and provider abstraction
 async function generateSeoWithAI(
@@ -275,7 +421,7 @@ export const getShortNewsJsonLd = async (req: Request, res: Response) => {
 
 export const listShortNews = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User & { role?: { name: string } };
+    const user = req.user as Express.User;
     if (!user?.id) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
@@ -468,7 +614,7 @@ export const updateShortNews = async (req: Request, res: Response) => {
     if (!req.user || typeof req.user !== 'object' || !('id' in req.user)) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-    const user = req.user as User & { role?: { name?: string } };
+    const user = req.user as Express.User;
     const { id } = req.params;
 
     const existing = await prisma.shortNews.findUnique({ where: { id } });
@@ -596,7 +742,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const items = await prisma.shortNews.findMany({
       where,
       include: {
-        author: { select: { id: true, email: true, mobileNumber: true } },
+        author: { select: { id: true, email: true, mobileNumber: true, role: { select: { name: true } }, profile: { select: { fullName: true, profilePhotoUrl: true } } } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 10, 200),
@@ -661,11 +807,21 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
     const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
     const authorLocByUser = new Map(authorLocs.map((l) => [l.userId, l]));
+    // read markers if user context (optional auth bearer). We accept optional user on public feed.
+  const user = (req as any).user as Express.User | undefined;
+    let readSet: Set<string> = new Set();
+    if (user && slice.length) {
+      const readRows = await prisma.shortNewsRead.findMany({
+        where: { userId: user.id, shortNewsId: { in: slice.map((s: any) => s.id) } },
+        select: { shortNewsId: true },
+      });
+      readSet = new Set(readRows.map(r => r.shortNewsId));
+    }
     const data = slice.map((i: any) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
   const categoryName = i.categoryId ? (catNameByCatLang.get(`${i.categoryId}:${i.language}`) ?? catNameById.get(i.categoryId) ?? null) : null;
-      const author = i.author as any;
-      const authorName = author?.email || author?.mobileNumber || null;
+  const author = i.author as any;
+  const authorName = author?.profile?.fullName || author?.email || author?.mobileNumber || null;
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
@@ -693,6 +849,8 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
           videoThumbnailUrl: primaryImageUrl || undefined,
         });
       }
+      const isOwner = user ? i.authorId === user.id : false;
+      const isRead = user ? readSet.has(i.id) : false;
       return {
         ...i,
         // Ensure mediaUrls always present as array
@@ -706,6 +864,17 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         languageCode: l?.code ?? null,
         categoryName,
         authorName,
+        author: {
+          id: author?.id || null,
+          fullName: author?.profile?.fullName || null,
+          profilePhotoUrl: author?.profile?.profilePhotoUrl || null,
+          email: author?.email || null,
+          mobileNumber: author?.mobileNumber || null,
+          roleName: author?.role?.name || null,
+          reporterType: author?.role?.name || null,
+        },
+        isOwner,
+        isRead,
         placeName,
         address,
         latitude: i.latitude ?? null,
@@ -726,7 +895,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
 // Moderation/status-wise listing: citizens see their own by status; desk/admin see language-wide by status
 export const listShortNewsByStatus = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User & { role?: { name: string } };
+    const user = req.user as Express.User;
     if (!user?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
     const status = (req.query.status as string) || undefined;
     const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
@@ -817,7 +986,7 @@ export const listShortNewsByStatus = async (req: Request, res: Response) => {
 // Admin/Desk wide listing with optional filters and pagination
 export const listAllShortNews = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User & { role?: { name?: string } };
+    const user = req.user as Express.User;
     if (!user?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
     const roleName = (user?.role?.name || '').toUpperCase();

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { upsertReaction, getReactionForArticle, batchReactionStatus } from './reactions.controller';
+import { requireRealUser } from '../middlewares/requireUser.middleware';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -16,7 +17,7 @@ const auth = passport.authenticate('jwt', { session: false });
  * @swagger
  * /reactions:
  *   put:
- *     summary: Set or clear a reaction (LIKE | DISLIKE | NONE)
+ *     summary: Set or clear a reaction (LIKE | DISLIKE | NONE) for Article or ShortNews
  *     tags: [Reactions]
  *     security:
  *       - bearerAuth: []
@@ -26,24 +27,32 @@ const auth = passport.authenticate('jwt', { session: false });
  *         application/json:
  *           schema:
  *             type: object
- *             required: [articleId, reaction]
+ *             required: [reaction]
  *             properties:
- *               articleId: { type: string }
+ *               articleId: { type: string, description: "Provide exactly one: articleId or shortNewsId" }
+ *               shortNewsId: { type: string }
  *               reaction: { type: string, enum: [LIKE, DISLIKE, NONE] }
- *             example:
- *               articleId: "abc123"
- *               reaction: "LIKE"
+ *           examples:
+ *             articleLike:
+ *               summary: Like an article
+ *               value: { articleId: "article123", reaction: "LIKE" }
+ *             shortNewsDislike:
+ *               summary: Dislike a short news item
+ *               value: { shortNewsId: "sn789", reaction: "DISLIKE" }
+ *             clearShortNews:
+ *               summary: Clear reaction
+ *               value: { shortNewsId: "sn789", reaction: "NONE" }
  *     responses:
  *       200:
- *         description: Reaction state after update
+ *         description: Unified reaction state after update
  */
-router.put('/', auth, upsertReaction);
+router.put('/', auth, requireRealUser, upsertReaction);
 
 /**
  * @swagger
  * /reactions/status:
  *   post:
- *     summary: Batch reaction status + counts for many articles
+ *     summary: Batch reaction status + counts (Article or ShortNews)
  *     tags: [Reactions]
  *     security:
  *       - bearerAuth: []
@@ -53,18 +62,28 @@ router.put('/', auth, upsertReaction);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [articleIds]
  *             properties:
  *               articleIds:
  *                 type: array
  *                 items: { type: string }
- *             example:
- *               articleIds: ["a1","a2","a3"]
+ *               shortNewsIds:
+ *                 type: array
+ *                 items: { type: string }
+ *             oneOf:
+ *               - required: [articleIds]
+ *               - required: [shortNewsIds]
+ *           examples:
+ *             articles:
+ *               summary: Articles batch
+ *               value: { articleIds: ["a1","a2"] }
+ *             shortNews:
+ *               summary: ShortNews batch
+ *               value: { shortNewsIds: ["sn1","sn2"] }
  *     responses:
  *       200:
- *         description: Batch reaction status
+ *         description: Batch reaction status list
  */
-router.post('/status', auth, batchReactionStatus);
+router.post('/status', auth, requireRealUser, batchReactionStatus);
 
 /**
  * @swagger
@@ -83,6 +102,6 @@ router.post('/status', auth, batchReactionStatus);
  *       200:
  *         description: Reaction info
  */
-router.get('/article/:articleId', auth, getReactionForArticle);
+router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
 
 export default router;

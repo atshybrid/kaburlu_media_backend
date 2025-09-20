@@ -14,10 +14,14 @@ const roles = [
     'CITIZEN_REPORTER',
     'GUEST'
 ];
+// Extend with South India languages (Tamil, Kannada, Malayalam) and keep structure consistent
 const languages: { name: string; code: string; nativeName: string; direction: string; isDeleted: boolean }[] = [
     { name: 'English', code: 'en', nativeName: 'English', direction: 'ltr', isDeleted: false },
     { name: 'Hindi', code: 'hi', nativeName: 'हिन्दी', direction: 'ltr', isDeleted: false },
-    { name: 'Telugu', code: 'te', nativeName: 'తెలుగు', direction: 'ltr', isDeleted: false }
+    { name: 'Telugu', code: 'te', nativeName: 'తెలుగు', direction: 'ltr', isDeleted: false },
+    { name: 'Tamil', code: 'ta', nativeName: 'தமிழ்', direction: 'ltr', isDeleted: false },
+    { name: 'Kannada', code: 'kn', nativeName: 'ಕನ್ನಡ', direction: 'ltr', isDeleted: false },
+    { name: 'Malayalam', code: 'ml', nativeName: 'മലയാളം', direction: 'ltr', isDeleted: false },
 ];
 
 const categories = [
@@ -121,6 +125,10 @@ async function main() {
 
     // Delete old data
     await prisma.user.deleteMany({});
+    await prisma.categoryTranslation.deleteMany({});
+    await prisma.category.deleteMany({});
+    await prisma.state.deleteMany({});
+    await prisma.country.deleteMany({});
     await prisma.language.deleteMany({});
     await prisma.role.deleteMany({});
 
@@ -149,9 +157,78 @@ async function main() {
     }
     console.log(`Seeded ${createdLanguages.length} languages.`);
 
+    // Seed Country (India) and States
+    console.log('Seeding country and states...');
+    const india = await prisma.country.create({ data: { name: 'India', code: 'IN' } });
+    const stateNames = [
+        'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Andaman and Nicobar Islands','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Delhi','Jammu and Kashmir','Ladakh','Lakshadweep','Puducherry'
+    ];
+    for (const stateName of stateNames) {
+        await prisma.state.create({ data: { name: stateName, countryId: india.id } });
+    }
+    console.log(`Seeded country India and ${stateNames.length} states.`);
+
     const languageMap: Record<string, string> = {};
     for (const lang of createdLanguages) {
         languageMap[lang.code] = lang.id;
+    }
+
+    // Seed Categories and Translations
+    console.log('Seeding categories...');
+    for (const cat of categories) {
+        const slug = cat.key.toLowerCase();
+        const created = await prisma.category.create({
+            data: { name: cat.key, slug }
+        });
+        const translations = categoryTranslations[cat.key];
+        if (translations) {
+            for (const [langCode, translatedName] of Object.entries(translations)) {
+                // only insert if language exists in seeds
+                if (languageMap[langCode]) {
+                    await prisma.categoryTranslation.create({
+                        data: {
+                            categoryId: created.id,
+                            language: langCode,
+                            name: translatedName,
+                        }
+                    });
+                }
+            }
+        }
+    }
+    console.log(`Seeded ${categories.length} categories with translations.`);
+
+    // Seed Prompts (only if table exists and empty)
+    try {
+        const promptCount = await prisma.prompt.count();
+        if (promptCount === 0) {
+            console.log('Seeding prompts...');
+            await prisma.prompt.createMany({
+                data: [
+                    {
+                        key: 'SEO_GENERATION',
+                        content: `You are an SEO assistant. Given a news title and content, produce strict JSON with keys: metaTitle, metaDescription, tags, altTexts.\n- metaTitle: short, compelling, <= 70 chars.\n- metaDescription: <= 160 chars.\n- tags: 5-10 concise tags.\n- altTexts: object mapping provided image URL -> descriptive alt text.\nRespond entirely in language code: {{languageCode}}.\nTitle: {{title}}\nContent: {{content}}\nImages: {{images}}\nOutput JSON schema: {"metaTitle": string, "metaDescription": string, "tags": string[], "altTexts": { [url: string]: string }}`,
+                        description: 'Generates SEO meta fields for short news',
+                    },
+                    {
+                        key: 'MODERATION',
+                        content: `Content moderation for news. Analyze the text for plagiarism likelihood and sensitive content (violence, hate, adult, personal data).\nReturn STRICT JSON: {"plagiarismScore": number (0-1), "sensitiveFlags": string[], "decision": "ALLOW"|"REVIEW"|"BLOCK", "remark": string (short, in {{languageCode}})}.\nText: {{content}}`,
+                        description: 'Moderation & safety analysis',
+                    },
+                    {
+                        key: 'CATEGORY_TRANSLATION',
+                        content: `You are a translator. Translate the news category name exactly into {{targetLanguage}}.\nRules:\n- Respond with ONLY the translated category name.\n- No quotes, no extra words, no punctuation.\n- Use the native script of {{targetLanguage}}{{latinGuard}}.\nCategory: {{text}}`,
+                        description: 'Translate category labels',
+                    },
+                ],
+                skipDuplicates: true,
+            });
+            console.log('Seeded prompts.');
+        } else {
+            console.log('Prompts already present, skipping prompt seeding.');
+        }
+    } catch (e) {
+        console.warn('Prompt table check/seed skipped (table may be missing):', (e as any)?.message);
     }
 
     // Seed Users

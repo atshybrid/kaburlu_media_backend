@@ -1,6 +1,8 @@
 
 import { Router } from 'express';
 import passport from 'passport';
+
+// Original like handlers imported (kept in case of internal fallback) but not used now.
 import {
   likeArticleController,
   unlikeArticleController,
@@ -10,68 +12,27 @@ import {
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 
-/**
- * @swagger
- * /likes/{articleId}:
- *   get:
- *     summary: Get all likes for an article
- *     tags: [Likes]
- *     parameters:
- *       - in: path
- *         name: articleId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       "200":
- *         description: A list of likes for the article
- */
-router.get('/:articleId', getLikesForArticleController);
+// DEPRECATED: Likes API replaced by unified /reactions (PUT /reactions with {articleId, reaction})
+// Hidden from swagger by removing annotation. Returns HTTP 410 Gone.
+router.get('/:articleId', (req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'The /likes API is deprecated. Use PUT /reactions with { articleId, reaction: "LIKE" | "DISLIKE" | "NONE" }.'
+  });
+});
 
-/**
- * @swagger
- * /likes:
- *   post:
- *     summary: Like an article
- *     tags: [Likes]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               articleId:
- *                 type: string
- *     responses:
- *       "201":
- *         description: Article liked successfully
- */
-router.post('/', auth, likeArticleController);
+router.post('/', auth, (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Deprecated. Use PUT /reactions with { articleId, reaction: "LIKE" }.'
+  });
+});
 
-/**
- * @swagger
- * /likes:
- *   delete:
- *     summary: Unlike an article
- *     tags: [Likes]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               articleId:
- *                 type: string
- *     responses:
- *       "204":
- *         description: Article unliked successfully
- */
-router.delete('/', auth, unlikeArticleController);
+router.delete('/', auth, (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Deprecated. Use PUT /reactions with { articleId, reaction: "NONE" } to clear.'
+  });
+});
 
 export default router;
