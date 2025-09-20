@@ -84,6 +84,7 @@ export const registerGuestController = async (req: Request, res: Response) => {
 };
 import * as bcrypt from 'bcrypt';
 import { getAdmin } from '../../lib/firebase';
+import { verifyToken } from '../../lib/tokenVerification';
 import jwtLib from 'jsonwebtoken';
 
 export const upgradeGuestController = async (req: Request, res: Response) => {
@@ -342,11 +343,51 @@ export const upsertDeviceController = async (req: Request, res: Response) => {
 
 export const loginWithGoogleController = async (req: Request, res: Response) => {
   try {
-    const { googleIdToken, deviceId } = req.body;
-    if (!googleIdToken) return res.status(400).json({ success: false, message: 'googleIdToken is required' });
-    const admin = getAdmin();
-    const decoded = await admin.auth().verifyIdToken(googleIdToken);
-    const firebaseUid = decoded.uid;
+    const { googleIdToken, firebaseIdToken, deviceId } = req.body;
+    
+    console.log('[Login Google] Request received:', {
+      hasGoogleIdToken: !!googleIdToken,
+      hasFirebaseIdToken: !!firebaseIdToken,
+      hasDeviceId: !!deviceId,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip || req.connection.remoteAddress
+    });
+    
+    // Validate that at least one token is provided
+    if (!googleIdToken && !firebaseIdToken) {
+      console.error('[Login Google] ERROR: No tokens provided in request');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Either googleIdToken or firebaseIdToken is required',
+        code: 'MISSING_TOKEN'
+      });
+    }
+    
+    // Use new token verification utility
+    const verificationResult = await verifyToken({ googleIdToken, firebaseIdToken });
+    
+    if (!verificationResult.success) {
+      console.error('[Login Google] Token verification failed:', verificationResult.error);
+      return res.status(401).json({ 
+        success: false, 
+        message: `Token verification failed: ${verificationResult.error}`,
+        code: 'INVALID_TOKEN',
+        details: {
+          verificationMethod: verificationResult.verificationMethod,
+          audience: verificationResult.audience,
+          issuer: verificationResult.issuer
+        }
+      });
+    }
+    
+    console.log('[Login Google] Token verification successful:', {
+      method: verificationResult.verificationMethod,
+      firebaseUid: verificationResult.firebaseUid,
+      email: verificationResult.email,
+      audience: verificationResult.audience
+    });
+    
+    const firebaseUid = verificationResult.firebaseUid;
 
     // Find user by firebaseUid
   let user = await prisma.user.findUnique({ where: { firebaseUid } as any });
@@ -397,8 +438,9 @@ export const loginWithGoogleController = async (req: Request, res: Response) => 
 
 export const upgradeCitizenReporterGoogleController = async (req: Request, res: Response) => {
   try {
-    const { googleIdToken, email, languageId, pushToken, location } = req.body as {
-      googleIdToken: string;
+    const { googleIdToken, firebaseIdToken, email, languageId, pushToken, location } = req.body as {
+      googleIdToken?: string;
+      firebaseIdToken?: string;
       email?: string;
       languageId: string;
       pushToken?: string;
@@ -414,16 +456,61 @@ export const upgradeCitizenReporterGoogleController = async (req: Request, res: 
         source?: string;
       };
     };
-    if (!googleIdToken) return res.status(400).json({ success: false, message: 'googleIdToken is required' });
+    
+    console.log('[Upgrade Citizen Reporter] Request received:', {
+      hasGoogleIdToken: !!googleIdToken,
+      hasFirebaseIdToken: !!firebaseIdToken,
+      email,
+      languageId,
+      hasPushToken: !!pushToken,
+      hasLocation: !!location,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip || req.connection.remoteAddress
+    });
+    
+    // Validate required parameters
+    if (!googleIdToken && !firebaseIdToken) {
+      console.error('[Upgrade Citizen Reporter] ERROR: No tokens provided');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Either googleIdToken or firebaseIdToken is required',
+        code: 'MISSING_TOKEN'
+      });
+    }
+    
     if (!languageId) return res.status(400).json({ success: false, message: 'languageId is required' });
     if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
       return res.status(400).json({ success: false, message: 'location with latitude and longitude is required' });
     }
+    
     const lang = await prisma.language.findUnique({ where: { id: languageId } });
     if (!lang) return res.status(400).json({ success: false, message: 'Invalid languageId' });
-    const admin = getAdmin();
-    const decoded = await admin.auth().verifyIdToken(googleIdToken);
-    const firebaseUid = decoded.uid;
+    
+    // Use new token verification utility
+    const verificationResult = await verifyToken({ googleIdToken, firebaseIdToken });
+    
+    if (!verificationResult.success) {
+      console.error('[Upgrade Citizen Reporter] Token verification failed:', verificationResult.error);
+      return res.status(401).json({ 
+        success: false, 
+        message: `Token verification failed: ${verificationResult.error}`,
+        code: 'INVALID_TOKEN',
+        details: {
+          verificationMethod: verificationResult.verificationMethod,
+          audience: verificationResult.audience,
+          issuer: verificationResult.issuer
+        }
+      });
+    }
+    
+    console.log('[Upgrade Citizen Reporter] Token verification successful:', {
+      method: verificationResult.verificationMethod,
+      firebaseUid: verificationResult.firebaseUid,
+      email: verificationResult.email,
+      audience: verificationResult.audience
+    });
+    
+    const firebaseUid = verificationResult.firebaseUid;
 
     // If user exists, return conflict
   let existing = await prisma.user.findUnique({ where: { firebaseUid } as any });
@@ -487,7 +574,7 @@ export const upgradeCitizenReporterGoogleController = async (req: Request, res: 
     const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
     if (!citizenRole) return res.status(500).json({ success: false, message: 'Citizen reporter role not found' });
 
-  const user = await prisma.user.create({ data: { firebaseUid, email: email || decoded.email || null as any, roleId: citizenRole.id, languageId, status: 'ACTIVE' } as any });
+  const user = await prisma.user.create({ data: { firebaseUid, email: email || verificationResult.email || null as any, roleId: citizenRole.id, languageId, status: 'ACTIVE' } as any });
 
     // Upsert user location (mandatory)
     await prisma.userLocation.upsert({
