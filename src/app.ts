@@ -84,6 +84,21 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// JSON body parse error handler (must be BEFORE other routes' logic error handling) –
+// Express's built-in json parser throws a SyntaxError for invalid JSON; we intercept
+// and convert to a 400 with a clear, consistent structure.
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid JSON payload',
+      message: err.message,
+      hint: 'Ensure request body is valid JSON: use double quotes for property names & strings, no trailing commas.'
+    });
+  }
+  return next(err);
+});
+
 // Passport JWT strategy
 app.use(passport.initialize());
 try {
@@ -180,7 +195,9 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   console.error('Unhandled error:', err && (err.stack || err.message || err));
   const status = err && err.status && Number(err.status) >= 400 ? Number(err.status) : 500;
   res.status(status).json({
-    error: err && err.message ? err.message : 'Internal Server Error'
+    success: false,
+    error: status === 500 ? 'Internal Server Error' : err.message || 'Error',
+    message: err && err.message ? err.message : undefined
   });
 });
 
