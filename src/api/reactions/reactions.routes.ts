@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { upsertReaction, getReactionForArticle, batchReactionStatus } from './reactions.controller';
+import { upsertReaction, getReactionForArticle, getReactionForShortNews, batchReactionStatus } from './reactions.controller';
 import { requireRealUser } from '../middlewares/requireUser.middleware';
 
 const router = Router();
@@ -103,5 +103,24 @@ router.post('/status', auth, requireRealUser, batchReactionStatus);
  *         description: Reaction info
  */
 router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
+
+/**
+ * @swagger
+ * /reactions/shortnews/{shortNewsId}:
+ *   get:
+ *     summary: Get reaction + counts for a single short news item
+ *     tags: [Reactions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: shortNewsId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Reaction info
+ */
+router.get('/shortnews/:shortNewsId', auth, requireRealUser, getReactionForShortNews);
 
 export default router;

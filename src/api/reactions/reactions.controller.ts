@@ -73,6 +73,20 @@ export const getReactionForArticle = async (req: Request, res: Response) => {
   }
 };
 
+export const getReactionForShortNews = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as any;
+    const { shortNewsId } = req.params as { shortNewsId?: string };
+    if (!shortNewsId) return res.status(400).json({ success: false, error: 'shortNewsId required' });
+    const exists = await prisma.shortNews.findUnique({ where: { id: shortNewsId } });
+    if (!exists) return res.status(404).json({ success: false, error: 'ShortNews not found' });
+    const result = await contentReactions.getReaction(user?.id || null, ContentType.SHORTNEWS, shortNewsId);
+    return res.status(200).json({ success: true, data: result });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Failed to fetch reaction' });
+  }
+};
+
 export const batchReactionStatus = async (req: Request, res: Response) => {
   try {
     const user = req.user as any;
