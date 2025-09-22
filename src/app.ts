@@ -29,6 +29,7 @@ import mediaRoutes from './api/media/media.routes';
 import devicesRoutes from './api/devices/devices.routes';
 import notificationsRoutes from './api/notifications/notifications.routes';
 import promptsRoutes from './api/prompts/prompts.routes';
+import preferencesRoutes from './api/preferences/preferences.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -140,6 +141,7 @@ app.use('/media', mediaRoutes);
 app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
+app.use('/preferences', preferencesRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -169,6 +171,7 @@ apiV1.use('/media', mediaRoutes);
 apiV1.use('/devices', devicesRoutes);
 apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
+apiV1.use('/preferences', preferencesRoutes);
 app.use('/api/v1', apiV1);
 
 // Protected sample route
