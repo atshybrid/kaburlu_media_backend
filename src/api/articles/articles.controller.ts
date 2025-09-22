@@ -1,4 +1,6 @@
+import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { buildCanonicalUrl } from '../../lib/domains';
 
 // Paginated article fetch for swipe UI
 export const getPaginatedArticleController = async (req: Request, res: Response) => {
@@ -13,12 +15,11 @@ export const getPaginatedArticleController = async (req: Request, res: Response)
       include: { language: true },
     });
     const nextId = articles.length === limit ? articles[articles.length - 1].id : null;
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
     const articlesOut = articles.map((a) => {
       const langCode = (a as any).language?.code || 'en';
       const cj: any = (a as any).contentJson || {};
       const slugOrId = cj?.slug || a.id;
-      const canonicalUrl = `${canonicalDomain}/${langCode}/${slugOrId}`;
+      const canonicalUrl = buildCanonicalUrl(langCode, slugOrId, 'article');
       return { ...a, canonicalUrl };
     });
     res.json({ articles: articlesOut, nextId });
@@ -35,18 +36,16 @@ export const getSingleArticleController = async (req: Request, res: Response) =>
     if (!article) {
       return res.status(404).json({ error: 'Article not found.' });
     }
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
     const langCode = (article as any).language?.code || 'en';
     const cj: any = (article as any).contentJson || {};
     const slugOrId = cj?.slug || article.id;
-    const canonicalUrl = `${canonicalDomain}/${langCode}/${slugOrId}`;
+    const canonicalUrl = buildCanonicalUrl(langCode, slugOrId, 'article');
     res.json({ ...article, canonicalUrl });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch article.' });
   }
 };
 
-import { Request, Response } from 'express';
 import { validate } from 'class-validator';
 import { CreateArticleDto } from './articles.dto';
 import { createArticle } from './articles.service';
@@ -111,8 +110,7 @@ export const createArticleController = async (req: Request, res: Response) => {
     // Build canonical URL and topics
   const user = author; // already fetched with language
   const languageCode = author?.language?.code || 'en';
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-  const canonicalUrl = `${canonicalDomain}/${languageCode}/${article.id}`;
+  const canonicalUrl = buildCanonicalUrl(languageCode, article.id, 'article');
 
     // Send notification to language topic and category topic (best-effort)
     const titleText = seoMeta.seoTitle || title;

@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { transliterate } from 'transliteration';
 import type { Language } from '@prisma/client';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+import { getCanonicalDomain, buildCanonicalUrl } from '../../lib/domains';
 
 import { aiEnabledFor } from '../../lib/aiConfig';
 import { getPrompt, renderPrompt } from '../../lib/prompts';
@@ -313,8 +314,7 @@ export const createShortNews = async (req: Request, res: Response) => {
     }
 
     // Build canonical URL and JSON-LD for SEO
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-    const canonicalUrl = `${canonicalDomain}/${languageCode}/${slug}`;
+    const canonicalUrl = buildCanonicalUrl(languageCode, slug, 'short');
     const jsonLd = buildNewsArticleJsonLd({
       headline: titleToSave,
       description: finalSeo.metaDescription,
@@ -398,8 +398,7 @@ export const getShortNewsJsonLd = async (req: Request, res: Response) => {
     if (!item) return res.status(404).json({ success: false, error: 'Not found' });
     const lang = await prisma.language.findUnique({ where: { id: item.language as any } });
     const languageCode = lang?.code || 'en';
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-    const canonicalUrl = `${canonicalDomain}/${languageCode}/${item.slug}`;
+    const canonicalUrl = buildCanonicalUrl(languageCode, item.slug || item.id, 'short');
     const imgs = (item.mediaUrls || []).filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
     const vids = (item.mediaUrls || []).filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
     const jsonLd = buildNewsArticleJsonLd({
@@ -582,8 +581,7 @@ export const updateShortNewsStatus = async (req: Request, res: Response) => {
           const lang = await prisma.language.findUnique({ where: { id: updated.language as any } });
           if (lang?.code) languageCode = lang.code;
         }
-        const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-        const canonicalUrl = `${canonicalDomain}/${languageCode}/${updated.slug}`;
+        const canonicalUrl = buildCanonicalUrl(languageCode, updated.slug || updated.id, 'short');
         const titleText = updated.title;
         const bodyText = (updated.content || '').slice(0, 120);
         const dataPayload = { type: 'shortnews', shortNewsId: updated.id, url: canonicalUrl } as Record<string, string>;
@@ -827,8 +825,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       const address = i.address ?? (loc as any)?.address ?? null;
       // derive canonical url and primary media
       const languageCode = l?.code || 'en';
-      const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-      const canonicalUrl = `${canonicalDomain}/${languageCode}/${i.slug}`;
+      const canonicalUrl = buildCanonicalUrl(languageCode, i.slug || i.id, 'short');
       const mediaUrls = Array.isArray(i.mediaUrls) ? i.mediaUrls : [];
       const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
       const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
@@ -968,8 +965,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
 
     // Build canonical URL and media URLs
     const languageCode = lang?.code || 'en';
-    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-    const canonicalUrl = `${canonicalDomain}/${languageCode}/${item.slug}`;
+    const canonicalUrl = buildCanonicalUrl(languageCode, item.slug || item.id, 'short');
     const mediaUrls = Array.isArray(item.mediaUrls) ? item.mediaUrls : [];
     const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
     const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
@@ -1217,8 +1213,7 @@ export const listAllShortNews = async (req: Request, res: Response) => {
       const address = i.address ?? (loc as any)?.address ?? null;
       // derive canonical url and primary media for convenience
       const languageCode = l?.code || 'en';
-      const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
-      const canonicalUrl = `${canonicalDomain}/${languageCode}/${i.slug}`;
+      const canonicalUrl = buildCanonicalUrl(languageCode, i.slug || i.id, 'short');
       const mediaUrls = Array.isArray(i.mediaUrls) ? i.mediaUrls : [];
       const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
       const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
