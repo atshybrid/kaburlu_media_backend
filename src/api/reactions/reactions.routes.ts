@@ -108,10 +108,8 @@ router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
  * @swagger
  * /reactions/shortnews/{shortNewsId}:
  *   get:
- *     summary: Get reaction + counts for a single short news item
+ *     summary: Get reaction + counts for a single short news item (PUBLIC - no auth required)
  *     tags: [Reactions]
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: shortNewsId
@@ -121,6 +119,6 @@ router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
  *       200:
  *         description: Reaction info
  */
-router.get('/shortnews/:shortNewsId', auth, requireRealUser, getReactionForShortNews);
+router.get('/shortnews/:shortNewsId', getReactionForShortNews);
 
 export default router;
