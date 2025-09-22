@@ -892,6 +892,147 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
   }
 };
 
+export const getApprovedShortNewsById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'ShortNews ID is required' });
+    }
+
+    // Find the short news item - must be approved to be publicly accessible
+    const item = await prisma.shortNews.findUnique({
+      where: { id },
+      include: {
+        author: { 
+          select: { 
+            id: true, 
+            email: true, 
+            mobileNumber: true, 
+            role: { select: { name: true } }, 
+            profile: { select: { fullName: true, profilePhotoUrl: true } } 
+          } 
+        },
+      },
+    });
+
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'ShortNews not found' });
+    }
+
+    // Only approved items are publicly accessible
+    if (!['DESK_APPROVED', 'AI_APPROVED'].includes(item.status as string)) {
+      return res.status(404).json({ success: false, error: 'ShortNews not found' });
+    }
+
+    // Get language info
+    const lang = item.language ? await prisma.language.findUnique({ where: { id: item.language as any } }) : null;
+
+    // Get category name (in the item's language if available)
+    let categoryName: string | null = null;
+    if (item.categoryId) {
+      const catTranslation = await prisma.categoryTranslation.findUnique({
+        where: { categoryId_language: { categoryId: item.categoryId, language: item.language as any } }
+      });
+      if (catTranslation) {
+        categoryName = catTranslation.name;
+      } else {
+        // Fallback to category default name
+        const cat = await prisma.category.findUnique({ where: { id: item.categoryId } });
+        categoryName = cat?.name || null;
+      }
+    }
+
+    // Get author location for place/address fallback
+    let authorLoc: any = null;
+    if (item.authorId) {
+      authorLoc = await prisma.userLocation.findUnique({ where: { userId: item.authorId } });
+    }
+
+    // Check if requesting user has read this (optional auth)
+    const user = (req as any).user as Express.User | undefined;
+    let isRead = false;
+    let isOwner = false;
+    if (user) {
+      isOwner = item.authorId === user.id;
+      const readRecord = await prisma.shortNewsRead.findUnique({
+        where: { userId_shortNewsId: { userId: user.id, shortNewsId: item.id } }
+      });
+      isRead = !!readRecord;
+    }
+
+    // Build enriched response (same format as public list)
+    const author = item.author as any;
+    const authorName = author?.profile?.fullName || author?.email || author?.mobileNumber || null;
+    const placeName = item.placeName ?? authorLoc?.placeName ?? null;
+    const address = item.address ?? authorLoc?.address ?? null;
+
+    // Build canonical URL and media URLs
+    const languageCode = lang?.code || 'en';
+    const canonicalDomain = process.env.CANONICAL_DOMAIN || 'https://app.hrcitodaynews.in';
+    const canonicalUrl = `${canonicalDomain}/${languageCode}/${item.slug}`;
+    const mediaUrls = Array.isArray(item.mediaUrls) ? item.mediaUrls : [];
+    const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
+    const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
+    const primaryImageUrl = imageUrls[0] || null;
+    const primaryVideoUrl = videoUrls[0] || null;
+
+    // Build JSON-LD (fallback if missing)
+    let jsonLd: any = (item.seo as any)?.jsonLd;
+    if (!jsonLd) {
+      jsonLd = buildNewsArticleJsonLd({
+        headline: item.title,
+        description: ((item.seo as any)?.metaDescription || item.content?.slice(0, 160)),
+        canonicalUrl,
+        imageUrls: imageUrls.slice(0, 5),
+        languageCode,
+        datePublished: item.createdAt,
+        dateModified: item.updatedAt,
+        videoUrl: primaryVideoUrl || undefined,
+        videoThumbnailUrl: primaryImageUrl || undefined,
+      });
+    }
+
+    const data = {
+      ...item,
+      mediaUrls,
+      primaryImageUrl,
+      primaryVideoUrl,
+      canonicalUrl,
+      jsonLd,
+      languageId: item.language ?? null,
+      languageName: lang?.name ?? null,
+      languageCode: lang?.code ?? null,
+      categoryName,
+      authorName,
+      author: {
+        id: author?.id || null,
+        fullName: author?.profile?.fullName || null,
+        profilePhotoUrl: author?.profile?.profilePhotoUrl || null,
+        email: author?.email || null,
+        mobileNumber: author?.mobileNumber || null,
+        roleName: author?.role?.name || null,
+        reporterType: author?.role?.name || null,
+      },
+      isOwner,
+      isRead,
+      placeName,
+      address,
+      latitude: item.latitude ?? null,
+      longitude: item.longitude ?? null,
+      accuracyMeters: item.accuracyMeters ?? null,
+      provider: item.provider ?? null,
+      timestampUtc: item.timestampUtc ?? null,
+      placeId: item.placeId ?? null,
+      source: item.source ?? null,
+    };
+
+    return res.json({ success: true, data });
+  } catch (e) {
+    console.error('Failed to fetch short news by ID:', e);
+    return res.status(500).json({ success: false, error: 'Failed to fetch short news' });
+  }
+};
+
 // Moderation/status-wise listing: citizens see their own by status; desk/admin see language-wide by status
 export const listShortNewsByStatus = async (req: Request, res: Response) => {
   try {

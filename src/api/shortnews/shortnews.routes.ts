@@ -538,6 +538,72 @@ router.get('/public', shortNewsController.listApprovedShortNews);
 
 /**
  * @swagger
+ * /shortnews/public/{id}:
+ *   get:
+ *     summary: Get single approved short news by ID (PUBLIC - no auth required)
+ *     description: Returns a single approved short news item with full enriched data including reactions, comments, and metadata. Only DESK_APPROVED and AI_APPROVED items are accessible. Perfect for URL sharing and deep linking.
+ *     tags: [ShortNews]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ShortNews ID
+ *     responses:
+ *       200:
+ *         description: Single approved short news item with enriched data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string }
+ *                     title: { type: string }
+ *                     content: { type: string }
+ *                     slug: { type: string }
+ *                     status: { type: string }
+ *                     authorName: { type: string, nullable: true }
+ *                     author:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string, nullable: true }
+ *                         fullName: { type: string, nullable: true }
+ *                         profilePhotoUrl: { type: string, nullable: true }
+ *                         email: { type: string, nullable: true }
+ *                         mobileNumber: { type: string, nullable: true }
+ *                         roleName: { type: string, nullable: true }
+ *                         reporterType: { type: string, nullable: true }
+ *                     categoryName: { type: string, nullable: true }
+ *                     languageId: { type: string, nullable: true }
+ *                     languageName: { type: string, nullable: true }
+ *                     languageCode: { type: string, nullable: true }
+ *                     mediaUrls: { type: array, items: { type: string } }
+ *                     primaryImageUrl: { type: string, nullable: true }
+ *                     primaryVideoUrl: { type: string, nullable: true }
+ *                     canonicalUrl: { type: string }
+ *                     jsonLd: { type: object }
+ *                     isOwner: { type: boolean, description: "True if requesting user is the author" }
+ *                     isRead: { type: boolean, description: "True if requesting user has read this item" }
+ *                     placeName: { type: string, nullable: true }
+ *                     address: { type: string, nullable: true }
+ *                     latitude: { type: number, nullable: true }
+ *                     longitude: { type: number, nullable: true }
+ *                     createdAt: { type: string, format: date-time }
+ *                     updatedAt: { type: string, format: date-time }
+ *       404:
+ *         description: ShortNews not found or not approved for public access
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/public/:id', shortNewsController.getApprovedShortNewsById);
+
+/**
+ * @swagger
  * /shortnews/moderation:
  *   get:
  *     summary: Moderation queue/status-wise listing
