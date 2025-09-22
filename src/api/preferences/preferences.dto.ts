@@ -64,3 +64,6 @@ export class UpdatePreferencesDto {
 
 // Export schema for use with validation middleware
 export const updatePreferencesSchema = UpdatePreferencesDto;
+
+// Re-export for TypeScript module resolution
+export default UpdatePreferencesDto;
