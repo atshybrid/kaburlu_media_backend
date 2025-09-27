@@ -1,5 +1,5 @@
 {
-  "name": "ai_kaburlu-backend",
+  "name": "kaburlu_media_backend",
   "description": "Kaburlu News Platform API (Node + Express + TypeScript)",
   "version": "1.0.0",
   "private": true,
