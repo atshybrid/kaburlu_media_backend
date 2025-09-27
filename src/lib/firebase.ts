@@ -10,7 +10,7 @@ function initFirebase() {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
   console.log('[Firebase Init] Initializing Firebase Admin SDK...');
-  console.log('[Firebase Init] Expected project ID: khabarx-f0365');
+  console.log('[Firebase Init] Expected project ID: kaburlu-f0365');
   console.log('[Firebase Init] Environment project ID:', projectId || 'not set');
 
   if (credsPath) {
@@ -41,9 +41,9 @@ function initFirebase() {
     const actualProjectId = app.options.projectId;
     console.log('[Firebase Init] Actual initialized project ID:', actualProjectId);
     
-    if (actualProjectId !== 'khabarx-f0365') {
+    if (actualProjectId !== 'kaburlu-f0365') {
       console.warn('[Firebase Init] WARNING: Project ID mismatch!');
-      console.warn(`[Firebase Init] Expected: khabarx-f0365, Got: ${actualProjectId}`);
+      console.warn(`[Firebase Init] Expected: kaburlu-f0365, Got: ${actualProjectId}`);
       console.warn('[Firebase Init] This may cause audience mismatch errors in token verification');
     } else {
       console.log('[Firebase Init] ✅ Project ID verified correctly');
