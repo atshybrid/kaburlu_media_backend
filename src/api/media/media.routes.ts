@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { r2Client, R2_BUCKET, getPublicUrl } from '../../lib/r2';
+import { r2Client, R2_BUCKET, getPublicUrl, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } from '../../lib/r2';
 import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import multer from 'multer';
 import prisma from '../../lib/prisma';
@@ -17,6 +17,9 @@ const router = Router();
 function ensureR2Configured(res: any): boolean {
   const missing: string[] = [];
   if (!R2_BUCKET) missing.push('R2_BUCKET');
+  if (!R2_ACCOUNT_ID) missing.push('R2_ACCOUNT_ID');
+  if (!R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
+  if (!R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
   // Endpoint/credentials are configured in the r2 client. We only check bucket here.
   if (missing.length > 0) {
     res.status(500).json({ error: 'Storage not configured', missing });
@@ -289,8 +292,20 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
       size: uploadBuffer.length,
       kind: (file.mimetype?.startsWith('image/') ? 'image' : (file.mimetype?.startsWith('video/') ? 'video' : 'other')),
     });
-  } catch (e) {
+  } catch (e: any) {
+    // Log full error server-side for diagnostics
     console.error('direct upload error', e);
+    // In non-production, return a minimal error detail to help debugging
+    const isProd = process.env.NODE_ENV === 'production';
+    if (!isProd) {
+      const detail = {
+        name: e?.name,
+        message: e?.message,
+        code: e?.code || e?.Code,
+        statusCode: e?.$metadata?.httpStatusCode,
+      };
+      return res.status(500).json({ error: 'Upload failed', detail });
+    }
     res.status(500).json({ error: 'Upload failed' });
   }
 });
