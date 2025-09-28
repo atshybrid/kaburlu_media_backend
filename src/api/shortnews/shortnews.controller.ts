@@ -386,8 +386,20 @@ export const createShortNews = async (req: Request, res: Response) => {
         seo: shortNews.seo,
       },
     });
-  } catch (error) {
-    res.status(400).json({ success: false, error: 'Failed to submit short news' });
+  } catch (error: any) {
+    // Differentiate known Prisma validation/foreign key errors vs generic failure
+    const message = (error && typeof error === 'object' && (error.message || (error as any).code)) ? String(error.message || (error as any).code) : 'Failed to submit short news';
+    // Log full error server-side for observability
+    console.error('[createShortNews] Error:', message, '\nStack:', error?.stack);
+    // Heuristic mapping for cleaner client messages
+    let clientMsg = 'Failed to submit short news';
+    if (/foreign key|relation|not found/i.test(message)) clientMsg = 'Invalid categoryId or related reference';
+    else if (/Unique constraint/i.test(message)) clientMsg = 'Duplicate value constraint violated';
+    else if (/JSON|Unexpected token/i.test(message)) clientMsg = 'AI moderation parsing failed';
+    else if (/timeout/i.test(message)) clientMsg = 'Upstream AI/service timeout';
+    // In development, expose the raw message to help debugging
+    const isDev = process.env.NODE_ENV !== 'production';
+    return res.status(400).json({ success: false, error: clientMsg, detail: isDev ? message : undefined });
   }
 };
 
