@@ -72,8 +72,21 @@ READABILITY ENFORCERS (internal steps – DO them but DO NOT output explanation)
 CATEGORY SUGGESTION:
 Choose ONE (exact case) most appropriate: Politics, Crime, Accident, Weather, Sports, Business, Education, Health, Environment, Technology, Entertainment, Community, Traffic, Agriculture. If unclear, use "Community".
 
+OPTIONAL HEADINGS (ONLY IF USEFUL):
+• If the content would benefit from a short sub-head (h2) or a tag-line (h3), include them.
+• If NOT needed, omit entirely. Never invent headings just to fill.
+• Each heading text ≤ 50 characters. Provide styling fields when included: color (text color) and bgColor (background color). If unsure, set bgColor to "transparent".
+
 OUTPUT STRICT RAW JSON ONLY (no markdown) with EXACT schema:
-{"title": string, "content": string, "suggestedCategoryName": string}
+{
+  "title": string,
+  "content": string,
+  "suggestedCategoryName": string,
+  "headings"?: {
+    "h2"?: { "text": string, "color"?: string, "bgColor"?: string },
+    "h3"?: { "text": string, "color"?: string, "bgColor"?: string }
+  }
+}
 Return ONLY the JSON object.`,
 };
 

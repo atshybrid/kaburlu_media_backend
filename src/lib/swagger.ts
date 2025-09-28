@@ -27,6 +27,7 @@ const swaggerDefinition = {
     { name: 'Auth' },
     { name: 'Users' },
     { name: 'ShortNews' },
+    { name: 'ShortNews Options' },
     { name: 'Locations' },
     { name: 'Categories' },
     { name: 'Languages' },

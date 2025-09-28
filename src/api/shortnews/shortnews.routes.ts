@@ -135,6 +135,29 @@ router.post('/ai/rewrite', passport.authenticate('jwt', { session: false }), sho
  *                 items:
  *                   type: string
  *                 example: ["https://img.com/1.jpg", "https://img.com/2.mp4"]
+ *               templateId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Optional template identifier for client-side rendering style.
+ *                 example: "simple-01"
+ *               headings:
+ *                 type: object
+ *                 description: 'Optional extra headings styling. If provided, server applies defaults (h2: color #1f2937 size 20, h3: color #374151 size 18).'
+ *                 properties:
+ *                   h2:
+ *                     type: object
+ *                     properties:
+ *                       text: { type: string, maxLength: 50 }
+ *                       color: { type: string, example: "#1f2937" }
+ *                       bgColor: { type: string, example: "transparent" }
+ *                       size: { type: number, example: 20 }
+ *                   h3:
+ *                     type: object
+ *                     properties:
+ *                       text: { type: string, maxLength: 50 }
+ *                       color: { type: string, example: "#374151" }
+ *                       bgColor: { type: string, example: "transparent" }
+ *                       size: { type: number, example: 18 }
  *               latitude:
  *                 type: number
  *                 example: 17.385044
@@ -433,6 +456,24 @@ router.get('/all', passport.authenticate('jwt', { session: false }), requireDesk
  *               placeId: { type: string }
  *               placeName: { type: string }
  *               source: { type: string }
+ *               templateId: { type: string, nullable: true, description: "Optional template identifier" }
+ *               headings:
+ *                 type: object
+ *                 properties:
+ *                   h2:
+ *                     type: object
+ *                     properties:
+ *                       text: { type: string, maxLength: 50 }
+ *                       color: { type: string }
+ *                       bgColor: { type: string }
+ *                       size: { type: number }
+ *                   h3:
+ *                     type: object
+ *                     properties:
+ *                       text: { type: string, maxLength: 50 }
+ *                       color: { type: string }
+ *                       bgColor: { type: string }
+ *                       size: { type: number }
  *     responses:
  *       200:
  *         description: Updated short news item

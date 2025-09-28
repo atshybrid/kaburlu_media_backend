@@ -8,6 +8,10 @@ export interface GeneratedShortNewsDraft {
   suggestedCategoryName: string;
   attempts: number;
   fallbackUsed: boolean;
+  headings?: {
+    h2?: { text: string; color?: string; bgColor?: string };
+    h3?: { text: string; color?: string; bgColor?: string };
+  };
 }
 
 export interface GenerateShortNewsOptions {
@@ -88,11 +92,30 @@ export async function generateAiShortNewsFromPrompt(
     parsed.suggestedCategoryName = 'Community';
   }
 
+  // Normalize optional headings if present
+  const clip = (s: any) => (typeof s === 'string' ? s.trim().slice(0, 50) : undefined);
+  const normHead = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return undefined;
+    const text = clip(obj.text ?? obj.content);
+    if (!text) return undefined;
+    const color = typeof obj.color === 'string' && obj.color.trim() ? obj.color.trim() : undefined;
+    const bgColorRaw = obj.bgColor ?? obj.backgroundColor;
+    const bgColor = typeof bgColorRaw === 'string' && bgColorRaw.trim() ? bgColorRaw.trim() : 'transparent';
+    return { text, color, bgColor };
+  };
+  let headings: any = undefined;
+  if (parsed.headings && typeof parsed.headings === 'object') {
+    const h2 = normHead(parsed.headings.h2);
+    const h3 = normHead(parsed.headings.h3);
+    if (h2 || h3) headings = { ...(h2 ? { h2 } : {}), ...(h3 ? { h3 } : {}) };
+  }
+
   return {
     title: parsed.title,
     content: parsed.content,
     suggestedCategoryName: parsed.suggestedCategoryName.trim(),
     attempts,
     fallbackUsed,
+    ...(headings ? { headings } : {}),
   };
 }

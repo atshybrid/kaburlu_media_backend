@@ -13,6 +13,40 @@ import { sendToTopic } from '../../lib/fcm';
 import prismaClient from '../../lib/prisma';
 import { translateAndSaveCategoryInBackground } from '../categories/categories.service';
 
+type HeadingStyle = { text: string; color?: string; bgColor?: string; size?: number; tag?: 'h2' | 'h3' };
+type HeadingsPayload = { h2?: HeadingStyle; h3?: HeadingStyle };
+
+function normalizeHeading(tag: 'h2' | 'h3', obj: any): HeadingStyle | undefined {
+  if (!obj) return undefined;
+  const text = typeof obj.text === 'string' ? obj.text.trim() : (typeof obj.content === 'string' ? obj.content.trim() : '');
+  if (!text) return undefined;
+  const maxLen = 50;
+  const color = typeof obj.color === 'string' && obj.color.trim() ? obj.color.trim() : undefined;
+  const bgColorRaw = (obj.bgColor ?? obj.backgroundColor);
+  const bgColor = typeof bgColorRaw === 'string' && bgColorRaw.trim() ? bgColorRaw.trim() : undefined;
+  const sizeNum = obj.size != null ? Number(obj.size) : undefined;
+  const size = Number.isFinite(sizeNum) && sizeNum! > 0 ? sizeNum : undefined;
+  const defaults = tag === 'h2' ? { color: '#1f2937', bgColor: 'transparent', size: 20 } : { color: '#374151', bgColor: 'transparent', size: 18 };
+  return {
+    tag,
+    text: text.slice(0, maxLen),
+    color: color || defaults.color,
+    bgColor: bgColor || defaults.bgColor,
+    size: size || defaults.size,
+  };
+}
+
+function normalizeHeadings(input?: any, h2Alt?: any, h3Alt?: any): HeadingsPayload | null {
+  // Accept either a single "headings" object or separate h2/h3 objects
+  const src = (input && typeof input === 'object') ? input : {};
+  const h2 = normalizeHeading('h2', src.h2 ?? h2Alt);
+  const h3 = normalizeHeading('h3', src.h3 ?? h3Alt);
+  const payload: HeadingsPayload = {};
+  if (h2) payload.h2 = h2;
+  if (h3) payload.h3 = h3;
+  return Object.keys(payload).length ? payload : null;
+}
+
 // AI article generation (SHORTNEWS_AI_ARTICLE) - helper only, no DB write
 export const aiGenerateShortNewsArticle = async (req: Request, res: Response) => {
   try {
@@ -109,6 +143,7 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
         localizedCategoryName,
         attempts: draft.attempts,
         fallback: draft.fallbackUsed,
+        headings: draft.headings || undefined,
       },
     });
   } catch (e) {
@@ -195,7 +230,7 @@ const prisma = new PrismaClient();
 export const createShortNews = async (req: Request, res: Response) => {
   try {
   const { title, content, mediaUrls, latitude, longitude, address, categoryId, tags,
-    accuracyMeters, provider, timestampUtc, placeId, placeName, source } = req.body;
+    accuracyMeters, provider, timestampUtc, placeId, placeName, source, headings, h2, h3, templateId } = req.body;
     if (!req.user || typeof req.user !== 'object' || !('id' in req.user)) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
@@ -330,7 +365,9 @@ export const createShortNews = async (req: Request, res: Response) => {
       videoThumbnailUrl: imageCandidates[0],
     });
 
-    const shortNews = await prisma.shortNews.create({
+    const normalizedHeadings = normalizeHeadings(headings, h2, h3);
+
+    const shortNews = await (prisma as any).shortNews.create({
       data: {
         title: titleToSave,
         slug,
@@ -339,6 +376,8 @@ export const createShortNews = async (req: Request, res: Response) => {
         categoryId,
         tags: combinedTags,
         seo: { ...finalSeo, jsonLd },
+  headings: normalizedHeadings || undefined,
+  templateId: typeof templateId === 'string' && templateId.trim() ? templateId.trim() : undefined,
         mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
         latitude: Number(latNum),
         longitude: Number(lonNum),
@@ -656,6 +695,10 @@ export const updateShortNews = async (req: Request, res: Response) => {
       placeId,
       placeName,
       source,
+      headings,
+      h2,
+      h3,
+      templateId,
     } = req.body || {};
 
     // Validate optional lat/lon if provided
@@ -696,8 +739,17 @@ export const updateShortNews = async (req: Request, res: Response) => {
     if (placeId !== undefined) data.placeId = placeId || null;
     if (placeName !== undefined) data.placeName = placeName || null;
     if (source !== undefined) data.source = source || null;
+  if (templateId === null) data.templateId = null;
+  else if (templateId !== undefined) data.templateId = String(templateId).trim() || null;
 
-    const updated = await prisma.shortNews.update({ where: { id }, data });
+    if (headings === null) {
+      data.headings = null;
+    } else if (headings !== undefined || h2 !== undefined || h3 !== undefined) {
+      const norm = normalizeHeadings(headings, h2, h3);
+      if (norm) data.headings = norm; else data.headings = null;
+    }
+
+  const updated = await (prisma as any).shortNews.update({ where: { id }, data });
     return res.status(200).json({ success: true, data: updated });
   } catch (e) {
     return res.status(400).json({ success: false, error: 'Failed to update short news' });

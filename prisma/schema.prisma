@@ -20,6 +20,10 @@ model ShortNews {
   publishDate  DateTime?
   status       String   @default("PENDING") // PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED
   seo          Json?
+  // Optional extra headings styling payload, e.g. { h2: { text, color?, size? }, h3: { text, color?, size? } }
+  headings     Json?
+  // Optional template id for client-side rendering style
+  templateId   String?
   allowComments Boolean @default(true)
   mediaUrls    String[] // array of image/video URLs
   latitude     Float?
@@ -38,6 +42,7 @@ model ShortNews {
   updatedAt    DateTime @updatedAt
   reads        ShortNewsRead[]
   comments     Comment[]
+  options      ShortNewsOption[]
 }
 
 datasource db {
@@ -78,6 +83,7 @@ model User {
   media        Media[]
   contentReads ContentRead[]
   contentReactions ContentReaction[]
+  shortNewsOptions ShortNewsOption[]
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
@@ -456,4 +462,22 @@ model UserProfile {
   socialLinks           Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+}
+
+/// One-line options/opinions posted by a user for a ShortNews.
+/// - At most one option per (user, shortNews)
+/// - content is limited to 50 characters
+model ShortNewsOption {
+  id          String     @id @default(cuid())
+  shortNews   ShortNews  @relation(fields: [shortNewsId], references: [id])
+  shortNewsId String
+  user        User       @relation(fields: [userId], references: [id])
+  userId      String
+  content     String     @db.VarChar(50)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([userId, shortNewsId])
+  @@index([shortNewsId])
+  @@index([userId])
 }

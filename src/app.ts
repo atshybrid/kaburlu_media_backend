@@ -30,6 +30,7 @@ import devicesRoutes from './api/devices/devices.routes';
 import notificationsRoutes from './api/notifications/notifications.routes';
 import promptsRoutes from './api/prompts/prompts.routes';
 import preferencesRoutes from './api/preferences/preferences.routes';
+import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -142,6 +143,7 @@ app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 app.use('/preferences', preferencesRoutes);
+app.use('/shortnews-options', shortnewsOptionsRouter);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -172,6 +174,7 @@ apiV1.use('/devices', devicesRoutes);
 apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/preferences', preferencesRoutes);
+apiV1.use('/shortnews-options', shortnewsOptionsRouter);
 app.use('/api/v1', apiV1);
 
 // Protected sample route
