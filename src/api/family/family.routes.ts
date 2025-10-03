@@ -25,12 +25,12 @@ router.post('/relations/link', auth, async (req: any, res) => {
     const inverse = inverseMap[relationType];
 
     const created = await prisma.$transaction(async (tx) => {
-      const a = await tx.familyRelation.upsert({
+      const a = await (tx as any)['familyRelation'].upsert({
         where: { userId_relatedUserId_relationType: { userId, relatedUserId, relationType } },
         update: {},
         create: { userId, relatedUserId, relationType }
       });
-      const b = await tx.familyRelation.upsert({
+      const b = await (tx as any)['familyRelation'].upsert({
         where: { userId_relatedUserId_relationType: { userId: relatedUserId, relatedUserId: userId, relationType: inverse } },
         update: {},
         create: { userId: relatedUserId, relatedUserId: userId, relationType: inverse }

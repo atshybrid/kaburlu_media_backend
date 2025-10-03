@@ -43,7 +43,7 @@ export async function buildFamilyScopeUserIds(opts: BuildScopeOptions): Promise<
     const depthById = new Map(batch.map(b => [b.id, b.depth] as const));
 
     // Fetch outgoing edges for frontier nodes
-    const edges = await prisma.familyRelation.findMany({
+    const edges = await (prisma as any)['familyRelation'].findMany({
       where: { userId: { in: userIds }, relationType: { in: allowedTypes as any } },
       select: { userId: true, relatedUserId: true }
     });
