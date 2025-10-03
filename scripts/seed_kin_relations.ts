@@ -43,8 +43,8 @@ const KIN: Kin[] = [
   { code: 'MATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: 'Uncle (Mother’s brother)', te: 'మామయ్య' },
   { code: 'MATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: 'Aunt (Mother’s sister)', te: 'అత్తయ్య' },
   // Nieces/Nephews
-  { code: 'NEPHEW', category: 'NEPHEW', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Nephew', te: 'సోదరుని కుమారుడు/సోదరి కుమారుడు' },
-  { code: 'NIECE', category: 'NIECE', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Niece', te: 'సోదరుని కుమార్తె/సోదరి కుమార్తె' },
+  { code: 'NEPHEW', category: 'NEPHEW', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Nephew', te: 'మేన అల్లుడు' },
+  { code: 'NIECE', category: 'NIECE', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Niece', te: 'మేన కోడలు' },
   // Cousins
   { code: 'COUSIN', category: 'COUSIN', gender: 'NEUTRAL', side: 'BOTH', en: 'Cousin', te: 'బాబాయి/పిన్ని/మామయ్య/అత్తయ్య పిల్లలు' },
 ];
