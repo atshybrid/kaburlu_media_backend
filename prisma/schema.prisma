@@ -447,6 +447,23 @@ model FamilyMember {
   @@index([userId])
 }
 
+/// Dictionary of kinship relation labels in multiple languages
+model KinRelation {
+  id             String   @id @default(cuid())
+  code           String   @unique  // e.g., FATHER, MOTHER, PATERNAL_GRANDMOTHER
+  category       String            // PARENT, CHILD, SPOUSE, SIBLING, GRANDPARENT, GRANDCHILD, AUNT, UNCLE, NIECE, NEPHEW, COUSIN, SELF
+  gender         String?           // MALE, FEMALE, NEUTRAL (label grammatical gender)
+  side           String?           // PATERNAL, MATERNAL, BOTH, N/A
+  generationUp   Int      @default(0)
+  generationDown Int      @default(0)
+  en             String            // English label
+  te             String            // Telugu label
+  isCommon       Boolean  @default(true)
+  notes          Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model Comment {
   id          String     @id @default(cuid())
   user        User       @relation(fields: [userId], references: [id])
