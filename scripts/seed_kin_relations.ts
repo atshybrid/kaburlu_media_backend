@@ -37,16 +37,27 @@ const KIN: Kin[] = [
   { code: 'HUSBAND', category: 'SPOUSE', gender: 'MALE', side: 'BOTH', en: 'Husband', te: 'భర్త' },
   { code: 'WIFE', category: 'SPOUSE', gender: 'FEMALE', side: 'BOTH', en: 'Wife', te: 'భార్య' },
   // Aunts/Uncles (Father side)
-  { code: 'PATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'PATERNAL', generationUp: 1, en: 'Uncle (Father’s brother)', te: 'బాబాయి' },
-  { code: 'PATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 1, en: 'Aunt (Father’s sister)', te: 'పిన్ని' },
+  { code: 'PATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'PATERNAL', generationUp: 1, en: 'Uncle (Father’s brother, younger generic)', te: 'బాబాయి' },
+  { code: 'PATERNAL_UNCLE_ELDER', category: 'UNCLE', gender: 'MALE', side: 'PATERNAL', generationUp: 1, en: "Uncle (Father’s elder brother)", te: 'పెద్ద నాన్న' },
+  { code: 'PATERNAL_UNCLE_WIFE_YOUNGER', category: 'AUNT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 1, en: "Aunt (Wife of father’s younger brother)", te: 'పిన్ని' },
+  { code: 'PATERNAL_UNCLE_WIFE_ELDER', category: 'AUNT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 1, en: "Aunt (Wife of father’s elder brother)", te: 'పెద్ద అమ్మ' },
+  { code: 'PATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 1, en: 'Aunt (Father’s sister)', te: 'మేన అత్తయ్య' },
   // Aunts/Uncles (Mother side)
-  { code: 'MATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: 'Uncle (Mother’s brother)', te: 'మామయ్య' },
-  { code: 'MATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: 'Aunt (Mother’s sister)', te: 'అత్తయ్య' },
+  { code: 'MATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: 'Uncle (Mother’s brother)', te: 'మేన మామయ్య' },
+  { code: 'MATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: 'Aunt (Mother’s sister, generic)', te: 'అత్తయ్య' },
+  { code: 'MATERNAL_AUNT_YOUNGER', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: "Aunt (Mother’s younger sister)", te: 'పిన్ని' },
+  { code: 'MATERNAL_AUNT_ELDER', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: "Aunt (Mother’s elder sister)", te: 'పెద్ద అమ్మ' },
+  { code: 'MATERNAL_AUNT_HUSBAND_YOUNGER', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: "Uncle (Husband of mother’s younger sister)", te: 'బాబాయి' },
+  { code: 'MATERNAL_AUNT_HUSBAND_ELDER', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: "Uncle (Husband of mother’s elder sister)", te: 'పెద్ద నాన్న' },
   // Nieces/Nephews
   { code: 'NEPHEW', category: 'NEPHEW', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Nephew', te: 'మేన అల్లుడు' },
   { code: 'NIECE', category: 'NIECE', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Niece', te: 'మేన కోడలు' },
   // Cousins
-  { code: 'COUSIN', category: 'COUSIN', gender: 'NEUTRAL', side: 'BOTH', en: 'Cousin', te: 'బాబాయి/పిన్ని/మామయ్య/అత్తయ్య పిల్లలు' },
+  // Cousins – individualized by parent-side and aunt/uncle type
+  { code: 'COUSIN_PATERNAL_UNCLE_CHILD', category: 'COUSIN', gender: 'NEUTRAL', side: 'PATERNAL', en: "Cousin (Child of father’s brother)", te: 'బాబాయి పిల్లలు' },
+  { code: 'COUSIN_PATERNAL_AUNT_CHILD', category: 'COUSIN', gender: 'NEUTRAL', side: 'PATERNAL', en: "Cousin (Child of father’s sister)", te: 'మేన అత్తయ్య పిల్లలు' },
+  { code: 'COUSIN_MATERNAL_UNCLE_CHILD', category: 'COUSIN', gender: 'NEUTRAL', side: 'MATERNAL', en: "Cousin (Child of mother’s brother)", te: 'మేన మామయ్య పిల్లలు' },
+  { code: 'COUSIN_MATERNAL_AUNT_CHILD', category: 'COUSIN', gender: 'NEUTRAL', side: 'MATERNAL', en: "Cousin (Child of mother’s sister)", te: 'అత్తయ్య/పిన్ని పిల్లలు' },
 ];
 
 async function main() {
