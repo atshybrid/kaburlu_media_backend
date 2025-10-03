@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
+import { buildFamilyScopeUserIds } from './family.service';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -49,10 +50,9 @@ router.get('/scope/preview', auth, async (req: any, res) => {
   try {
     const userId = req.user.id as string;
     const direction = String(req.query.direction || 'both');
-    const maxDepth = Math.max(1, Math.min(10, Number(req.query.maxDepth || 2))); // cap preview to 10 for compute safety
-
-    // Placeholder: return parameters; actual membership enumeration to be implemented in service
-    return res.json({ rootUserId: userId, direction, maxDepth, estimatedCount: null });
+    const maxDepth = Math.max(1, Number(req.query.maxDepth || 2));
+    const { members, truncated, depthReached } = await buildFamilyScopeUserIds({ rootUserId: userId, direction: direction as any, maxDepth, includeSelf: true, hardMemberCap: 10000 });
+    return res.json({ rootUserId: userId, direction, maxDepth, estimatedCount: members.length, truncated, depthReached });
   } catch (err) {
     console.error('scope preview error', err);
     return res.status(500).json({ error: 'Failed to preview scope' });
