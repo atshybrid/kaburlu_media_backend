@@ -22,9 +22,9 @@ const KIN: Kin[] = [
   { code: 'MOTHER', category: 'PARENT', gender: 'FEMALE', side: 'BOTH', generationUp: 1, en: 'Mother', te: 'అమ్మ' },
   // Grandparents
   { code: 'PATERNAL_GRANDFATHER', category: 'GRANDPARENT', gender: 'MALE', side: 'PATERNAL', generationUp: 2, en: 'Grandfather (Paternal)', te: 'తాతయ్య' },
-  { code: 'PATERNAL_GRANDMOTHER', category: 'GRANDPARENT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 2, en: 'Grandmother (Paternal)', te: 'అమ్మమ్మ' },
-  { code: 'MATERNAL_GRANDFATHER', category: 'GRANDPARENT', gender: 'MALE', side: 'MATERNAL', generationUp: 2, en: 'Grandfather (Maternal)', te: 'నాన్నయ్య' },
-  { code: 'MATERNAL_GRANDMOTHER', category: 'GRANDPARENT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 2, en: 'Grandmother (Maternal)', te: 'నాన్నమ్మ' },
+  { code: 'PATERNAL_GRANDMOTHER', category: 'GRANDPARENT', gender: 'FEMALE', side: 'PATERNAL', generationUp: 2, en: 'Grandmother (Paternal)', te: 'నానమ్మ' },
+  { code: 'MATERNAL_GRANDFATHER', category: 'GRANDPARENT', gender: 'MALE', side: 'MATERNAL', generationUp: 2, en: 'Grandfather (Maternal)', te: 'తాతయ్య' },
+  { code: 'MATERNAL_GRANDMOTHER', category: 'GRANDPARENT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 2, en: 'Grandmother (Maternal)', te: 'అమ్మమ్మ' },
   // Children
   { code: 'SON', category: 'CHILD', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Son', te: 'కొడుకు' },
   { code: 'DAUGHTER', category: 'CHILD', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Daughter', te: 'కూతురు' },
@@ -43,8 +43,8 @@ const KIN: Kin[] = [
   { code: 'MATERNAL_UNCLE', category: 'UNCLE', gender: 'MALE', side: 'MATERNAL', generationUp: 1, en: 'Uncle (Mother’s brother)', te: 'మామయ్య' },
   { code: 'MATERNAL_AUNT', category: 'AUNT', gender: 'FEMALE', side: 'MATERNAL', generationUp: 1, en: 'Aunt (Mother’s sister)', te: 'అత్తయ్య' },
   // Nieces/Nephews
-  { code: 'NEPHEW', category: 'NEPHEW', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Nephew', te: 'మనవడు/సోదరుని కుమారుడు/సోదరి కుమారుడు' },
-  { code: 'NIECE', category: 'NIECE', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Niece', te: 'మనవరాలు/సోదరుని కుమార్తె/సోదరి కుమార్తె' },
+  { code: 'NEPHEW', category: 'NEPHEW', gender: 'MALE', side: 'BOTH', generationDown: 1, en: 'Nephew', te: 'సోదరుని కుమారుడు/సోదరి కుమారుడు' },
+  { code: 'NIECE', category: 'NIECE', gender: 'FEMALE', side: 'BOTH', generationDown: 1, en: 'Niece', te: 'సోదరుని కుమార్తె/సోదరి కుమార్తె' },
   // Cousins
   { code: 'COUSIN', category: 'COUSIN', gender: 'NEUTRAL', side: 'BOTH', en: 'Cousin', te: 'బాబాయి/పిన్ని/మామయ్య/అత్తయ్య పిల్లలు' },
 ];
