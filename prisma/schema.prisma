@@ -84,6 +84,10 @@ model User {
   contentReads ContentRead[]
   contentReactions ContentReaction[]
   shortNewsOptions ShortNewsOption[]
+  // Family graph back-relations
+  familyRelations     FamilyRelation[]
+  relatedFamilyEdges  FamilyRelation[] @relation("RelatedUser")
+  familyMemberships   FamilyMember[]
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
@@ -395,6 +399,51 @@ model ContentReaction {
 
   @@unique([userId, contentType, contentId])
   @@index([contentType, contentId])
+  @@index([userId])
+}
+
+/// Family relationship graph (directed edges). Store both directions for convenience.
+enum FamilyRelationType {
+  PARENT
+  CHILD
+  SPOUSE
+  SIBLING
+}
+
+model FamilyRelation {
+  id              String             @id @default(cuid())
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  relatedUser     User               @relation("RelatedUser", fields: [relatedUserId], references: [id], onDelete: Cascade)
+  relatedUserId   String
+  relationType    FamilyRelationType
+  meta            Json?
+  createdAt       DateTime           @default(now())
+
+  @@unique([userId, relatedUserId, relationType])
+  @@index([userId])
+  @@index([relatedUserId])
+}
+
+/// Optional grouping of users into named families (e.g., by surname or explicit unit)
+model Family {
+  id          String         @id @default(cuid())
+  familyName  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  members     FamilyMember[]
+}
+
+model FamilyMember {
+  id        String  @id @default(cuid())
+  family    Family  @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  familyId  String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      String?
+  addedAt   DateTime @default(now())
+
+  @@unique([familyId, userId])
   @@index([userId])
 }
 
