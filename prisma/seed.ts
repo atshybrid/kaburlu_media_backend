@@ -123,21 +123,47 @@ const defaultPermissions: Record<string, string[]> = {
 async function main() {
     console.log(`Start seeding ...`);
 
-    // Delete old data
-    await prisma.user.deleteMany({});
-    await prisma.categoryTranslation.deleteMany({});
-    await prisma.category.deleteMany({});
-    await prisma.state.deleteMany({});
-    await prisma.country.deleteMany({});
-    await prisma.language.deleteMany({});
-    await prisma.role.deleteMany({});
+    // Optional destructive wipe (NOT enabled by default)
+    // Set FULL_WIPE=true to clear core reference data in correct order.
+    if (process.env.FULL_WIPE === 'true') {
+        console.warn('FULL_WIPE enabled: clearing existing core data...');
+        // Order matters: child tables first (subset, minimal for now).
+        await prisma.comment.deleteMany({});
+        await prisma.like.deleteMany({});
+        await prisma.dislike.deleteMany({});
+        await prisma.articleView.deleteMany({});
+        await prisma.articleRead.deleteMany({});
+        await prisma.shortNewsRead.deleteMany({});
+        await prisma.shortNewsOption.deleteMany({});
+        await prisma.shortNews.deleteMany({});
+        await prisma.article.deleteMany({});
+        // New multi-tenant related
+        await prisma.reporterPayment.deleteMany({}).catch(()=>{});
+        await prisma.reporterIDCard.deleteMany({}).catch(()=>{});
+        await prisma.reporter.deleteMany({}).catch(()=>{});
+        await prisma.domainCheckLog.deleteMany({}).catch(()=>{});
+        await prisma.domainCategory.deleteMany({}).catch(()=>{});
+        await prisma.domainLanguage.deleteMany({}).catch(()=>{});
+        await prisma.domain.deleteMany({}).catch(()=>{});
+        await prisma.tenantTheme.deleteMany({}).catch(()=>{});
+        await prisma.tenant.deleteMany({}).catch(()=>{});
+        await prisma.categoryTranslation.deleteMany({});
+        await prisma.category.deleteMany({});
+        await prisma.state.deleteMany({});
+        await prisma.country.deleteMany({});
+        await prisma.language.deleteMany({});
+        await prisma.user.deleteMany({});
+        await prisma.role.deleteMany({});
+    }
 
     // Seed Roles
     console.log('Seeding roles...');
     const roleMap: Record<string, string> = {};
     for (const roleName of roles) {
-        const newRole = await prisma.role.create({
-            data: {
+        const newRole = await prisma.role.upsert({
+            where: { name: roleName },
+            update: {},
+            create: {
                 name: roleName,
                 permissions: defaultPermissions[roleName]
             },
@@ -150,8 +176,10 @@ async function main() {
     console.log('Seeding languages...');
     const createdLanguages: { id: string; code: string }[] = [];
     for (const lang of languages) {
-        const newLang = await prisma.language.create({
-            data: lang,
+        const newLang = await prisma.language.upsert({
+            where: { code: lang.code },
+            update: {},
+            create: lang,
         });
         createdLanguages.push({ id: newLang.id, code: newLang.code });
     }
@@ -159,12 +187,20 @@ async function main() {
 
     // Seed Country (India) and States
     console.log('Seeding country and states...');
-    const india = await prisma.country.create({ data: { name: 'India', code: 'IN' } });
+    const india = await prisma.country.upsert({
+        where: { name: 'India' },
+        update: { code: 'IN' },
+        create: { name: 'India', code: 'IN' }
+    });
     const stateNames = [
         'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Andaman and Nicobar Islands','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Delhi','Jammu and Kashmir','Ladakh','Lakshadweep','Puducherry'
     ];
     for (const stateName of stateNames) {
-        await prisma.state.create({ data: { name: stateName, countryId: india.id } });
+        await prisma.state.upsert({
+            where: { name: stateName },
+            update: {},
+            create: { name: stateName, countryId: india.id }
+        });
     }
     console.log(`Seeded country India and ${stateNames.length} states.`);
 
@@ -177,22 +213,21 @@ async function main() {
     console.log('Seeding categories...');
     for (const cat of categories) {
         const slug = cat.key.toLowerCase();
-        const created = await prisma.category.create({
-            data: { name: cat.key, slug }
+        const created = await prisma.category.upsert({
+            where: { slug },
+            update: { name: cat.key },
+            create: { name: cat.key, slug }
         });
         const translations = categoryTranslations[cat.key];
         if (translations) {
             for (const [langCode, translatedName] of Object.entries(translations)) {
-                // only insert if language exists in seeds
-                if (languageMap[langCode]) {
-                    await prisma.categoryTranslation.create({
-                        data: {
-                            categoryId: created.id,
-                            language: langCode,
-                            name: translatedName,
-                        }
-                    });
-                }
+                if (!languageMap[langCode]) continue;
+                // Upsert category translation via composite unique (categoryId, language)
+                await prisma.categoryTranslation.upsert({
+                    where: { categoryId_language: { categoryId: created.id, language: langCode } },
+                    update: { name: translatedName },
+                    create: { categoryId: created.id, language: langCode, name: translatedName }
+                });
             }
         }
     }
@@ -242,8 +277,10 @@ async function main() {
     const saltRounds = 10;
     for (const userData of usersToCreate) {
         const hashedMpin = await bcrypt.hash(userData.mpin, saltRounds);
-        await prisma.user.create({
-            data: {
+        await prisma.user.upsert({
+            where: { mobileNumber: userData.mobileNumber },
+            update: {},
+            create: {
                 mobileNumber: userData.mobileNumber,
                 mpin: hashedMpin,
                 roleId: roleMap[userData.roleName],
@@ -253,6 +290,163 @@ async function main() {
         });
     }
     console.log(`Seeded ${usersToCreate.length} users.`);
+
+    // ---------------- Multi-Tenant Demo Seed (idempotent) ----------------
+    console.log('Seeding multi-tenant demo data...');
+    // Pick a known state (Telangana) if present
+    const telanganaState = await prisma.state.findFirst({ where: { name: 'Telangana' } });
+    const prgiNumber = 'PRGI-TS-2025-01987';
+    // Upsert Tenant
+    const tenant = await prisma.tenant.upsert({
+        where: { slug: 'greennews' },
+        update: {},
+        create: {
+            name: 'Green News Network',
+            slug: 'greennews',
+            stateId: telanganaState?.id,
+            prgiNumber,
+            prgiStatus: 'VERIFIED',
+            prgiVerifiedAt: new Date(),
+        }
+    });
+    // Domains
+    const activeDomain = await prisma.domain.upsert({
+        where: { domain: 'news.greennews.local' },
+        update: {},
+        create: {
+            domain: 'news.greennews.local',
+            tenantId: tenant.id,
+            isPrimary: true,
+            status: 'ACTIVE',
+            verifiedAt: new Date(),
+            lastCheckAt: new Date(),
+            lastCheckStatus: 'OK'
+        }
+    });
+    await prisma.domain.upsert({
+        where: { domain: 'beta.greennews.local' },
+        update: {},
+        create: {
+            domain: 'beta.greennews.local',
+            tenantId: tenant.id,
+            isPrimary: false,
+            status: 'PENDING',
+            verificationToken: 'tok_demo_beta'
+        }
+    });
+
+    // Map first two categories & two languages (en + te) to active domain
+    const allCategories = await prisma.category.findMany({ take: 2 });
+    for (const cat of allCategories) {
+        try {
+            await prisma.domainCategory.upsert({
+                where: { domainId_categoryId: { domainId: activeDomain.id, categoryId: cat.id } },
+                update: {},
+                create: { domainId: activeDomain.id, categoryId: cat.id }
+            });
+        } catch (e) {
+            // swallow unique race if parallel
+        }
+    }
+    const langEn = await prisma.language.findFirst({ where: { code: 'en' } });
+    const langTe = await prisma.language.findFirst({ where: { code: 'te' } });
+    for (const lang of [langEn, langTe]) {
+        if (!lang) continue;
+        try {
+            await prisma.domainLanguage.upsert({
+                where: { domainId_languageId: { domainId: activeDomain.id, languageId: lang.id } },
+                update: {},
+                create: { domainId: activeDomain.id, languageId: lang.id }
+            });
+        } catch {}
+    }
+
+    // Theme
+    await prisma.tenantTheme.upsert({
+        where: { tenantId: tenant.id },
+        update: {
+            logoUrl: 'https://cdn.example/greennews/logo.png',
+            faviconUrl: 'https://cdn.example/greennews/favicon.ico',
+            primaryColor: '#0A7F2E',
+            headerHtml: '<header>Green News</header>'
+        },
+        create: {
+            tenantId: tenant.id,
+            logoUrl: 'https://cdn.example/greennews/logo.png',
+            faviconUrl: 'https://cdn.example/greennews/favicon.ico',
+            primaryColor: '#0A7F2E',
+            headerHtml: '<header>Green News</header>'
+        }
+    });
+
+    // Reporter hierarchy
+    // Create a tenant admin reporter
+    const adminReporter = await prisma.reporter.upsert({
+        where: { email: 'admin@greennews.local' },
+        update: {},
+        create: {
+            tenantId: tenant.id,
+            role: 'TENANT_ADMIN',
+            level: 'STATE',
+            stateId: telanganaState?.id,
+            name: 'Green Admin',
+            email: 'admin@greennews.local',
+            passwordHash: await bcrypt.hash('AdminPass123!', 10)
+        }
+    });
+    // Parent Reporter
+    const parentReporter = await prisma.reporter.upsert({
+        where: { email: 'parent@greennews.local' },
+        update: {},
+        create: {
+            tenantId: tenant.id,
+            role: 'PARENT_REPORTER',
+            level: 'DISTRICT',
+            name: 'District Lead',
+            email: 'parent@greennews.local',
+            passwordHash: await bcrypt.hash('ParentPass123!', 10)
+        }
+    });
+    // Child Reporter
+    await prisma.reporter.upsert({
+        where: { email: 'reporter1@greennews.local' },
+        update: {},
+        create: {
+            tenantId: tenant.id,
+            role: 'REPORTER',
+            level: 'MANDAL',
+            parentId: parentReporter.id,
+            name: 'Field Reporter 1',
+            email: 'reporter1@greennews.local',
+            passwordHash: await bcrypt.hash('ReporterPass123!', 10)
+        }
+    });
+
+    // Reporter payment & ID card for parent reporter
+    const currentYear = new Date().getUTCFullYear();
+    await prisma.reporterPayment.upsert({
+        where: { reporterId_year: { reporterId: parentReporter.id, year: currentYear } },
+        update: { status: 'PAID' },
+        create: {
+            reporterId: parentReporter.id,
+            year: currentYear,
+            amount: 1500,
+            status: 'PAID',
+            expiresAt: new Date(new Date().setUTCFullYear(currentYear + 1))
+        }
+    });
+    await prisma.reporterIDCard.upsert({
+        where: { reporterId: parentReporter.id },
+        update: {},
+        create: {
+            reporterId: parentReporter.id,
+            cardNumber: `GREENNEWS-${currentYear}-0001`,
+            issuedAt: new Date(),
+            expiresAt: new Date(new Date().setUTCFullYear(currentYear + 1))
+        }
+    });
+
+    console.log('Multi-tenant demo seed complete.');
 
     console.log(`Seeding finished.`);
 }
