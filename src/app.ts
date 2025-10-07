@@ -35,6 +35,7 @@ import familyRoutes from './api/family/family.routes';
 import kinRelationsRoutes from './api/kinrelations/kinRelations.routes';
 import castesRoutes from './api/castes/castes.routes';
 import chatRoutes from './api/chat/chat.routes';
+import publicRoutes from './api/public/public.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -187,6 +188,8 @@ apiV1.use('/family', familyRoutes);
 apiV1.use('/kin-relations', kinRelationsRoutes);
 apiV1.use('/castes', castesRoutes);
 apiV1.use('/chat', chatRoutes);
+// Multi-tenant public read-only routes (domain based)
+app.use('/api/public', publicRoutes);
 app.use('/api/v1', apiV1);
 
 // Protected sample route
