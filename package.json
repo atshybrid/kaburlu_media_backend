@@ -12,6 +12,9 @@
     "seed": "ts-node prisma/seed.ts",
     "seed:family": "ts-node scripts/seed_family.ts",
   "seed:kin": "ts-node scripts/seed_kin_relations.ts",
+    "seed:castes": "ts-node scripts/seed_castes.ts",
+    "seed:sample:chat": "ts-node scripts/seed_sample_family_chat.ts",
+  "clear:relations": "ts-node scripts/clear_relations_and_chats.ts",
     "ai:smoke": "ts-node scripts/aiDraftSmoke.ts",
     "postinstall": "prisma generate"
   },

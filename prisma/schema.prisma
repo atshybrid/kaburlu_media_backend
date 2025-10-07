@@ -88,6 +88,10 @@ model User {
   familyRelations     FamilyRelation[]
   relatedFamilyEdges  FamilyRelation[] @relation("RelatedUser")
   familyMemberships   FamilyMember[]
+  chatInterests       ChatInterest[] // users this user follows (viewer side)
+  interestedInMe      ChatInterest[] @relation("ChatInterest_target") // users who follow this user (target side)
+  // E2EE public key bundle (1:1). Added inverse relation for UserEncryptionKey.user
+  userEncryptionKey   UserEncryptionKey?
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
@@ -120,6 +124,7 @@ model Language {
   users      User[]
   articles   Article[]
   devices    Device[]
+  domainLanguages DomainLanguage[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -182,6 +187,8 @@ model State {
   districts District[]
   userProfiles UserProfile[] @relation("UserProfile_state")
   contentReads ContentRead[] @relation("ContentRead_state")
+  tenants    Tenant[]
+  reporters  Reporter[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
@@ -195,6 +202,7 @@ model District {
   mandals   Mandal[]
   userProfiles UserProfile[] @relation("UserProfile_district")
   contentReads ContentRead[] @relation("ContentRead_district")
+  reporters Reporter[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -207,6 +215,7 @@ model Mandal {
   isDeleted  Boolean  @default(false)
   userProfiles UserProfile[] @relation("UserProfile_mandal")
   contentReads ContentRead[] @relation("ContentRead_mandal")
+  reporters Reporter[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -222,6 +231,7 @@ model Category {
   children     Category[]            @relation("SubCategories")
   translations CategoryTranslation[]
   articles     Article[]
+  domainCategories DomainCategory[]
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 }
@@ -251,6 +261,9 @@ model Article {
   // Article language (from author's language at creation time)
   language          Language?     @relation(fields: [languageId], references: [id])
   languageId        String?
+  // Optional tenant scoping. Null => global article
+  tenant            Tenant?       @relation(fields: [tenantId], references: [id])
+  tenantId          String?
   status            String        @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   categories        Category[]
   tags              String[]
@@ -269,7 +282,198 @@ model Article {
   articleViews      ArticleView[]
   contentJson       Json?
   articleReads      ArticleRead[]
+
+  @@index([tenantId, createdAt])
 }
+
+/// ---------------- Multi-Tenancy & Reporter Enums ----------------
+
+enum PrgiStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFYING
+  ACTIVE
+  SUSPENDED
+  DECOMMISSIONED
+}
+
+enum ReporterRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  ADMIN_EDITOR
+  NEWS_MODERATOR
+  PARENT_REPORTER
+  REPORTER
+  GUEST_REPORTER
+}
+
+enum ReporterLevel {
+  NATIONAL
+  STATE
+  DISTRICT
+  ASSEMBLY
+  MANDAL
+}
+
+enum ReporterPaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  REFUNDED
+}
+
+/// ---------------- Core Tenant & Domain Models ----------------
+
+model Tenant {
+  id          String         @id @default(cuid())
+  name        String
+  slug        String         @unique
+  state       State?         @relation(fields: [stateId], references: [id])
+  stateId     String?
+  // PRGI compliance fields
+  prgiNumber          String       @unique
+  prgiStatus          PrgiStatus   @default(PENDING)
+  prgiSubmittedAt     DateTime?
+  prgiVerifiedAt      DateTime?
+  prgiRejectedAt      DateTime?
+  prgiRejectionReason String?
+  prgiDocuments       Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  domains     Domain[]
+  articles    Article[]
+  theme       TenantTheme?
+  reporters   Reporter[]
+}
+
+model Domain {
+  id               String        @id @default(cuid())
+  domain           String        @unique
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId         String
+  isPrimary        Boolean       @default(false)
+  status           DomainStatus  @default(PENDING)
+  verificationToken String?
+  verificationMethod String?     // DNS_TXT | HTTPS_FILE | MANUAL
+  verifiedAt       DateTime?
+  lastCheckAt      DateTime?
+  lastCheckStatus  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  categories       DomainCategory[]
+  languages        DomainLanguage[]
+  checkLogs        DomainCheckLog[]
+}
+
+model DomainCategory {
+  id         String   @id @default(cuid())
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domainId   String
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  @@unique([domainId, categoryId])
+  @@index([categoryId])
+}
+
+model DomainLanguage {
+  id         String    @id @default(cuid())
+  domain     Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domainId   String
+  language   Language  @relation(fields: [languageId], references: [id])
+  languageId String
+  createdAt  DateTime  @default(now())
+
+  @@unique([domainId, languageId])
+  @@index([languageId])
+}
+
+model DomainCheckLog {
+  id         String   @id @default(cuid())
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domainId   String
+  checkedAt  DateTime @default(now())
+  result     String   // OK | DNS_FAIL | TLS_FAIL | HTTP_TIMEOUT | HOST_MISMATCH
+  details    Json?
+
+  @@index([domainId, checkedAt])
+}
+
+model TenantTheme {
+  id          String   @id @default(cuid())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId    String   @unique
+  logoUrl     String?
+  faviconUrl  String?
+  primaryColor String?
+  headerHtml  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// ---------------- Reporter & Compliance ----------------
+
+model Reporter {
+  id            String        @id @default(cuid())
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId      String
+  parent        Reporter?     @relation("ReporterParent", fields: [parentId], references: [id])
+  parentId      String?
+  children      Reporter[]    @relation("ReporterParent")
+  role          ReporterRole
+  level         ReporterLevel?
+  state         State?        @relation(fields: [stateId], references: [id])
+  stateId       String?
+  district      District?     @relation(fields: [districtId], references: [id])
+  districtId    String?
+  mandal        Mandal?       @relation(fields: [mandalId], references: [id])
+  mandalId      String?
+  assemblyId    String?
+  name          String
+  email         String        @unique
+  passwordHash  String
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  idCard        ReporterIDCard?
+  payments      ReporterPayment[]
+}
+
+model ReporterIDCard {
+  id          String    @id @default(cuid())
+  reporter    Reporter  @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId  String    @unique
+  cardNumber  String    @unique
+  issuedAt    DateTime
+  expiresAt   DateTime
+  pdfUrl      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ReporterPayment {
+  id          String                 @id @default(cuid())
+  reporter    Reporter               @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId  String
+  year        Int
+  amount      Int
+  status      ReporterPaymentStatus  @default(PENDING)
+  expiresAt   DateTime
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([reporterId, year])
+  @@index([status])
+}
+
+/// ---------------- End Multi-Tenant Additions ----------------
 
 model ArticleView {
   id        String   @id @default(cuid())
@@ -506,6 +710,8 @@ model UserProfile {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId                String   @unique
   fullName              String?
+  surname               String?
+  lastName              String?
   gender                String?
   dob                   DateTime?
   maritalStatus         String?
@@ -525,9 +731,69 @@ model UserProfile {
   villageId             String?
   occupation            String?
   education             String?
+  caste                 String?
+  subCaste              String?
+  casteRef              Caste?   @relation("UserProfile_casteRef", fields: [casteId], references: [id])
+  casteId               String?
+  subCasteRef           SubCaste? @relation("UserProfile_subCasteRef", fields: [subCasteId], references: [id])
+  subCasteId            String?
   socialLinks           Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+}
+
+/// Caste and SubCaste lookups (optional references from UserProfile)
+model Caste {
+  id         String     @id @default(cuid())
+  name       String     @unique
+  subCastes  SubCaste[]
+  profiles   UserProfile[] @relation("UserProfile_casteRef")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model SubCaste {
+  id        String   @id @default(cuid())
+  name      String
+  caste     Caste    @relation(fields: [casteId], references: [id], onDelete: Cascade)
+  casteId   String
+  profiles  UserProfile[] @relation("UserProfile_subCasteRef")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([casteId, name])
+}
+
+/// Track which other users a user is "interested" in (follow) for family chat filtering.
+/// A record means the viewer wants to SEE messages from targetUser (unless muted).
+/// If no record exists: default = not followed, messages hidden in interest-only mode.
+/// If muted = true: hide even if followed.
+model ChatInterest {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  targetUser  User     @relation("ChatInterest_target", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetUserId String
+  followed    Boolean  @default(true)
+  muted       Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, targetUserId])
+  @@index([targetUserId])
+}
+
+/// Public encryption key material per user (E2EE bootstrap). No private keys stored.
+model UserEncryptionKey {
+  userId          String   @id
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identityKey     String   // Base64 public identity key
+  signedPreKey    String?  // Base64 public signed pre-key
+  signedPreKeySig String?  // Signature of signedPreKey by identity key
+  oneTimePreKeys  Json     @default("[]") // Array of Base64 one-time pre-keys
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
 }
 
 /// One-line options/opinions posted by a user for a ShortNews.

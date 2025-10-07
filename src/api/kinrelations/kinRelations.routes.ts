@@ -114,7 +114,7 @@ router.delete('/:code', passport.authenticate('jwt', { session: false }), delete
 
 /**
  * @swagger
- * /kin-relations:bulk-upsert:
+ * /kin-relations/bulk-upsert:
  *   post:
  *     summary: Bulk upsert kin relations (fix Telugu labels)
  *     tags: [KinRelations]

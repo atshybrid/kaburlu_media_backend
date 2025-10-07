@@ -36,7 +36,12 @@ const swaggerDefinition = {
     { name: 'Translate' },
     { name: 'Media' },
     { name: 'Prompts' },
-    { name: 'Engagement - Comments' }
+    { name: 'Engagement - Comments' },
+    { name: 'KaChat - Interests', description: 'Follow / mute user interests for filtering realtime feed' },
+    { name: 'KaChat - Membership', description: 'Family and direct chat room management & sync' },
+    { name: 'KaChat - Messaging', description: 'Message send & history (Firestore bridge)' },
+    { name: 'KaChat - Crypto', description: 'End-to-end encryption key management (public key distribution)' },
+    { name: 'KaChat - Auth', description: 'Chat-specific authentication helpers (Firebase custom token)' }
   ],
   components: {
     securitySchemes: {

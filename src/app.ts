@@ -33,6 +33,8 @@ import preferencesRoutes from './api/preferences/preferences.routes';
 import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.routes';
 import familyRoutes from './api/family/family.routes';
 import kinRelationsRoutes from './api/kinrelations/kinRelations.routes';
+import castesRoutes from './api/castes/castes.routes';
+import chatRoutes from './api/chat/chat.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -148,6 +150,8 @@ app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
 app.use('/family', familyRoutes);
 app.use('/kin-relations', kinRelationsRoutes);
+app.use('/castes', castesRoutes);
+app.use('/chat', chatRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -181,6 +185,8 @@ apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
 apiV1.use('/family', familyRoutes);
 apiV1.use('/kin-relations', kinRelationsRoutes);
+apiV1.use('/castes', castesRoutes);
+apiV1.use('/chat', chatRoutes);
 app.use('/api/v1', apiV1);
 
 // Protected sample route

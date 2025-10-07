@@ -275,6 +275,10 @@ export default router;
  *       properties:
  *         fullName:
  *           type: string
+ *         surname:
+ *           type: string
+ *         lastName:
+ *           type: string
  *         gender:
  *           type: string
  *         dob:
@@ -311,6 +315,14 @@ export default router;
  *         socialLinks:
  *           type: object
  *           additionalProperties: true
+ *         caste:
+ *           type: string
+ *         subCaste:
+ *           type: string
+ *         casteId:
+ *           type: string
+ *         subCasteId:
+ *           type: string
  *     UserProfile:
  *       allOf:
  *         - $ref: '#/components/schemas/UserProfileDto'

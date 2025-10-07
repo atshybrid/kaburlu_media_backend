@@ -1,13 +1,13 @@
-import 'dotenv/config';
+// dotenv is loaded inside config/env
 import 'reflect-metadata';
 import app from './app';
 import { PrismaClient } from '@prisma/client';
 import http from 'http';
+import { config } from './config/env';
 
 const prisma = new PrismaClient();
 
-// ensure PORT is a number
-const port = Number(process.env.PORT) || 3001;
+const port = config.port;
 
 async function start() {
   try {
@@ -21,8 +21,8 @@ async function start() {
     const server = http.createServer(app);
 
     server.listen(port, () => {
-      console.log(`Server is running on http://localhost:${port}`);
-  console.log(`Swagger is running on http://localhost:${port}/api/docs`);
+      console.log(`[Bootstrap] Server running (env=${config.env}) http://localhost:${port}`);
+      console.log(`[Bootstrap] Swagger: http://localhost:${port}/api/docs`);
     });
 
     // graceful shutdown
