@@ -37,11 +37,14 @@ const swaggerDefinition = {
     { name: 'Media' },
     { name: 'Prompts' },
     { name: 'Engagement - Comments' },
-    { name: 'KaChat - Interests', description: 'Follow / mute user interests for filtering realtime feed' },
-    { name: 'KaChat - Membership', description: 'Family and direct chat room management & sync' },
-    { name: 'KaChat - Messaging', description: 'Message send & history (Firestore bridge)' },
-    { name: 'KaChat - Crypto', description: 'End-to-end encryption key management (public key distribution)' },
-    { name: 'KaChat - Auth', description: 'Chat-specific authentication helpers (Firebase custom token)' }
+    // Multi-tenant & Reporter tags
+    { name: 'Tenants', description: 'Tenant CRUD & PRGI fields' },
+    { name: 'Domains', description: 'Domain verification & status management' },
+    { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
+    { name: 'Reporters', description: 'Reporter hierarchy & roles' },
+    { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
+    { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
+    { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' }
   ],
   components: {
     securitySchemes: {

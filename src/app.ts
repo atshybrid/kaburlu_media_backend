@@ -31,11 +31,14 @@ import notificationsRoutes from './api/notifications/notifications.routes';
 import promptsRoutes from './api/prompts/prompts.routes';
 import preferencesRoutes from './api/preferences/preferences.routes';
 import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.routes';
-import familyRoutes from './api/family/family.routes';
-import kinRelationsRoutes from './api/kinrelations/kinRelations.routes';
 import castesRoutes from './api/castes/castes.routes';
-import chatRoutes from './api/chat/chat.routes';
 import publicRoutes from './api/public/public.routes';
+import tenantsRoutes from './api/tenants/tenants.routes';
+import domainsRoutes from './api/domains/domains.routes';
+import reportersRoutes from './api/reporters/reporters.routes';
+import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
+import tenantThemeRoutes from './api/tenantTheme/tenantTheme.routes';
+import prgiRoutes from './api/prgi/prgi.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -149,10 +152,8 @@ app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
-app.use('/family', familyRoutes);
-app.use('/kin-relations', kinRelationsRoutes);
+// family & kin-relations removed
 app.use('/castes', castesRoutes);
-app.use('/chat', chatRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -184,10 +185,14 @@ apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
-apiV1.use('/family', familyRoutes);
-apiV1.use('/kin-relations', kinRelationsRoutes);
+// family & kin-relations removed
 apiV1.use('/castes', castesRoutes);
-apiV1.use('/chat', chatRoutes);
+apiV1.use('/tenants', tenantsRoutes);
+apiV1.use('/domains', domainsRoutes);
+apiV1.use('/reporters', reportersRoutes);
+apiV1.use('/reporter-payments', reporterPaymentsRoutes);
+apiV1.use('/tenant-theme', tenantThemeRoutes);
+apiV1.use('/prgi', prgiRoutes);
 // Multi-tenant public read-only routes (domain based)
 app.use('/api/public', publicRoutes);
 app.use('/api/v1', apiV1);

@@ -306,3 +306,39 @@ it('retries when under 58 words', async () => {
 | Rate limiting | Not yet | Add simple token bucket per user for AI endpoints |
 | Security | JWT enforced | Add role/permission guard for admin-only AI endpoints |
 
+---
+
+## Removed Modules (Chat, Family Graph, Kin Relations)
+
+The legacy KaChat (chat & interests), Family graph (`FamilyRelation`, `FamilyMember`, `Family`), and `KinRelation` dictionary modules have been removed from the active codebase to streamline the multi-tenant news focus.
+
+What changed:
+- Prisma models removed: `ChatInterest`, `FamilyRelation`, `FamilyMember`, `Family`, `KinRelation`, enum `FamilyRelationType`.
+- Related Express routes (`/chat`, `/family`, `/kin-relations`) and seed/utility scripts deleted or replaced with no-op scripts.
+- New migration: `20251007170000_remove_chat_family_kin` safely drops the obsolete tables (idempotent DO $$ block) while preserving historical migrations for audit.
+
+How to apply in an environment:
+```
+npm run build
+npx prisma migrate deploy
+```
+
+If you had existing data you still need:
+1. Do NOT run the cleanup migration yet.
+2. Backup tables: `pg_dump -t "ChatInterest" -t "FamilyRelation" -t "FamilyMember" -t "Family" -t "KinRelation" > legacy_chat_family_backup.sql`.
+3. After confirming backups, apply migration.
+
+Rollback (git-level):
+```
+git checkout <previous_commit_hash> -- prisma/schema.prisma src/api/chat src/api/family src/api/kinrelations
+```
+Then re-run `prisma generate` and reintroduce earlier migrations (or recreate tables manually).
+
+Reasoning:
+- Reduced maintenance overhead and Prisma client size.
+- Removed features not aligned with current multi-tenant + reporter scope.
+- Simplified Swagger docs & public surface area.
+
+No other modules depend on the removed tables; removal is isolated. Historical migrations are intentionally kept to preserve a complete evolution trail.
+
+

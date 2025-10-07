@@ -85,11 +85,7 @@ model User {
   contentReactions ContentReaction[]
   shortNewsOptions ShortNewsOption[]
   // Family graph back-relations
-  familyRelations     FamilyRelation[]
-  relatedFamilyEdges  FamilyRelation[] @relation("RelatedUser")
-  familyMemberships   FamilyMember[]
-  chatInterests       ChatInterest[] // users this user follows (viewer side)
-  interestedInMe      ChatInterest[] @relation("ChatInterest_target") // users who follow this user (target side)
+  // Family graph removed
   // E2EE public key bundle (1:1). Added inverse relation for UserEncryptionKey.user
   userEncryptionKey   UserEncryptionKey?
 }
@@ -114,64 +110,6 @@ model Role {
   updatedAt   DateTime @updatedAt
 }
 
-model Language {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  code       String   @unique
-  nativeName String
-  direction  String   @default("ltr")
-  isDeleted  Boolean  @default(false)
-  users      User[]
-  articles   Article[]
-  devices    Device[]
-  domainLanguages DomainLanguage[]
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-model Device {
-  id          String   @id @default(cuid())
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userId      String?
-  deviceId    String   @unique
-  deviceModel String
-  pushToken   String?
-  latitude    Float?
-  longitude   Float?
-  accuracyMeters Float?
-  placeId     String?
-  placeName   String?
-  address     String?
-  source      String?
-  // When a device operates as a guest (no User row) we store role & language here.
-  role        Role?    @relation(fields: [roleId], references: [id])
-  roleId      String?
-  language    Language? @relation(fields: [languageId], references: [id])
-  languageId  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model UserLocation {
-  id        String   @id @default(cuid())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String   @unique
-  latitude  Float
-  longitude Float
-  accuracyMeters Float?
-  provider       String?
-  timestampUtc   DateTime?
-  placeId        String?
-  placeName      String?
-  address        String?
-  source         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Country {
-  id        String   @id @default(cuid())
-  name      String   @unique
   code      String?  @unique
   states    State[]
   createdAt DateTime @default(now())
@@ -768,21 +706,6 @@ model SubCaste {
 /// A record means the viewer wants to SEE messages from targetUser (unless muted).
 /// If no record exists: default = not followed, messages hidden in interest-only mode.
 /// If muted = true: hide even if followed.
-model ChatInterest {
-  id          String   @id @default(cuid())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId      String
-  targetUser  User     @relation("ChatInterest_target", fields: [targetUserId], references: [id], onDelete: Cascade)
-  targetUserId String
-  followed    Boolean  @default(true)
-  muted       Boolean  @default(false)
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([userId, targetUserId])
-  @@index([targetUserId])
-}
 
 /// Public encryption key material per user (E2EE bootstrap). No private keys stored.
 model UserEncryptionKey {
