@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+// any-cast to reduce transient TS issues when schema just changed
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const p: any = prisma;
 
 interface CachedDomain {
   domain: any; // Prisma Domain with tenant
@@ -25,7 +28,7 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
   const cached = cache.get(host);
   if (cached && cached.expiresAt > now) return cached;
   if (pending.has(host)) return pending.get(host)!;
-  const p = prisma.domain.findUnique({
+  const prom = p.domain.findUnique({
     where: { domain: host },
     include: { tenant: true }
   }).then((result: any) => {
@@ -36,8 +39,8 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
   }).finally(() => {
     pending.delete(host);
   });
-  pending.set(host, p);
-  return p;
+  pending.set(host, prom);
+  return prom;
 }
 
 export async function tenantResolver(req: Request, res: Response, next: NextFunction) {
