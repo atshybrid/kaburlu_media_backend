@@ -5,6 +5,19 @@ import { createUser, findUserByMobileNumber } from '../users/users.service';
 
 const router = Router();
 
+const includeReporterContact = {
+  designation: true,
+  user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } }
+} as const;
+
+function mapReporterContact(r: any) {
+  if (!r) return r;
+  const fullName = r?.user?.profile?.fullName || null;
+  const mobileNumber = r?.user?.mobileNumber || null;
+  const { user, ...rest } = r;
+  return { ...rest, fullName, mobileNumber };
+}
+
 /**
  * @swagger
  * tags:
@@ -55,8 +68,8 @@ router.get('/', async (req, res) => {
   if (mandalId) where.mandalId = mandalId;
   if (assemblyConstituencyId) where.assemblyConstituencyId = assemblyConstituencyId;
   if (typeof activeRaw !== 'undefined') where.active = String(activeRaw).toLowerCase() === 'true';
-  const reporters = await (prisma as any).reporter.findMany({ where, orderBy: { createdAt: 'desc' }, include: { designation: true } });
-  res.json(reporters);
+  const reporters = await (prisma as any).reporter.findMany({ where, orderBy: { createdAt: 'desc' }, include: includeReporterContact });
+  res.json(reporters.map(mapReporterContact));
 });
 
 /**
@@ -75,9 +88,9 @@ router.get('/', async (req, res) => {
  *       404: { description: Not found }
  */
 router.get('/:id', async (req, res) => {
-  const r = await (prisma as any).reporter.findUnique({ where: { id: req.params.id }, include: { designation: true, parent: true } });
+  const r = await (prisma as any).reporter.findUnique({ where: { id: req.params.id }, include: includeReporterContact });
   if (!r) return res.status(404).json({ error: 'Reporter not found' });
-  res.json(r);
+  res.json(mapReporterContact(r));
 });
 
 /**
@@ -235,8 +248,8 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
     if (level === 'DISTRICT' && !data.districtId) return res.status(400).json({ error: 'districtId required for DISTRICT level' });
     if (level === 'MANDAL' && !data.mandalId) return res.status(400).json({ error: 'mandalId required for MANDAL level' });
     if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
-    const created = await (prisma as any).reporter.create({ data });
-    res.status(201).json(created);
+    const created = await (prisma as any).reporter.create({ data, include: includeReporterContact });
+    res.status(201).json(mapReporterContact(created));
   } catch (e: any) {
     console.error('create reporter error', e);
     res.status(500).json({ error: 'Failed to create reporter' });
@@ -293,9 +306,10 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
         monthlySubscriptionAmount: typeof req.body.monthlySubscriptionAmount === 'number' ? req.body.monthlySubscriptionAmount : existing.monthlySubscriptionAmount,
         idCardCharge: typeof req.body.idCardCharge === 'number' ? req.body.idCardCharge : existing.idCardCharge,
         // KYC modifications blocked in generic patch
-      }
+      },
+      include: includeReporterContact
     });
-    res.json(updated);
+    res.json(mapReporterContact(updated));
   } catch (e: any) {
     console.error('update reporter error', e);
     res.status(500).json({ error: 'Failed to update reporter' });
@@ -323,8 +337,8 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), async (r
     const { id } = req.params;
     const existing = await (prisma as any).reporter.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Reporter not found' });
-    const updated = await (prisma as any).reporter.update({ where: { id }, data: { active: false } });
-    res.json({ success: true, reporter: updated });
+    const updated = await (prisma as any).reporter.update({ where: { id }, data: { active: false }, include: includeReporterContact });
+    res.json({ success: true, reporter: mapReporterContact(updated) });
   } catch (e: any) {
     console.error('deactivate reporter error', e);
     res.status(500).json({ error: 'Failed to deactivate reporter' });

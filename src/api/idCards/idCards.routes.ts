@@ -165,7 +165,7 @@ async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline
   return Object.assign({}, data, { __inline: { logo, photo, stamp, sign, qrImg } });
 }
 
-function buildIdCardHtml(data: CardData): string {
+function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
   const primary = data.tenant.primaryColor || '#153e82'; // dynamic blue
   const fixedRed = '#d71f1f'; // fixed red
   const inline = (data as any).__inline || {};
@@ -187,6 +187,111 @@ function buildIdCardHtml(data: CardData): string {
     const yy = d.getUTCFullYear();
     return `${dd}-${mm}-${yy}`;
   })();
+
+  const print = !!(opts && opts.print);
+
+  if (print) {
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Press ID Card — Print</title>
+  <style>
+    @page { size: 54mm 85.6mm; margin: 0; }
+    :root{--card-w:54mm;--card-h:85.6mm}
+    html,body{height:100%;margin:0;background:#fff;font-family:Inter, Arial, sans-serif}
+    .card{width:var(--card-w);height:var(--card-h);background:#fff;position:relative;overflow:hidden}
+    .page-break{page-break-after: always;}
+    /* FRONT */
+    .front .top-logo{width:100%;padding-top:2mm;display:flex;justify-content:center;align-items:center}
+    .front .top-logo img{max-width:40mm;max-height:8mm}
+    .front .press-bar{margin-top:3mm;width:100%;background:${fixedRed};height:8mm;display:flex;justify-content:center;align-items:center}
+    .front .press-bar h1{margin:0;color:#fff;font-size:5mm;font-weight:700;font-family:'Archivo Black', sans-serif}
+    .front .main{padding:3mm 3mm}
+    .front .photo-qr{display:flex;gap:3mm}
+    .front .photo{position:relative;width:20mm;height:25mm;border-radius:3px;overflow:visible;background:#f2f2f2}
+    .front .photo img{width:100%;height:100%;object-fit:cover;object-position:center}
+    .front .qr{width:20mm;height:20mm;background:#fff}
+    .front .qr img{width:100%;height:100%;object-fit:contain}
+    .front .details{margin-top:4mm;font-size:2.2mm}
+    .front .details table{width:100%;border-collapse:collapse}
+    .front .details td{padding:0.2mm 0;line-height:1.5}
+    .front .details .label{width:15mm;font-weight:700}
+    .front .details .colon{width:2mm;text-align:center}
+    .front .details .value{width:auto}
+    .front .signature{position:absolute;right:2mm;bottom:5mm;width:15mm}
+    .front .signature img{width:100%}
+    .front .photo .stamp{position:absolute;right:-1mm;bottom:-1mm;width:11mm;height:11mm;pointer-events:none;opacity:0.95}
+    .front .photo .stamp img{width:100%;height:100%;object-fit:contain}
+    .front .footer{position:absolute;left:0;right:0;bottom:0;background:${primary};height:7mm;color:#fff;display:flex;justify-content:center;align-items:center;font-size:2.5mm;font-weight:700}
+    /* BACK */
+    .back .header{height:12mm;background:${primary};color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 3mm;box-sizing:border-box}
+    .back .header h1{font-family:'Archivo Black',sans-serif;font-size:6.5mm;margin:0;line-height:1}
+    .back .header p{margin:2px 0 0;font-size:2.6mm;letter-spacing:1px;font-weight:700;line-height:1}
+    .back .body{padding:4mm 4mm 0 4mm;box-sizing:border-box;text-align:center;display:flex;flex-direction:column;align-items:center}
+    .back .qr-box{width:20mm;height:20mm;margin:1.5mm auto 2mm;background:#f3f3f3;padding:1px;display:flex;align-items:center;justify-content:center;border-radius:2px}
+    .back .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
+    .back .address{color:${primary};font-size:3.2mm;line-height:1.15;margin-top:2mm;text-align:center}
+    .back .address .heading{font-weight:700;font-size:3mm;margin-bottom:1.5px}
+    .back .address .lines{white-space:pre-line;font-size:2mm;line-height:1.05}
+    .back .contact{margin-top:1.5px;font-size:2mm}
+    .back .prgi{position:absolute;left:0;right:0;bottom:22mm;color:${primary};font-weight:700;font-size:3.4mm;text-align:center}
+    .back .footer{position:absolute;left:0;right:0;bottom:0;height:22mm;background:${primary};color:#fff;padding:4px 3mm;box-sizing:border-box;font-size:1mm}
+    .back .footer strong{display:block;text-align:center;margin-bottom:3px;font-size:2.6mm}
+    .back .footer ol{margin:0;padding-left:0;padding-right:0;text-align:justify;line-height:1.05}
+    .back .footer li{margin-bottom:3px}
+  </style>
+</head>
+<body>
+  <!-- FRONT PAGE -->
+  <div class="card front">
+    <div class="top-logo">${logo ? `<img src="${logo}" alt="logo" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+    <div class="press-bar"><h1>PRINT MEDIA</h1></div>
+    <div class="main">
+      <div class="photo-qr">
+        <div class="photo">${photo ? `<img src="${photo}" alt="photo" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}
+        ${stamp ? `<div class="stamp"><img src="${stamp}" alt="stamp" crossorigin="anonymous" referrerpolicy="no-referrer"/></div>` : ''}
+        </div>
+        <div class="qr">${qrImg ? `<img src="${qrImg}" alt="qr" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+      </div>
+      <div class="details">
+        <table>
+          <tr><td class="label">Name</td><td class="colon">:</td><td class="value">${data.reporter.fullName || '-'}</td></tr>
+          <tr><td class="label">ID Number</td><td class="colon">:</td><td class="value">${(data.reporter.cardNumber || '').toUpperCase() || '-'}</td></tr>
+          <tr><td class="label">Desig</td><td class="colon">:</td><td class="value">${data.reporter.designation || '-'}</td></tr>
+          <tr><td class="label">Work Place</td><td class="colon">:</td><td class="value">${data.reporter.placeOfWork || '-'}</td></tr>
+          <tr><td class="label">Phone</td><td class="colon">:</td><td class="value">${data.reporter.mobile || '-'}</td></tr>
+          <tr><td class="label">Valid</td><td class="colon">:</td><td class="value">${validDate}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="signature">${sign ? `<img src="${sign}" alt="signature" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+    <div class="footer">PRGI No : ${prgi || '-'}</div>
+  </div>
+  <div class="page-break"></div>
+  <!-- BACK PAGE -->
+  <div class="card back">
+    <div class="header"><h1>PRESS</h1><p>REPORTER ID CARD</p></div>
+    <div class="body">
+      <div class="qr-box">${qrImg ? `<img src="${qrImg}" alt="qr" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+      ${office ? `<div class="address"><div class="heading">ADDRESS</div><div class="lines">${office}</div>${(help1||help2||data.reporter.mobile) ? `<div class="contact">Contact No: <span>${[data.reporter.mobile, help1, help2].filter(Boolean)[0] || ''}</span></div>` : ''}</div>` : ''}
+      ${prgi ? `<div class="prgi">PRGI No : ${prgi}</div>` : ''}
+    </div>
+    <div class="footer">
+      <strong>Terms & Conditions</strong>
+      <ol>
+        <li>Non-Transferable: The card is strictly for the named individual and must not be loaned, shared, or transferred to any other person.</li>
+        <li>Valid for Professional Use Only: It must be used solely for legitimate journalistic activities, news gathering, or official media representation.</li>
+        <li>Immediate Surrender Upon Request/Termination: The card must be immediately returned to the issuing organization upon expiration, termination of employment/affiliation, or if explicitly requested.</li>
+        <li>Adherence to Law and Ethics: The cardholder must comply with all applicable local, state, and federal laws, as well as established journalistic ethics, while using the card.</li>
+        <li>Subject to Verification: The card's validity and the holder's identity are subject to random verification by authorities or the issuing body at any time.</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
 
   return `<!doctype html>
 <html lang="en">
@@ -392,7 +497,8 @@ router.get('/html', async (req, res) => {
     if (!reporter) return res.status(404).send('Reporter not found');
     const data = await buildIdCardData(reporter.id);
     if (!data) return res.status(404).send('ID card not found for reporter');
-    const html = buildIdCardHtml(data);
+    const printMode = ['1','true','yes','print'].includes(String((req.query.print || req.query.mode || '')).toLowerCase());
+    const html = buildIdCardHtml(data, { print: printMode });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // Allow cross-origin images (logo, stamp, sign, QR) to load in browser
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -408,7 +514,7 @@ router.get('/html', async (req, res) => {
  * /id-cards/pdf:
  *   get:
  *     summary: Public - Download ID card PDF
- *     description: Fetch reporter ID card PDF by reporterId OR mobile OR fullName. One of these query params is required.
+ *     description: Fetch reporter ID card PDF by reporterId OR mobile OR fullName. One of these query params is required. Set `print=true` (or `mode=print`) to get a print-ready PDF with two pages (front/back), each sized to the card (54mm x 85.6mm).
  *     tags: [ID Cards]
  *     parameters:
  *       - in: query
@@ -447,7 +553,9 @@ router.get('/pdf', async (req, res) => {
     try {
       data = await inlineAssetsForPdf(data);
     } catch {}
-    const html = buildIdCardHtml(data);
+    // Always use print-ready mode for PDF (two pages at card size)
+    const printMode = true;
+    const html = buildIdCardHtml(data, { print: true });
     let puppeteer: any;
     try {
       puppeteer = require('puppeteer');
@@ -461,7 +569,7 @@ router.get('/pdf', async (req, res) => {
     await page.setContent(html, { waitUntil: 'networkidle0' });
     let pdfBuffer: Buffer;
     try {
-      pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+      pdfBuffer = await page.pdf({ width: '54mm', height: '85.6mm', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
     } catch (e) {
       console.error('Puppeteer pdf() failed', e);
       await browser.close();

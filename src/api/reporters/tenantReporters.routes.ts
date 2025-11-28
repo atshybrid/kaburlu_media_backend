@@ -4,6 +4,19 @@ import prisma from '../../lib/prisma';
 
 const router = Router();
 
+const includeReporterContact = {
+  designation: true,
+  user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } }
+} as const;
+
+function mapReporterContact(r: any) {
+  if (!r) return r;
+  const fullName = r?.user?.profile?.fullName || null;
+  const mobileNumber = r?.user?.mobileNumber || null;
+  const { user, ...rest } = r;
+  return { ...rest, fullName, mobileNumber };
+}
+
 /**
  * @swagger
  * tags:
@@ -32,6 +45,8 @@ const router = Router();
  *         kycStatus: { type: string, enum: [PENDING, SUBMITTED, APPROVED, REJECTED] }
  *         kycData: { type: object, nullable: true }
  *         profilePhotoUrl: { type: string, nullable: true }
+  *         fullName: { type: string, nullable: true, description: 'Derived from UserProfile.fullName' }
+  *         mobileNumber: { type: string, nullable: true, description: 'Derived from User.mobileNumber' }
  *         active: { type: boolean }
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
@@ -135,8 +150,8 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
   if (mandalId) where.mandalId = mandalId;
   if (assemblyConstituencyId) where.assemblyConstituencyId = assemblyConstituencyId;
   if (typeof activeRaw !== 'undefined') where.active = String(activeRaw).toLowerCase() === 'true';
-  const list = await (prisma as any).reporter.findMany({ where, orderBy: { createdAt: 'desc' }, include: { designation: true } });
-  res.json(list);
+  const list = await (prisma as any).reporter.findMany({ where, orderBy: { createdAt: 'desc' }, include: includeReporterContact });
+  res.json(list.map(mapReporterContact));
 });
 
 /**
@@ -210,8 +225,8 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
       if (level === 'DISTRICT' && !data.districtId) throw new Error('districtId required for DISTRICT level');
       if (level === 'MANDAL' && !data.mandalId) throw new Error('mandalId required for MANDAL level');
       if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) throw new Error('assemblyConstituencyId required for ASSEMBLY level');
-      const reporter = await tx.reporter.create({ data, include: { designation: true } });
-      return reporter;
+      const reporter = await tx.reporter.create({ data, include: includeReporterContact });
+      return reporter ? mapReporterContact(reporter) : reporter;
     });
     res.status(201).json(result);
   } catch (e: any) {
@@ -241,9 +256,9 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
  */
 router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
   const { tenantId, id } = req.params;
-  const reporter = await (prisma as any).reporter.findFirst({ where: { id, tenantId }, include: { designation: true } });
+  const reporter = await (prisma as any).reporter.findFirst({ where: { id, tenantId }, include: includeReporterContact });
   if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
-  res.json(reporter);
+  res.json(mapReporterContact(reporter));
 });
 
 /**
@@ -412,8 +427,8 @@ router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { se
     if (data.level === 'DISTRICT' && !data.districtId) return res.status(400).json({ error: 'districtId required for DISTRICT level' });
     if (data.level === 'MANDAL' && !data.mandalId) return res.status(400).json({ error: 'mandalId required for MANDAL level' });
     if (data.level === 'ASSEMBLY' && !data.assemblyConstituencyId) return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
-    const updated = await (prisma as any).reporter.update({ where: { id: existing.id }, data });
-    res.json(updated);
+    const updated = await (prisma as any).reporter.update({ where: { id: existing.id }, data, include: includeReporterContact });
+    res.json(mapReporterContact(updated));
   } catch (e: any) {
     console.error('update tenant reporter error', e);
     res.status(500).json({ error: 'Failed to update reporter' });
@@ -456,8 +471,8 @@ router.patch('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenti
     if (!profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required' });
     const existing = await (prisma as any).reporter.findFirst({ where: { id, tenantId } });
     if (!existing) return res.status(404).json({ error: 'Reporter not found' });
-    const updated = await (prisma as any).reporter.update({ where: { id }, data: { profilePhotoUrl } });
-    res.json(updated);
+    const updated = await (prisma as any).reporter.update({ where: { id }, data: { profilePhotoUrl }, include: includeReporterContact });
+    res.json(mapReporterContact(updated));
   } catch (e: any) {
     console.error('update reporter photo error', e);
     res.status(500).json({ error: 'Failed to update profile photo' });
@@ -489,8 +504,8 @@ router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authent
     const { tenantId, id } = req.params;
     const existing = await (prisma as any).reporter.findFirst({ where: { id, tenantId } });
     if (!existing) return res.status(404).json({ error: 'Reporter not found' });
-    const updated = await (prisma as any).reporter.update({ where: { id }, data: { profilePhotoUrl: null } });
-    res.json({ success: true, reporter: updated });
+    const updated = await (prisma as any).reporter.update({ where: { id }, data: { profilePhotoUrl: null }, include: includeReporterContact });
+    res.json({ success: true, reporter: mapReporterContact(updated) });
   } catch (e: any) {
     console.error('delete reporter photo error', e);
     res.status(500).json({ error: 'Failed to remove profile photo' });
@@ -501,7 +516,7 @@ router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authent
  * @swagger
  * /tenants/{tenantId}/reporters/{id}/id-card:
  *   post:
- *     summary: Issue reporter ID card (requires subscriptionActive)
+ *     summary: Issue reporter ID card (if subscriptionActive then PAID payment required)
  *     tags: [TenantReporters]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -523,7 +538,13 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const { tenantId, id } = req.params;
     const reporter = await (prisma as any).reporter.findFirst({ where: { id, tenantId } });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
-    if (!reporter.subscriptionActive) return res.status(400).json({ error: 'Subscription inactive' });
+    // If subscription is ACTIVE, require at least one PAID payment record
+    if (reporter.subscriptionActive) {
+      const hasPaid = await (prisma as any).reporterPayment.findFirst({
+        where: { reporterId: reporter.id, status: 'PAID' }
+      });
+      if (!hasPaid) return res.status(400).json({ error: 'Payment required: active subscription must have PAID status' });
+    }
     // Mandatory fields gating
     if (!reporter.profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required before ID card issuance' });
     if (!reporter.userId) return res.status(400).json({ error: 'Linked user required before ID card issuance' });
@@ -542,8 +563,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     const card = await (prisma as any).reporterIDCard.create({ data: { reporterId: reporter.id, cardNumber, issuedAt, expiresAt } });
-    // Set pdfUrl to public PDF endpoint (generated on demand)
-    const pdfUrl = `/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+    // Set pdfUrl to public PDF endpoint (print-ready two-page card size)
+    const pdfUrl = `/api/v1/id-cards/pdf?reporterId=${reporter.id}&print=true`;
     const updatedCard = await (prisma as any).reporterIDCard.update({ where: { reporterId: reporter.id }, data: { pdfUrl } });
     res.status(201).json(updatedCard);
   } catch (e: any) {
