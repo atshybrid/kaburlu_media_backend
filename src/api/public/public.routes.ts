@@ -18,10 +18,29 @@ router.get('/_health', (_req, res) => {
 
 /**
  * @swagger
+ * /api/public/theme:
+ *   get:
+ *     summary: Get website theme for this domain's tenant
+ *     description: Returns branding assets and colors configured for the tenant resolved from the request domain.
+ *     tags: [Public - Website, Public - Tenant]
+ *     responses:
+ *       200:
+ *         description: Theme or null
+ */
+router.get('/theme', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const theme = await p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } });
+  // If no theme found, return null so the frontend can fall back to defaults
+  res.json(theme || null);
+});
+
+/**
+ * @swagger
  * /api/public/categories:
  *   get:
  *     summary: List categories allowed for this domain
- *     tags: [Public - Tenant]
+ *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: query
  *         name: includeChildren
@@ -34,24 +53,48 @@ router.get('/_health', (_req, res) => {
 router.get('/categories', async (req, res) => {
   const domain = (res.locals as any).domain;
   if (!domain) return res.status(500).json({ error: 'Domain context missing' });
+
   const includeChildren = String(req.query.includeChildren).toLowerCase() === 'true';
+  const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
+
+  // Fetch allowed categories for this domain
   const domainCats = await p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } });
   const allowedIds = new Set(domainCats.map((dc: any) => dc.categoryId));
   let categories = domainCats.map((dc: any) => dc.category);
 
   if (includeChildren) {
-    const childIds: string[] = [];
-    categories.forEach((c: any) => {
-      // fetch children lazily (could be optimized by single query)
-      childIds.push(c.id);
-    });
-    const children = await p.category.findMany({ where: { parentId: { in: Array.from(childIds) } } });
-    // Filter children to allowed set if they are explicitly allowed
+    const parentIds: string[] = [];
+    categories.forEach((c: any) => parentIds.push(c.id));
+    const children = await p.category.findMany({ where: { parentId: { in: Array.from(parentIds) } } });
+    // Only include children if explicitly allowed for the domain
     categories = categories.concat(children.filter((ch: any) => allowedIds.has(ch.id)));
   }
-  // Deduplicate by id
+
+  // Optional: apply translations if a language is requested and allowed for this domain
+  let translationsByCategory: Map<string, string> | undefined;
+  if (languageCode) {
+    // Check language is allowed for this domain
+    const lang = await p.language.findUnique({ where: { code: languageCode } });
+    if (lang) {
+      const domLang = await p.domainLanguage.findUnique({
+        where: { domainId_languageId: { domainId: domain.id, languageId: lang.id } }
+      });
+      if (domLang) {
+        const ids = Array.from(new Set(categories.map((c: any) => c.id)));
+        const translations = await p.categoryTranslation.findMany({
+          where: { categoryId: { in: ids }, language: languageCode }
+        });
+        translationsByCategory = new Map(translations.map((t: any) => [t.categoryId, t.name]));
+      }
+    }
+  }
+
+  // Deduplicate and shape response, substituting translation when available
   const map = new Map<string, any>();
-  categories.forEach((c: any) => map.set(c.id, { id: c.id, name: c.name, slug: c.slug, parentId: c.parentId, iconUrl: c.iconUrl }));
+  categories.forEach((c: any) => {
+    const displayName = translationsByCategory?.get(c.id) || c.name;
+    map.set(c.id, { id: c.id, name: displayName, slug: c.slug, parentId: c.parentId, iconUrl: c.iconUrl });
+  });
   res.json(Array.from(map.values()));
 });
 
@@ -60,7 +103,7 @@ router.get('/categories', async (req, res) => {
  * /api/public/articles:
  *   get:
  *     summary: List published articles for this domain
- *     tags: [Public - Tenant]
+ *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: query
  *         name: page
@@ -143,7 +186,7 @@ router.get('/articles', async (req, res) => {
  * /api/public/articles/{slug}:
  *   get:
  *     summary: Get a single published article by slug for this domain
- *     tags: [Public - Tenant]
+ *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: path
  *         name: slug
@@ -178,6 +221,46 @@ router.get('/articles/:slug', async (req, res) => {
   if (!article.categories.some((c: any) => allowedCategoryIds.has(c.id))) return res.status(404).json({ error: 'Not found' });
   if (article.languageId && allowedLanguageIds.size && !allowedLanguageIds.has(article.languageId)) return res.status(404).json({ error: 'Not found' });
   res.json(article);
+});
+
+/**
+ * @swagger
+ * /api/public/entity:
+ *   get:
+ *     summary: Get public PRGI/entity details for this domain's tenant
+ *     tags: [Public - Tenant]
+ *     responses:
+ *       200: { description: Entity details }
+ *       404: { description: Not found }
+ */
+router.get('/entity', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const row = await p.tenantEntity.findUnique({
+    where: { tenantId: tenant.id },
+    include: {
+      language: true,
+      publicationCountry: true,
+      publicationState: true,
+      publicationDistrict: true,
+      publicationMandal: true,
+      printingDistrict: true,
+      printingMandal: true,
+    }
+  });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  // Only expose safe public fields
+  const { prgiNumber, registrationTitle, periodicity, registrationDate, language, ownerName, publisherName, editorName,
+    publicationCountry, publicationState, publicationDistrict, publicationMandal, printingPressName, printingDistrict, printingMandal, printingCityName, address } = row;
+  res.json({
+    tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+    prgiNumber, registrationTitle, periodicity, registrationDate,
+    language,
+    ownerName, publisherName, editorName,
+    publicationCountry, publicationState, publicationDistrict, publicationMandal,
+    printingPressName, printingDistrict, printingMandal, printingCityName,
+    address,
+  });
 });
 
 export default router;

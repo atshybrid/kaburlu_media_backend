@@ -44,7 +44,8 @@ const swaggerDefinition = {
     { name: 'Reporters', description: 'Reporter hierarchy & roles' },
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
-    { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' }
+    { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
+    { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' }
   ],
   components: {
     securitySchemes: {

@@ -9,6 +9,32 @@ Server should run automatically when starting a workspace. To run manually, run:
 npm run dev
 ```
 
+## Local Postgres fallback (no data loss)
+
+If your remote database (Neon) isn’t reachable from this machine (Prisma P1001), you can run a local Postgres temporarily without touching the remote data:
+
+1. Start local Postgres (requires Docker Desktop):
+
+	docker compose up -d
+
+2. Point the app to local DB (temporary):
+
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kaburlu_local
+
+3. Apply schema and run:
+
+	npm run build
+	npm run start
+
+When Neon connectivity is fixed, restore your Neon `DATABASE_URL` and run Prisma migrations there. No remote data is modified while you use the local DB.
+
+## Neon connectivity tips
+
+- Use the exact Prisma connection string from Neon (includes `?sslmode=require`)
+- Some networks block outbound 5432; try a different network or allow 5432 in firewall
+- Optional params: `&pgbouncer=true&connect_timeout=15&pool_timeout=30`
+- Consider Prisma Accelerate (HTTPS 443) if TCP 5432 is blocked
+
 ## Admin: Managing AI Prompt Templates
 
 The API uses DB-backed prompt templates for AI features (SEO, moderation, translations). Admins can view and update these via the Prompts API.

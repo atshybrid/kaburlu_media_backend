@@ -12,7 +12,7 @@ const router = Router();
 
 /**
  * @swagger
- * /api/v1/tenant-theme/{tenantId}:
+ * /tenant-theme/{tenantId}:
  *   get:
  *     summary: Get tenant theme (demo)
  *     tags: [Tenant Theme]

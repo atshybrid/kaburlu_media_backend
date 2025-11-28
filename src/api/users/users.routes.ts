@@ -28,9 +28,24 @@ router.get('/:userId/location', async (req, res) => {
  *   post:
  *     summary: Create a new user
  *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               roleId: { type: string }
+ *               languageId: { type: string, description: "Mandatory language row id" }
+ *               mobileNumber: { type: string, description: "Digits only" }
+ *               mpin: { type: string, description: "If omitted, defaults to last 4 digits of mobile (hashed)" }
+ *               email: { type: string }
+ *             required: [languageId]
  *     responses:
  *       201:
  *         description: User created
+ *       400:
+ *         description: languageId missing or invalid, or cannot derive mpin from mobile
  */
 router.post('/', userController.createUser);
 

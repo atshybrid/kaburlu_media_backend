@@ -1,7 +1,18 @@
 
-
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+
+// Prefer local fallback DB for seeding if requested via env
+try {
+    if (String(process.env.PRISMA_PREFER_FALLBACK).toLowerCase() === 'true' && process.env.DATABASE_URL_FALLBACK) {
+        const original = process.env.DATABASE_URL || '';
+        const fb = process.env.DATABASE_URL_FALLBACK!;
+        const mask = (s: string) => s.replace(/:\/\/.*?:.*?@/, '://***:***@');
+        console.log(`[Prisma Seed] PRISMA_PREFER_FALLBACK=true -> Using fallback datasource`);
+        console.log(`[Prisma Seed] From: ${mask(original)}\n[Prisma Seed] To:   ${mask(fb)}`);
+        process.env.DATABASE_URL = fb;
+    }
+} catch {}
 
 const prisma = new PrismaClient();
 // Temporary any-cast accessor for newly added multi-tenant delegates while TS language server cache refreshes.
@@ -11,14 +22,39 @@ const prisma = new PrismaClient();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const p: any = prisma;
 
+// Core and extended roles. Added TENANT_ADMIN & PUBLISHER for tenant-scoped management and publishing workflow.
 const roles = [
     'SUPER_ADMIN',
+    'TENANT_ADMIN',
+    'PUBLISHER',
     'LANGUAGE_ADMIN',
     'NEWS_DESK',
     'REPORTER',
     'ADMIN',
     'CITIZEN_REPORTER',
-    'GUEST'
+    'GUEST',
+    // Added best-practice granular roles
+    'EDITOR',           // Create & edit articles, submit for review
+    'REVIEWER',         // Review and approve/reject submitted articles
+    'MODERATOR',        // Content & community moderation
+    'ANALYST',          // Read-only analytics & content visibility
+    'SEO_EDITOR'        // Manage SEO metadata & tags
+];
+// Default reporter designations (global). Tenant-specific overrides seeded via API seed endpoint.
+// Keep codes stable (used by client & API when referencing designationCode).
+const reporterDesignationsDefaults: { level: string; code: string; name: string }[] = [
+    { level: 'STATE', code: 'EDITOR_IN_CHIEF', name: 'Editor-in-Chief' },
+    { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief' },
+    { level: 'STATE', code: 'STATE_EDITOR', name: 'State Editor' },
+    { level: 'STATE', code: 'STATE_REPORTER', name: 'State Reporter' },
+    { level: 'DISTRICT', code: 'DISTRICT_BUREAU_CHIEF', name: 'District Bureau Chief' },
+    { level: 'DISTRICT', code: 'SENIOR_CORRESPONDENT', name: 'Senior Correspondent' },
+    { level: 'DISTRICT', code: 'DISTRICT_REPORTER', name: 'District Reporter' },
+    { level: 'DISTRICT', code: 'DISTRICT_DESK', name: 'District Desk' },
+    { level: 'ASSEMBLY', code: 'ASSEMBLY_INCHARGE', name: 'Assembly Incharge' },
+    { level: 'ASSEMBLY', code: 'ASSEMBLY_REPORTER', name: 'Assembly Reporter' },
+    { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter' },
+    { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' }
 ];
 // Extend with South India languages (Tamil, Kannada, Malayalam) and keep structure consistent
 const languages: { name: string; code: string; nativeName: string; direction: string; isDeleted: boolean }[] = [
@@ -116,14 +152,69 @@ const telanganaLocations: { districts: LocationData } = {
     },
 };
 
+// Permissions kept coarse-grained; refine to capability-based checks later.
 const defaultPermissions: Record<string, string[]> = {
-    SUPER_ADMIN: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
+    SUPER_ADMIN: ['create', 'read', 'update', 'delete', 'approve', 'reject', 'tenants:all'],
+    TENANT_ADMIN: [
+        'tenant:read',
+        'tenant:update',
+        'tenant:domains',
+        'tenant:categories',
+        'tenant:feature-flags',
+        'tenant:navigation',
+        'designations:manage',
+        'reporters:manage',
+        'roles:manage',
+        'roles:assign',
+        'articles:approve',
+        'articles:reject'
+    ],
+    PUBLISHER: [
+        'articles:publish',
+        'articles:schedule',
+        'articles:seo',
+        'articles:status',
+        'articles:read'
+    ],
     LANGUAGE_ADMIN: ['articles:create', 'articles:read', 'articles:update', 'articles:delete', 'articles:approve', 'articles:reject', 'users:read'],
     NEWS_DESK: [],
     REPORTER: [],
     ADMIN: [],
     CITIZEN_REPORTER: [],
     GUEST: [],
+    // Granular editorial workflow roles
+    EDITOR: [
+        'articles:create',
+        'articles:read',
+        'articles:update',
+        'articles:submit',        // submit for review
+        'articles:media'
+    ],
+    REVIEWER: [
+        'articles:read',
+        'articles:review',        // view submissions in review queue
+        'articles:approve',
+        'articles:reject'
+    ],
+    MODERATOR: [
+        'comments:moderate',
+        'articles:flag',
+        'shortnews:flag',
+        'users:restrict'
+    ],
+    ANALYST: [
+        'analytics:read',
+        'articles:read',
+        'shortnews:read',
+        'categories:read'
+    ],
+    SEO_EDITOR: [
+        'articles:read',
+        'articles:update',
+        'articles:seo',
+        'seo:tags',
+        'seo:metadata'
+    ]
 };
 
 async function main() {
@@ -166,17 +257,31 @@ async function main() {
     console.log('Seeding roles...');
     const roleMap: Record<string, string> = {};
     for (const roleName of roles) {
+        const perms = defaultPermissions[roleName] || [];
         const newRole = await prisma.role.upsert({
             where: { name: roleName },
-            update: {},
+            update: { permissions: perms }, // ensure permission changes are applied on reseed
             create: {
                 name: roleName,
-                permissions: defaultPermissions[roleName]
+                permissions: perms
             },
         });
         roleMap[roleName] = newRole.id;
     }
     console.log(`Seeded ${roles.length} roles.`);
+
+    // Seed global reporter designations (tenantId null). Idempotent via composite unique.
+    console.log('Seeding global reporter designations...');
+    for (const d of reporterDesignationsDefaults) {
+        const existing = await prisma.reporterDesignation.findFirst({ where: { tenantId: null, code: d.code } });
+        if (!existing) {
+            await prisma.reporterDesignation.create({ data: { tenantId: null, level: d.level as any, code: d.code, name: d.name } });
+        } else if (existing.name !== d.name || existing.level !== d.level) {
+            await prisma.reporterDesignation.update({ where: { id: existing.id }, data: { name: d.name, level: d.level as any } });
+        }
+    }
+    const globalDesignationsCount = await p.reporterDesignation.count({ where: { tenantId: null } });
+    console.log(`Seeded ${reporterDesignationsDefaults.length} global reporter designations (total now ${globalDesignationsCount}).`);
 
     // Seed Languages
     console.log('Seeding languages...');
@@ -209,6 +314,60 @@ async function main() {
         });
     }
     console.log(`Seeded country India and ${stateNames.length} states.`);
+
+    // Seed Telangana news districts (idempotent)
+    async function seedTelanganaDistricts() {
+        console.log('Seeding Telangana districts...');
+        const telangana = await prisma.state.findFirst({ where: { name: 'Telangana' } });
+        if (!telangana) {
+            console.warn('Telangana state not found; skipping district seed.');
+            return;
+        }
+        const districts: string[] = [
+            'Adilabad',
+            'Komaram Bheem Asifabad',
+            'Mancherial',
+            'Nirmal',
+            'Nizamabad',
+            'Jagtial',
+            'Peddapalli',
+            'Karimnagar',
+            'Rajanna Sircilla',
+            'Siddipet',
+            'Medak',
+            'Sangareddy',
+            'Kamareddy',
+            'Hyderabad',
+            'Ranga Reddy',
+            'Medchal-Malkajgiri',
+            'Vikarabad',
+            'Mahabubnagar',
+            'Nagarkurnool',
+            'Wanaparthy',
+            'Jogulamba Gadwal',
+            'Narayanpet',
+            'Nalgonda',
+            'Suryapet',
+            'Yadadri Bhuvanagiri',
+            'Khammam',
+            'Bhadradri Kothagudem',
+            'Warangal',
+            'Hanumakonda',
+            'Mahabubabad',
+            'Mulugu',
+            'Jayashankar Bhupalpally',
+            'Jangaon'
+        ];
+        let createdCount = 0;
+        for (const name of districts) {
+            const existing = await prisma.district.findFirst({ where: { name, stateId: telangana.id } });
+            if (existing) continue;
+            await prisma.district.create({ data: { name, stateId: telangana.id } });
+            createdCount += 1;
+        }
+        console.log(`Telangana districts seed done. Added ${createdCount} new of ${districts.length}.`);
+    }
+    await seedTelanganaDistricts();
 
     const languageMap: Record<string, string> = {};
     for (const lang of createdLanguages) {
@@ -385,78 +544,151 @@ async function main() {
         }
     });
 
-    // Reporter hierarchy
-    // Create a tenant admin reporter
-    const adminReporter = await p.reporter.upsert({
-        where: { email: 'admin@greennews.local' },
-        update: {},
-        create: {
-            tenantId: tenant.id,
-            role: 'TENANT_ADMIN',
-            level: 'STATE',
-            stateId: telanganaState?.id,
-            name: 'Green Admin',
-            email: 'admin@greennews.local',
-            passwordHash: await bcrypt.hash('AdminPass123!', 10)
-        }
-    });
-    // Parent Reporter
-    const parentReporter = await p.reporter.upsert({
-        where: { email: 'parent@greennews.local' },
-        update: {},
-        create: {
-            tenantId: tenant.id,
-            role: 'PARENT_REPORTER',
-            level: 'DISTRICT',
-            name: 'District Lead',
-            email: 'parent@greennews.local',
-            passwordHash: await bcrypt.hash('ParentPass123!', 10)
-        }
-    });
-    // Child Reporter
-    await p.reporter.upsert({
-        where: { email: 'reporter1@greennews.local' },
-        update: {},
-        create: {
-            tenantId: tenant.id,
-            role: 'REPORTER',
-            level: 'MANDAL',
-            parentId: parentReporter.id,
-            name: 'Field Reporter 1',
-            email: 'reporter1@greennews.local',
-            passwordHash: await bcrypt.hash('ReporterPass123!', 10)
-        }
-    });
+    // Reporter hierarchy seeding skipped: current Reporter model doesn't include fields like email/name/password.
+    // If needed later, create Reporter records using existing columns only (tenantId, userId, level, stateId...).
+    console.log('Multi-tenant demo seed complete (reporters skipped).');
 
-    // Reporter payment & ID card for parent reporter
-    const currentYear = new Date().getUTCFullYear();
-    await p.reporterPayment.upsert({
-        where: { reporterId_year: { reporterId: parentReporter.id, year: currentYear } },
-        update: { status: 'PAID' },
-        create: {
-            reporterId: parentReporter.id,
-            year: currentYear,
-            amount: 1500,
-            status: 'PAID',
-            expiresAt: new Date(new Date().setUTCFullYear(currentYear + 1))
+    // Assembly constituencies (Telangana) seed (idempotent)
+    async function seedTelanganaAssemblyConstituencies() {
+        console.log('Seeding Telangana assembly constituencies...');
+        const telangana = await prisma.state.findFirst({ where: { name: 'Telangana' } });
+        if (!telangana) { console.warn('Telangana state not found; skipping assembly constituencies.'); return; }
+        const acList: { name: string; district: string }[] = [
+            { name: 'Adilabad', district: 'Adilabad' },
+            { name: 'Boath (ST)', district: 'Adilabad' },
+            { name: 'Nirmal', district: 'Nirmal' },
+            { name: 'Khanapur (ST)', district: 'Nirmal' },
+            { name: 'Sirpur (ST)', district: 'Komaram Bheem Asifabad' },
+            { name: 'Asifabad (ST)', district: 'Komaram Bheem Asifabad' },
+            { name: 'Mancherial', district: 'Mancherial' },
+            { name: 'Chennur (SC)', district: 'Mancherial' },
+            { name: 'Bellampalli (SC)', district: 'Mancherial' },
+            { name: 'Mudhole', district: 'Nirmal' },
+            { name: 'Armur', district: 'Nizamabad' },
+            { name: 'Balkonda', district: 'Nizamabad' },
+            { name: 'Korutla', district: 'Jagtial' },
+            { name: 'Jagtial', district: 'Jagtial' },
+            { name: 'Metpally', district: 'Jagtial' },
+            { name: 'Dharmapuri (SC)', district: 'Jagtial' },
+            { name: 'Ramagundam', district: 'Peddapalli' },
+            { name: 'Manthani', district: 'Peddapalli' },
+            { name: 'Peddapalli (SC)', district: 'Peddapalli' },
+            { name: 'Karimnagar', district: 'Karimnagar' },
+            { name: 'Choppadandi (SC)', district: 'Karimnagar' },
+            { name: 'Vemulawada', district: 'Rajanna Sircilla' },
+            { name: 'Sircilla', district: 'Rajanna Sircilla' },
+            { name: 'Husnabad', district: 'Siddipet' },
+            { name: 'Huzurabad', district: 'Karimnagar' },
+            { name: 'Manakondur (SC)', district: 'Karimnagar' },
+            { name: 'Siddipet', district: 'Siddipet' },
+            { name: 'Medak', district: 'Medak' },
+            { name: 'Narayankhed', district: 'Sangareddy' },
+            { name: 'Andole (SC)', district: 'Sangareddy' },
+            { name: 'Narsapur', district: 'Medak' },
+            { name: 'Zahirabad', district: 'Sangareddy' },
+            { name: 'Sangareddy', district: 'Sangareddy' },
+            { name: 'Patancheru', district: 'Sangareddy' },
+            { name: 'Dubbak', district: 'Siddipet' },
+            { name: 'Gajwel', district: 'Siddipet' },
+            { name: 'Kamareddy', district: 'Kamareddy' },
+            { name: 'Yellareddy', district: 'Kamareddy' },
+            { name: 'Nizamabad (Urban)', district: 'Nizamabad' },
+            { name: 'Nizamabad (Rural)', district: 'Nizamabad' },
+            { name: 'Bodhan', district: 'Nizamabad' },
+            { name: 'Jukkal (SC)', district: 'Kamareddy' },
+            { name: 'Banswada', district: 'Kamareddy' },
+            { name: 'Bhuvanagiri', district: 'Yadadri Bhuvanagiri' },
+            { name: 'Tungaturthi', district: 'Suryapet' },
+            { name: 'Suryapet', district: 'Suryapet' },
+            { name: 'Kodad', district: 'Suryapet' },
+            { name: 'Huzurnagar', district: 'Suryapet' },
+            { name: 'Nalgonda', district: 'Nalgonda' },
+            { name: 'Nakur (Nakrekal) (SC)', district: 'Nalgonda' },
+            { name: 'Munugode', district: 'Nalgonda' },
+            { name: 'Devarakonda (ST)', district: 'Nalgonda' },
+            { name: 'Miryalaguda', district: 'Nalgonda' },
+            { name: 'Bhongir', district: 'Yadadri Bhuvanagiri' },
+            { name: 'Aleru', district: 'Yadadri Bhuvanagiri' },
+            { name: 'Jangaon', district: 'Jangaon' },
+            { name: 'Ghanpur (Station) (SC)', district: 'Jangaon' },
+            { name: 'Palakurthi', district: 'Jangaon' },
+            { name: 'Warangal West', district: 'Hanumakonda' },
+            { name: 'Warangal East', district: 'Hanumakonda' },
+            { name: 'Wardhannapet (SC)', district: 'Hanumakonda' },
+            { name: 'Parakala', district: 'Hanumakonda' },
+            { name: 'Bhupalpally', district: 'Jayashankar Bhupalpally' },
+            { name: 'Mulug (ST)', district: 'Mulugu' },
+            { name: 'Mahabubabad (SC)', district: 'Mahabubabad' },
+            { name: 'Narsampet', district: 'Warangal' },
+            { name: 'Dornakal (ST)', district: 'Mahabubabad' },
+            { name: 'Khammam', district: 'Khammam' },
+            { name: 'Palair', district: 'Khammam' },
+            { name: 'Madhira (SC)', district: 'Khammam' },
+            { name: 'Wyra (ST)', district: 'Khammam' },
+            { name: 'Sathupalli (SC)', district: 'Khammam' },
+            { name: 'Yellandu (ST)', district: 'Bhadradri Kothagudem' },
+            { name: 'Kothagudem', district: 'Bhadradri Kothagudem' },
+            { name: 'Bhadrachalam (ST)', district: 'Bhadradri Kothagudem' },
+            { name: 'Aswaraopeta (ST)', district: 'Bhadradri Kothagudem' },
+            { name: 'Mahabubnagar', district: 'Mahabubnagar' },
+            { name: 'Jadcherla', district: 'Mahabubnagar' },
+            { name: 'Devarakadra', district: 'Mahabubnagar' },
+            { name: 'Makthal', district: 'Narayanpet' },
+            { name: 'Narayanpet', district: 'Narayanpet' },
+            { name: 'Kodangal', district: 'Vikarabad' },
+            { name: 'Shadnagar', district: 'Ranga Reddy' },
+            { name: 'Kollapur', district: 'Nagarkurnool' },
+            { name: 'Wanaparthy', district: 'Wanaparthy' },
+            { name: 'Gadwal', district: 'Jogulamba Gadwal' },
+            { name: 'Alampur (SC)', district: 'Jogulamba Gadwal' },
+            { name: 'Nagarkurnool', district: 'Nagarkurnool' },
+            { name: 'Achampet (SC)', district: 'Nagarkurnool' },
+            { name: 'Kalwakurthy', district: 'Nagarkurnool' },
+            { name: 'Maheshwaram', district: 'Ranga Reddy' },
+            { name: 'Ibrahimpatnam', district: 'Ranga Reddy' },
+            { name: 'L.B. Nagar', district: 'Ranga Reddy' },
+            { name: 'Rajendranagar', district: 'Ranga Reddy' },
+            { name: 'Serilingampally', district: 'Ranga Reddy' },
+            { name: 'Chevella', district: 'Ranga Reddy' },
+            { name: 'Pargi', district: 'Vikarabad' },
+            { name: 'Vikarabad (SC)', district: 'Vikarabad' },
+            { name: 'Tandur', district: 'Vikarabad' },
+            { name: 'Medchal', district: 'Medchal-Malkajgiri' },
+            { name: 'Malkajgiri', district: 'Medchal-Malkajgiri' },
+            { name: 'Quthbullapur', district: 'Medchal-Malkajgiri' },
+            { name: 'Kukatpally', district: 'Medchal-Malkajgiri' },
+            { name: 'Uppal', district: 'Medchal-Malkajgiri' },
+            { name: 'Amberpet', district: 'Hyderabad' },
+            { name: 'Khairatabad', district: 'Hyderabad' },
+            { name: 'Jubilee Hills', district: 'Hyderabad' },
+            { name: 'Sanathnagar', district: 'Hyderabad' },
+            { name: 'Nampally', district: 'Hyderabad' },
+            { name: 'Karwan', district: 'Hyderabad' },
+            { name: 'Goshamahal', district: 'Hyderabad' },
+            { name: 'Charminar', district: 'Hyderabad' },
+            { name: 'Chandrayangutta', district: 'Hyderabad' },
+            { name: 'Yakutpura', district: 'Hyderabad' },
+            { name: 'Bahadurpura', district: 'Hyderabad' },
+            { name: 'Secunderabad', district: 'Hyderabad' },
+            { name: 'Secunderabad Cantt (SC)', district: 'Hyderabad' },
+            { name: 'Mulug? (ST)', district: 'Mulugu' }, // duplicate handled by unique constraint if exists
+            { name: 'Shamshabad', district: 'Ranga Reddy' },
+            { name: 'Ghatkesar', district: 'Medchal-Malkajgiri' }
+        ];
+        let created = 0; let skipped = 0;
+        for (const ac of acList) {
+            const dist = await prisma.district.findFirst({ where: { name: ac.district } });
+            if (!dist) { skipped++; continue; }
+            const existing = await (p as any).assemblyConstituency.findFirst({ where: { name: ac.name, districtId: dist.id } });
+            if (existing) continue;
+            await (p as any).assemblyConstituency.create({ data: { name: ac.name, districtId: dist.id } });
+            created++;
         }
-    });
-    await p.reporterIDCard.upsert({
-        where: { reporterId: parentReporter.id },
-        update: {},
-        create: {
-            reporterId: parentReporter.id,
-            cardNumber: `GREENNEWS-${currentYear}-0001`,
-            issuedAt: new Date(),
-            expiresAt: new Date(new Date().setUTCFullYear(currentYear + 1))
-        }
-    });
-
-    console.log('Multi-tenant demo seed complete.');
-
+        console.log(`Telangana assembly constituencies seed complete. Created ${created}, skipped (missing district) ${skipped}.`);
+    }
+    await seedTelanganaAssemblyConstituencies();
     console.log(`Seeding finished.`);
 }
-
 main()
     .catch((e) => {
         console.error(e);

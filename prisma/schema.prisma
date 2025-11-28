@@ -84,6 +84,12 @@ model User {
   contentReads ContentRead[]
   contentReactions ContentReaction[]
   shortNewsOptions ShortNewsOption[]
+  // Optional back-relations for family graph (even if API deprecated)
+  familyRelations        FamilyRelation[]     @relation("FamilyRelation_user")
+  relatedFamilyRelations FamilyRelation[]     @relation("FamilyRelation_relatedUser")
+  familyMemberships      FamilyMember[]
+  // Reporter profile (if user is a reporter/admin editor etc.)
+  reporterProfile        Reporter?
   // Family graph back-relations
   // Family graph removed
   // E2EE public key bundle (1:1). Added inverse relation for UserEncryptionKey.user
@@ -105,15 +111,33 @@ model Role {
   name        String   @unique
   permissions Json
   users       User[]
-  devices     Device[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
+model Country {
+  id        String   @id @default(cuid())
+  name      String   @unique
   code      String?  @unique
   states    State[]
+  tenantEntities TenantEntity[] @relation("TenantEntity_publicationCountry")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Language {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  code        String            @unique
+  nativeName  String?
+  direction   String?           @default("ltr")
+  isDeleted   Boolean           @default(false)
+  users       User[]
+  domainLangs DomainLanguage[]
+  articles    Article[]         @relation("Article_language")
+  tenantEntities TenantEntity[] @relation("TenantEntity_language")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }
 
 model State {
@@ -127,10 +151,11 @@ model State {
   contentReads ContentRead[] @relation("ContentRead_state")
   tenants    Tenant[]
   reporters  Reporter[]
+  tenantEntities TenantEntity[] @relation("TenantEntity_publicationState")
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
-
+ 
 model District {
   id        String   @id @default(cuid())
   name      String
@@ -141,6 +166,9 @@ model District {
   userProfiles UserProfile[] @relation("UserProfile_district")
   contentReads ContentRead[] @relation("ContentRead_district")
   reporters Reporter[]
+  assemblyConstituencies AssemblyConstituency[] @relation("DistrictAssemblyConstituencies")
+  tenantEntitiesPublication TenantEntity[] @relation("TenantEntity_publicationDistrict")
+  tenantEntitiesPrinting    TenantEntity[] @relation("TenantEntity_printingDistrict")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -151,9 +179,13 @@ model Mandal {
   district   District @relation(fields: [districtId], references: [id])
   districtId String
   isDeleted  Boolean  @default(false)
+  // True if this mandal name matches an Assembly Constituency center
+  isAssemblyConstituency Boolean @default(false)
   userProfiles UserProfile[] @relation("UserProfile_mandal")
   contentReads ContentRead[] @relation("ContentRead_mandal")
-  reporters Reporter[]
+  reporters   Reporter[]
+  tenantEntitiesPublication TenantEntity[] @relation("TenantEntity_publicationMandal")
+  tenantEntitiesPrinting    TenantEntity[] @relation("TenantEntity_printingMandal")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -197,7 +229,7 @@ model Article {
   author            User          @relation(fields: [authorId], references: [id])
   authorId          String
   // Article language (from author's language at creation time)
-  language          Language?     @relation(fields: [languageId], references: [id])
+  language          Language?     @relation("Article_language", fields: [languageId], references: [id])
   languageId        String?
   // Optional tenant scoping. Null => global article
   tenant            Tenant?       @relation(fields: [tenantId], references: [id])
@@ -252,7 +284,6 @@ enum ReporterRole {
 }
 
 enum ReporterLevel {
-  NATIONAL
   STATE
   DISTRICT
   ASSEMBLY
@@ -264,6 +295,22 @@ enum ReporterPaymentStatus {
   PAID
   EXPIRED
   REFUNDED
+}
+
+// KYC lifecycle for reporter onboarding
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+/// PRGI periodicity for newspaper registration
+enum Periodicity {
+  DAILY
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
 }
 
 /// ---------------- Core Tenant & Domain Models ----------------
@@ -287,7 +334,17 @@ model Tenant {
   domains     Domain[]
   articles    Article[]
   theme       TenantTheme?
+  // Back-relations for new website/tenant config models
+  navigation          TenantNavigation?
+  featureFlags        TenantFeatureFlags?
+  homepageSections    TenantHomepageSection[]
+  newsletterSubscriptions NewsletterSubscription[]
   reporters   Reporter[]
+  reporterDesignations ReporterDesignation[]
+  entity      TenantEntity? @relation("Tenant_TenantEntity")
+  reporterPayments ReporterPayment[]
+  razorpayConfig   RazorpayConfig?
+  idCardSettings   TenantIdCardSettings?
 }
 
 model Domain {
@@ -356,32 +413,160 @@ model TenantTheme {
   updatedAt   DateTime @updatedAt
 }
 
+/// One-to-one PRGI registration and entity details for a Tenant
+model TenantEntity {
+  id                     String      @id @default(cuid())
+  tenant                 Tenant      @relation("Tenant_TenantEntity", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId               String      @unique
+  // PRGI core fields
+  prgiNumber             String      @unique
+  registrationTitle      String?
+  periodicity            Periodicity @default(DAILY)
+  registrationDate       DateTime?
+  // Language
+  language               Language?   @relation("TenantEntity_language", fields: [languageId], references: [id])
+  languageId             String?
+  // People
+  ownerName              String?
+  publisherName          String?
+  editorName             String?
+  // Publication place (state/district)
+  publicationCountry     Country?    @relation("TenantEntity_publicationCountry", fields: [publicationCountryId], references: [id])
+  publicationCountryId   String?
+  publicationState       State?      @relation("TenantEntity_publicationState", fields: [publicationStateId], references: [id])
+  publicationStateId     String?
+  publicationDistrict    District?   @relation("TenantEntity_publicationDistrict", fields: [publicationDistrictId], references: [id])
+  publicationDistrictId  String?
+  publicationMandal      Mandal?     @relation("TenantEntity_publicationMandal", fields: [publicationMandalId], references: [id])
+  publicationMandalId    String?
+  // Printing press and place of printing
+  printingPressName      String?
+  printingDistrict       District?   @relation("TenantEntity_printingDistrict", fields: [printingDistrictId], references: [id])
+  printingDistrictId     String?
+  printingMandal         Mandal?     @relation("TenantEntity_printingMandal", fields: [printingMandalId], references: [id])
+  printingMandalId       String?
+  printingCityName       String?
+  // Address free text
+  address                String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+}
+
+/// ---------------- Website Navigation & Feature Config (Multi-tenant) ----------------
+
+model TenantNavigation {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String   @unique
+  // Arbitrary JSON config matching frontend navigation contract
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TenantFeatureFlags {
+  id                    String   @id @default(cuid())
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId              String   @unique
+  enableMobileAppView   Boolean  @default(false)
+  section2Rows          Int      @default(2)
+  section2ListCount     Int      @default(4)
+  section2ForceCategoryName String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model TenantHomepageSection {
+  id         String   @id @default(cuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId   String
+  sectionName String
+  // Items: array of article IDs or card objects; flexible for future editorial overrides
+  items      Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, sectionName])
+  @@index([tenantId, sectionName])
+}
+
+model NewsletterSubscription {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String
+  email     String
+  source    String?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
 /// ---------------- Reporter & Compliance ----------------
 
 model Reporter {
   id            String        @id @default(cuid())
   tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenantId      String
-  parent        Reporter?     @relation("ReporterParent", fields: [parentId], references: [id])
-  parentId      String?
-  children      Reporter[]    @relation("ReporterParent")
-  role          ReporterRole
+  // Link to platform user; all authentication and role-based access controlled via User.role
+  user          User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String?       @unique
   level         ReporterLevel?
+  designation   ReporterDesignation? @relation(fields: [designationId], references: [id])
+  designationId String?
   state         State?        @relation(fields: [stateId], references: [id])
   stateId       String?
   district      District?     @relation(fields: [districtId], references: [id])
   districtId    String?
   mandal        Mandal?       @relation(fields: [mandalId], references: [id])
   mandalId      String?
-  assemblyId    String?
-  name          String
-  email         String        @unique
-  passwordHash  String
+  assemblyConstituency AssemblyConstituency? @relation(fields: [assemblyConstituencyId], references: [id])
+  assemblyConstituencyId String?
+  // Subscription & compliance fields
+  subscriptionActive Boolean   @default(false)
+  monthlySubscriptionAmount Int? // Stored in smallest currency unit (e.g. paise)
+  idCardCharge   Int?          // Fee charged for ID card issuance (if any, smallest unit)
+  kycStatus      KycStatus     @default(PENDING)
+  kycData        Json?         // Arbitrary structured KYC payload (documents, verification notes)
+  profilePhotoUrl String?      // Optional direct URL to reporter profile photo
   active        Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   idCard        ReporterIDCard?
   payments      ReporterPayment[]
+
+  @@index([tenantId, level])
+  @@index([designationId])
+  @@index([kycStatus])
+}
+
+model AssemblyConstituency {
+  id        String    @id @default(cuid())
+  name      String
+  district  District  @relation("DistrictAssemblyConstituencies", fields: [districtId], references: [id])
+  districtId String
+  isDeleted Boolean   @default(false)
+  reporters Reporter[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([districtId, name])
+  @@index([districtId])
+}
+
+model ReporterDesignation {
+  id          String         @id @default(cuid())
+  tenant      Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId    String?
+  level       ReporterLevel
+  code        String         // machine code e.g. STATE_BUREAU_CHIEF
+  name        String         // display name e.g. "State Bureau Chief"
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  reporters   Reporter[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, level])
 }
 
 model ReporterIDCard {
@@ -396,19 +581,67 @@ model ReporterIDCard {
   updatedAt   DateTime  @updatedAt
 }
 
+/// Per-tenant ID card layout & numbering settings
+model TenantIdCardSettings {
+  id             String   @id @default(cuid())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId       String   @unique
+  templateId     String   @default("STYLE_1")
+  frontLogoUrl   String?
+  roundStampUrl  String?
+  signUrl        String?
+  primaryColor   String?  // hex color like #004f9f
+  secondaryColor String?  // hex color like #ff0000
+  termsJson      Json?    // array of strings for back-side terms
+  officeAddress  String?
+  helpLine1      String?
+  helpLine2      String?
+  // Validity configuration
+  validityType   String   @default("PER_USER_DAYS") // PER_USER_DAYS | FIXED_END_DATE
+  validityDays   Int?     // used when PER_USER_DAYS
+  fixedValidUntil DateTime? // used when FIXED_END_DATE
+  // ID number format
+  idPrefix       String?  // e.g. KM
+  idDigits       Int?     // e.g. 6 → KM000123
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model ReporterPayment {
   id          String                 @id @default(cuid())
   reporter    Reporter               @relation(fields: [reporterId], references: [id], onDelete: Cascade)
   reporterId  String
-  year        Int
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId    String
+  type        String                 // ONBOARDING | MONTHLY_SUBSCRIPTION
+  year        Int                    // Billing year (for monthly subscriptions)
+  month       Int                    // 1-12 billing month (for monthly subscriptions)
   amount      Int
+  currency    String                 @default("INR")
   status      ReporterPaymentStatus  @default(PENDING)
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  meta        Json?
   expiresAt   DateTime
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 
-  @@unique([reporterId, year])
+  @@unique([reporterId, type, year, month])
   @@index([status])
+}
+
+/// Razorpay configuration per tenant (or global when tenantId is null)
+model RazorpayConfig {
+  id        String   @id @default(cuid())
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String?
+  keyId     String
+  keySecret String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId])
 }
 
 /// ---------------- End Multi-Tenant Additions ----------------
@@ -554,9 +787,9 @@ enum FamilyRelationType {
 
 model FamilyRelation {
   id              String             @id @default(cuid())
-  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User               @relation("FamilyRelation_user", fields: [userId], references: [id], onDelete: Cascade)
   userId          String
-  relatedUser     User               @relation("RelatedUser", fields: [relatedUserId], references: [id], onDelete: Cascade)
+  relatedUser     User               @relation("FamilyRelation_relatedUser", fields: [relatedUserId], references: [id], onDelete: Cascade)
   relatedUserId   String
   relationType    FamilyRelationType
   meta            Json?
@@ -735,4 +968,41 @@ model ShortNewsOption {
   @@unique([userId, shortNewsId])
   @@index([shortNewsId])
   @@index([userId])
+}
+
+/// Device registration and last-known location per device
+model Device {
+  id            String   @id @default(cuid())
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
+  deviceId      String   @unique
+  deviceModel   String?
+  pushToken     String?
+  // Last known location snapshot for this device
+  latitude      Float?
+  longitude     Float?
+  accuracyMeters Float?
+  placeId       String?
+  placeName     String?
+  address       String?
+  source        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Canonical location for a registered user (separate from device)
+model UserLocation {
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String   @id
+  latitude    Float
+  longitude   Float
+  accuracyMeters Float?
+  provider    String?
+  timestampUtc DateTime?
+  placeId     String?
+  placeName   String?
+  address     String?
+  source      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

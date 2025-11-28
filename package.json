@@ -10,12 +10,27 @@
     "start": "node dist/index.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "seed": "ts-node prisma/seed.ts",
+    "prisma:migrate:dev": "npx prisma migrate dev",
+    "prisma:migrate:deploy": "npx prisma migrate deploy",
+    "prisma:generate": "npx prisma generate",
+    "prisma:studio": "npx prisma studio",
+    "prisma:seed": "npm run seed",
+    "seed:reporter-designations": "ts-node scripts/seed_reporter_designations.ts",
+    "seed:minimal": "ts-node scripts/seed_minimal.ts",
+    "seed:demo-prashna": "ts-node scripts/seed_demo_prashna.ts",
+    "seed:adilabad-mandals": "ts-node scripts/seed_adilabad_mandals.ts",
+    "seed:adilabad-full": "ts-node scripts/seed_adilabad_full_mandals.ts",
+    "reset:adilabad-mandals": "ts-node scripts/reset_adilabad_mandals.ts",
+    "clear:mandals": "ts-node scripts/clear_mandals.ts",
     "seed:family": "echo 'family seeding removed'",
     "seed:kin": "echo 'kin relations seeding removed'",
     "seed:castes": "ts-node scripts/seed_castes.ts",
     "clear:relations": "echo 'chat relations script removed'",
     "ai:smoke": "ts-node scripts/aiDraftSmoke.ts",
     "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -54,6 +69,9 @@
     "multer": "^2.0.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "puppeteer": "^24.31.0",
+    "razorpay": "^2.9.6",
+    "react-native-razorpay": "^2.3.1",
     "reflect-metadata": "^0.2.2",
     "sharp": "^0.34.3",
     "swagger-jsdoc": "^6.2.8",

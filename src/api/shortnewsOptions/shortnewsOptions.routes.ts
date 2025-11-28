@@ -4,6 +4,44 @@ import prisma from '../../lib/prisma';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   - name: ShortNews Options
+ *     description: User-submitted option strings (<=50 chars) attached to short news items.
+ */
+
+/**
+ * @swagger
+ * /shortnews-options:
+ *   post:
+ *     summary: Create a short news option (one per user per shortNews)
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [shortNewsId, content]
+ *             properties:
+ *               shortNewsId: { type: string }
+ *               content: { type: string, maxLength: 50 }
+ *           examples:
+ *             create:
+ *               summary: Create option
+ *               value:
+ *                 shortNewsId: "sn123"
+ *                 content: "Need more water tankers"
+ *     responses:
+ *       201: { description: Created }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ *       404: { description: ShortNews not found }
+ *       409: { description: Duplicate option for user }
+ */
+
 // Contract:
 // - POST /shortnews-options
 //   body: { shortNewsId: string, content: string (<= 50) }
@@ -53,6 +91,23 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
   }
 });
 
+/**
+ * @swagger
+ * /shortnews-options/by-user/{userId}:
+ *   get:
+ *     summary: List a user's short news options
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List }
+ *       401: { description: Unauthorized }
+ */
+
 router.get('/by-user/:userId', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
     const { userId } = req.params;
@@ -67,6 +122,23 @@ router.get('/by-user/:userId', passport.authenticate('jwt', { session: false }),
     return res.status(500).json({ error: 'Failed to fetch' });
   }
 });
+
+/**
+ * @swagger
+ * /shortnews-options/by-shortnews/{shortNewsId}:
+ *   get:
+ *     summary: List options for a short news item (with user basic profile)
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: shortNewsId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List }
+ *       401: { description: Unauthorized }
+ */
 
 router.get('/by-shortnews/:shortNewsId', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -103,6 +175,28 @@ router.get('/by-shortnews/:shortNewsId', passport.authenticate('jwt', { session:
   }
 });
 
+/**
+ * @swagger
+ * /shortnews-options/by-user/{userId}/shortnews/{shortNewsId}:
+ *   get:
+ *     summary: Get a user's option for a short news item
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: shortNewsId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Option }
+ *       401: { description: Unauthorized }
+ *       404: { description: Not found }
+ */
+
 // Get a specific user's option for a given shortNews
 router.get('/by-user/:userId/shortnews/:shortNewsId', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -138,6 +232,24 @@ router.get('/by-user/:userId/shortnews/:shortNewsId', passport.authenticate('jwt
   }
 });
 
+/**
+ * @swagger
+ * /shortnews-options/by-shortnews/{shortNewsId}/me:
+ *   get:
+ *     summary: Get the authenticated user's option for a short news item
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: shortNewsId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Option }
+ *       401: { description: Unauthorized }
+ *       404: { description: Not found }
+ */
+
 // Get the current (authenticated) user's option for a given shortNews
 router.get('/by-shortnews/:shortNewsId/me', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -154,6 +266,35 @@ router.get('/by-shortnews/:shortNewsId/me', passport.authenticate('jwt', { sessi
     return res.status(500).json({ error: 'Failed to fetch' });
   }
 });
+
+/**
+ * @swagger
+ * /shortnews-options/{id}:
+ *   put:
+ *     summary: Update an option (owner only)
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content: { type: string, maxLength: 50 }
+ *     responses:
+ *       200: { description: Updated }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Not found }
+ */
 
 router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -176,6 +317,25 @@ router.put('/:id', passport.authenticate('jwt', { session: false }), async (req,
     return res.status(500).json({ error: 'Failed to update' });
   }
 });
+
+/**
+ * @swagger
+ * /shortnews-options/{id}:
+ *   delete:
+ *     summary: Delete an option (owner only)
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Deleted }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Not found }
+ */
 
 router.delete('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {

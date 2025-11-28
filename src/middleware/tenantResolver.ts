@@ -46,7 +46,9 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
 export async function tenantResolver(req: Request, res: Response, next: NextFunction) {
   if (process.env.MULTI_TENANCY !== 'true') return next();
 
-  const host = normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
+  // Allow explicit override via custom header when calling cross-origin without a reverse proxy
+  const overrideHost = normalizeHost(req.headers['x-tenant-domain'] as any);
+  const host = overrideHost || normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
   if (!host) {
     return res.status(400).json({ code: 'HOST_HEADER_REQUIRED', message: 'Host header missing for tenant resolution' });
   }

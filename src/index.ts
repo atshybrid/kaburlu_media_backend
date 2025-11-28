@@ -1,11 +1,9 @@
 // dotenv is loaded inside config/env
 import 'reflect-metadata';
 import app from './app';
-import { PrismaClient } from '@prisma/client';
+import prisma from './lib/prisma';
 import http from 'http';
 import { config } from './config/env';
-
-const prisma = new PrismaClient();
 
 const port = config.port;
 
