@@ -348,6 +348,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
  *             properties:
  *               domain: { type: string }
  *               isPrimary: { type: boolean, default: false }
+ *     description: Allows at most one primary domain and one epaper subdomain per tenant.
  *     responses:
  *       200: { description: Created }
  */
@@ -358,6 +359,19 @@ router.post('/:tenantId/domains', auth, requireSuperOrTenantAdminScoped, async (
     if (!domain) return res.status(400).json({ error: 'domain required' });
     const t = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
     if (!t) return res.status(404).json({ error: 'Tenant not found' });
+    const existing = await (prisma as any).domain.findMany({ where: { tenantId } });
+    const isEpaper = String(domain).toLowerCase().startsWith('epaper.');
+    const primaryExists = existing.some((d: any) => d.isPrimary === true);
+    const epaperExists = existing.some((d: any) => String(d.domain).toLowerCase().startsWith('epaper.'));
+    if (existing.length >= 2) {
+      return res.status(409).json({ error: 'Only one primary domain and one epaper subdomain allowed per tenant' });
+    }
+    if (isEpaper && epaperExists) {
+      return res.status(409).json({ error: 'Epaper subdomain already exists for tenant' });
+    }
+    if (!isEpaper && Boolean(isPrimary) && primaryExists) {
+      return res.status(409).json({ error: 'Primary domain already exists for tenant' });
+    }
     const token = crypto.randomBytes(12).toString('hex');
     const row = await (prisma as any).domain.create({
       data: { tenantId, domain, isPrimary: Boolean(isPrimary), status: 'PENDING', verificationToken: token, verificationMethod: 'DNS_TXT' }
