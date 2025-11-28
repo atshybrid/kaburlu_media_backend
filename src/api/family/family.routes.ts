@@ -49,7 +49,7 @@ router.get('/relations', auth, async (req: any, res) => {
   }
 });
 
-// POST /api/v1/family/relations/link - link a relation and its inverse
+// POST /family/relations/link - link a relation and its inverse
 router.post('/relations/link', auth, async (req: any, res) => {
   try {
     const userId = req.user.id as string;
@@ -178,7 +178,7 @@ router.patch('/relations', auth, async (req: any, res) => {
   }
 });
 
-// GET /api/v1/family/scope/preview?direction=both&maxDepth=2
+// GET /family/scope/preview?direction=both&maxDepth=2
 router.get('/scope/preview', auth, async (req: any, res) => {
   try {
     const userId = req.user.id as string;

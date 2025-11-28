@@ -564,7 +564,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     const card = await (prisma as any).reporterIDCard.create({ data: { reporterId: reporter.id, cardNumber, issuedAt, expiresAt } });
     // Set pdfUrl to public PDF endpoint (print-ready two-page card size)
-    const pdfUrl = `/api/v1/id-cards/pdf?reporterId=${reporter.id}&print=true`;
+    // Store version-agnostic relative PDF path (base /api/v1 added externally)
+    const pdfUrl = `/id-cards/pdf?reporterId=${reporter.id}&print=true`;
     const updatedCard = await (prisma as any).reporterIDCard.update({ where: { reporterId: reporter.id }, data: { pdfUrl } });
     res.status(201).json(updatedCard);
   } catch (e: any) {

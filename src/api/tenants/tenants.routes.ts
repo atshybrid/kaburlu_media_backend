@@ -100,14 +100,66 @@ router.put('/admin/razorpay-config/global', auth, requireSuperAdmin, async (req,
  * /tenants:
  *   get:
  *     summary: List tenants
+ *     description: |
+ *       Returns basic tenants by default. Pass `full=true` to include domains and entity details for each tenant.
  *     tags: [Tenants]
+ *     parameters:
+ *       - in: query
+ *         name: full
+ *         schema: { type: boolean, default: false }
+ *         description: Include domains (status, primary) and full PRGI entity details.
  *     responses:
  *       200:
- *         description: List of tenants
+ *         description: List of tenants (optionally enriched with domains and entity)
  */
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+  const full = ['1','true','yes','full','all'].includes(String(req.query.full || '').toLowerCase());
   const tenants = await (prisma as any).tenant.findMany({ take: 100, orderBy: { createdAt: 'desc' } });
-  res.json(tenants);
+  if (!full || !tenants.length) return res.json(tenants);
+
+  const ids = tenants.map((t: any) => t.id);
+  const [domains, entities] = await Promise.all([
+    (prisma as any).domain.findMany({
+      where: { tenantId: { in: ids } },
+      orderBy: [{ isPrimary: 'desc' }, { domain: 'asc' }]
+    }),
+    (prisma as any).tenantEntity.findMany({
+      where: { tenantId: { in: ids } },
+      include: {
+        language: true,
+        publicationCountry: true,
+        publicationState: true,
+        publicationDistrict: true,
+        publicationMandal: true,
+        printingDistrict: true,
+        printingMandal: true,
+      }
+    })
+  ]);
+
+  const domainsByTenant: Record<string, any[]> = {};
+  for (const d of domains) {
+    const list = domainsByTenant[d.tenantId] || (domainsByTenant[d.tenantId] = []);
+    // Expose non-sensitive domain fields only
+    list.push({
+      id: d.id,
+      domain: d.domain,
+      isPrimary: d.isPrimary,
+      status: d.status,
+      verifiedAt: d.verifiedAt,
+      lastCheckAt: d.lastCheckAt,
+      lastCheckStatus: d.lastCheckStatus
+    });
+  }
+  const entityByTenant: Record<string, any> = {};
+  for (const e of entities) entityByTenant[e.tenantId] = e;
+
+  const shaped = tenants.map((t: any) => ({
+    ...t,
+    domains: domainsByTenant[t.id] || [],
+    entity: entityByTenant[t.id] || null
+  }));
+  res.json(shaped);
 });
 
 /**
@@ -707,6 +759,16 @@ router.post('/:tenantId/entity/simple', auth, requireSuperOrTenantAdminScoped, a
       where: { tenantId },
       update: data,
       create: data,
+      include: {
+        language: true,
+        publicationCountry: true,
+        publicationState: true,
+        publicationDistrict: true,
+        publicationMandal: true,
+        printingDistrict: true,
+        printingMandal: true,
+        tenant: { select: { id: true, name: true, slug: true, prgiNumber: true, prgiStatus: true } },
+      }
     });
 
     // Optionally create / update TENANT_ADMIN user (alias: publisherMobile for backwards compatibility)
@@ -922,7 +984,7 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
 
 /**
  * @swagger
- * /api/v1/tenants/{tenantId}/entity:
+ * /tenants/{tenantId}/entity:
  *   get:
  *     summary: Get PRGI/entity details for a Tenant [Superadmin]
  *     tags: [Tenants]

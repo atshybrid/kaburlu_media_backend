@@ -26,17 +26,29 @@ const swaggerDefinition = {
   tags: [
     { name: 'Auth' },
     { name: 'Users' },
+    { name: 'Articles' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },
-    { name: 'Locations' },
+    { name: 'Reactions' },
+    { name: 'Comments' },
     { name: 'Categories' },
     { name: 'Languages' },
-    { name: 'Roles' },
     { name: 'States' },
-    { name: 'Translate' },
+    { name: 'Districts' },
+    { name: 'Mandals' },
+    { name: 'Assembly Constituencies' },
+    { name: 'Locations' },
     { name: 'Media' },
+    { name: 'Profiles' },
+    { name: 'Preferences' },
+    { name: 'Notifications' },
+    { name: 'Devices' },
+    { name: 'Translate' },
     { name: 'Prompts' },
-    { name: 'Engagement - Comments' },
+    { name: 'Castes' },
+    { name: 'Kin Relations' },
+    { name: 'Countries' },
+    { name: 'ID Cards' },
     // Multi-tenant & Reporter tags
     { name: 'Tenants', description: 'Tenant CRUD & PRGI fields' },
     { name: 'Domains', description: 'Domain verification & status management' },
@@ -45,7 +57,8 @@ const swaggerDefinition = {
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
-    { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' }
+    { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
+    { name: 'Webhooks' }
   ],
   components: {
     securitySchemes: {
