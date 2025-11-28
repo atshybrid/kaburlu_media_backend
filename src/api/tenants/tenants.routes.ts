@@ -202,7 +202,7 @@ router.get('/:id', async (req, res) => {
  *               slug: { type: string, description: 'Unique slug for platform subdomains. Optional; auto-generated from name if omitted.' }
  *               prgiNumber: { type: string }
  *               stateId: { type: string }
- *               createDefaultDomains: { type: boolean, default: true }
+ *               createDefaultDomains: { type: boolean, default: false }
  *     responses:
  *       200: { description: Created }
  */
@@ -213,7 +213,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
       slug,
       prgiNumber,
       stateId,
-      createDefaultDomains = true,
+      createDefaultDomains = false,
       adminMobileNumber,
       publisherMobileNumber,
       autoCreateAdmin = true,

@@ -26,6 +26,7 @@
     "seed:kin": "echo 'kin relations seeding removed'",
     "seed:castes": "ts-node scripts/seed_castes.ts",
     "clear:relations": "echo 'chat relations script removed'",
+    "clear:tenant": "ts-node scripts/clear_tenant.ts"
     "ai:smoke": "ts-node scripts/aiDraftSmoke.ts",
     "postinstall": "prisma generate"
   },
