@@ -29,9 +29,6 @@
     "ai:smoke": "ts-node scripts/aiDraftSmoke.ts",
     "postinstall": "prisma generate"
   },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
-  },
   "engines": {
     "node": ">=18.0.0"
   },
