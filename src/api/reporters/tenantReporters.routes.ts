@@ -37,7 +37,7 @@ const router = Router();
  *         updatedAt: { type: string, format: date-time }
  *     TenantReporterCreate:
  *       type: object
- *       required: [designationId, level]
+ *       required: [designationId, level, fullName, mobileNumber, profilePhotoUrl]
  *       properties:
  *         designationId: { type: string }
  *         level: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
@@ -49,6 +49,8 @@ const router = Router();
  *         monthlySubscriptionAmount: { type: integer }
  *         idCardCharge: { type: integer }
  *         profilePhotoUrl: { type: string }
+ *         fullName: { type: string, description: 'Reporter full name (stored in UserProfile)' }
+ *         mobileNumber: { type: string, description: 'Reporter mobile number (creates or links User)' }
  *     TenantReporterUpdate:
  *       type: object
  *       properties:
@@ -163,8 +165,10 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
   try {
     const { tenantId } = req.params;
     const body = req.body || {};
-    const { designationId, level } = body;
-    if (!designationId || !level) return res.status(400).json({ error: 'designationId and level required' });
+    const { designationId, level, fullName, mobileNumber, profilePhotoUrl } = body;
+    if (!designationId || !level || !fullName || !mobileNumber || !profilePhotoUrl) {
+      return res.status(400).json({ error: 'designationId, level, fullName, mobileNumber, profilePhotoUrl required' });
+    }
     // Validate tenant
     const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) return res.status(400).json({ error: 'Invalid tenantId' });
@@ -172,6 +176,23 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     const designation = await (prisma as any).reporterDesignation.findUnique({ where: { id: designationId } });
     if (!designation || (designation.tenantId && designation.tenantId !== tenantId)) {
       return res.status(400).json({ error: 'Invalid designationId for this tenant' });
+    }
+    // Normalize mobile
+    const normalizedMobile = String(mobileNumber).trim();
+    if (!/^[0-9]{7,15}$/.test(normalizedMobile)) return res.status(400).json({ error: 'Invalid mobileNumber format' });
+    // Find or create user
+    let user = await (prisma as any).user.findFirst({ where: { mobileNumber: normalizedMobile } });
+    if (!user) {
+      const citizenReporterRole = await (prisma as any).role.findFirst({ where: { name: 'CITIZEN_REPORTER' } });
+      if (!citizenReporterRole) return res.status(500).json({ error: 'CITIZEN_REPORTER role missing' });
+      user = await (prisma as any).user.create({ data: { mobileNumber: normalizedMobile, roleId: citizenReporterRole.id, languageId: tenant.stateId ? undefined : undefined, status: 'ACTIVE' } });
+    }
+    // Upsert user profile with fullName & profilePhotoUrl
+    const existingProfile = await (prisma as any).userProfile.findUnique({ where: { userId: user.id } }).catch(()=>null);
+    if (existingProfile) {
+      await (prisma as any).userProfile.update({ where: { userId: user.id }, data: { fullName, profilePhotoUrl } });
+    } else {
+      await (prisma as any).userProfile.create({ data: { userId: user.id, fullName, profilePhotoUrl } });
     }
     const data: any = {
       tenantId,
@@ -184,7 +205,8 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
       subscriptionActive: !!body.subscriptionActive,
       monthlySubscriptionAmount: typeof body.monthlySubscriptionAmount === 'number' ? body.monthlySubscriptionAmount : null,
       idCardCharge: typeof body.idCardCharge === 'number' ? body.idCardCharge : null,
-      profilePhotoUrl: body.profilePhotoUrl || null
+      profilePhotoUrl: profilePhotoUrl || null,
+      userId: user.id
     };
     // Level-location validation
     if (level === 'STATE' && !data.stateId) return res.status(400).json({ error: 'stateId required for STATE level' });
@@ -503,6 +525,13 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const reporter = await (prisma as any).reporter.findFirst({ where: { id, tenantId } });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
     if (!reporter.subscriptionActive) return res.status(400).json({ error: 'Subscription inactive' });
+    // Mandatory fields gating
+    if (!reporter.profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required before ID card issuance' });
+    if (!reporter.userId) return res.status(400).json({ error: 'Linked user required before ID card issuance' });
+    const user = await (prisma as any).user.findUnique({ where: { id: reporter.userId } });
+    if (!user || !user.mobileNumber) return res.status(400).json({ error: 'User mobileNumber required before ID card issuance' });
+    const profile = await (prisma as any).userProfile.findUnique({ where: { userId: user.id } });
+    if (!profile || !profile.fullName) return res.status(400).json({ error: 'User fullName required before ID card issuance' });
     if (reporter.idCardCharge && reporter.idCardCharge > 0) {
       // Optionally verify payment present; skipped for now
     }
@@ -514,7 +543,10 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     const card = await (prisma as any).reporterIDCard.create({ data: { reporterId: reporter.id, cardNumber, issuedAt, expiresAt } });
-    res.status(201).json(card);
+    // Set pdfUrl to public PDF endpoint (generated on demand)
+    const pdfUrl = `/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+    const updatedCard = await (prisma as any).reporterIDCard.update({ where: { reporterId: reporter.id }, data: { pdfUrl } });
+    res.status(201).json(updatedCard);
   } catch (e: any) {
     console.error('issue id card error', e);
     res.status(500).json({ error: 'Failed to issue ID card' });
