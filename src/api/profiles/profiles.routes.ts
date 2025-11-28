@@ -52,6 +52,9 @@ router.get('/me', passport.authenticate('jwt', { session: false }), async (req: 
  * /profiles/me:
  *   post:
  *     summary: Create a profile for the authenticated user
+ *     description: |
+ *       Note: If this user is linked to a Reporter, `fullName` and `profilePhotoUrl` should be provided.
+ *       ID card issuance for reporters is gated on these fields.
  *     tags: [Profiles]
  *     security:
  *       - bearerAuth: []
@@ -87,6 +90,9 @@ router.post('/me', passport.authenticate('jwt', { session: false }), validationM
  * /profiles/me:
  *   put:
  *     summary: Update the authenticated user's own profile
+ *     description: |
+ *       For reporter accounts, `fullName` and `profilePhotoUrl` are expected.
+ *       Missing values will block reporter ID card issuance.
  *     tags: [Profiles]
  *     security:
  *       - bearerAuth: []
@@ -272,6 +278,9 @@ export default router;
  *   schemas:
  *     UserProfileDto:
  *       type: object
+ *       description: |
+ *         General user profile fields. For users who are Reporters, providing `fullName` and
+ *         `profilePhotoUrl` is required to issue/renew reporter ID cards.
  *       properties:
  *         fullName:
  *           type: string
