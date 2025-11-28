@@ -1,11 +1,12 @@
 import { S3Client } from '@aws-sdk/client-s3';
+import { config } from '../config/env';
 
-export const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
-export const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
-export const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
-export const R2_BUCKET = process.env.R2_BUCKET || '';
-export const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL || '';
-export const R2_ENDPOINT = process.env.R2_ENDPOINT || '';
+export const R2_ACCOUNT_ID = config.r2.accountId || '';
+export const R2_ACCESS_KEY_ID = config.r2.accessKeyId || '';
+export const R2_SECRET_ACCESS_KEY = config.r2.secretAccessKey || '';
+export const R2_BUCKET = config.r2.bucket || '';
+export const R2_PUBLIC_BASE_URL = config.r2.publicBaseUrl || '';
+export const R2_ENDPOINT = config.r2.endpoint || '';
 
 export const r2Client = new S3Client({
   region: 'auto',

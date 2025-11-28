@@ -7,6 +7,14 @@ export class CreateProfileDto {
 
   @IsOptional()
   @IsString()
+  surname?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
   gender?: string;
 
   @IsOptional()
@@ -68,6 +76,23 @@ export class CreateProfileDto {
   @IsOptional()
   @IsObject()
   socialLinks?: any;
+
+  // Caste fields (both freeform and reference IDs are allowed)
+  @IsOptional()
+  @IsString()
+  caste?: string;
+
+  @IsOptional()
+  @IsString()
+  subCaste?: string;
+
+  @IsOptional()
+  @IsString()
+  casteId?: string;
+
+  @IsOptional()
+  @IsString()
+  subCasteId?: string;
 }
 
 export class UpdateProfileDto extends CreateProfileDto {}

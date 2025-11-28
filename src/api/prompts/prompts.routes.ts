@@ -3,7 +3,42 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 
 const router = Router();
+/**
+ * @swagger
+ * tags:
+ *   - name: Prompts
+ *     description: AI / editorial prompt templates management
+ */
 
+/**
+ * @swagger
+ * /prompts:
+ *   get:
+ *     summary: List prompts
+ *     description: Returns all stored prompt templates ordered by key. Restricted to NEWS_DESK_ADMIN, LANGUAGE_ADMIN, SUPERADMIN.
+ *     tags: [Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Success list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       content: { type: string }
+ *                       description: { type: string, nullable: true }
+ *       403:
+ *         description: Forbidden
+ */
 // List prompts
 router.get(
   '/',
@@ -23,6 +58,46 @@ router.get(
   }
 );
 
+/**
+ * @swagger
+ * /prompts:
+ *   put:
+ *     summary: Upsert prompt by key
+ *     description: Creates or updates a prompt template identified by unique key. Restricted to NEWS_DESK_ADMIN, LANGUAGE_ADMIN, SUPERADMIN.
+ *     tags: [Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [key, content]
+ *             properties:
+ *               key: { type: string }
+ *               content: { type: string }
+ *               description: { type: string }
+ *           examples:
+ *             create:
+ *               summary: Create new prompt
+ *               value:
+ *                 key: "shortnews_ai_article"
+ *                 content: "Rewrite the short news into a concise article..."
+ *                 description: "AI rewrite template for short news to article"
+ *             update:
+ *               summary: Update existing prompt
+ *               value:
+ *                 key: "shortnews_ai_article"
+ *                 content: "Rewrite the short news as a structured article with title, intro, body, summary."
+ *     responses:
+ *       200:
+ *         description: Upserted prompt
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden
+ */
 // Upsert a prompt by key
 router.put(
   '/',

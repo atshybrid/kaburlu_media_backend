@@ -40,14 +40,22 @@ export const loginController = async (req: Request, res: Response) => {
       return res.status(400).json({ errors });
     }
 
-    const result = await login(loginDto);
+    const result: any = await login(loginDto);
     console.log("result", result);
     if (!result) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-
+    if (result.paymentRequired) {
+      // 402 Payment Required semantics; client should create orders via existing endpoints
+      return res.status(402).json({ success: false, code: 'PAYMENT_REQUIRED', message: result.message || 'Payment required before login', data: {
+        reporter: result.reporter,
+        outstanding: result.outstanding
+      }});
+    }
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
   } catch (error) {
+    // Improve visibility for debugging unexpected login errors
+    console.error('[Auth] loginController error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
@@ -68,6 +76,7 @@ export const refreshController = async (req: Request, res: Response) => {
 
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
   } catch (error) {
+    console.error('[Auth] refreshController error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
@@ -79,6 +88,7 @@ export const registerGuestController = async (req: Request, res: Response) => {
     const result = await registerGuestUser(guestDto, anonHeader);
     res.status(200).json(result);
   } catch (error) {
+    console.error('[Auth] registerGuestController error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

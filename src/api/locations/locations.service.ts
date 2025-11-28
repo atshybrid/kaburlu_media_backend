@@ -30,19 +30,19 @@ export const findAllLocations = (options: { page?: number, limit?: number, filte
     });
 };
 
-// Get a single location by ID
-export const findLocationById = (id: string) => {
+// Get a single location by userId (primary key)
+export const findLocationById = (userId: string) => {
     return prisma.userLocation.findUnique({
-        where: { id }
+        where: { userId }
         // No relations in UserLocation model
     });
 };
 
 // Update a location
-export const updateLocation = (id: string, data: UpdateLocationDto) => {
+export const updateLocation = (userId: string, data: UpdateLocationDto) => {
     const { timestampUtc, ...rest } = data as any;
     return prisma.userLocation.update({
-        where: { id },
+        where: { userId },
         data: {
             ...rest,
             timestampUtc: timestampUtc ? new Date(timestampUtc) : undefined,
@@ -51,9 +51,9 @@ export const updateLocation = (id: string, data: UpdateLocationDto) => {
 };
 
 // Delete a location
-export const deleteLocation = (id: string) => {
+export const deleteLocation = (userId: string) => {
     return prisma.userLocation.delete({
-        where: { id },
+        where: { userId },
     });
 };
 

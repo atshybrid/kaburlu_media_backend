@@ -31,8 +31,22 @@ import notificationsRoutes from './api/notifications/notifications.routes';
 import promptsRoutes from './api/prompts/prompts.routes';
 import preferencesRoutes from './api/preferences/preferences.routes';
 import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.routes';
-import familyRoutes from './api/family/family.routes';
-import kinRelationsRoutes from './api/kinrelations/kinRelations.routes';
+import castesRoutes from './api/castes/castes.routes';
+import publicRoutes from './api/public/public.routes';
+import websitePublicRoutes from './api/public/website.routes';
+import tenantsRoutes from './api/tenants/tenants.routes';
+import domainsRoutes from './api/domains/domains.routes';
+import reportersRoutes from './api/reporters/reporters.routes';
+import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
+import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
+import tenantThemeRoutes from './api/tenantTheme/tenantTheme.routes';
+import prgiRoutes from './api/prgi/prgi.routes';
+import districtsRoutes from './api/districts/districts.routes';
+import mandalsRoutes from './api/mandals/mandals.routes';
+import assemblyConstituenciesRoutes from './api/assembly/assemblyConstituencies.routes';
+import adminRoutes from './api/admin/admin.routes';
+import webhooksRoutes from './api/webhooks/webhooks.routes';
+import idCardsRoutes from './api/idCards/idCards.routes';
 import { Router } from 'express';
 
 const app = express();
@@ -78,7 +92,8 @@ const corsOptions: CorsOptions = {
   },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   credentials: true,
-  allowedHeaders: 'Content-Type, Authorization'
+  // Allow custom tenant header for cross-origin calls
+  allowedHeaders: 'Content-Type, Authorization, X-Tenant-Domain'
 };
 
 // Middlewares
@@ -138,6 +153,11 @@ app.use('/users', usersRoutes);
 app.use('/auth', authRoutes);
 app.use('/auth', otpRoutes);
 app.use('/locations', locationsRoutes);
+app.use('/districts', districtsRoutes);
+app.use('/mandals', mandalsRoutes);
+app.use('/', assemblyConstituenciesRoutes);
+// Tenant-scoped reporter management (mount root so internal paths /tenants/:tenantId/... work)
+app.use('/', tenantReportersRoutes);
 app.use('/translate', translateRoutes);
 app.use('/profiles', profileRoutes);
 app.use('/media', mediaRoutes);
@@ -146,8 +166,10 @@ app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
-app.use('/family', familyRoutes);
-app.use('/kin-relations', kinRelationsRoutes);
+// Mount reporter payments routes at root so absolute paths inside work (e.g., /tenants/:tenantId/reporters/:id/payments/order)
+app.use('/', reporterPaymentsRoutes);
+// family & kin-relations removed
+app.use('/castes', castesRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -171,6 +193,11 @@ apiV1.use('/users', usersRoutes);
 apiV1.use('/auth', authRoutes);
 apiV1.use('/auth', otpRoutes);
 apiV1.use('/locations', locationsRoutes);
+apiV1.use('/districts', districtsRoutes);
+apiV1.use('/mandals', mandalsRoutes);
+apiV1.use('/', assemblyConstituenciesRoutes);
+// Tenant-scoped reporter management under versioned API as well
+apiV1.use('/', tenantReportersRoutes);
 apiV1.use('/translate', translateRoutes);
 apiV1.use('/profiles', profileRoutes);
 apiV1.use('/media', mediaRoutes);
@@ -179,8 +206,23 @@ apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
-apiV1.use('/family', familyRoutes);
-apiV1.use('/kin-relations', kinRelationsRoutes);
+// Mount reporter payments under versioned root as well for absolute paths
+apiV1.use('/', reporterPaymentsRoutes);
+// family & kin-relations removed
+apiV1.use('/castes', castesRoutes);
+apiV1.use('/tenants', tenantsRoutes);
+apiV1.use('/domains', domainsRoutes);
+apiV1.use('/reporters', reportersRoutes);
+apiV1.use('/reporter-payments', reporterPaymentsRoutes);
+apiV1.use('/tenant-theme', tenantThemeRoutes);
+apiV1.use('/prgi', prgiRoutes);
+apiV1.use('/admin', adminRoutes);
+apiV1.use('/webhooks', webhooksRoutes);
+// Public ID Card render APIs (JSON/HTML/PDF)
+apiV1.use('/id-cards', idCardsRoutes);
+// Multi-tenant public read-only routes (domain based)
+app.use('/api/public', publicRoutes);
+app.use('/api/public', websitePublicRoutes);
 app.use('/api/v1', apiV1);
 
 // Protected sample route

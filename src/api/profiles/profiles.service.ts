@@ -36,6 +36,8 @@ export async function createProfile(userId: string, data: CreateProfileDto) {
   const payload: any = {
     userId,
     fullName: data.fullName ?? null,
+    surname: data.surname ?? null,
+    lastName: data.lastName ?? null,
     gender: data.gender ?? null,
     dob,
     maritalStatus: data.maritalStatus ?? null,
@@ -52,6 +54,10 @@ export async function createProfile(userId: string, data: CreateProfileDto) {
     occupation: data.occupation ?? null,
     education: data.education ?? null,
     socialLinks: data.socialLinks ?? null,
+    caste: data.caste ?? null,
+    subCaste: data.subCaste ?? null,
+    casteId: data.casteId || null,
+    subCasteId: data.subCasteId || null,
   };
   for (const key of ['stateId', 'districtId', 'assemblyId', 'mandalId', 'villageId']) {
     if (payload[key] === '') payload[key] = null;
@@ -63,6 +69,8 @@ export async function updateProfile(userId: string, data: UpdateProfileDto) {
   const dob = data.dob ? parseDate(data.dob) : undefined;
   const updateData: any = {
     fullName: data.fullName,
+    surname: data.surname,
+    lastName: data.lastName,
     gender: data.gender,
     dob,
     maritalStatus: data.maritalStatus,
@@ -79,6 +87,10 @@ export async function updateProfile(userId: string, data: UpdateProfileDto) {
     occupation: data.occupation,
     education: data.education,
     socialLinks: data.socialLinks,
+    caste: data.caste,
+    subCaste: data.subCaste,
+    casteId: data.casteId === '' ? null : data.casteId,
+    subCasteId: data.subCasteId === '' ? null : data.subCasteId,
   };
   try {
     return await prisma.userProfile.update({

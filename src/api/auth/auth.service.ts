@@ -47,19 +47,98 @@ export const login = async (loginDto: MpinLoginDto) => {
   if (!user.mpin) {
     return null;
   }
-  const isMpinValid = await bcrypt.compare(loginDto.mpin, user.mpin);
+  // Support legacy plaintext MPINs by detecting non-bcrypt values, then migrate to hashed on-the-fly
+  const isBcryptHash = typeof user.mpin === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(user.mpin);
+  let isMpinValid = false;
+  if (isBcryptHash) {
+    try {
+      isMpinValid = await bcrypt.compare(loginDto.mpin, user.mpin);
+    } catch (e) {
+      console.warn('[Auth] bcrypt.compare failed, treating as invalid MPIN for user', user.id, e instanceof Error ? e.message : e);
+      isMpinValid = false;
+    }
+  } else {
+    // Plaintext stored (legacy) – compare directly and upgrade to hashed if match
+    if (loginDto.mpin === user.mpin) {
+      isMpinValid = true;
+      try {
+        const hashed = await bcrypt.hash(loginDto.mpin, 10);
+        await prisma.user.update({ where: { id: user.id }, data: { mpin: hashed } });
+        console.log('[Auth] Migrated plaintext MPIN to bcrypt hash for user', user.id);
+      } catch (e) {
+        console.error('[Auth] Failed to migrate plaintext MPIN to hash for user', user.id, e);
+      }
+    } else {
+      isMpinValid = false;
+    }
+  }
   console.log("isMpinValid:", isMpinValid);
   if (!isMpinValid) {
     console.log("Invalid mpin for user:", user.id);
     return null; // Invalid credentials
   }
-
-  const role = await prisma.role.findUnique({
-    where: {
-      id: user.roleId,
-    },
-  });
+  // Determine reporter payment gating BEFORE issuing tokens
+  let role = await prisma.role.findUnique({ where: { id: user.roleId } });
   console.log("User role:", role);
+  try {
+    // Fetch reporter record linked to this user (if any)
+    const reporter = await prisma.reporter.findUnique({ where: { userId: user.id }, include: { payments: true } });
+    if (reporter && role?.name !== 'SUPER_ADMIN') {
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1; // 1-12
+      const outstanding: any[] = [];
+
+      // Onboarding fee requirement
+      if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+        const onboardingPaid = reporter.payments.find(p => p.type === 'ONBOARDING' && p.status === 'PAID');
+        if (!onboardingPaid) {
+          const existingOnboarding = reporter.payments.find(p => p.type === 'ONBOARDING');
+          outstanding.push({
+            type: 'ONBOARDING',
+            amount: reporter.idCardCharge,
+            currency: 'INR',
+            status: existingOnboarding ? existingOnboarding.status : 'MISSING',
+            paymentId: existingOnboarding?.id || null,
+            razorpayOrderId: (existingOnboarding as any)?.razorpayOrderId || null,
+            razorpayPaymentId: (existingOnboarding as any)?.razorpayPaymentId || null
+          });
+        }
+      }
+
+      // Monthly subscription requirement
+      if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+        const monthlyPaid = reporter.payments.find(p => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth && p.status === 'PAID');
+        if (!monthlyPaid) {
+          const existingMonthly = reporter.payments.find(p => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth);
+          outstanding.push({
+            type: 'MONTHLY_SUBSCRIPTION',
+            amount: reporter.monthlySubscriptionAmount,
+            currency: 'INR',
+            year: currentYear,
+            month: currentMonth,
+            status: existingMonthly ? existingMonthly.status : 'MISSING',
+            paymentId: existingMonthly?.id || null,
+            razorpayOrderId: (existingMonthly as any)?.razorpayOrderId || null,
+            razorpayPaymentId: (existingMonthly as any)?.razorpayPaymentId || null
+          });
+        }
+      }
+
+      if (outstanding.length > 0) {
+        console.log('[Auth] Payment gating triggered for reporter', reporter.id, 'Outstanding:', outstanding);
+        return {
+          paymentRequired: true,
+          code: 'PAYMENT_REQUIRED',
+            message: 'Reporter payments required before login',
+          reporter: { id: reporter.id, tenantId: reporter.tenantId },
+          outstanding
+        };
+      }
+    }
+  } catch (e) {
+    console.error('[Auth] Failed reporter payment gating check', e);
+  }
 
   const payload = {
     sub: user.id,

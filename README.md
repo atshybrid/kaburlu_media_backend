@@ -9,6 +9,32 @@ Server should run automatically when starting a workspace. To run manually, run:
 npm run dev
 ```
 
+## Local Postgres fallback (no data loss)
+
+If your remote database (Neon) isn’t reachable from this machine (Prisma P1001), you can run a local Postgres temporarily without touching the remote data:
+
+1. Start local Postgres (requires Docker Desktop):
+
+	docker compose up -d
+
+2. Point the app to local DB (temporary):
+
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kaburlu_local
+
+3. Apply schema and run:
+
+	npm run build
+	npm run start
+
+When Neon connectivity is fixed, restore your Neon `DATABASE_URL` and run Prisma migrations there. No remote data is modified while you use the local DB.
+
+## Neon connectivity tips
+
+- Use the exact Prisma connection string from Neon (includes `?sslmode=require`)
+- Some networks block outbound 5432; try a different network or allow 5432 in firewall
+- Optional params: `&pgbouncer=true&connect_timeout=15&pool_timeout=30`
+- Consider Prisma Accelerate (HTTPS 443) if TCP 5432 is blocked
+
 ## Admin: Managing AI Prompt Templates
 
 The API uses DB-backed prompt templates for AI features (SEO, moderation, translations). Admins can view and update these via the Prompts API.
@@ -305,4 +331,40 @@ it('retries when under 58 words', async () => {
 | Error telemetry | Partial (HTTP codes) | Add structured event logs for AI retries & category auto-create |
 | Rate limiting | Not yet | Add simple token bucket per user for AI endpoints |
 | Security | JWT enforced | Add role/permission guard for admin-only AI endpoints |
+
+---
+
+## Removed Modules (Chat, Family Graph, Kin Relations)
+
+The legacy KaChat (chat & interests), Family graph (`FamilyRelation`, `FamilyMember`, `Family`), and `KinRelation` dictionary modules have been removed from the active codebase to streamline the multi-tenant news focus.
+
+What changed:
+- Prisma models removed: `ChatInterest`, `FamilyRelation`, `FamilyMember`, `Family`, `KinRelation`, enum `FamilyRelationType`.
+- Related Express routes (`/chat`, `/family`, `/kin-relations`) and seed/utility scripts deleted or replaced with no-op scripts.
+- New migration: `20251007170000_remove_chat_family_kin` safely drops the obsolete tables (idempotent DO $$ block) while preserving historical migrations for audit.
+
+How to apply in an environment:
+```
+npm run build
+npx prisma migrate deploy
+```
+
+If you had existing data you still need:
+1. Do NOT run the cleanup migration yet.
+2. Backup tables: `pg_dump -t "ChatInterest" -t "FamilyRelation" -t "FamilyMember" -t "Family" -t "KinRelation" > legacy_chat_family_backup.sql`.
+3. After confirming backups, apply migration.
+
+Rollback (git-level):
+```
+git checkout <previous_commit_hash> -- prisma/schema.prisma src/api/chat src/api/family src/api/kinrelations
+```
+Then re-run `prisma generate` and reintroduce earlier migrations (or recreate tables manually).
+
+Reasoning:
+- Reduced maintenance overhead and Prisma client size.
+- Removed features not aligned with current multi-tenant + reporter scope.
+- Simplified Swagger docs & public surface area.
+
+No other modules depend on the removed tables; removal is isolated. Historical migrations are intentionally kept to preserve a complete evolution trail.
+
 

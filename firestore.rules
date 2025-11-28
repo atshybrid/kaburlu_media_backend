@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isMember(chatId) {
+      return exists(/databases/$(database)/documents/chatMembers/$(chatId + '_' + request.auth.uid));
+    }
+
+    match /chats/{chatId} {
+      allow read: if isMember(chatId);
+      allow write: if false; // Server writes only
+    }
+
+    match /chatMembers/{docId} {
+      allow read: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /messages/{messageId} {
+      allow create: if request.auth != null &&
+        request.resource.data.senderUserId == request.auth.uid &&
+        isMember(request.resource.data.chatId);
+      allow read: if request.auth != null && isMember(resource.data.chatId);
+      allow update, delete: if false;
+    }
+  }
+}

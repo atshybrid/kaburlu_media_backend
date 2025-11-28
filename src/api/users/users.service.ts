@@ -26,10 +26,50 @@ export const getLocation = async (userId: string) => {
     return prisma.userLocation.findUnique({ where: { userId } });
 };
 import prisma from '../../lib/prisma';
+import * as bcrypt from 'bcrypt';
 
 export const createUser = async (data: any) => {
+    const {
+        mobileNumber,
+        mpin,
+        languageId,
+        roleId,
+        skipMpinDefault,
+        ...rest
+    } = data || {};
+
+    if (!languageId) {
+        throw new Error('languageId is required');
+    }
+    // Optional: verify language exists
+    const lang = await prisma.language.findUnique({ where: { id: String(languageId) } });
+    if (!lang) {
+        throw new Error(`Invalid languageId: '${languageId}'`);
+    }
+
+    let finalMpinHash: string | undefined;
+    if (typeof mpin === 'string' && mpin.trim()) {
+        finalMpinHash = await bcrypt.hash(mpin, 10);
+    } else if (skipMpinDefault) {
+        // Explicitly allow null mpin (e.g. reporter pre-registration) without defaulting to last4
+        finalMpinHash = undefined;
+    } else if (typeof mobileNumber === 'string' && /\d{4,}/.test(mobileNumber)) {
+        const last4 = mobileNumber.slice(-4);
+        finalMpinHash = await bcrypt.hash(last4, 10);
+    } else {
+        throw new Error('mpin is required when mobileNumber is missing or too short to derive last 4 digits');
+    }
+
     return prisma.user.create({
-        data,
+        data: {
+            ...rest,
+            mobileNumber: mobileNumber ?? null,
+            mpin: finalMpinHash || null,
+            languageId: String(languageId),
+            roleId: roleId,
+            status: data?.status || 'ACTIVE'
+        },
+        include: { role: true }
     });
 };
 

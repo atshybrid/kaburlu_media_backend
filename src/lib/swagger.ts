@@ -36,7 +36,16 @@ const swaggerDefinition = {
     { name: 'Translate' },
     { name: 'Media' },
     { name: 'Prompts' },
-    { name: 'Engagement - Comments' }
+    { name: 'Engagement - Comments' },
+    // Multi-tenant & Reporter tags
+    { name: 'Tenants', description: 'Tenant CRUD & PRGI fields' },
+    { name: 'Domains', description: 'Domain verification & status management' },
+    { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
+    { name: 'Reporters', description: 'Reporter hierarchy & roles' },
+    { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
+    { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
+    { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
+    { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' }
   ],
   components: {
     securitySchemes: {
