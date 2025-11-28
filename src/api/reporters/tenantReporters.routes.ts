@@ -143,7 +143,7 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
  * @swagger
  * /tenants/{tenantId}/reporters:
  *   post:
- *     summary: Create tenant reporter (without creating User account)
+ *     summary: Create tenant reporter (atomic with User + UserProfile)
  *     tags: [TenantReporters]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -177,44 +177,43 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     if (!designation || (designation.tenantId && designation.tenantId !== tenantId)) {
       return res.status(400).json({ error: 'Invalid designationId for this tenant' });
     }
-    // Normalize mobile
     const normalizedMobile = String(mobileNumber).trim();
     if (!/^[0-9]{7,15}$/.test(normalizedMobile)) return res.status(400).json({ error: 'Invalid mobileNumber format' });
-    // Find or create user
-    let user = await (prisma as any).user.findFirst({ where: { mobileNumber: normalizedMobile } });
-    if (!user) {
-      const citizenReporterRole = await (prisma as any).role.findFirst({ where: { name: 'CITIZEN_REPORTER' } });
-      if (!citizenReporterRole) return res.status(500).json({ error: 'CITIZEN_REPORTER role missing' });
-      user = await (prisma as any).user.create({ data: { mobileNumber: normalizedMobile, roleId: citizenReporterRole.id, languageId: tenant.stateId ? undefined : undefined, status: 'ACTIVE' } });
-    }
-    // Upsert user profile with fullName & profilePhotoUrl
-    const existingProfile = await (prisma as any).userProfile.findUnique({ where: { userId: user.id } }).catch(()=>null);
-    if (existingProfile) {
-      await (prisma as any).userProfile.update({ where: { userId: user.id }, data: { fullName, profilePhotoUrl } });
-    } else {
-      await (prisma as any).userProfile.create({ data: { userId: user.id, fullName, profilePhotoUrl } });
-    }
-    const data: any = {
-      tenantId,
-      designationId,
-      level,
-      stateId: body.stateId || null,
-      districtId: body.districtId || null,
-      mandalId: body.mandalId || null,
-      assemblyConstituencyId: body.assemblyConstituencyId || null,
-      subscriptionActive: !!body.subscriptionActive,
-      monthlySubscriptionAmount: typeof body.monthlySubscriptionAmount === 'number' ? body.monthlySubscriptionAmount : null,
-      idCardCharge: typeof body.idCardCharge === 'number' ? body.idCardCharge : null,
-      profilePhotoUrl: profilePhotoUrl || null,
-      userId: user.id
-    };
-    // Level-location validation
-    if (level === 'STATE' && !data.stateId) return res.status(400).json({ error: 'stateId required for STATE level' });
-    if (level === 'DISTRICT' && !data.districtId) return res.status(400).json({ error: 'districtId required for DISTRICT level' });
-    if (level === 'MANDAL' && !data.mandalId) return res.status(400).json({ error: 'mandalId required for MANDAL level' });
-    if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
-    const created = await (prisma as any).reporter.create({ data, include: { designation: true } });
-    res.status(201).json(created);
+    if (String(fullName).trim().length < 2) return res.status(400).json({ error: 'fullName too short' });
+    const citizenReporterRole = await (prisma as any).role.findFirst({ where: { name: 'CITIZEN_REPORTER' } });
+    if (!citizenReporterRole) return res.status(500).json({ error: 'CITIZEN_REPORTER role missing' });
+    const defaultLanguage = await (prisma as any).language.findFirst({ where: { code: 'en' } }).catch(()=>null);
+    const existingUser = await (prisma as any).user.findFirst({ where: { mobileNumber: normalizedMobile } });
+    const result = await (prisma as any).$transaction(async (tx: any) => {
+      let user = existingUser;
+      if (!user) {
+        user = await tx.user.create({ data: { mobileNumber: normalizedMobile, roleId: citizenReporterRole.id, languageId: defaultLanguage?.id || citizenReporterRole.id, status: 'ACTIVE' } });
+      } else if (user.roleId !== citizenReporterRole.id) {
+        user = await tx.user.update({ where: { id: user.id }, data: { roleId: citizenReporterRole.id } });
+      }
+      await tx.userProfile.upsert({ where: { userId: user.id }, update: { fullName, profilePhotoUrl }, create: { userId: user.id, fullName, profilePhotoUrl } });
+      const data: any = {
+        tenantId,
+        designationId,
+        level,
+        stateId: body.stateId || null,
+        districtId: body.districtId || null,
+        mandalId: body.mandalId || null,
+        assemblyConstituencyId: body.assemblyConstituencyId || null,
+        subscriptionActive: !!body.subscriptionActive,
+        monthlySubscriptionAmount: typeof body.monthlySubscriptionAmount === 'number' ? body.monthlySubscriptionAmount : null,
+        idCardCharge: typeof body.idCardCharge === 'number' ? body.idCardCharge : null,
+        profilePhotoUrl: profilePhotoUrl || null,
+        userId: user.id
+      };
+      if (level === 'STATE' && !data.stateId) throw new Error('stateId required for STATE level');
+      if (level === 'DISTRICT' && !data.districtId) throw new Error('districtId required for DISTRICT level');
+      if (level === 'MANDAL' && !data.mandalId) throw new Error('mandalId required for MANDAL level');
+      if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) throw new Error('assemblyConstituencyId required for ASSEMBLY level');
+      const reporter = await tx.reporter.create({ data, include: { designation: true } });
+      return reporter;
+    });
+    res.status(201).json(result);
   } catch (e: any) {
     console.error('create tenant reporter error', e);
     res.status(500).json({ error: 'Failed to create reporter' });
