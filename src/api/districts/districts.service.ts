@@ -15,18 +15,38 @@ export async function getDistrict(id: string) {
 }
 
 export async function createDistrict(data: CreateDistrictDto) {
-  return prisma.district.create({ data: { name: data.name.trim(), stateId: data.stateId } });
+  const name = data.name.trim();
+  // Check for existing by name+stateId (case-insensitive)
+  const existing = await prisma.district.findFirst({
+    where: { stateId: data.stateId, name: { equals: name, mode: 'insensitive' } }
+  });
+  if (existing) {
+    if (existing.isDeleted) {
+      return prisma.district.update({ where: { id: existing.id }, data: { isDeleted: false } });
+    }
+    throw new Error('District already exists');
+  }
+  return prisma.district.create({ data: { name, stateId: data.stateId } });
 }
 
 export async function updateDistrict(id: string, data: UpdateDistrictDto) {
-  return prisma.district.update({
-    where: { id },
-    data: {
-      name: data.name?.trim(),
-      stateId: data.stateId,
-      isDeleted: data.isDeleted ?? undefined
+  const payload: any = {};
+  if (typeof data.name === 'string') {
+    const name = data.name.trim();
+    payload.name = name;
+    // If renaming, ensure uniqueness within same stateId (when provided)
+    const record = await prisma.district.findUnique({ where: { id } });
+    const stateId = data.stateId ?? record?.stateId ?? undefined;
+    if (stateId) {
+      const clash = await prisma.district.findFirst({
+        where: { id: { not: id }, stateId, name: { equals: name, mode: 'insensitive' }, isDeleted: false }
+      });
+      if (clash) throw new Error('Duplicate district name in state');
     }
-  });
+  }
+  if (typeof data.stateId === 'string') payload.stateId = data.stateId;
+  if (typeof data.isDeleted === 'boolean') payload.isDeleted = data.isDeleted;
+  return prisma.district.update({ where: { id }, data: payload });
 }
 
 export async function softDeleteDistrict(id: string) {

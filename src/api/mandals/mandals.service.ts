@@ -15,19 +15,37 @@ export async function getMandal(id: string) {
 }
 
 export async function createMandal(data: CreateMandalDto) {
-  return prisma.mandal.create({ data: { name: data.name.trim(), districtId: data.districtId, isAssemblyConstituency: !!data.isAssemblyConstituency } });
+  const name = data.name.trim();
+  const existing = await prisma.mandal.findFirst({
+    where: { districtId: data.districtId, name: { equals: name, mode: 'insensitive' } }
+  });
+  if (existing) {
+    if (existing.isDeleted) {
+      return prisma.mandal.update({ where: { id: existing.id }, data: { isDeleted: false } });
+    }
+    throw new Error('Mandal already exists');
+  }
+  return prisma.mandal.create({ data: { name, districtId: data.districtId, isAssemblyConstituency: !!data.isAssemblyConstituency } });
 }
 
 export async function updateMandal(id: string, data: UpdateMandalDto) {
-  return prisma.mandal.update({
-    where: { id },
-    data: {
-      name: data.name?.trim(),
-      districtId: data.districtId,
-      isAssemblyConstituency: data.isAssemblyConstituency,
-      isDeleted: data.isDeleted ?? undefined
-    }
-  });
+  const payload: any = {};
+  let targetDistrictId: string | undefined = data.districtId;
+  const current = await prisma.mandal.findUnique({ where: { id } });
+  if (!current) throw new Error('Mandal not found');
+  if (!targetDistrictId) targetDistrictId = current.districtId;
+  if (typeof data.name === 'string') {
+    const name = data.name.trim();
+    payload.name = name;
+    const clash = await prisma.mandal.findFirst({
+      where: { id: { not: id }, districtId: targetDistrictId, name: { equals: name, mode: 'insensitive' }, isDeleted: false }
+    });
+    if (clash) throw new Error('Duplicate mandal name in district');
+  }
+  if (typeof data.districtId === 'string') payload.districtId = data.districtId;
+  if (typeof data.isAssemblyConstituency === 'boolean') payload.isAssemblyConstituency = data.isAssemblyConstituency;
+  if (typeof data.isDeleted === 'boolean') payload.isDeleted = data.isDeleted;
+  return prisma.mandal.update({ where: { id }, data: payload });
 }
 
 export async function softDeleteMandal(id: string) {

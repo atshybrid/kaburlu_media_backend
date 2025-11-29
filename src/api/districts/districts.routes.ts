@@ -118,8 +118,15 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
   try {
     const data = req.body as CreateDistrictDto;
     if (!data.name || !data.stateId) return res.status(400).json({ error: 'name and stateId required' });
-    const created = await createDistrict(data);
-    res.status(201).json(created);
+    try {
+      const created = await createDistrict(data);
+      return res.status(201).json(created);
+    } catch (e: any) {
+      if (String(e.message).toLowerCase().includes('exists')) {
+        return res.status(409).json({ error: e.message });
+      }
+      throw e;
+    }
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -148,9 +155,13 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
  */
 router.patch('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const updated = await updateDistrict(req.params.id, req.body as UpdateDistrictDto);
+    const body = typeof req.body === 'string' ? { name: req.body } : (req.body as UpdateDistrictDto);
+    const updated = await updateDistrict(req.params.id, body as UpdateDistrictDto);
     res.json(updated);
   } catch (e: any) {
+    if (String(e.message).toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: e.message });
+    }
     res.status(404).json({ error: 'District not found' });
   }
 });
@@ -178,9 +189,13 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
  */
 router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const updated = await updateDistrict(req.params.id, req.body as UpdateDistrictDto);
+    const body = typeof req.body === 'string' ? { name: req.body } : (req.body as UpdateDistrictDto);
+    const updated = await updateDistrict(req.params.id, body as UpdateDistrictDto);
     res.json(updated);
   } catch (e: any) {
+    if (String(e.message).toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: e.message });
+    }
     res.status(404).json({ error: 'District not found' });
   }
 });

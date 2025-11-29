@@ -108,8 +108,15 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
   try {
     const data = req.body as CreateMandalDto;
     if (!data.name || !data.districtId) return res.status(400).json({ error: 'name and districtId required' });
-    const created = await createMandal(data);
-    res.status(201).json(created);
+    try {
+      const created = await createMandal(data);
+      return res.status(201).json(created);
+    } catch (e: any) {
+      if (String(e.message).toLowerCase().includes('exists')) {
+        return res.status(409).json({ error: e.message });
+      }
+      throw e;
+    }
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -138,9 +145,13 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
  */
 router.patch('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const updated = await updateMandal(req.params.id, req.body as UpdateMandalDto);
+    const body = typeof req.body === 'string' ? { name: req.body } : (req.body as UpdateMandalDto);
+    const updated = await updateMandal(req.params.id, body as UpdateMandalDto);
     res.json(updated);
   } catch (e: any) {
+    if (String(e.message).toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: e.message });
+    }
     res.status(404).json({ error: 'Mandal not found' });
   }
 });
@@ -168,9 +179,13 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
  */
 router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const updated = await updateMandal(req.params.id, req.body as UpdateMandalDto);
+    const body = typeof req.body === 'string' ? { name: req.body } : (req.body as UpdateMandalDto);
+    const updated = await updateMandal(req.params.id, body as UpdateMandalDto);
     res.json(updated);
   } catch (e: any) {
+    if (String(e.message).toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: e.message });
+    }
     res.status(404).json({ error: 'Mandal not found' });
   }
 });

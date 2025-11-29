@@ -4,97 +4,8 @@ import prisma from '../../lib/prisma';
 import crypto from 'crypto';
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import * as bcrypt from 'bcrypt';
-
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
-
-/**
- * @swagger
- * tags:
- *   - name: Tenants
- *     description: Tenant CRUD & PRGI fields
- *   - name: Razorpay Config
- *     description: Global and tenant Razorpay credentials
- *   - name: ID Cards
- *     description: Tenant ID card settings and rendering
- */
-
-/**
- * @swagger
- * /admin/razorpay-config/global:
- *   put:
- *     summary: Upsert global Razorpay keys (SUPER_ADMIN)
- *     tags: [Razorpay Config]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - keyId
- *               - keySecret
- *             properties:
- *               keyId:
- *                 type: string
- *                 description: Razorpay key_id
- *               keySecret:
- *                 type: string
- *                 description: Razorpay key_secret
- *               active:
- *                 type: boolean
- *                 description: Whether these keys are active
- *                 default: true
- *     responses:
- *       200:
- *         description: Global Razorpay config upserted
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- *   get:
- *     summary: Get global Razorpay config (SUPER_ADMIN)
- *     tags: [Razorpay Config]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Current global Razorpay configuration
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- */
-router.put('/admin/razorpay-config/global', auth, requireSuperAdmin, async (req, res) => {
-  try {
-    const { keyId, keySecret, active = true } = req.body || {};
-
-    if (!keyId || !keySecret) {
-      return res.status(400).json({ error: 'keyId and keySecret are required' });
-    }
-
-    const config = await (prisma as any).razorpayConfig.upsert({
-      where: { tenantId: null },
-      update: { keyId, keySecret, active: Boolean(active) },
-      create: { tenantId: null, keyId, keySecret, active: Boolean(active) },
-    });
-
-    res.json({
-      id: config.id,
-      tenantId: config.tenantId,
-      keyId: config.keyId,
-      active: config.active,
-      createdAt: config.createdAt,
-      updatedAt: config.updatedAt,
-    });
-  } catch (e) {
-    console.error('global razorpay-config upsert error', e);
-    res.status(500).json({ error: 'Failed to upsert global Razorpay config' });
-  }
-});
-
 /**
  * @swagger
  * /tenants:
@@ -164,6 +75,54 @@ router.get('/', async (req, res) => {
 
 /**
  * @swagger
+ * /tenants/id-card-settings:
+ *   get:
+ *     summary: List ID card settings for all tenants (SUPER_ADMIN)
+ *     tags: [ID Cards]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *         required: false
+ *         description: Page number (default 1)
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 200 }
+ *         required: false
+ *         description: Items per page (default 50, max 200)
+ *     responses:
+ *       200: { description: Paginated settings with tenant info }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/id-card-settings', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const pageRaw = req.query.page as string | undefined;
+    const pageSizeRaw = req.query.pageSize as string | undefined;
+    let page = pageRaw ? parseInt(pageRaw, 10) : 1;
+    let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
+    if (pageSize > 200) pageSize = 200;
+
+    const total = await (prisma as any).tenantIdCardSettings.count();
+    const skip = (page - 1) * pageSize;
+    const rows = await (prisma as any).tenantIdCardSettings.findMany({
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: pageSize,
+      include: { tenant: { select: { id: true, name: true } } }
+    });
+    res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
+  } catch (e) {
+    console.error('tenant id-card-settings list error', e);
+    res.status(500).json({ error: 'Failed to list ID card settings' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/{id}:
  *   get:
  *     summary: Get tenant by id
@@ -182,149 +141,9 @@ router.get('/:id', async (req, res) => {
   if (!t) return res.status(404).json({ error: 'Not found' });
   res.json(t);
 });
+// (corrupted duplicate tenant creation block removed)
 
-/**
- * @swagger
- * /tenants:
- *   post:
- *     summary: Create a new Newspaper entity (Tenant) [Superadmin]
- *     tags: [Tenants]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name, prgiNumber]
- *             properties:
- *               name: { type: string }
- *               slug: { type: string, description: 'Unique slug for platform subdomains. Optional; auto-generated from name if omitted.' }
- *               prgiNumber: { type: string }
- *               stateId: { type: string }
- *               createDefaultDomains: { type: boolean, default: false }
- *     responses:
- *       200: { description: Created }
- */
-router.post('/', auth, requireSuperAdmin, async (req, res) => {
-  try {
-    const {
-      name,
-      slug,
-      prgiNumber,
-      stateId,
-      createDefaultDomains = false,
-      adminMobileNumber,
-      publisherMobileNumber,
-      autoCreateAdmin = true,
-      autoCreatePublisher = false,
-      adminDesignationCode = 'EDITOR_IN_CHIEF',
-      publisherDesignationCode = 'STATE_REPORTER'
-    } = req.body || {};
-    if (!name || !prgiNumber) return res.status(400).json({ error: 'name, prgiNumber required' });
-
-    // Auto-generate slug if missing/null
-    const generateSlug = (inputName: string) => {
-      const base = String(inputName)
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]+/g, '') // remove invalid chars
-        .replace(/\s+/g, '-') // spaces to hyphen
-        .replace(/-+/g, '-'); // collapse multiple hyphens
-      return base || `tenant-${crypto.randomBytes(3).toString('hex')}`;
-    };
-
-    let finalSlug = (slug && String(slug).trim()) ? String(slug).trim() : generateSlug(name);
-    finalSlug = finalSlug.toLowerCase(); // normalize
-
-    // Ensure uniqueness (light pre-check; DB constraint remains authoritative)
-    const existing = await (prisma as any).tenant.findUnique({ where: { slug: finalSlug } }).catch(() => null);
-    if (existing) {
-      let attempt = 2;
-      const base = finalSlug;
-      while (attempt < 15) {
-        const candidate = `${base}-${attempt}`;
-        const taken = await (prisma as any).tenant.findUnique({ where: { slug: candidate } }).catch(() => null);
-        if (!taken) { finalSlug = candidate; break; }
-        attempt += 1;
-      }
-      if (existing && finalSlug === base) {
-        finalSlug = `${base}-${crypto.randomBytes(2).toString('hex')}`;
-      }
-    }
-    // create tenant
-    const tenant = await (prisma as any).tenant.create({
-      data: { name, slug: finalSlug, prgiNumber, stateId: stateId || null },
-    });
-    const createdDomains: any[] = [];
-    if (createDefaultDomains) {
-      const newsHost = `${finalSlug}.kaburlu.app`;
-      const epaperHost = `epaper.${finalSlug}.kaburlu.app`;
-      const token1 = crypto.randomBytes(12).toString('hex');
-      const token2 = crypto.randomBytes(12).toString('hex');
-      const d1 = await (prisma as any).domain.create({ data: { tenantId: tenant.id, domain: newsHost, isPrimary: true, status: 'ACTIVE', verificationToken: token1, verificationMethod: 'MANUAL' } });
-      const d2 = await (prisma as any).domain.create({ data: { tenantId: tenant.id, domain: epaperHost, isPrimary: false, status: 'ACTIVE', verificationToken: token2, verificationMethod: 'MANUAL' } });
-      createdDomains.push(d1, d2);
-    }
-    // Auto-create admin / publisher users using last4 mpin strategy
-    const results: any = { tenant, domains: createdDomains, autoGeneratedSlug: !slug ? finalSlug : undefined };
-    const english = await (prisma as any).language.findFirst({ where: { code: 'en' } }).catch(()=>null);
-    const langId = english?.id || null;
-
-    async function createUserAndReporter(mobile: string, roleName: string, designationCode: string) {
-      if (!mobile) return { skipped: true, reason: 'mobile_missing' };
-      const normalized = String(mobile).trim();
-      if (!/^[0-9]{7,}$/.test(normalized)) return { skipped: true, reason: 'invalid_mobile' };
-      const existingUser = await (prisma as any).user.findFirst({ where: { mobileNumber: normalized } });
-      if (existingUser) return { skipped: true, reason: 'user_exists' };
-      const mpinPlain = normalized.slice(-4);
-      if (mpinPlain.length < 4) return { skipped: true, reason: 'mobile_too_short_for_last4' };
-      const mpinHash = await bcrypt.hash(mpinPlain, 10);
-      const role = await (prisma as any).role.findFirst({ where: { name: roleName } });
-      if (!role) return { skipped: true, reason: 'role_missing' };
-      const user = await (prisma as any).user.create({ data: { mobileNumber: normalized, mpin: mpinHash, roleId: role.id, languageId: langId, status: 'ACTIVE' } });
-      // Link reporter profile with designation fallback (tenant override else global)
-      const designation = await (prisma as any).reporterDesignation.findFirst({
-        where: { OR: [ { tenantId: tenant.id, code: designationCode }, { tenantId: null, code: designationCode } ] },
-        orderBy: { tenantId: 'desc' }
-      }).catch(()=>null);
-      const reporter = await (prisma as any).reporter.create({
-        data: {
-          tenantId: tenant.id,
-          userId: user.id,
-          designationId: designation?.id || null,
-          level: designation?.level || null,
-          stateId: tenant.stateId || null
-        }
-      });
-      return { created: true, mobile: normalized, defaultMpinStrategy: 'last4', designationCode: designationCode, reporterId: reporter.id };
-    }
-
-    if (autoCreateAdmin && adminMobileNumber) {
-      results.adminCreation = await createUserAndReporter(adminMobileNumber, 'TENANT_ADMIN', adminDesignationCode);
-    } else {
-      results.adminCreation = { skipped: true, reason: !autoCreateAdmin ? 'autoCreateAdmin_disabled' : 'adminMobileNumber_missing' };
-    }
-    if (autoCreatePublisher && publisherMobileNumber) {
-      // If same number as admin, skip separate publisher
-      if (publisherMobileNumber === adminMobileNumber) {
-        results.publisherCreation = { skipped: true, reason: 'same_as_admin' };
-      } else {
-        results.publisherCreation = await createUserAndReporter(publisherMobileNumber, 'PUBLISHER', publisherDesignationCode);
-      }
-    } else {
-      results.publisherCreation = { skipped: true, reason: !autoCreatePublisher ? 'autoCreatePublisher_disabled' : 'publisherMobileNumber_missing' };
-    }
-
-    res.json(results);
-  } catch (e: any) {
-    if (String(e.message).includes('Unique constraint') || String(e.code) === 'P2002') {
-      return res.status(409).json({ error: 'Slug or PRGI already exists' });
-    }
-    console.error('tenant create error', e);
-    res.status(500).json({ error: 'Failed to create tenant' });
-  }
-});
+// [corrupted block removed: duplicate tenant creation snippet]
 
 /**
  * @swagger
