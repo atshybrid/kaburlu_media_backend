@@ -64,31 +64,73 @@ router.get('/roles/:id/permissions', passport.authenticate('jwt', { session: fal
  * @swagger
  * /permissions/modules:
  *   get:
- *     summary: List available permission modules
- *     description: Returns distinct module names found across role permissions, plus known system modules.
+ *     summary: List available permission modules (concise)
+ *     description: |
+ *       Returns distinct module keys discovered from role permissions combined with known system modules.
+ *       Each entry includes a human-friendly displayName and short description to clarify its scope.
  *     tags: [Role Permissions]
- *     security:
- *       - bearerAuth: []
+ *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
- *         description: Array of module names
+ *         description: Array of module metadata objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   key: { type: string }
+ *                   displayName: { type: string }
+ *                   description: { type: string }
+ *                   typicalActions:
+ *                     type: array
+ *                     items: { type: string }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   - key: "articles"
+ *                     displayName: "Articles"
+ *                     description: "Long-form news articles and metrics"
+ *                     typicalActions: ["create","read","update","delete","approve","reject"]
+ *                   - key: "tenants"
+ *                     displayName: "Tenants"
+ *                     description: "Tenant onboarding, entity & settings"
+ *                     typicalActions: ["create","read","update"]
  */
 router.get('/modules', passport.authenticate('jwt', { session: false }), async (_req, res) => {
 	try {
 		const roles = await prisma.role.findMany({ select: { permissions: true } });
-		const set = new Set<string>();
+		const discovered = new Set<string>();
 		for (const r of roles) {
 			const perms = (r as any).permissions || {};
 			if (perms && typeof perms === 'object') {
-				for (const k of Object.keys(perms)) set.add(k);
+				for (const k of Object.keys(perms)) discovered.add(k);
 			}
 		}
-		// Seed with common modules to help clients discoverability
-		const known = ['articles','shortnews','tenants','domains','categories','districts','mandals','id-cards','assembly-constituencies'];
-		for (const k of known) set.add(k);
-		// Filter out numeric-looking keys (likely accidental indices)
-		const cleaned = Array.from(set).filter(k => !/^\d+$/.test(k)).sort();
-		res.json(cleaned);
+		const knownBase: Array<{ key: string; displayName: string; description: string; typicalActions: string[] }> = [
+			{ key: 'articles', displayName: 'Articles', description: 'Long-form news articles and metrics', typicalActions: ['create','read','update','delete','approve','reject'] },
+			{ key: 'shortnews', displayName: 'Short News', description: 'Concise news items', typicalActions: ['create','read','update','delete','approve','reject'] },
+			{ key: 'tenants', displayName: 'Tenants', description: 'Tenant onboarding, entity & settings', typicalActions: ['create','read','update'] },
+			{ key: 'domains', displayName: 'Domains', description: 'Tenant domain management & verification', typicalActions: ['create','read','update'] },
+			{ key: 'categories', displayName: 'Categories', description: 'Content categories & hierarchy', typicalActions: ['create','read','update','delete'] },
+			{ key: 'districts', displayName: 'Districts', description: 'Geographic districts', typicalActions: ['create','read','update','delete'] },
+			{ key: 'mandals', displayName: 'Mandals', description: 'Sub-district regions', typicalActions: ['create','read','update','delete'] },
+			{ key: 'assembly-constituencies', displayName: 'Assembly Constituencies', description: 'Electoral constituency data', typicalActions: ['create','read','update','delete'] },
+			{ key: 'id-cards', displayName: 'ID Cards', description: 'Reporter ID card settings & generation', typicalActions: ['read','update'] },
+			{ key: 'permissions', displayName: 'Permissions', description: 'Role permission assignment', typicalActions: ['read','update'] },
+			{ key: 'roles', displayName: 'Roles', description: 'Role creation & management', typicalActions: ['create','read','update','delete'] }
+		];
+		const baseKeys = new Set(knownBase.map(m => m.key));
+		const dynamic = Array.from(discovered).filter(k => !/^\d+$/.test(k) && !baseKeys.has(k));
+		const dynamicMapped = dynamic.map(k => ({
+			key: k,
+			displayName: k.replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
+			description: 'Custom module (derived from role permissions)',
+			typicalActions: ['create','read','update','delete']
+		}));
+		const merged = [...knownBase, ...dynamicMapped].sort((a,b) => a.key.localeCompare(b.key));
+		res.json(merged);
 	} catch (e) {
 		console.error('list modules error', e);
 		res.status(500).json({ error: 'Failed to list modules' });
