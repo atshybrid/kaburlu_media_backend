@@ -19,19 +19,51 @@ const upload = multer({ dest: 'uploads/' });
  * @swagger
  * /districts:
  *   get:
- *     summary: List districts (filter by stateId; non-deleted by default)
+ *     summary: List districts (optional stateId filter, pagination, includeDeleted)
  *     tags: [Districts]
+ *     parameters:
+ *       - in: query
+ *         name: stateId
+ *         schema: { type: string }
+ *         required: false
+ *         description: Filter districts by a specific state ID
+ *       - in: query
+ *         name: includeDeleted
+ *         schema: { type: boolean }
+ *         required: false
+ *         description: Include soft-deleted districts when true
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *         required: false
+ *         description: Page number (default 1)
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 200 }
+ *         required: false
+ *         description: Items per page (default 50, max 200)
  *     responses:
  *       200:
- *         description: Array of districts
+ *         description: Paginated districts list
  */
 router.get('/', async (req, res) => {
   const includeDeleted = String(req.query.includeDeleted || '').toLowerCase() === 'true';
   const stateId = (req.query.stateId as string | undefined) || undefined;
+  const pageRaw = req.query.page as string | undefined;
+  const pageSizeRaw = req.query.pageSize as string | undefined;
+  let page = pageRaw ? parseInt(pageRaw, 10) : 1;
+  let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+  if (isNaN(page) || page < 1) page = 1;
+  if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
+  if (pageSize > 200) pageSize = 200;
+
   const where: any = includeDeleted ? {} : { isDeleted: false };
   if (stateId) where.stateId = stateId;
-  const districts = await prisma.district.findMany({ where, orderBy: { name: 'asc' } });
-  res.json(districts);
+
+  const total = await prisma.district.count({ where });
+  const skip = (page - 1) * pageSize;
+  const districts = await prisma.district.findMany({ where, orderBy: { name: 'asc' }, skip, take: pageSize });
+  res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: districts });
 });
 
 /**
