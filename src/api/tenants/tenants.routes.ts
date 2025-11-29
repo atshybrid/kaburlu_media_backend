@@ -1189,6 +1189,34 @@ router.get('/:tenantId/categories', auth, requireSuperOrTenantAdminScoped, async
  *       403: { description: Forbidden }
  *       404: { description: Tenant not found }
  */
+/**
+ * Global list of ID card settings (super admin only)
+ */
+router.get('/id-card-settings', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const pageRaw = req.query.page as string | undefined;
+    const pageSizeRaw = req.query.pageSize as string | undefined;
+    let page = pageRaw ? parseInt(pageRaw, 10) : 1;
+    let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
+    if (pageSize > 200) pageSize = 200;
+
+    const total = await (prisma as any).tenantIdCardSettings.count();
+    const skip = (page - 1) * pageSize;
+    const rows = await (prisma as any).tenantIdCardSettings.findMany({
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: pageSize,
+      include: { tenant: { select: { id: true, name: true } } }
+    });
+    res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
+  } catch (e) {
+    console.error('tenant id-card-settings list error', e);
+    res.status(500).json({ error: 'Failed to list ID card settings' });
+  }
+});
+
 router.get('/:tenantId/id-card-settings', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
   try {
     const { tenantId } = req.params;
@@ -1264,29 +1292,5 @@ router.put('/:tenantId/id-card-settings', auth, requireSuperOrTenantAdminScoped,
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
-router.get('/id-card-settings', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
-  try {
-    const pageRaw = req.query.page as string | undefined;
-    const pageSizeRaw = req.query.pageSize as string | undefined;
-    let page = pageRaw ? parseInt(pageRaw, 10) : 1;
-    let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
-    if (isNaN(page) || page < 1) page = 1;
-    if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
-    if (pageSize > 200) pageSize = 200;
-
-    const total = await (prisma as any).tenantIdCardSettings.count();
-    const skip = (page - 1) * pageSize;
-    const rows = await (prisma as any).tenantIdCardSettings.findMany({
-      orderBy: { updatedAt: 'desc' },
-      skip,
-      take: pageSize,
-      include: { tenant: { select: { id: true, name: true } } }
-    });
-    res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
-  } catch (e) {
-    console.error('tenant id-card-settings list error', e);
-    res.status(500).json({ error: 'Failed to list ID card settings' });
-  }
-});
 
 export default router;
