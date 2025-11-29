@@ -7,8 +7,10 @@ const router = Router();
 /**
  * @swagger
  * tags:
- *   - name: Settings
- *     description: Entity, tenant and domain settings
+ *   - name: Settings (Admin)
+ *     description: Manage Entity, Tenant and Domain settings (JWT required)
+ *   - name: Settings (Public)
+ *     description: Read-only settings for the news website (auto-detect by Host)
  */
 
 /** Entity Settings (SUPER_ADMIN) */
@@ -17,14 +19,26 @@ const router = Router();
  * /entity/settings:
  *   get:
  *     summary: Get global entity settings
- *     tags: [Settings]
+ *     description: SUPER_ADMIN only. Returns platform default settings used as fallbacks.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     responses:
  *       200:
  *         description: Settings JSON
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   theme: "dark"
+ *                   primaryColor: "#0D47A1"
+ *                   secondaryColor: "#FFC107"
+ *                   logoUrl: "https://cdn.kaburlu.com/logos/global.png"
+ *                   faviconUrl: "https://cdn.kaburlu.com/favicons/global.ico"
  *   put:
  *     summary: Replace global entity settings
- *     tags: [Settings]
+ *     description: SUPER_ADMIN only. Replaces entire settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -32,12 +46,21 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             sample:
+ *               value:
+ *                 theme: "light"
+ *                 primaryColor: "#004D40"
+ *                 secondaryColor: "#FF5722"
+ *                 fontFamily: "Inter, Arial, sans-serif"
+ *                 defaultLanguage: "en"
  *     responses:
  *       200:
  *         description: Updated settings
  *   patch:
  *     summary: Update parts of entity settings
- *     tags: [Settings]
+ *     description: SUPER_ADMIN only. Partially updates settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -45,6 +68,13 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             sample:
+ *               value:
+ *                 theme: "dark"
+ *                 accentColor: "#03A9F4"
+ *                 showTicker: true
+ *                 supportedLanguages: ["en","te"]
  */
 router.get('/entity/settings', passport.authenticate('jwt', { session: false }), getEntitySettings);
 router.put('/entity/settings', passport.authenticate('jwt', { session: false }), upsertEntitySettings);
@@ -56,7 +86,8 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  * /tenants/{tenantId}/settings:
  *   get:
  *     summary: Get tenant settings (resolved)
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Shows tenant settings and effective (merged with entity).
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -66,9 +97,26 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *     responses:
  *       200:
  *         description: Tenant settings with effective merged defaults
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   settings:
+ *                     theme: "dark"
+ *                     primaryColor: "#0D47A1"
+ *                     secondaryColor: "#FFC107"
+ *                     logoUrl: "https://cdn.kaburlu.com/logos/tenant.png"
+ *                     faviconUrl: "https://cdn.kaburlu.com/favicons/tenant.ico"
+ *                   effective:
+ *                     theme: "dark"
+ *                     primaryColor: "#0D47A1"
+ *                     secondaryColor: "#FFC107"
  *   put:
  *     summary: Replace tenant settings
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Replaces entire tenant settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -81,9 +129,17 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             sample:
+ *               value:
+ *                 theme: "light"
+ *                 primaryColor: "#1B5E20"
+ *                 secondaryColor: "#E64A19"
+ *                 fontFamily: "Inter"
  *   patch:
  *     summary: Update parts of tenant settings
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates tenant settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -107,7 +163,8 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  * /tenants/{tenantId}/domains/{domainId}/settings:
  *   get:
  *     summary: Get domain settings (resolved)
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Domain is canonical for website config. Effective merges entity→tenant→domain.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -118,9 +175,30 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  *         name: domainId
  *         required: true
  *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Domain settings with effective merged defaults
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   domainId: "dmn_123"
+ *                   settings:
+ *                     theme: "light"
+ *                     primaryColor: "#3F51B5"
+ *                     secondaryColor: "#CDDC39"
+ *                     logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
+ *                     faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
+ *                   effective:
+ *                     theme: "light"
+ *                     primaryColor: "#3F51B5"
+ *                     secondaryColor: "#CDDC39"
  *   put:
  *     summary: Replace domain settings
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Replaces entire domain settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -128,9 +206,17 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             sample:
+ *               value:
+ *                 theme: "light"
+ *                 primaryColor: "#3F51B5"
+ *                 secondaryColor: "#CDDC39"
+ *                 customCss: "body{font-family:Inter;}"
  *   patch:
  *     summary: Update parts of domain settings
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates domain settings JSON.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
  *       required: true
@@ -148,7 +234,8 @@ router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authentic
  * /tenants/{tenantId}/domains/settings:
  *   get:
  *     summary: List domain settings for tenant
- *     tags: [Settings]
+ *     description: TENANT_ADMIN or SUPER_ADMIN. Paginated list for managing multiple domains.
+ *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -164,6 +251,20 @@ router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authentic
  *     responses:
  *       200:
  *         description: Paginated domain settings
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   meta: { page: 1, pageSize: 20, total: 1 }
+ *                   data:
+ *                     - id: "ds_1"
+ *                       domainId: "dmn_123"
+ *                       tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                       data:
+ *                         theme: "dark"
+ *                         primaryColor: "#0D47A1"
+ *                         secondaryColor: "#FFC107"
  */
 router.get('/tenants/:tenantId/domains/settings', passport.authenticate('jwt', { session: false }), listDomainSettings);
 

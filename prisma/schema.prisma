@@ -345,6 +345,8 @@ model Tenant {
   reporterPayments ReporterPayment[]
   razorpayConfig   RazorpayConfig?
   idCardSettings   TenantIdCardSettings?
+  settings         TenantSettings? @relation("Tenant_TenantSettings")
+  domainSettings   DomainSettings[] @relation("Tenant_DomainSettings")
 }
 
 model Domain {
@@ -364,6 +366,7 @@ model Domain {
   categories       DomainCategory[]
   languages        DomainLanguage[]
   checkLogs        DomainCheckLog[]
+  settings         DomainSettings? @relation("Domain_DomainSettings")
 }
 
 model DomainCategory {
@@ -397,6 +400,9 @@ model DomainCheckLog {
   checkedAt  DateTime @default(now())
   result     String   // OK | DNS_FAIL | TLS_FAIL | HTTP_TIMEOUT | HOST_MISMATCH
   details    Json?
+  
+  @@index([domainId, checkedAt])
+}
 
 
 /// ---------------- Settings Models ----------------
@@ -412,7 +418,7 @@ model EntitySettings {
 /// Per-tenant overrides for branding/theme/layout/etc.
 model TenantSettings {
   id        String   @id @default(cuid())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation("Tenant_TenantSettings", fields: [tenantId], references: [id], onDelete: Cascade)
   tenantId  String   @unique
   data      Json
   createdAt DateTime @default(now())
@@ -422,15 +428,13 @@ model TenantSettings {
 /// Per-domain branding and settings.
 model DomainSettings {
   id        String   @id @default(cuid())
-  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain    Domain   @relation("Domain_DomainSettings", fields: [domainId], references: [id], onDelete: Cascade)
   domainId  String   @unique
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation("Tenant_DomainSettings", fields: [tenantId], references: [id], onDelete: Cascade)
   tenantId  String
   data      Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-  @@index([domainId, checkedAt])
 }
 
 model TenantTheme {
