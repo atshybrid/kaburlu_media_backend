@@ -20,34 +20,54 @@ const router = Router();
  *         schema:
  *           type: string
  *         required: true
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               module:
- *                 type: string
- *                 example: "articles"
- *               actions:
- *                 type: array
- *                 items:
- *                   type: string
- *                   enum: [create, read, update, delete, approve, reject]
+	*     requestBody:
+	*       content:
+	*         application/json:
+	*           schema:
+	*             oneOf:
+	*               - title: New format (recommended)
+	*                 type: object
+	*                 properties:
+	*                   permissions:
+	*                     type: object
+	*                     additionalProperties:
+	*                       type: array
+	*                       items:
+	*                         type: string
+	*                         enum: [create, read, update, delete, approve, reject]
+	*                 required: [permissions]
+	*               - title: Legacy format (deprecated)
+	*                 type: object
+	*                 properties:
+	*                   module:
+	*                     type: string
+	*                     example: "articles"
+	*                   actions:
+	*                     type: array
+	*                     items:
+	*                       type: string
+	*                       enum: [create, read, update, delete, approve, reject]
  *     responses:
  *       "200":
  *         description: Permissions assigned
  *         content:
  *           application/json:
- *             examples:
- *               assigned:
- *                 summary: Assigned actions to module
- *                 value:
- *                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
- *                   module: "articles"
- *                   actions: ["create","update"]
- *                   permissions:
- *                     articles: ["create","update"]
+	*             examples:
+	*               newFormat:
+	*                 summary: Assign multiple modules using `permissions` map
+	*                 value:
+	*                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
+	*                   updatedModules: ["articles","shortnews"]
+	*                   permissions:
+	*                     articles: ["create","update"]
+	*                     shortnews: ["read"]
+	*               legacyFormat:
+	*                 summary: Assign single module using legacy fields
+	*                 value:
+	*                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
+	*                   updatedModules: ["articles"]
+	*                   permissions:
+	*                     articles: ["create"]
  */
 router.post('/roles/:id/permissions', passport.authenticate('jwt', { session: false }), assignPermissionToRole);
 

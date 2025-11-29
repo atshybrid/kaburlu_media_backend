@@ -6,10 +6,10 @@ const prisma = new PrismaClient();
 
 export const assignPermissionToRole = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { module, actions } = req.body;
+    const { module, actions, permissions: incomingPermissions } = req.body as any;
 
-    if (!module || !actions) {
-        return res.status(400).json({ error: 'Module and actions are required' });
+    if (!incomingPermissions && (!module || !actions)) {
+        return res.status(400).json({ error: 'Provide `permissions` map or legacy `module` + `actions`.' });
     }
 
     try {
@@ -21,9 +21,32 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Role not found' });
         }
 
-        const currentPermissions = (role.permissions as Record<string, string[]>) || {};
-        
-        currentPermissions[module] = actions;
+        // Normalize existing permissions into a module->actions map
+        let currentPermissions: Record<string, string[]> = {};
+        const raw = (role as any).permissions;
+        if (Array.isArray(raw)) {
+            // Convert array of strings like "module:action" into map
+            for (const p of raw) {
+                if (typeof p === 'string' && p.includes(':')) {
+                    const [mod, act] = p.split(':');
+                    const list = currentPermissions[mod] || (currentPermissions[mod] = []);
+                    if (act && !list.includes(act)) list.push(act);
+                }
+            }
+        } else if (raw && typeof raw === 'object') {
+            currentPermissions = { ...(raw as Record<string, string[]>) };
+        }
+
+        // If new payload `permissions` map is provided, merge/overwrite per module
+        if (incomingPermissions && typeof incomingPermissions === 'object') {
+            for (const [mod, acts] of Object.entries(incomingPermissions as Record<string, string[]>)) {
+                const unique = Array.from(new Set(Array.isArray(acts) ? acts : []));
+                currentPermissions[mod] = unique;
+            }
+        } else if (module && actions) {
+            // Legacy payload: overwrite or set actions for the provided module
+            currentPermissions[module] = Array.from(new Set(actions));
+        }
 
         const updatedRole = await prisma.role.update({
             where: { id },
@@ -32,8 +55,7 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
 
         return res.status(200).json({
             roleId: updatedRole.id,
-            module,
-            actions,
+            updatedModules: Object.keys(currentPermissions),
             permissions: currentPermissions
         });
     } catch (error) {
@@ -53,8 +75,19 @@ export const getPermissionsForRole = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Role not found' });
         }
 
-        const perms = (role.permissions as any) || {};
-        return res.status(200).json(perms);
+        const raw = (role as any).permissions;
+        if (Array.isArray(raw)) {
+            const mapped: Record<string, string[]> = {};
+            for (const p of raw) {
+                if (typeof p === 'string' && p.includes(':')) {
+                    const [mod, act] = p.split(':');
+                    const list = mapped[mod] || (mapped[mod] = []);
+                    if (act && !list.includes(act)) list.push(act);
+                }
+            }
+            return res.status(200).json(mapped);
+        }
+        return res.status(200).json(raw || {});
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: 'Internal server error' });

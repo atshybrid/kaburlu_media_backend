@@ -59,26 +59,46 @@ router.post('/', passport.authenticate('jwt', { session: false }), createRoleCon
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               module: { type: string }
- *               actions:
- *                 type: array
- *                 items:
- *                   type: string
- *                   enum: [create, read, update, delete, approve, reject]
+ *             oneOf:
+ *               - title: New format (recommended)
+ *                 type: object
+ *                 properties:
+ *                   permissions:
+ *                     type: object
+ *                     additionalProperties:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                         enum: [create, read, update, delete, approve, reject]
+ *                 required: [permissions]
+ *               - title: Legacy format (deprecated)
+ *                 type: object
+ *                 properties:
+ *                   module: { type: string }
+ *                   actions:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                       enum: [create, read, update, delete, approve, reject]
  *     responses:
  *       200:
  *         description: Permissions assigned
  *         content:
  *           application/json:
  *             examples:
- *               assigned:
- *                 summary: Assigned actions to module
+ *               newFormat:
+ *                 summary: Assign multiple modules using `permissions` map
  *                 value:
  *                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
- *                   module: "articles"
- *                   actions: ["create"]
+ *                   updatedModules: ["articles","tenants"]
+ *                   permissions:
+ *                     articles: ["create","update"]
+ *                     tenants: ["read"]
+ *               legacyFormat:
+ *                 summary: Assign single module using legacy fields
+ *                 value:
+ *                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   updatedModules: ["articles"]
  *                   permissions:
  *                     articles: ["create"]
  */
