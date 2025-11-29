@@ -1241,4 +1241,52 @@ router.put('/:tenantId/id-card-settings', auth, requireSuperOrTenantAdminScoped,
   }
 });
 
+/**
+ * @swagger
+ * /tenants/id-card-settings:
+ *   get:
+ *     summary: List ID card settings for all tenants
+ *     tags: [Tenants]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *         required: false
+ *         description: Page number (default 1)
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 200 }
+ *         required: false
+ *         description: Items per page (default 50, max 200)
+ *     responses:
+ *       200: { description: Paginated settings with tenant info }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/id-card-settings', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const pageRaw = req.query.page as string | undefined;
+    const pageSizeRaw = req.query.pageSize as string | undefined;
+    let page = pageRaw ? parseInt(pageRaw, 10) : 1;
+    let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
+    if (pageSize > 200) pageSize = 200;
+
+    const total = await (prisma as any).tenantIdCardSettings.count();
+    const skip = (page - 1) * pageSize;
+    const rows = await (prisma as any).tenantIdCardSettings.findMany({
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: pageSize,
+      include: { tenant: { select: { id: true, name: true } } }
+    });
+    res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
+  } catch (e) {
+    console.error('tenant id-card-settings list error', e);
+    res.status(500).json({ error: 'Failed to list ID card settings' });
+  }
+});
+
 export default router;
