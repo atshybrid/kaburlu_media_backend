@@ -128,7 +128,7 @@ router.get('/assembly-constituencies/:id', passport.authenticate('jwt', { sessio
  * @swagger
  * /assembly-constituencies/{id}:
  *   patch:
- *     summary: Update assembly constituency (rename or soft delete) (SUPER_ADMIN)
+*     summary: Update assembly constituency name or deletion flag (SUPER_ADMIN)
  *     tags: [AssemblyConstituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -142,9 +142,9 @@ router.get('/assembly-constituencies/:id', passport.authenticate('jwt', { sessio
  *         application/json:
  *           schema:
  *             type: object
- *             properties:
- *               name: { type: string }
- *               isDeleted: { type: boolean }
+*             properties:
+*               name: { type: string, description: "Rename the constituency" }
+*               isDeleted: { type: boolean, description: "Soft delete (true) or restore (false)" }
  *     responses:
  *       200: { description: Updated }
  *       404: { description: Not found }
@@ -155,13 +155,14 @@ router.patch('/assembly-constituencies/:id', passport.authenticate('jwt', { sess
     const existing = await (prisma as any).assemblyConstituency.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Assembly constituency not found' });
     const { name, isDeleted } = req.body || {};
+    const isDeletedNormalized = typeof isDeleted === 'string' ? (isDeleted.toLowerCase() === 'true') : isDeleted;
     if (typeof name === 'string' && name.trim() && name !== existing.name) {
       const dup = await (prisma as any).assemblyConstituency.findFirst({ where: { name, districtId: existing.districtId } });
       if (dup) return res.status(409).json({ error: 'Another constituency with this name exists in district' });
     }
     const updated = await (prisma as any).assemblyConstituency.update({ where: { id }, data: {
       name: typeof name === 'string' && name.trim() ? name : existing.name,
-      isDeleted: typeof isDeleted === 'boolean' ? isDeleted : existing.isDeleted
+      isDeleted: typeof isDeletedNormalized === 'boolean' ? isDeletedNormalized : existing.isDeleted
     }});
     res.json(updated);
   } catch (e: any) {
@@ -203,3 +204,31 @@ router.delete('/assembly-constituencies/:id', passport.authenticate('jwt', { ses
 });
 
 export default router;
+/**
+ * @swagger
+ * /assembly-constituencies/{id}/restore:
+ *   post:
+ *     summary: Restore a soft-deleted assembly constituency (SUPER_ADMIN)
+ *     tags: [AssemblyConstituencies]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Restored }
+ *       404: { description: Not found }
+ */
+router.post('/assembly-constituencies/:id/restore', passport.authenticate('jwt', { session: false }), requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await (prisma as any).assemblyConstituency.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Assembly constituency not found' });
+    const updated = await (prisma as any).assemblyConstituency.update({ where: { id }, data: { isDeleted: false } });
+    res.json({ success: true, item: updated });
+  } catch (e: any) {
+    console.error('restore assembly constituency error', e);
+    res.status(500).json({ error: 'Failed to restore assembly constituency' });
+  }
+});

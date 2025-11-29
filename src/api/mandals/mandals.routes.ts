@@ -18,7 +18,7 @@ const upload = multer({ dest: 'uploads/' });
  * @swagger
  * /mandals:
  *   get:
- *     summary: List mandals (filter by districtId)
+ *     summary: List mandals (filter by districtId; non-deleted)
  *     tags: [Mandals]
  *     parameters:
  *       - in: query
@@ -119,6 +119,36 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
 /**
  * @swagger
  * /mandals/{id}:
+ *   put:
+ *     summary: Update mandal (PUT)
+ *     tags: [Mandals]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/UpdateMandalDto' }
+ *     responses:
+ *       200: { description: Updated }
+ *       404: { description: Not found }
+ */
+router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const updated = await updateMandal(req.params.id, req.body as UpdateMandalDto);
+    res.json(updated);
+  } catch (e: any) {
+    res.status(404).json({ error: 'Mandal not found' });
+  }
+});
+
+/**
+ * @swagger
+ * /mandals/{id}:
  *   delete:
  *     summary: Soft delete mandal
  *     tags: [Mandals]
@@ -136,6 +166,31 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), async (r
   try {
     await softDeleteMandal(req.params.id);
     res.status(204).send();
+  } catch {
+    res.status(404).json({ error: 'Mandal not found' });
+  }
+});
+
+/**
+ * @swagger
+ * /mandals/{id}/restore:
+ *   post:
+ *     summary: Restore soft-deleted mandal
+ *     tags: [Mandals]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Restored }
+ *       404: { description: Not found }
+ */
+router.post('/:id/restore', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const restored = await updateMandal(req.params.id, { isDeleted: false });
+    res.json(restored);
   } catch {
     res.status(404).json({ error: 'Mandal not found' });
   }

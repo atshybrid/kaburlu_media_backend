@@ -3,6 +3,7 @@ import passport from 'passport';
 import multer from 'multer';
 import { createDistrict, getDistrict, listDistricts, softDeleteDistrict, updateDistrict, bulkUploadDistricts } from './districts.service';
 import { CreateDistrictDto, UpdateDistrictDto } from './districts.dto';
+import prisma from '../../lib/prisma';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -18,14 +19,18 @@ const upload = multer({ dest: 'uploads/' });
  * @swagger
  * /districts:
  *   get:
- *     summary: List districts (non-deleted)
+ *     summary: List districts (filter by stateId; non-deleted by default)
  *     tags: [Districts]
  *     responses:
  *       200:
  *         description: Array of districts
  */
 router.get('/', async (req, res) => {
-  const districts = await listDistricts(false);
+  const includeDeleted = String(req.query.includeDeleted || '').toLowerCase() === 'true';
+  const stateId = (req.query.stateId as string | undefined) || undefined;
+  const where: any = includeDeleted ? {} : { isDeleted: false };
+  if (stateId) where.stateId = stateId;
+  const districts = await prisma.district.findMany({ where, orderBy: { name: 'asc' } });
   res.json(districts);
 });
 
@@ -40,13 +45,20 @@ router.get('/', async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *       - in: query
+ *         name: includeDeleted
+ *         required: false
+ *         schema: { type: boolean }
+ *         description: Return even if soft-deleted when true
  *     responses:
  *       200: { description: District }
  *       404: { description: Not found }
  */
 router.get('/:id', async (req, res) => {
+  const includeDeleted = String(req.query.includeDeleted || '').toLowerCase() === 'true';
   const d = await getDistrict(req.params.id);
-  if (!d || d.isDeleted) return res.status(404).json({ error: 'District not found' });
+  if (!d) return res.status(404).json({ error: 'District not found' });
+  if (d.isDeleted && !includeDeleted) return res.status(404).json({ error: 'District not found' });
   res.json(d);
 });
 
@@ -114,6 +126,36 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
 /**
  * @swagger
  * /districts/{id}:
+ *   put:
+ *     summary: Update district (PUT)
+ *     tags: [Districts]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/UpdateDistrictDto' }
+ *     responses:
+ *       200: { description: Updated }
+ *       404: { description: Not found }
+ */
+router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const updated = await updateDistrict(req.params.id, req.body as UpdateDistrictDto);
+    res.json(updated);
+  } catch (e: any) {
+    res.status(404).json({ error: 'District not found' });
+  }
+});
+
+/**
+ * @swagger
+ * /districts/{id}:
  *   delete:
  *     summary: Soft delete district
  *     tags: [Districts]
@@ -131,6 +173,31 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), async (r
   try {
     await softDeleteDistrict(req.params.id);
     res.status(204).send();
+  } catch {
+    res.status(404).json({ error: 'District not found' });
+  }
+});
+
+/**
+ * @swagger
+ * /districts/{id}/restore:
+ *   post:
+ *     summary: Restore soft-deleted district
+ *     tags: [Districts]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Restored }
+ *       404: { description: Not found }
+ */
+router.post('/:id/restore', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const restored = await updateDistrict(req.params.id, { isDeleted: false });
+    res.json(restored);
   } catch {
     res.status(404).json({ error: 'District not found' });
   }
