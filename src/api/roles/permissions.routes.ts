@@ -35,8 +35,19 @@ const router = Router();
  *                   type: string
  *                   enum: [create, read, update, delete, approve, reject]
  *     responses:
- *       "201":
+ *       "200":
  *         description: Permissions assigned
+ *         content:
+ *           application/json:
+ *             examples:
+ *               assigned:
+ *                 summary: Assigned actions to module
+ *                 value:
+ *                   roleId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   module: "articles"
+ *                   actions: ["create","update"]
+ *                   permissions:
+ *                     articles: ["create","update"]
  */
 router.post('/roles/:id/permissions', passport.authenticate('jwt', { session: false }), assignPermissionToRole);
 
@@ -56,7 +67,14 @@ router.post('/roles/:id/permissions', passport.authenticate('jwt', { session: fa
  *         required: true
  *     responses:
  *       "200":
- *         description: Array of permissions
+ *         description: Permissions map (module -> actions)
+ *         content:
+ *           application/json:
+ *             examples:
+ *               map:
+ *                 value:
+ *                   articles: ["create","update"]
+ *                   shortnews: ["read"]
  */
 router.get('/roles/:id/permissions', passport.authenticate('jwt', { session: false }), getPermissionsForRole);
 

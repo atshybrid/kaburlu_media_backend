@@ -30,7 +30,12 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
             data: { permissions: currentPermissions },
         });
 
-        return res.status(201).json(updatedRole.permissions);
+        return res.status(200).json({
+            roleId: updatedRole.id,
+            module,
+            actions,
+            permissions: currentPermissions
+        });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -48,7 +53,8 @@ export const getPermissionsForRole = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Role not found' });
         }
 
-        return res.status(200).json(role.permissions);
+        const perms = (role.permissions as any) || {};
+        return res.status(200).json(perms);
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: 'Internal server error' });
