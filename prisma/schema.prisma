@@ -398,6 +398,38 @@ model DomainCheckLog {
   result     String   // OK | DNS_FAIL | TLS_FAIL | HTTP_TIMEOUT | HOST_MISMATCH
   details    Json?
 
+
+/// ---------------- Settings Models ----------------
+
+/// Global platform defaults; singleton row recommended.
+model EntitySettings {
+  id        String   @id @default(cuid())
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-tenant overrides for branding/theme/layout/etc.
+model TenantSettings {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-domain branding and settings.
+model DomainSettings {
+  id        String   @id @default(cuid())
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domainId  String   @unique
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
   @@index([domainId, checkedAt])
 }
 

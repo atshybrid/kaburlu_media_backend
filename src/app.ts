@@ -48,6 +48,7 @@ import adminRoutes from './api/admin/admin.routes';
 import webhooksRoutes from './api/webhooks/webhooks.routes';
 import idCardsRoutes from './api/idCards/idCards.routes';
 import { Router } from 'express';
+import settingsRouter from './api/settings/settings.routes';
 
 const app = express();
 
@@ -129,6 +130,7 @@ try {
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // Also expose docs under the versioned base for convenience
+app.use('/api/v1', settingsRouter);
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API Routes (no version prefix) - legacy support
