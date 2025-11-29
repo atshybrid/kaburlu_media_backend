@@ -111,8 +111,15 @@ router.get('/:id', async (req, res) => {
  *             properties:
  *               name: { type: string }
  *               stateId: { type: string }
+ *           examples:
+ *             createExample:
+ *               summary: Create a district
+ *               value:
+ *                 name: "Nellore"
+ *                 stateId: "<stateId>"
  *     responses:
  *       201: { description: Created }
+ *       409: { description: Conflict – district with same name exists in state }
  */
 router.post('/', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -148,9 +155,23 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/UpdateDistrictDto' }
+ *           schema:
+ *             oneOf:
+ *               - $ref: '#/components/schemas/UpdateDistrictDto'
+ *               - type: string
+ *             example: "Nellore"
+ *             description: Supports raw JSON string body to update only the name.
+ *           examples:
+ *             updateObject:
+ *               summary: Update name via object
+ *               value:
+ *                 name: "Nellore"
+ *             updateString:
+ *               summary: Update name via raw string
+ *               value: "Nellore"
  *     responses:
  *       200: { description: Updated }
+ *       409: { description: Conflict – duplicate district name in state }
  *       404: { description: Not found }
  */
 router.patch('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
@@ -182,9 +203,23 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/UpdateDistrictDto' }
+ *           schema:
+ *             oneOf:
+ *               - $ref: '#/components/schemas/UpdateDistrictDto'
+ *               - type: string
+ *             example: "Nellore"
+ *             description: Supports raw JSON string body to update only the name.
+ *           examples:
+ *             putObject:
+ *               summary: PUT name via object
+ *               value:
+ *                 name: "Nellore"
+ *             putString:
+ *               summary: PUT name via raw string
+ *               value: "Nellore"
  *     responses:
  *       200: { description: Updated }
+ *       409: { description: Conflict – duplicate district name in state }
  *       404: { description: Not found }
  */
 router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {

@@ -123,6 +123,89 @@ router.get('/id-card-settings', auth, requireSuperAdmin, async (req, res) => {
 
 /**
  * @swagger
+ * /tenants/razorpay-configs:
+ *   get:
+ *     summary: List all tenants' Razorpay configs (SUPER_ADMIN)
+ *     description: Returns Razorpay config entries with minimal tenant info. Secrets are masked.
+ *     tags: [Razorpay Config]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *         required: false
+ *         description: Page number (default 1)
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 200 }
+ *         required: false
+ *         description: Items per page (default 50, max 200)
+ *       - in: query
+ *         name: active
+ *         schema: { type: boolean }
+ *         required: false
+ *         description: Filter by active status when provided
+ *       - in: query
+ *         name: tenantName
+ *         schema: { type: string }
+ *         required: false
+ *         description: Case-insensitive contains filter on tenant name
+ *     responses:
+ *       200: { description: Paginated Razorpay configs with tenant info }
+ */
+router.get('/razorpay-configs', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const pageRaw = req.query.page as string | undefined;
+    const pageSizeRaw = req.query.pageSize as string | undefined;
+    let page = pageRaw ? parseInt(pageRaw, 10) : 1;
+    let pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(pageSize) || pageSize < 1) pageSize = 50;
+    if (pageSize > 200) pageSize = 200;
+
+    const activeFilter = req.query.active as string | undefined;
+    const tenantName = req.query.tenantName as string | undefined;
+
+    const where: any = {};
+    if (typeof activeFilter === 'string') {
+      const v = activeFilter.toLowerCase();
+      if (v === 'true' || v === 'false') where.active = v === 'true';
+    }
+
+    const total = await (prisma as any).razorpayConfig.count({ where });
+    const skip = (page - 1) * pageSize;
+    const rows = await (prisma as any).razorpayConfig.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: pageSize,
+      include: { tenant: { select: { id: true, name: true } } }
+    });
+
+    let data = rows.map((r: any) => ({
+      id: r.id,
+      tenant: r.tenant,
+      keyId: r.keyId,
+      keySecretMasked: r.keySecret ? `${String(r.keySecret).slice(0,4)}***${String(r.keySecret).slice(-2)}` : null,
+      active: r.active,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }));
+
+    if (tenantName) {
+      const q = tenantName.toLowerCase();
+      data = data.filter((d: any) => String(d.tenant?.name || '').toLowerCase().includes(q));
+    }
+
+    res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data });
+  } catch (e) {
+    console.error('list razorpay-configs error', e);
+    res.status(500).json({ error: 'Failed to list Razorpay configs' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/{id}:
  *   get:
  *     summary: Get tenant by id

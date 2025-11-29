@@ -101,8 +101,16 @@ router.get('/:id', async (req, res) => {
  *               name: { type: string }
  *               districtId: { type: string }
  *               isAssemblyConstituency: { type: boolean }
+ *           examples:
+ *             createExample:
+ *               summary: Create a mandal
+ *               value:
+ *                 name: "Some Mandal"
+ *                 districtId: "<districtId>"
+ *                 isAssemblyConstituency: false
  *     responses:
  *       201: { description: Created }
+ *       409: { description: Conflict – mandal with same name exists in district }
  */
 router.post('/', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
@@ -138,9 +146,23 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/UpdateMandalDto' }
+ *           schema:
+ *             oneOf:
+ *               - $ref: '#/components/schemas/UpdateMandalDto'
+ *               - type: string
+ *             example: "Some Mandal"
+ *             description: Supports raw JSON string body to update only the name.
+ *           examples:
+ *             updateObject:
+ *               summary: Update name via object
+ *               value:
+ *                 name: "Some Mandal"
+ *             updateString:
+ *               summary: Update name via raw string
+ *               value: "Some Mandal"
  *     responses:
  *       200: { description: Updated }
+ *       409: { description: Conflict – duplicate mandal name in district }
  *       404: { description: Not found }
  */
 router.patch('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
@@ -172,9 +194,23 @@ router.patch('/:id', passport.authenticate('jwt', { session: false }), async (re
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/UpdateMandalDto' }
+ *           schema:
+ *             oneOf:
+ *               - $ref: '#/components/schemas/UpdateMandalDto'
+ *               - type: string
+ *             example: "Some Mandal"
+ *             description: Supports raw JSON string body to update only the name.
+ *           examples:
+ *             putObject:
+ *               summary: PUT name via object
+ *               value:
+ *                 name: "Some Mandal"
+ *             putString:
+ *               summary: PUT name via raw string
+ *               value: "Some Mandal"
  *     responses:
  *       200: { description: Updated }
+ *       409: { description: Conflict – duplicate mandal name in district }
  *       404: { description: Not found }
  */
 router.put('/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
