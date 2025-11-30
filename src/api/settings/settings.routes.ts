@@ -200,30 +200,112 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  *     description: TENANT_ADMIN or SUPER_ADMIN. Replaces entire domain settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: domainId
+ *         required: true
+ *         schema: { type: string }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *           examples:
- *             sample:
- *               value:
- *                 theme: "light"
- *                 primaryColor: "#3F51B5"
- *                 secondaryColor: "#CDDC39"
- *                 customCss: "body{font-family:Inter;}"
+	*           examples:
+	*             sample:
+	*               summary: Full website config (recommended sections)
+	*               value:
+	*                 branding:
+	*                   logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
+	*                   faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
+	*                 theme:
+	*                   theme: "light"
+	*                   colors:
+	*                     primary: "#3F51B5"
+	*                     secondary: "#CDDC39"
+	*                     accent: "#FF9800"
+	*                   typography:
+	*                     fontFamily: "Inter, Arial, sans-serif"
+	*                     baseSize: 16
+	*                   layout:
+	*                     header: "classic"
+	*                     footer: "minimal"
+	*                     showTopBar: true
+	*                     showTicker: true
+	*                 navigation:
+	*                   menu:
+	*                     - { label: "Home", href: "/" }
+	*                     - { label: "Politics", href: "/category/politics" }
+	*                 content:
+	*                   defaultLanguage: "en"
+	*                   supportedLanguages: ["en","te"]
+	*                 seo:
+	*                   defaultMetaTitle: "Kaburlu News"
+	*                   defaultMetaDescription: "Latest breaking news and updates."
+	*                   ogImageUrl: "https://cdn.kaburlu.com/seo/default-og.png"
+	*                   canonicalBaseUrl: "https://news.kaburlu.com"
+	*                 notifications:
+	*                   enabled: true
+	*                   providers:
+	*                     webpush:
+	*                       publicKey: "BExxx..."
+	*                 integrations:
+	*                   analytics:
+	*                     provider: "gtag"
+	*                     measurementId: "G-XXXXXXX"
+	*                 flags:
+	*                   enableComments: true
+	*                   enableBookmarks: true
+	*                 customCss: "body{font-family:Inter;}"
  *   patch:
  *     summary: Update parts of domain settings
  *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates domain settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: domainId
+ *         required: true
+ *         schema: { type: string }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+	*           examples:
+	*             themeUpdate:
+	*               summary: Update only theme colors and mode
+	*               value:
+	*                 theme:
+	*                   theme: "dark"
+	*                   colors:
+	*                     primary: "#0D47A1"
+	*                     secondary: "#FFC107"
+	*             brandingUpdate:
+	*               summary: Update only logo and favicon
+	*               value:
+	*                 branding:
+	*                   logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
+	*                   faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
+	*             seoUpdate:
+	*               summary: Update SEO defaults
+	*               value:
+	*                 seo:
+	*                   defaultMetaTitle: "Kaburlu News"
+	*                   defaultMetaDescription: "Latest breaking news."
+	*             customCssUpdate:
+	*               summary: Add custom CSS only
+	*               value:
+	*                 customCss: "body{font-family:Inter;}"
  */
 router.get('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), getDomainSettings);
 router.put('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), upsertDomainSettings);
