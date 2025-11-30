@@ -29,14 +29,96 @@ function buildDefaultNavigation(tenant: any) {
   };
 }
 
+// Merge utility
+const merge = (a: any, b: any) => ({ ...(a || {}), ...(b || {}) });
+
 /**
  * @swagger
- * /api/public/navigation:
+ * /public/domain/settings:
+ *   get:
+ *     summary: Get effective Domain Settings for current Host
+ *     description: Auto-detects tenant/domain using the Host header and returns effective website config.
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
+ *     responses:
+ *       200:
+ *         description: Effective settings
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   domain: "manachourasta.com"
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   effective:
+ *                     branding:
+ *                       logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
+ *                       faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
+ *                     theme:
+ *                       theme: "dark"
+ *                       colors:
+ *                         primary: "#0D47A1"
+ *                         secondary: "#FFC107"
+ *                     navigation:
+ *                       menu:
+ *                         - { label: "Home", href: "/" }
+ *                     seo:
+ *                       defaultMetaTitle: "Kaburlu News"
+ *                       defaultMetaDescription: "Latest breaking news and updates."
+ */
+router.get('/domain/settings', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
+  const entity = await p.entitySettings.findFirst().catch(()=>null);
+  const tenantSet = await p.tenantSettings.findUnique({ where: { tenantId: tenant.id } }).catch(()=>null);
+  const domainSet = await p.domainSettings.findUnique({ where: { domainId: domain.id } }).catch(()=>null);
+  const effective = merge(merge(entity?.data, tenantSet?.data), domainSet?.data);
+  res.json({ domain: domain.domain, tenantId: tenant.id, effective });
+});
+
+/**
+ * @swagger
+ * /public/navigation:
  *   get:
  *     summary: Get tenant navigation config
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Navigation config JSON }
+  *       200:
+  *         description: Navigation config JSON
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   brand:
+  *                     logoText: "News"
+  *                   primaryLinks:
+  *                     - label: "Home"
+  *                       href: "/"
+  *       500:
+  *         description: Domain context missing
+  *         content:
+  *           application/json:
+  *             examples:
+  *               error:
+  *                 value:
+  *                   error: "Domain context missing"
  */
 router.get('/navigation', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -47,12 +129,39 @@ router.get('/navigation', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/features:
+ * /public/features:
  *   get:
  *     summary: Get tenant feature flags
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Feature flags }
+  *       200:
+  *         description: Feature flags
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   enableMobileAppView: false
+  *                   section2:
+  *                     rows: 2
+  *                     listCount: 4
+  *                     forceCategoryName: null
+  *       500:
+  *         description: Domain context missing
+  *         content:
+  *           application/json:
+  *             examples:
+  *               error:
+  *                 value:
+  *                   error: "Domain context missing"
  */
 router.get('/features', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -89,12 +198,39 @@ function toCard(a: any) {
 
 /**
  * @swagger
- * /api/public/homepage:
+ * /public/homepage:
  *   get:
  *     summary: Aggregated homepage sections
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Homepage JSON sections }
+  *       200:
+  *         description: Homepage JSON sections
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   hero:
+  *                     - id: "art123"
+  *                       title: "Top headline"
+  *                       image: "https://cdn/img.jpg"
+  *                   topStories:
+  *                     - id: "art124"
+  *                       title: "Story"
+  *                       image: null
+  *                   politics: []
+  *                   technology: []
+  *                   sports: []
+ *       500:
+ *         description: Domain context missing
  */
 router.get('/homepage', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -117,16 +253,32 @@ router.get('/homepage', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/live-desk:
+ * /public/live-desk:
  *   get:
  *     summary: Latest brief/live desk items
  *     tags: [Public - Website]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 50 }
  *     responses:
- *       200: { description: Live desk cards }
+  *       200:
+  *         description: Live desk cards
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   - id: "art100"
+  *                     title: "Breaking"
+  *                     isBreakingNews: true
  */
 router.get('/live-desk', async (req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -143,16 +295,32 @@ router.get('/live-desk', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/webstories:
+ * /public/webstories:
  *   get:
  *     summary: Web story style articles
  *     tags: [Public - Website]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 50 }
  *     responses:
- *       200: { description: Web story cards }
+  *       200:
+  *         description: Web story cards
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   - id: "ws1"
+  *                     title: "Story"
+  *                     image: "https://cdn/img.jpg"
  */
 router.get('/webstories', async (req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -169,16 +337,32 @@ router.get('/webstories', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/tags/popular:
+ * /public/tags/popular:
  *   get:
  *     summary: Popular tags for tenant
  *     tags: [Public - Website]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 50 }
  *     responses:
- *       200: { description: Array of tag strings }
+  *       200:
+  *         description: Array of tag strings
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   - "politics"
+  *                   - "sports"
+  *                   - "technology"
  */
 router.get('/tags/popular', async (req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -193,12 +377,28 @@ router.get('/tags/popular', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/cities:
+ * /public/cities:
  *   get:
  *     summary: List of cities (placeholder derived from categories with slug prefix city-)
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Array of city names }
+  *       200:
+  *         description: Array of city names
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   - "Hyderabad"
+  *                   - "Warangal"
  */
 router.get('/cities', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -211,10 +411,18 @@ router.get('/cities', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/newsletter:
+ * /public/newsletter:
  *   post:
  *     summary: Subscribe to newsletter
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     requestBody:
  *       required: true
  *       content:
@@ -226,7 +434,14 @@ router.get('/cities', async (_req, res) => {
  *               source: { type: string }
  *             required: [email]
  *     responses:
- *       200: { description: Subscription result }
+  *       200:
+  *         description: Subscription result
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   success: true
  */
 router.post('/newsletter', async (req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -245,12 +460,29 @@ router.post('/newsletter', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/reporters:
+ * /public/reporters:
  *   get:
  *     summary: Public reporter directory
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Reporter list }
+  *       200:
+  *         description: Reporter list
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   - id: "rep1"
+  *                     name: "John"
+  *                     level: "SENIOR"
  */
 router.get('/reporters', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -263,12 +495,30 @@ router.get('/reporters', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/seo/site:
+ * /public/seo/site:
  *   get:
  *     summary: Site-level JSON-LD (WebSite + Organization)
  *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: JSON-LD objects }
+  *       200:
+  *         description: JSON-LD objects
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   website:
+  *                     "@type": "WebSite"
+  *                   organization:
+  *                     "@type": "NewsMediaOrganization"
  */
 router.get('/seo/site', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -298,17 +548,32 @@ router.get('/seo/site', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/seo/article/{slug}:
+ * /public/seo/article/{slug}:
  *   get:
  *     summary: Article JSON-LD
  *     tags: [Public - Website]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: path
  *         name: slug
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: NewsArticle JSON-LD }
+  *       200:
+  *         description: NewsArticle JSON-LD
+  *         content:
+  *           application/json:
+  *             examples:
+  *               sample:
+  *                 value:
+  *                   "@type": "NewsArticle"
+  *                   headline: "Title"
  *       404: { description: Not found }
  */
 router.get('/seo/article/:slug', async (req, res) => {

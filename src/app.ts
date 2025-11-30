@@ -222,7 +222,14 @@ apiV1.use('/admin', adminRoutes);
 apiV1.use('/webhooks', webhooksRoutes);
 // Public ID Card render APIs (JSON/HTML/PDF)
 apiV1.use('/id-cards', idCardsRoutes);
+// Versioned public read-only routes (duplicate of /api/public for convenience in Swagger testing)
+apiV1.use('/public', publicRoutes);
+apiV1.use('/public', websitePublicRoutes);
 // Multi-tenant public read-only routes (domain based)
+// Preferred mount without version/prefix for frontend consumption
+app.use('/public', publicRoutes);
+app.use('/public', websitePublicRoutes);
+// Backward compatibility mounts (still available)
 app.use('/api/public', publicRoutes);
 app.use('/api/public', websitePublicRoutes);
 app.use('/api/v1', apiV1);

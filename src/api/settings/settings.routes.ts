@@ -57,6 +57,16 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Updated settings
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   theme: "light"
+ *                   primaryColor: "#004D40"
+ *                   secondaryColor: "#FF5722"
+ *                   fontFamily: "Inter, Arial, sans-serif"
+ *                   defaultLanguage: "en"
  *   patch:
  *     summary: Update parts of entity settings
  *     description: SUPER_ADMIN only. Partially updates settings JSON.
@@ -75,6 +85,18 @@ const router = Router();
  *                 accentColor: "#03A9F4"
  *                 showTicker: true
  *                 supportedLanguages: ["en","te"]
+ *     responses:
+ *       200:
+ *         description: Updated settings (merged)
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   theme: "dark"
+ *                   accentColor: "#03A9F4"
+ *                   showTicker: true
+ *                   supportedLanguages: ["en","te"]
  */
 router.get('/entity/settings', passport.authenticate('jwt', { session: false }), getEntitySettings);
 router.put('/entity/settings', passport.authenticate('jwt', { session: false }), upsertEntitySettings);
@@ -136,6 +158,20 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *                 primaryColor: "#1B5E20"
  *                 secondaryColor: "#E64A19"
  *                 fontFamily: "Inter"
+ *     responses:
+ *       200:
+ *         description: Tenant settings saved
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   settings:
+ *                     theme: "light"
+ *                     primaryColor: "#1B5E20"
+ *                     secondaryColor: "#E64A19"
+ *                     fontFamily: "Inter"
  *   patch:
  *     summary: Update parts of tenant settings
  *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates tenant settings JSON.
@@ -152,6 +188,18 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *         application/json:
  *           schema:
  *             type: object
+ *     responses:
+ *       200:
+ *         description: Tenant settings updated (merged)
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   settings:
+ *                     theme: "dark"
+ *                     accentColor: "#03A9F4"
  */
 router.get('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), getTenantSettings);
 router.put('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), upsertTenantSettings);
@@ -261,6 +309,20 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
 	*                   enableComments: true
 	*                   enableBookmarks: true
 	*                 customCss: "body{font-family:Inter;}"
+	 *     responses:
+	 *       200:
+	 *         description: Domain settings saved
+	 *         content:
+	 *           application/json:
+	 *             examples:
+	 *               sample:
+	 *                 value:
+	 *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+	 *                   domainId: "dmn_123"
+	 *                   settings:
+	 *                     theme:
+	 *                       theme: "light"
+	 *                     customCss: "body{font-family:Inter;}"
  *   patch:
  *     summary: Update parts of domain settings
  *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates domain settings JSON.
@@ -306,6 +368,22 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
 	*               summary: Add custom CSS only
 	*               value:
 	*                 customCss: "body{font-family:Inter;}"
+	 *     responses:
+	 *       200:
+	 *         description: Domain settings updated (merged)
+	 *         content:
+	 *           application/json:
+	 *             examples:
+	 *               sample:
+	 *                 value:
+	 *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+	 *                   domainId: "dmn_123"
+	 *                   settings:
+	 *                     theme:
+	 *                       theme: "dark"
+	 *                       colors:
+	 *                         primary: "#0D47A1"
+	 *                         secondary: "#FFC107"
  */
 router.get('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), getDomainSettings);
 router.put('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), upsertDomainSettings);

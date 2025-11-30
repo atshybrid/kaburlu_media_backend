@@ -18,14 +18,30 @@ router.get('/_health', (_req, res) => {
 
 /**
  * @swagger
- * /api/public/theme:
+ * /public/theme:
  *   get:
  *     summary: Get website theme for this domain's tenant
  *     description: Returns branding assets and colors configured for the tenant resolved from the request domain.
  *     tags: [Public - Website, Public - Tenant]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
  *       200:
  *         description: Theme or null
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   logoUrl: "https://cdn.kaburlu.com/logo.png"
+ *                   faviconUrl: "https://cdn.kaburlu.com/favicon.ico"
+ *                   primaryColor: "#0D47A1"
  */
 router.get('/theme', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -37,18 +53,37 @@ router.get('/theme', async (_req, res) => {
 
 /**
  * @swagger
- * /api/public/categories:
+ * /public/categories:
  *   get:
  *     summary: List categories allowed for this domain
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: query
  *         name: includeChildren
  *         schema: { type: boolean }
  *         description: Include immediate children categories (filtered to allowed set)
+ *       - in: query
+ *         name: languageCode
+ *         schema: { type: string }
+ *         description: Optional ISO code (must be allowed for domain)
  *     responses:
  *       200:
  *         description: Category list
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   - id: "cat1"
+ *                     name: "Politics"
+ *                     slug: "politics"
  */
 router.get('/categories', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -100,11 +135,18 @@ router.get('/categories', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/articles:
+ * /public/articles:
  *   get:
  *     summary: List published articles for this domain
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: query
  *         name: page
  *         schema: { type: integer, minimum: 1 }
@@ -118,7 +160,19 @@ router.get('/categories', async (req, res) => {
  *         name: languageCode
  *         schema: { type: string }
  *     responses:
- *       200: { description: Paginated articles }
+ *       200:
+ *         description: Paginated articles
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   page: 1
+ *                   pageSize: 20
+ *                   total: 100
+ *                   items:
+ *                     - id: "art1"
+ *                       title: "Headline"
  */
 router.get('/articles', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -183,17 +237,33 @@ router.get('/articles', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/articles/{slug}:
+ * /public/articles/{slug}:
  *   get:
  *     summary: Get a single published article by slug for this domain
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *       - in: path
  *         name: slug
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Article or 404 }
+ *       200:
+ *         description: Article or 404
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   id: "art1"
+ *                   title: "Headline"
+ *                   status: "PUBLISHED"
  */
 router.get('/articles/:slug', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -225,12 +295,28 @@ router.get('/articles/:slug', async (req, res) => {
 
 /**
  * @swagger
- * /api/public/entity:
+ * /public/entity:
  *   get:
  *     summary: Get public PRGI/entity details for this domain's tenant
  *     tags: [Public - Tenant]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
  *     responses:
- *       200: { description: Entity details }
+ *       200:
+ *         description: Entity details
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   prgiNumber: "PRGI-1234"
+ *                   registrationTitle: "Kaburlu News"
  *       404: { description: Not found }
  */
 router.get('/entity', async (_req, res) => {
