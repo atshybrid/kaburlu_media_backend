@@ -28,17 +28,20 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
   const cached = cache.get(host);
   if (cached && cached.expiresAt > now) return cached;
   if (pending.has(host)) return pending.get(host)!;
-  const prom = p.domain.findUnique({
-    where: { domain: host },
-    include: { tenant: true }
-  }).then((result: any) => {
-    if (!result || result.status !== 'ACTIVE') return null;
-    const entry: CachedDomain = { domain: result, tenant: result.tenant, expiresAt: Date.now() + CACHE_TTL_MS };
-    cache.set(host, entry);
-    return entry;
-  }).finally(() => {
-    pending.delete(host);
-  });
+  const prom = (async () => {
+    try {
+      const result = await p.domain.findUnique({ where: { domain: host }, include: { tenant: true } });
+      if (!result || result.status !== 'ACTIVE') return null;
+      const entry: CachedDomain = { domain: result, tenant: result.tenant, expiresAt: Date.now() + CACHE_TTL_MS };
+      cache.set(host, entry);
+      return entry;
+    } catch (e) {
+      console.error('fetchDomain error for host', host, e);
+      return null;
+    } finally {
+      pending.delete(host);
+    }
+  })();
   pending.set(host, prom);
   return prom;
 }
@@ -48,12 +51,37 @@ export async function tenantResolver(req: Request, res: Response, next: NextFunc
 
   // Allow explicit override via custom header when calling cross-origin without a reverse proxy
   const overrideHost = normalizeHost(req.headers['x-tenant-domain'] as any);
+  const overrideSlug = (req.headers['x-tenant-slug'] as string | undefined)?.toString().trim() || undefined;
+  const overrideTenantId = (req.headers['x-tenant-id'] as string | undefined)?.toString().trim() || undefined;
   const host = overrideHost || normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
   if (!host) {
     return res.status(400).json({ code: 'HOST_HEADER_REQUIRED', message: 'Host header missing for tenant resolution' });
   }
   try {
-    const data = await fetchDomain(host);
+    // 1) Try exact domain match
+    let data = await fetchDomain(host);
+
+    // 2) Fall back: slug or tenantId override
+    if (!data && (overrideSlug || overrideTenantId)) {
+      const tenant = overrideTenantId
+        ? await p.tenant.findUnique({ where: { id: overrideTenantId } }).catch(() => null)
+        : await p.tenant.findUnique({ where: { slug: overrideSlug } }).catch(() => null);
+      if (tenant) {
+        const dom = await p.domain.findFirst({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => null);
+        if (dom) {
+          data = { domain: dom, tenant, expiresAt: Date.now() + CACHE_TTL_MS };
+        }
+      }
+    }
+
+    // 3) Dev/local fallback for localhost/127.0.0.1: use any active domain
+    if (!data && (host === 'localhost' || host === '127.0.0.1')) {
+      const dom = await p.domain.findFirst({ where: { status: 'ACTIVE' }, include: { tenant: true }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+      if (dom) {
+        data = { domain: dom, tenant: dom.tenant, expiresAt: Date.now() + CACHE_TTL_MS };
+      }
+    }
+
     if (!data) {
       return res.status(404).json({ code: 'DOMAIN_NOT_FOUND_OR_INACTIVE', message: 'Domain not active or unknown' });
     }

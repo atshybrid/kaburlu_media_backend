@@ -9,9 +9,32 @@ const port = config.port;
 
 async function start() {
   try {
+    const allowStartWithoutDb = String(process.env.ALLOW_START_WITHOUT_DB).toLowerCase() === 'true';
     if (process.env.DATABASE_URL) {
-      await prisma.$connect();
-      console.log('Prisma connected');
+      // Retry connect a few times to tolerate transient network/DB issues
+      const maxAttempts = Number(process.env.DB_CONNECT_RETRIES || 5);
+      const baseDelayMs = Number(process.env.DB_CONNECT_BACKOFF_MS || 1000);
+      let attempt = 0;
+      let connected = false;
+      while (attempt < maxAttempts && !connected) {
+        try {
+          attempt++;
+          await prisma.$connect();
+          connected = true;
+          console.log('Prisma connected');
+        } catch (e) {
+          console.warn(`Prisma connect failed (attempt ${attempt}/${maxAttempts}):`, (e as any)?.message || e);
+          if (attempt >= maxAttempts) {
+            if (allowStartWithoutDb) {
+              console.warn('Starting without DB connection due to ALLOW_START_WITHOUT_DB=true');
+              break;
+            }
+            throw e;
+          }
+          const delay = baseDelayMs * attempt;
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
     } else {
       console.log('DATABASE_URL not set — skipping Prisma connect');
     }

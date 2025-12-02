@@ -31,6 +31,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
  *               languageCode: { type: string, example: 'te' }
  *               title: { type: string }
  *               content: { type: string }
+ *               images: { type: array, items: { type: string } }
  *               categoryIds: { type: array, items: { type: string } }
  *               type: { type: string, example: 'reporter' }
  *               isPublished: { type: boolean }
@@ -47,27 +48,26 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
  *                     level: { type: integer, enum: [1,2,3] }
  *                     paragraphs: { type: array, items: { type: string } }
  *                     imageUrl: { type: string }
- *           examples:
- *             sample:
- *               value:
- *                 tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
- *                 languageCode: 'te'
- *                 title: 'Budget Highlights 2025'
- *                 content: 'Key points from the budget...'
- *                 categoryIds: ['cat123']
- *                 type: 'reporter'
- *                 isPublished: true
- *                 h1: 'Budget Highlights 2025'
- *                 h2: 'Key takeaways for taxpayers'
- *                 h3: ['Direct taxes', 'Infra spend']
- *                 sections:
- *                   - heading: 'Direct Tax Reforms'
- *                     level: 2
- *                     paragraphs: ['Slab changes...', 'Rebate updates...']
- *                   - heading: 'Infrastructure'
- *                     level: 2
- *                     paragraphs: ['Highways...', 'Rail...']
- *                 contentHtml: '<h1>Budget Highlights 2025</h1><p>Key points...</p>'
+ *           example:
+ *             tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
+ *             languageCode: 'te'
+ *             title: 'Budget Highlights 2025'
+ *             content: 'Key points from the budget...'
+ *             images: ['https://cdn/img1.jpg']
+ *             categoryIds: ['cat123']
+ *             type: 'reporter'
+ *             isPublished: true
+ *             h1: 'Budget Highlights 2025'
+ *             h2: 'Key takeaways for taxpayers'
+ *             h3: ['Direct taxes', 'Infra spend']
+ *             sections:
+ *               - heading: 'Direct Tax Reforms'
+ *                 level: 2
+ *                 paragraphs: ['Slab changes...', 'Rebate updates...']
+ *               - heading: 'Infrastructure'
+ *                 level: 2
+ *                 paragraphs: ['Highways...', 'Rail...']
+ *             contentHtml: '<h1>Budget Highlights 2025</h1><p>Key points...</p>'
  *     responses:
  *       201:
  *         description: Created
@@ -97,16 +97,40 @@ router.post('/tenant', passport.authenticate('jwt', { session: false }), require
  *               images: { type: array, items: { type: string } }
  *               categoryIds: { type: array, items: { type: string } }
  *               isPublished: { type: boolean }
- *           examples:
- *             sample:
- *               value:
- *                 tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
- *                 languageCode: 'en'
- *                 title: 'Festival Highlights'
- *                 content: 'Slide 1: ... Slide 2: ...'
- *                 images: ['https://cdn/img1.jpg']
- *                 categoryIds: ['cat123']
- *                 isPublished: true
+ *               h1: { type: string }
+ *               h2: { type: string }
+ *               h3: { type: array, items: { type: string } }
+ *               contentHtml: { type: string }
+ *               sections:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     heading: { type: string }
+ *                     level: { type: integer, enum: [1,2,3] }
+ *                     paragraphs: { type: array, items: { type: string } }
+ *                     imageUrl: { type: string }
+ *           example:
+ *             tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
+ *             languageCode: 'en'
+ *             title: 'Festival Highlights'
+ *             content: 'Slide 1: ... Slide 2: ...'
+ *             images: ['https://cdn/img1.jpg']
+ *             categoryIds: ['cat123']
+ *             isPublished: true
+ *             h1: 'Festival Highlights Full Story'
+ *             h2: 'Top moments'
+ *             h3: ['Opening parade', 'Food stalls']
+ *             contentHtml: '<h1>Festival Highlights</h1><p>Slide 1...</p>'
+ *             sections:
+ *               - heading: 'Opening Parade'
+ *                 level: 2
+ *                 paragraphs: ['Colorful floats', 'Local troupes performance']
+ *                 imageUrl: 'https://cdn/img1.jpg'
+ *               - heading: 'Food Stalls'
+ *                 level: 2
+ *                 paragraphs: ['Street foods', 'Traditional sweets']
+ *                 imageUrl: 'https://cdn/img2.jpg'
  *     responses:
  *       201:
  *         description: Created
