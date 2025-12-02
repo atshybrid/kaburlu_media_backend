@@ -52,13 +52,15 @@ async function main() {
     process.exit(1);
   }
   const base = await prisma.domainSettings.findUnique({ where: { domainId: domain.id } });
-  const data = { ...(base?.data || {}), style1: style1Theme };
+  const previous = base?.data as any;
+  const baseObj = previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {};
+  const data: any = { ...baseObj, style1: style1Theme };
   await prisma.domainSettings.upsert({
     where: { domainId: domain.id },
     update: { data },
-    create: { domainId: domain.id, data }
+    create: { domainId: domain.id, tenantId: domain.tenantId, data }
   });
-  console.log('Applied style1 theme to domain:', domainName);
+  console.log('Applied style1 theme to domain:', domainName, 'tenant:', domain.tenantId);
 }
 
 main().catch(e => { console.error(e); process.exit(1); }).finally(()=>process.exit());
