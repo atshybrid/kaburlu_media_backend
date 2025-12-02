@@ -235,15 +235,34 @@ router.get('/categories', async (req, res) => {
 router.get('/category-translations', async (req, res) => {
   const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
   if (!languageCode) return res.status(400).json({ error: 'languageCode required' });
-  const categories = await p.category.findMany();
-  const translations = await p.categoryTranslation.findMany({ where: { language: languageCode } });
-  const map = new Map(translations.map((t: any) => [t.categoryId, t.name]));
+  const domain = (res.locals as any).domain;
+  if (!domain) return res.status(500).json({ error: 'Domain context missing' });
+
+  // Categories allocated to this domain only
+  const domainCats = await p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } });
+  const categories = domainCats.map((dc: any) => dc.category);
+
+  // Respect DomainLanguage gating: if language not enabled for domain, return list with translated=null
+  const langRow = await p.language.findUnique({ where: { code: languageCode } });
+  let domainLanguageEnabled = false;
+  if (langRow) {
+    const domLang = await p.domainLanguage.findUnique({ where: { domainId_languageId: { domainId: domain.id, languageId: langRow.id } } });
+    domainLanguageEnabled = !!domLang;
+  }
+
+  let translationsMap = new Map<string, string>();
+  if (domainLanguageEnabled) {
+    const translations = await p.categoryTranslation.findMany({ where: { language: languageCode, categoryId: { in: categories.map((c: any) => c.id) } } });
+    translationsMap = new Map(translations.map((t: any) => [t.categoryId, t.name]));
+  }
+
   const shaped = categories.map((c: any) => ({
     id: c.id,
     baseName: c.name,
     slug: c.slug,
-    translated: map.get(c.id) || null,
-    hasTranslation: map.has(c.id)
+    translated: domainLanguageEnabled ? (translationsMap.get(c.id) || null) : null,
+    hasTranslation: domainLanguageEnabled && translationsMap.has(c.id),
+    domainLanguageEnabled
   }));
   res.json(shaped);
 });
