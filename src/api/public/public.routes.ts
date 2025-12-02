@@ -202,6 +202,54 @@ router.get('/categories', async (req, res) => {
 
 /**
  * @swagger
+ * /public/category-translations:
+ *   get:
+ *     summary: Debug listing of categories with raw translation (NOT for production use)
+ *     description: Returns categories plus their translation for a requested language without domain-language gating. Use only for diagnostics.
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: app.kaburlumedia.com
+ *       - in: query
+ *         name: languageCode
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Categories with translation status
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   - id: 'cat1'
+ *                     baseName: 'NATIONAL'
+ *                     translated: 'జాతీయ'
+ *                     hasTranslation: true
+ */
+router.get('/category-translations', async (req, res) => {
+  const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
+  if (!languageCode) return res.status(400).json({ error: 'languageCode required' });
+  const categories = await p.category.findMany();
+  const translations = await p.categoryTranslation.findMany({ where: { language: languageCode } });
+  const map = new Map(translations.map((t: any) => [t.categoryId, t.name]));
+  const shaped = categories.map((c: any) => ({
+    id: c.id,
+    baseName: c.name,
+    slug: c.slug,
+    translated: map.get(c.id) || null,
+    hasTranslation: map.has(c.id)
+  }));
+  res.json(shaped);
+});
+
+/**
+ * @swagger
  * /public/articles:
  *   get:
  *     summary: List published articles for this domain
