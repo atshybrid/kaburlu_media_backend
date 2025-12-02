@@ -186,7 +186,7 @@ async function resolveTenantScope(req: Request, bodyTenantId?: string, bodyDomai
 // Create tenant-scoped article (reporter/admin)
 export const createTenantArticleController = async (req: Request, res: Response) => {
   try {
-    const { tenantId: tenantIdBody, domainId, title, content, categoryIds = [], type = 'reporter', isPublished = false, images = [] } = req.body || {};
+    const { tenantId: tenantIdBody, domainId, title, content, categoryIds = [], type = 'reporter', isPublished = false, images = [], languageCode, h1, h2, h3, sections, contentHtml } = req.body || {};
     if (!title || !content || !Array.isArray(categoryIds) || categoryIds.length === 0) {
       return res.status(400).json({ error: 'title, content, categoryIds required' });
     }
@@ -198,7 +198,12 @@ export const createTenantArticleController = async (req: Request, res: Response)
     const user: any = (req as any).user;
     const authorId: string = user.id;
     const author = await prisma.user.findUnique({ where: { id: authorId }, include: { language: true } });
-    const languageId = (user.languageId as string) || author?.languageId || null;
+    let languageId: string | null = (user.languageId as string) || author?.languageId || null;
+    if (languageCode) {
+      const lang = await prisma.language.findUnique({ where: { code: String(languageCode) } });
+      if (!lang) return res.status(400).json({ error: 'Invalid languageCode' });
+      languageId = lang.id;
+    }
     const status = isPublished ? 'PUBLISHED' : 'DRAFT';
     // Create
     const article = await prisma.article.create({
@@ -212,7 +217,13 @@ export const createTenantArticleController = async (req: Request, res: Response)
         languageId,
         images,
         categories: { connect: categoryIds.map((id: string) => ({ id })) },
-        contentJson: {},
+        contentJson: {
+          h1: h1 || undefined,
+          h2: h2 || undefined,
+          h3: Array.isArray(h3) ? h3 : undefined,
+          sections: Array.isArray(sections) ? sections : undefined,
+          contentHtml: contentHtml || undefined
+        },
       }
     });
     res.status(201).json(article);

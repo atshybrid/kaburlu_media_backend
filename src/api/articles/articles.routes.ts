@@ -28,20 +28,46 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
  *             properties:
  *               tenantId: { type: string }
  *               domainId: { type: string }
+ *               languageCode: { type: string, example: 'te' }
  *               title: { type: string }
  *               content: { type: string }
  *               categoryIds: { type: array, items: { type: string } }
  *               type: { type: string, example: 'reporter' }
  *               isPublished: { type: boolean }
+ *               h1: { type: string }
+ *               h2: { type: string }
+ *               h3: { type: array, items: { type: string } }
+ *               contentHtml: { type: string }
+ *               sections:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     heading: { type: string }
+ *                     level: { type: integer, enum: [1,2,3] }
+ *                     paragraphs: { type: array, items: { type: string } }
+ *                     imageUrl: { type: string }
  *           examples:
  *             sample:
  *               value:
  *                 tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
+ *                 languageCode: 'te'
  *                 title: 'Budget Highlights 2025'
  *                 content: 'Key points from the budget...'
  *                 categoryIds: ['cat123']
  *                 type: 'reporter'
  *                 isPublished: true
+ *                 h1: 'Budget Highlights 2025'
+ *                 h2: 'Key takeaways for taxpayers'
+ *                 h3: ['Direct taxes', 'Infra spend']
+ *                 sections:
+ *                   - heading: 'Direct Tax Reforms'
+ *                     level: 2
+ *                     paragraphs: ['Slab changes...', 'Rebate updates...']
+ *                   - heading: 'Infrastructure'
+ *                     level: 2
+ *                     paragraphs: ['Highways...', 'Rail...']
+ *                 contentHtml: '<h1>Budget Highlights 2025</h1><p>Key points...</p>'
  *     responses:
  *       201:
  *         description: Created
@@ -65,6 +91,7 @@ router.post('/tenant', passport.authenticate('jwt', { session: false }), require
  *             properties:
  *               tenantId: { type: string }
  *               domainId: { type: string }
+ *               languageCode: { type: string, example: 'en' }
  *               title: { type: string }
  *               content: { type: string }
  *               images: { type: array, items: { type: string } }
@@ -74,6 +101,7 @@ router.post('/tenant', passport.authenticate('jwt', { session: false }), require
  *             sample:
  *               value:
  *                 tenantId: 'cmidgq4v80004ugv8dtqv4ijk'
+ *                 languageCode: 'en'
  *                 title: 'Festival Highlights'
  *                 content: 'Slide 1: ... Slide 2: ...'
  *                 images: ['https://cdn/img1.jpg']
