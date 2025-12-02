@@ -236,7 +236,7 @@ export const updateArticleController = async (req: Request, res: Response) => {
     const art = await prisma.article.findUnique({ where: { id } });
     if (!art) return res.status(404).json({ error: 'Article not found' });
     // Authorization: reporters/admins can only update within their tenant
-    const scope = await resolveTenantScope(req, art.tenantId, undefined);
+    const scope = await resolveTenantScope(req, art.tenantId ?? undefined, undefined);
     if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
     const data: any = {};
     if (title) data.title = title;
@@ -259,7 +259,7 @@ export const deleteArticleController = async (req: Request, res: Response) => {
     const { id } = req.params;
     const art = await prisma.article.findUnique({ where: { id } });
     if (!art) return res.status(404).json({ error: 'Article not found' });
-    const scope = await resolveTenantScope(req, art.tenantId, undefined);
+    const scope = await resolveTenantScope(req, art.tenantId ?? undefined, undefined);
     if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
     await prisma.article.delete({ where: { id } });
     res.json({ ok: true });
