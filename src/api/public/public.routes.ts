@@ -168,13 +168,21 @@ router.get('/categories', async (req, res) => {
     categories = categories.concat(children.filter((ch: any) => allowedIds.has(ch.id)));
   }
 
-  // Optional: apply translations if a language is effective and allowed for this domain
+  // Optional: apply translations. Allow if domain explicitly enables language OR if it matches tenant default.
   let translationsByCategory: Map<string, string> | undefined;
   if (languageCode) {
     const lang = await p.language.findUnique({ where: { code: languageCode } });
     if (lang) {
+      // Check domain gating
       const domLang = await p.domainLanguage.findUnique({ where: { domainId_languageId: { domainId: domain.id, languageId: lang.id } } });
-      if (domLang) {
+      // Get tenant default language code (we might have loaded earlier; reload if needed)
+      let tenantDefaultLangCode: string | undefined;
+      try {
+        const entity = await p.tenantEntity.findUnique({ where: { tenantId: tenant.id }, include: { language: true } });
+        tenantDefaultLangCode = entity?.language?.code;
+      } catch (_) { /* ignore */ }
+      const languageAllowed = !!domLang || (tenantDefaultLangCode && tenantDefaultLangCode === languageCode);
+      if (languageAllowed) {
         const ids = Array.from(new Set(categories.map((c: any) => c.id)));
         const translations = await p.categoryTranslation.findMany({ where: { categoryId: { in: ids }, language: languageCode } });
         translationsByCategory = new Map(translations.map((t: any) => [t.categoryId, t.name]));
@@ -236,18 +244,22 @@ router.get('/category-translations', async (req, res) => {
   const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
   if (!languageCode) return res.status(400).json({ error: 'languageCode required' });
   const domain = (res.locals as any).domain;
-  if (!domain) return res.status(500).json({ error: 'Domain context missing' });
+  const tenant = (res.locals as any).tenant;
+  if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
 
-  // Categories allocated to this domain only
   const domainCats = await p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } });
   const categories = domainCats.map((dc: any) => dc.category);
 
-  // Respect DomainLanguage gating: if language not enabled for domain, return list with translated=null
   const langRow = await p.language.findUnique({ where: { code: languageCode } });
   let domainLanguageEnabled = false;
+  let tenantDefaultLangCode: string | undefined;
+  try {
+    const entity = await p.tenantEntity.findUnique({ where: { tenantId: tenant.id }, include: { language: true } });
+    tenantDefaultLangCode = entity?.language?.code;
+  } catch (_) { /* ignore */ }
   if (langRow) {
     const domLang = await p.domainLanguage.findUnique({ where: { domainId_languageId: { domainId: domain.id, languageId: langRow.id } } });
-    domainLanguageEnabled = !!domLang;
+    domainLanguageEnabled = !!domLang || (tenantDefaultLangCode === languageCode);
   }
 
   let translationsMap = new Map<string, string>();
@@ -262,7 +274,8 @@ router.get('/category-translations', async (req, res) => {
     slug: c.slug,
     translated: domainLanguageEnabled ? (translationsMap.get(c.id) || null) : null,
     hasTranslation: domainLanguageEnabled && translationsMap.has(c.id),
-    domainLanguageEnabled
+    domainLanguageEnabled,
+    tenantDefaultLanguage: tenantDefaultLangCode
   }));
   res.json(shaped);
 });
