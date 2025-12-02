@@ -47,3 +47,16 @@ export function requireSuperOrTenantAdmin(req: Request, res: Response, next: Nex
     return res.status(500).json({ error: 'Authorization check failed' });
   }
 }
+
+// Allow SUPER_ADMIN, TENANT_ADMIN, or REPORTER
+export function requireReporterOrAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user: any = (req as any).user;
+    if (!user || !user.role) return res.status(401).json({ error: 'Unauthorized' });
+    const roleName = user.role.name;
+    if (roleName === 'SUPER_ADMIN' || roleName === 'TENANT_ADMIN' || roleName === 'REPORTER') return next();
+    return res.status(403).json({ error: 'Forbidden: Reporter or Admin only' });
+  } catch {
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+}

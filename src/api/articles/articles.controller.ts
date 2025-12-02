@@ -150,3 +150,121 @@ export const createArticleController = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to create short news article.' });
   }
 };
+
+// Helper to resolve tenant scope based on role/token and optional tenantId/domainId in body
+async function resolveTenantScope(req: Request, bodyTenantId?: string, bodyDomainId?: string): Promise<{ tenantId: string } | { error: string; status: number }> {
+  const user: any = (req as any).user;
+  if (!user || !user.role) return { error: 'Unauthorized', status: 401 };
+  const roleName = user.role.name;
+  // SUPER_ADMIN: allow explicit tenantId or derive from domainId
+  if (roleName === 'SUPER_ADMIN') {
+    if (bodyTenantId) return { tenantId: bodyTenantId };
+    if (bodyDomainId) {
+      const dom = await prisma.domain.findUnique({ where: { id: bodyDomainId } });
+      if (!dom) return { error: 'Domain not found', status: 400 };
+      return { tenantId: dom.tenantId };
+    }
+    // fallback: reporter linkage
+    const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { tenantId: true } }).catch(() => null);
+    if (rep?.tenantId) return { tenantId: rep.tenantId };
+    return { error: 'tenantId or domainId required for SUPER_ADMIN', status: 400 };
+  }
+  // TENANT_ADMIN or REPORTER: use reporter linkage
+  if (roleName === 'TENANT_ADMIN' || roleName === 'REPORTER') {
+    const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { tenantId: true } }).catch(() => null);
+    if (!rep?.tenantId) return { error: 'Reporter profile not linked to tenant', status: 403 };
+    if (bodyTenantId && bodyTenantId !== rep.tenantId) return { error: 'Tenant scope mismatch', status: 403 };
+    if (bodyDomainId) {
+      const dom = await prisma.domain.findUnique({ where: { id: bodyDomainId } });
+      if (!dom || dom.tenantId !== rep.tenantId) return { error: 'Domain tenant mismatch', status: 403 };
+    }
+    return { tenantId: rep.tenantId };
+  }
+  return { error: 'Forbidden', status: 403 };
+}
+
+// Create tenant-scoped article (reporter/admin)
+export const createTenantArticleController = async (req: Request, res: Response) => {
+  try {
+    const { tenantId: tenantIdBody, domainId, title, content, categoryIds = [], type = 'reporter', isPublished = false, images = [] } = req.body || {};
+    if (!title || !content || !Array.isArray(categoryIds) || categoryIds.length === 0) {
+      return res.status(400).json({ error: 'title, content, categoryIds required' });
+    }
+    // Resolve tenant
+    const scope = await resolveTenantScope(req, tenantIdBody, domainId);
+    if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
+    const tenantId = scope.tenantId;
+    // Author and language
+    const user: any = (req as any).user;
+    const authorId: string = user.id;
+    const author = await prisma.user.findUnique({ where: { id: authorId }, include: { language: true } });
+    const languageId = (user.languageId as string) || author?.languageId || null;
+    const status = isPublished ? 'PUBLISHED' : 'DRAFT';
+    // Create
+    const article = await prisma.article.create({
+      data: {
+        title,
+        content,
+        type,
+        status,
+        authorId,
+        tenantId,
+        languageId,
+        images,
+        categories: { connect: categoryIds.map((id: string) => ({ id })) },
+        contentJson: {},
+      }
+    });
+    res.status(201).json(article);
+  } catch (e) {
+    console.error('createTenantArticle error', e);
+    res.status(500).json({ error: 'Failed to create article' });
+  }
+};
+
+// Create web story (type=web_story)
+export const createWebStoryController = async (req: Request, res: Response) => {
+  (req as any).body = { ...(req.body || {}), type: 'web_story' };
+  return createTenantArticleController(req, res);
+};
+
+// Update article
+export const updateArticleController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, content, categoryIds, status } = req.body || {};
+    const art = await prisma.article.findUnique({ where: { id } });
+    if (!art) return res.status(404).json({ error: 'Article not found' });
+    // Authorization: reporters/admins can only update within their tenant
+    const scope = await resolveTenantScope(req, art.tenantId, undefined);
+    if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
+    const data: any = {};
+    if (title) data.title = title;
+    if (content) data.content = content;
+    if (status) data.status = status;
+    if (Array.isArray(categoryIds)) {
+      data.categories = { set: [], connect: categoryIds.map((id: string) => ({ id })) };
+    }
+    const updated = await prisma.article.update({ where: { id }, data });
+    res.json(updated);
+  } catch (e) {
+    console.error('updateArticle error', e);
+    res.status(500).json({ error: 'Failed to update article' });
+  }
+};
+
+// Delete article
+export const deleteArticleController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const art = await prisma.article.findUnique({ where: { id } });
+    if (!art) return res.status(404).json({ error: 'Article not found' });
+    const scope = await resolveTenantScope(req, art.tenantId, undefined);
+    if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
+    await prisma.article.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('deleteArticle error', e);
+    res.status(500).json({ error: 'Failed to delete article' });
+  }
+};
