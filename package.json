@@ -28,6 +28,8 @@
     "clear:relations": "echo 'chat relations script removed'",
     "clear:tenant": "ts-node scripts/clear_tenant.ts",
     "ai:smoke": "ts-node scripts/aiDraftSmoke.ts",
+    "jobs:ai-queue": "ts-node src/jobs/aiQueue.worker.ts",
+    "prompts:web": "ts-node scripts/update_web_prompt.ts",
     "postinstall": "prisma generate"
   },
   "engines": {

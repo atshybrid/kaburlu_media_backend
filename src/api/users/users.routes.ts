@@ -107,7 +107,7 @@ router.get('/:id', userController.getUserById);
  *                 example: "John Doe"
  *               mobileNumber:
  *                 type: string
- *                 example: "9392010248"
+ *                 example: "8282"
  *               email:
  *                 type: string
  *                 example: "john.doe@example.com"

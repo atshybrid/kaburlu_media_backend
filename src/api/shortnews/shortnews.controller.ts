@@ -65,7 +65,15 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
     const languageCode = lang?.code || 'en';
     const tpl = await getPrompt('SHORTNEWS_AI_ARTICLE' as any);
     const prompt = renderPrompt(tpl, { languageCode, content: rawText });
-    const draft = await generateAiShortNewsFromPrompt(rawText, prompt, (p) => aiGenerateText({ prompt: p, purpose: 'shortnews_ai_article' }), { minWords: 58, maxWords: 60, maxAttempts: 3 });
+    const draft = await generateAiShortNewsFromPrompt(
+      rawText,
+      prompt,
+      async (p) => {
+        const r = await aiGenerateText({ prompt: p, purpose: 'shortnews_ai_article' });
+        return String(r?.text || '');
+      },
+      { minWords: 58, maxWords: 60, maxAttempts: 3 }
+    );
     let suggestedCategoryName = draft.suggestedCategoryName;
     if (!suggestedCategoryName) suggestedCategoryName = 'Community';
     // Optional: attempt to map suggested category to existing category id (case-insensitive match on base or translation name)
@@ -166,7 +174,8 @@ export const aiRewriteShortNews = async (req: Request, res: Response) => {
     const languageCode = lang?.code || 'en';
     const tpl = await getPrompt('SHORTNEWS_REWRITE' as any);
     const prompt = renderPrompt(tpl, { languageCode, title: title || '', content: rawText });
-  const aiJson = await aiGenerateText({ prompt, purpose: 'rewrite' });
+  const aiJsonRes = await aiGenerateText({ prompt, purpose: 'rewrite' });
+    const aiJson = String(aiJsonRes?.text || '');
     if (!aiJson) return res.status(500).json({ success: false, error: 'AI rewrite failed' });
     let parsed: any;
     try {
@@ -207,7 +216,8 @@ async function generateSeoWithAI(
       content: content.slice(0, 1000),
       images: imageUrls,
     });
-    const text = await aiGenerateText({ prompt, purpose: 'seo' });
+    const textRes = await aiGenerateText({ prompt, purpose: 'seo' });
+    const text = String(textRes?.text || '');
     if (!text) return null;
     const jsonText = text.trim().replace(/^```(json)?/i, '').replace(/```$/,'').trim();
     const parsed = JSON.parse(jsonText);
@@ -331,7 +341,8 @@ export const createShortNews = async (req: Request, res: Response) => {
       if (aiEnabledFor('moderation')) {
         const tpl = await getPrompt('MODERATION');
         const prompt = renderPrompt(tpl, { languageCode, content: content.slice(0, 2000) });
-        const out = await aiGenerateText({ prompt, purpose: 'moderation' });
+        const outRes = await aiGenerateText({ prompt, purpose: 'moderation' });
+        const out = String(outRes?.text || '');
         if (out) {
           const jsonText = out.trim().replace(/^```(json)?/i, '').replace(/```$/,'').trim();
           const parsed = JSON.parse(jsonText);

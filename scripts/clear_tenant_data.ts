@@ -55,8 +55,9 @@ async function run() {
     const tenantIds = tenants.map(t => t.id);
 
     // Count items
-    const [articleCount, tenantSpecDesignationCount] = await Promise.all([
+    const [articleCount, webArticleCount, tenantSpecDesignationCount] = await Promise.all([
       prisma.article.count({ where: { tenantId: { in: tenantIds } } }),
+      (prisma as any).tenantWebArticle.count({ where: { tenantId: { in: tenantIds } } }),
       prisma.reporterDesignation.count({ where: { tenantId: { in: tenantIds } } }),
     ]);
 
@@ -71,6 +72,7 @@ async function run() {
     }
     console.log(`- Tenant-scoped articles: ${articleCount}`);
     console.log(`- Tenant-specific reporter designations: ${tenantSpecDesignationCount}`);
+    console.log(`- Tenant web articles: ${webArticleCount}`);
     console.log(`- Domains (cascade via tenant): ${domainCount}`);
     console.log(`- Reporters (cascade via tenant): ${reporterCount}`);
     console.log(`- Tenants to delete: ${tenantIds.length}`);
@@ -83,6 +85,7 @@ async function run() {
     // Delete in safe order
     const delArticles = await prisma.article.deleteMany({ where: { tenantId: { in: tenantIds } } });
     const delTenantDesignations = await prisma.reporterDesignation.deleteMany({ where: { tenantId: { in: tenantIds } } });
+    const delWebArticles = await (prisma as any).tenantWebArticle.deleteMany({ where: { tenantId: { in: tenantIds } } });
 
     const delTenants = await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
 
@@ -90,6 +93,7 @@ async function run() {
     console.log(`- Deleted articles: ${delArticles.count}`);
     console.log(`- Deleted tenant-specific designations: ${delTenantDesignations.count}`);
     console.log(`- Deleted tenants: ${delTenants.count}`);
+    console.log(`- Deleted tenant web articles: ${delWebArticles.count}`);
     console.log('Cascade removed domains, navigation, themes, feature flags, homepage sections, entity, reporters, payments, ID cards, and domain allocations.');
   } catch (e: any) {
     console.error('Tenant data clear error:', e?.message || e);

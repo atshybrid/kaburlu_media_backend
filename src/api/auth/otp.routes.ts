@@ -93,7 +93,7 @@ router.post('/verify-otp', otpController.verifyOtp);
  *                 description: The ID of the OTP log entry from the verify-otp step.
  *               mobileNumber:
  *                 type: string
- *                 example: "9392010248"
+ *                 example: "8282868389"
  *               mpin:
  *                 type: string
  *                 example: "1234"

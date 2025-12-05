@@ -71,6 +71,7 @@ model User {
   updatedAt    DateTime      @updatedAt
   devices      Device[]
   articles     Article[]
+  tenantWebArticles TenantWebArticle[] @relation("User_WebArticles")
   likes        Like[]
   comments     Comment[]
   location     UserLocation?
@@ -136,6 +137,7 @@ model Language {
   domainLangs DomainLanguage[]
   articles    Article[]         @relation("Article_language")
   tenantEntities TenantEntity[] @relation("TenantEntity_language")
+  webArticles TenantWebArticle[] @relation("Language_WebArticles")
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 }
@@ -256,6 +258,47 @@ model Article {
   @@index([tenantId, createdAt])
 }
 
+/// Website-focused, tenant-scoped article with SEO-friendly JSON payload
+model TenantWebArticle {
+  id           String    @id @default(cuid())
+  // Multi-tenant scoping
+  tenant       Tenant    @relation("Tenant_WebArticles", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId     String
+  // Optional domain scoping (for multi-domain tenants)
+  domain       Domain?   @relation("Domain_WebArticles", fields: [domainId], references: [id], onDelete: SetNull)
+  domainId     String?
+  // Language of the article (nullable when inferred by client)
+  language     Language? @relation("Language_WebArticles", fields: [languageId], references: [id])
+  languageId   String?
+  // Optional author (user) attribution
+  author       User?     @relation("User_WebArticles", fields: [authorId], references: [id])
+  authorId     String?
+
+  // Editorial fields
+  title        String
+  slug         String
+  status       String    @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  coverImageUrl String?
+
+  // Canonical content JSON (blocks, contentHtml, plainText, meta, jsonLd, audit)
+  contentJson  Json
+
+  // SEO fields
+  seoTitle       String?
+  metaDescription String?
+  jsonLd          Json?
+  tags            String[]
+
+  // Timestamps
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([tenantId, createdAt])
+  // Ensure unique slug per tenant+domain+language to avoid collisions across locales
+  @@unique([tenantId, domainId, languageId, slug])
+}
+
 /// ---------------- Multi-Tenancy & Reporter Enums ----------------
 
 enum PrgiStatus {
@@ -333,6 +376,7 @@ model Tenant {
   updatedAt   DateTime       @updatedAt
   domains     Domain[]
   articles    Article[]
+  webArticles TenantWebArticle[] @relation("Tenant_WebArticles")
   theme       TenantTheme?
   // Back-relations for new website/tenant config models
   navigation          TenantNavigation?
@@ -367,6 +411,7 @@ model Domain {
   languages        DomainLanguage[]
   checkLogs        DomainCheckLog[]
   settings         DomainSettings? @relation("Domain_DomainSettings")
+  webArticles      TenantWebArticle[] @relation("Domain_WebArticles")
 }
 
 model DomainCategory {

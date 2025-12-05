@@ -25,7 +25,8 @@ const translateText = async (text: string, targetLanguageHint: string, isEnglish
   try {
     const tpl = await getPrompt('CATEGORY_TRANSLATION');
     const prompt = renderPrompt(tpl, { text, targetLanguage: targetLanguageHint, latinGuard: isEnglishTarget ? '' : ' (do NOT use Latin/English letters)' });
-    const out = (await aiGenerateText({ prompt, purpose: 'translation' })).trim();
+    const outRes = await aiGenerateText({ prompt, purpose: 'translation' });
+    const out = String(outRes?.text || '').trim();
     if (!out) return text;
     const looksLatin = /^[A-Za-z0-9\s\-_.]+$/.test(out);
     if (!isEnglishTarget && (out.localeCompare(text, undefined, { sensitivity: 'base' }) === 0 || looksLatin)) {

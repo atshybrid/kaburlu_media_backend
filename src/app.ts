@@ -49,6 +49,7 @@ import webhooksRoutes from './api/webhooks/webhooks.routes';
 import idCardsRoutes from './api/idCards/idCards.routes';
 import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
+import aiTestRoutes from './api/ai/ai.routes';
 
 const app = express();
 
@@ -166,6 +167,7 @@ app.use('/media', mediaRoutes);
 app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
+app.use('/ai', aiTestRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
 // Mount reporter payments routes at root so absolute paths inside work (e.g., /tenants/:tenantId/reporters/:id/payments/order)
@@ -206,6 +208,7 @@ apiV1.use('/media', mediaRoutes);
 apiV1.use('/devices', devicesRoutes);
 apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
+apiV1.use('/ai', aiTestRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
 // Mount reporter payments under versioned root as well for absolute paths

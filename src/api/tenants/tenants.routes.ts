@@ -75,6 +75,95 @@ router.get('/', async (req, res) => {
 
 /**
  * @swagger
+ * /tenants:
+ *   post:
+ *     summary: Create tenant (SUPER_ADMIN)
+ *     tags: [Tenants]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, slug, prgiNumber]
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               prgiNumber: { type: string }
+ *               stateId: { type: string }
+ *           examples:
+ *             minimal:
+ *               summary: Minimal tenant
+ *               value:
+ *                 name: "Kaburlu Media"
+ *                 slug: "kaburlu-media"
+ *                 prgiNumber: "PRGI-2025-001"
+ *             withState:
+ *               summary: With state linkage
+ *               value:
+ *                 name: "Prashna News"
+ *                 slug: "prashna"
+ *                 prgiNumber: "PRGI-2025-010"
+ *                 stateId: "cmstate123"
+ *     responses:
+ *       201:
+ *         description: Tenant created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 name: { type: string }
+ *                 slug: { type: string }
+ *                 prgiNumber: { type: string }
+ *                 stateId: { type: string, nullable: true }
+ *                 createdAt: { type: string }
+ *                 updatedAt: { type: string }
+ *             examples:
+ *               created:
+ *                 summary: Created tenant
+ *                 value:
+ *                   id: "cuid123"
+ *                   name: "Kaburlu Media"
+ *                   slug: "kaburlu-media"
+ *                   prgiNumber: "PRGI-2025-001"
+ *                   stateId: null
+ *                   createdAt: "2025-12-05T05:00:00.000Z"
+ *                   updatedAt: "2025-12-05T05:00:00.000Z"
+ *       400:
+ *         description: Validation error
+ *       409:
+ *         description: Duplicate slug or PRGI number
+ */
+router.post('/', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { name, slug, prgiNumber, stateId } = req.body || {};
+    if (!name || !slug || !prgiNumber) {
+      return res.status(400).json({ error: 'name, slug and prgiNumber are required' });
+    }
+    const existsSlug = await (prisma as any).tenant.findFirst({ where: { slug: { equals: String(slug), mode: 'insensitive' } } });
+    if (existsSlug) return res.status(409).json({ error: 'Slug already exists' });
+    const existsPrgi = await (prisma as any).tenant.findFirst({ where: { prgiNumber: { equals: String(prgiNumber), mode: 'insensitive' } } });
+    if (existsPrgi) return res.status(409).json({ error: 'PRGI number already exists' });
+
+    const data: any = { name: String(name), slug: String(slug), prgiNumber: String(prgiNumber) };
+    if (stateId) data.stateId = String(stateId);
+
+    const created = await (prisma as any).tenant.create({ data });
+    return res.status(201).json(created);
+  } catch (e: any) {
+    if (String(e.code) === 'P2002') {
+      return res.status(409).json({ error: 'Duplicate field (slug or prgiNumber)' });
+    }
+    console.error('tenant create error', e);
+    return res.status(500).json({ error: 'Failed to create tenant' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/id-card-settings:
  *   get:
  *     summary: List ID card settings for all tenants (SUPER_ADMIN)
@@ -223,6 +312,71 @@ router.get('/:id', async (req, res) => {
   const t = await (prisma as any).tenant.findUnique({ where: { id: req.params.id } });
   if (!t) return res.status(404).json({ error: 'Not found' });
   res.json(t);
+});
+/**
+ * @swagger
+ * /tenants/{id}:
+ *   patch:
+ *     summary: Update tenant (SUPER_ADMIN)
+ *     tags: [Tenants]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               prgiNumber: { type: string }
+ *               stateId: { type: string }
+ *           examples:
+ *             updateNameState:
+ *               summary: Update name and stateId
+ *               value:
+ *                 name: "Kaburlu Media Pvt Ltd"
+ *                 stateId: "cmstate123"
+ *     responses:
+ *       200:
+ *         description: Tenant updated
+ *       404:
+ *         description: Not found
+ *       409:
+ *         description: Duplicate slug or PRGI number
+ */
+router.patch('/:id', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await (prisma as any).tenant.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const { name, slug, prgiNumber, stateId } = req.body || {};
+    const data: any = {};
+    if (typeof name === 'string' && name.trim()) data.name = String(name);
+    if (typeof slug === 'string' && slug.trim()) {
+      const dupSlug = await (prisma as any).tenant.findFirst({ where: { slug: { equals: String(slug), mode: 'insensitive' }, id: { not: id } } });
+      if (dupSlug) return res.status(409).json({ error: 'Slug already exists' });
+      data.slug = String(slug);
+    }
+    if (typeof prgiNumber === 'string' && prgiNumber.trim()) {
+      const dupPrgi = await (prisma as any).tenant.findFirst({ where: { prgiNumber: { equals: String(prgiNumber), mode: 'insensitive' }, id: { not: id } } });
+      if (dupPrgi) return res.status(409).json({ error: 'PRGI number already exists' });
+      data.prgiNumber = String(prgiNumber);
+    }
+    if (typeof stateId === 'string') data.stateId = stateId || null;
+
+    const updated = await (prisma as any).tenant.update({ where: { id }, data });
+    return res.json(updated);
+  } catch (e: any) {
+    console.error('tenant update error', e);
+    return res.status(500).json({ error: 'Failed to update tenant' });
+  }
 });
 // (corrupted duplicate tenant creation block removed)
 

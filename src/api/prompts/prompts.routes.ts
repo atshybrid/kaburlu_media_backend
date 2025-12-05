@@ -47,7 +47,7 @@ router.get(
     try {
       // Simple role gate: only NEWS_DESK_ADMIN, LANGUAGE_ADMIN, SUPERADMIN can manage prompts
       const roleName = req.user?.role?.name || '';
-      if (!['NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPERADMIN'].includes(roleName)) {
+      if (!['NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPER_ADMIN', 'TENANT_ADMIN'].includes(roleName)) {
         return res.status(403).json({ success: false, error: 'Forbidden' });
       }
       const list = await (prisma as any).prompt?.findMany?.({ orderBy: { key: 'asc' } }) || [];
@@ -105,7 +105,7 @@ router.put(
   async (req: any, res) => {
     try {
       const roleName = req.user?.role?.name || '';
-      if (!['NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPERADMIN'].includes(roleName)) {
+      if (!['NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPER_ADMIN', 'TENANT_ADMIN'].includes(roleName)) {
         return res.status(403).json({ success: false, error: 'Forbidden' });
       }
       const { key, content, description } = req.body || {};
@@ -123,3 +123,44 @@ router.put(
 );
 
 export default router;
+/**
+ * @swagger
+ * /prompts/{key}:
+ *   get:
+ *     summary: Get prompt by key
+ *     description: Fetch a single prompt by its key. Restricted to NEWS_DESK_ADMIN, LANGUAGE_ADMIN, SUPER_ADMIN, TENANT_ADMIN.
+ *     tags: [Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Prompt
+ *       404:
+ *         description: Not found
+ *       403:
+ *         description: Forbidden
+ */
+router.get(
+  '/:key',
+  passport.authenticate('jwt', { session: false }),
+  async (req: any, res) => {
+    try {
+      const roleName = req.user?.role?.name || '';
+      if (!['NEWS_DESK_ADMIN', 'LANGUAGE_ADMIN', 'SUPER_ADMIN', 'TENANT_ADMIN'].includes(roleName)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+      const key = String(req.params.key || '');
+      const item = await (prisma as any).prompt?.findUnique?.({ where: { key } });
+      if (!item) return res.status(404).json({ success: false, error: 'Not found' });
+      return res.json({ success: true, data: item });
+    } catch (e) {
+      res.status(500).json({ success: false, error: 'Failed to fetch prompt' });
+    }
+  }
+);
