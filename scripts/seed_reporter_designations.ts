@@ -13,7 +13,8 @@ const prisma = new PrismaClient();
 const p: any = prisma;
 
 // Default designation set (same codes as global list). This script seeds PER TENANT copies.
-const defaults: { level: string; code: string; name: string }[] = [
+// Only use levels defined in ReporterLevel enum: STATE | DISTRICT | ASSEMBLY | MANDAL
+const defaults: { level: 'STATE' | 'DISTRICT' | 'ASSEMBLY' | 'MANDAL'; code: string; name: string }[] = [
   { level: 'STATE', code: 'EDITOR_IN_CHIEF', name: 'Editor-in-Chief' },
   { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief' },
   { level: 'STATE', code: 'STATE_EDITOR', name: 'State Editor' },
@@ -25,8 +26,7 @@ const defaults: { level: string; code: string; name: string }[] = [
   { level: 'ASSEMBLY', code: 'ASSEMBLY_INCHARGE', name: 'Assembly Incharge' },
   { level: 'ASSEMBLY', code: 'ASSEMBLY_REPORTER', name: 'Assembly Reporter' },
   { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter' },
-  { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' },
-  { level: 'VILLAGE', code: 'VILLAGE_REPORTER', name: 'Village Reporter' },
+  { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' }
 ];
 
 async function main() {

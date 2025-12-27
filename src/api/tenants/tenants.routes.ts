@@ -313,6 +313,76 @@ router.get('/:id', async (req, res) => {
   if (!t) return res.status(404).json({ error: 'Not found' });
   res.json(t);
 });
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/feature-flags:
+ *   get:
+ *     summary: Get tenant feature flags
+ *     tags: [Tenants, AI Rewrite]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Feature flags
+ */
+router.get('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const flags = await (prisma as any).tenantFeatureFlags.findUnique({ where: { tenantId } }).catch(() => null);
+    return res.json({ tenantId, flags: flags || { tenantId, aiArticleRewriteEnabled: true } });
+  } catch (e: any) {
+    console.error('get tenant feature-flags error', e);
+    return res.status(500).json({ error: 'Failed to get feature flags' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/feature-flags:
+ *   patch:
+ *     summary: Update tenant feature flags
+ *     description: Update tenant feature flags. Currently supports aiArticleRewriteEnabled.
+ *     tags: [Tenants, AI Rewrite]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               aiArticleRewriteEnabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Updated feature flags
+ */
+router.patch('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const aiArticleRewriteEnabled = typeof req.body?.aiArticleRewriteEnabled === 'boolean' ? req.body.aiArticleRewriteEnabled : undefined;
+    if (typeof aiArticleRewriteEnabled === 'undefined') return res.status(400).json({ error: 'aiArticleRewriteEnabled boolean required' });
+
+    const upserted = await (prisma as any).tenantFeatureFlags.upsert({
+      where: { tenantId },
+      update: { aiArticleRewriteEnabled },
+      create: { tenantId, aiArticleRewriteEnabled },
+    });
+    return res.json({ tenantId, flags: upserted });
+  } catch (e: any) {
+    console.error('patch tenant feature-flags error', e);
+    return res.status(500).json({ error: 'Failed to update feature flags' });
+  }
+});
 /**
  * @swagger
  * /tenants/{id}:

@@ -7,7 +7,7 @@ const swaggerDefinition = {
   info: {
     title: 'Kaburlu News Platform API',
     version: '1.0.0',
-    description: 'REST API for Kaburlu platform, covering Superadmin, Language Admin, News Desk, Citizen Reporter, Categories & Category Translations.'
+    description: 'REST API for Kaburlu platform. Note: Core roles and minimal seed bootstrap run automatically on server start to recover from empty databases.'
   },
   servers: [
     {
@@ -27,6 +27,7 @@ const swaggerDefinition = {
     { name: 'Auth' },
     { name: 'Users' },
     { name: 'Articles' },
+    { name: 'AI Rewrite', description: 'AI rewrite controls, usage metering, and billing limits' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },
     { name: 'Reactions' },

@@ -76,6 +76,144 @@ router.get('/', async (req, res) => {
     const locations = await locationService.findAllLocations(options);
     res.json(locations);
 });
+
+/**
+ * @swagger
+ * /locations/search:
+ *   get:
+ *     summary: Search geo locations (village/mandal/district/state)
+ *     tags: [Locations]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *         description: Search term (e.g., "ఆదిలాబాద్" or "Adilabad")
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+ *       - in: query
+ *         name: types
+ *         schema: { type: string }
+ *         description: "Optional comma-separated types: STATE,DISTRICT,MANDAL"
+ *       - in: query
+ *         name: includeVillage
+ *         schema: { type: boolean, default: false }
+ *         description: If true, returns a VILLAGE suggestion using the raw query.
+ *     responses:
+ *       200:
+ *         description: Matching geo entities
+ */
+router.get('/search', async (req, res) => {
+    try {
+        const q = String((req.query.q as any) || '').trim();
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const typesRaw = String((req.query.types as any) || '').trim();
+        const includeVillage = String((req.query.includeVillage as any) || '').toLowerCase() === 'true';
+        const tenantId = req.query.tenantId ? String(req.query.tenantId) : undefined;
+        const types = typesRaw ? typesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+
+        if (!q) return res.status(400).json({ error: 'q is required' });
+
+        const items = await locationService.searchGeoLocations({ q, limit, types, includeVillage, tenantId });
+        return res.json({ q, count: items.length, items });
+    } catch (e: any) {
+        console.error('GET /locations/search error', e);
+        return res.status(500).json({ error: 'Failed to search locations' });
+    }
+});
+
+/**
+ * @swagger
+ * /locations/villages:
+ *   post:
+ *     summary: Create village (tenant-scoped)
+ *     tags: [Locations]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [tenantId, mandalId, name]
+ *             properties:
+ *               tenantId: { type: string }
+ *               mandalId: { type: string }
+ *               name: { type: string }
+ *     responses:
+ *       201: { description: Created }
+ */
+router.post('/villages', async (req, res) => {
+    try {
+        const { tenantId, mandalId, name } = req.body || {};
+        if (!tenantId || !mandalId || !name) return res.status(400).json({ error: 'tenantId, mandalId, name required' });
+        const created = await (locationService as any).createVillage({ tenantId: String(tenantId), mandalId: String(mandalId), name: String(name).trim() });
+        return res.status(201).json(created);
+    } catch (e: any) {
+        return res.status(400).json({ error: e?.message || 'Failed' });
+    }
+});
+
+/**
+ * @swagger
+ * /locations/villages:
+ *   get:
+ *     summary: List villages
+ *     tags: [Locations]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: mandalId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: q
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, default: 0 }
+ *     responses:
+ *       200: { description: List }
+ */
+router.get('/villages', async (req, res) => {
+    try {
+        const tenantId = req.query.tenantId ? String(req.query.tenantId) : undefined;
+        const mandalId = req.query.mandalId ? String(req.query.mandalId) : undefined;
+        const q = req.query.q ? String(req.query.q) : undefined;
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const offset = req.query.offset ? Number(req.query.offset) : undefined;
+        const out = await (locationService as any).listVillages({ tenantId, mandalId, q, limit, offset });
+        return res.json(out);
+    } catch (e: any) {
+        return res.status(500).json({ error: e?.message || 'Failed' });
+    }
+});
+
+/**
+ * @swagger
+ * /locations/villages/{id}:
+ *   get:
+ *     summary: Get village by id
+ *     tags: [Locations]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Village }
+ *       404: { description: Not found }
+ */
+router.get('/villages/:id', async (req, res) => {
+    const id = String(req.params.id);
+    const item = await (locationService as any).getVillageById(id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    return res.json(item);
+});
 /**
  * @swagger
  * /locations/{id}:

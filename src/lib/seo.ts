@@ -19,6 +19,10 @@ export function buildNewsArticleJsonLd(params: {
   publisherLogoUrl?: string;
   videoUrl?: string;
   videoThumbnailUrl?: string;
+  keywords?: string[];
+  articleSection?: string;
+  isAccessibleForFree?: boolean;
+  wordCount?: number;
 }): NewsArticleJsonLd {
   const {
     headline,
@@ -33,17 +37,23 @@ export function buildNewsArticleJsonLd(params: {
     publisherLogoUrl = process.env.SEO_PUBLISHER_LOGO || '',
     videoUrl,
     videoThumbnailUrl,
+    keywords,
+    articleSection,
+    isAccessibleForFree = true,
+    wordCount,
   } = params;
 
   const article: any = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
     headline: String(headline).slice(0, 110),
+    url: canonicalUrl,
     mainEntityOfPage: {
       '@type': 'WebPage',
       '@id': canonicalUrl,
     },
     inLanguage: languageCode,
+    isAccessibleForFree,
   };
 
   if (description) article.description = String(description).slice(0, 160);
@@ -58,6 +68,9 @@ export function buildNewsArticleJsonLd(params: {
       logo: publisherLogoUrl ? { '@type': 'ImageObject', url: publisherLogoUrl } : undefined,
     };
   }
+  if (Array.isArray(keywords) && keywords.length) article.keywords = keywords;
+  if (articleSection) article.articleSection = articleSection;
+  if (Number.isFinite(wordCount as any)) article.wordCount = wordCount;
 
   if (videoUrl) {
     article.video = {

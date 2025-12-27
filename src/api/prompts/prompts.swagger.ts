@@ -2,7 +2,14 @@
  * @swagger
  * tags:
  *   - name: Prompts
- *     description: Admin endpoints to manage AI prompt templates used by the system.
+ *     description: |
+ *       Admin endpoints to manage AI prompt templates used by the system.
+ *
+ *       Common keys used by article rewrite pipeline:
+ *       - `ai_rewrite_prompt_true` (tenant AI enabled → FULL rewrite)
+ *       - `ai_rewrite_prompt_false` (tenant AI disabled → LIMITED SEO + shortnews)
+ *
+ *       Tip: set env vars `AI_REWRITE_PROMPT_TRUE` / `AI_REWRITE_PROMPT_FALSE` to the DB key name (e.g. `ai_rewrite_prompt_true`) to load prompt content from the Prompt table.
  */
 
 /**
@@ -45,6 +52,10 @@
  *           type: string
  *           nullable: true
  *           description: Optional description
+ *       example:
+ *         key: "ai_rewrite_prompt_true"
+ *         description: "FULL rewrite prompt (newspaper+web+shortnews)"
+ *         content: "You are an editor..."
  */
 
 /**

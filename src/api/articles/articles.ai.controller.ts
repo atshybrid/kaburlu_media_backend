@@ -279,8 +279,20 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
         languageId: languageId || undefined,
         images,
         categories: { connect: categoryIds.map((id: string) => ({ id })) },
-        contentJson: { raw }
+        contentJson: {
+          raw: { ...raw, title, content, images, categoryIds, languageCode },
+          aiQueue: { web: true, short: false, newspaper: false },
+          aiStatus: 'PENDING',
+          aiCreatedAt: new Date().toISOString(),
+        }
       }
+    });
+
+    return res.status(202).json({
+      message: 'Web article generation queued successfully',
+      articleId: baseArticle.id,
+      queued: { web: true, short: false, newspaper: false },
+      statusUrl: `/api/v1/articles/${baseArticle.id}`,
     });
 
     // Build provider-specific prompt and call AI
@@ -380,8 +392,9 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
     // Optionally generate Markdown article using DB prompt (if present)
     let webMarkdown: string | undefined;
     const mdPrompt = await buildMarkdownPrompt(payload).catch(() => null);
-    if (mdPrompt) {
-      const mdRes = await aiGenerateText({ prompt: mdPrompt, purpose: 'rewrite_markdown' as any });
+    const trimmedPrompt = String(mdPrompt ?? '').trim();
+    if (trimmedPrompt.length > 0) {
+      const mdRes = await aiGenerateText({ prompt: trimmedPrompt, purpose: 'rewrite_markdown' as any });
       if (mdRes?.text) {
         webMarkdown = String(mdRes.text).trim();
       }
@@ -405,7 +418,7 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
       });
       if (existing) {
         twa = await prisma.tenantWebArticle.update({
-          where: { id: existing.id },
+          where: { id: existing!.id },
           data: {
             title: String(webJson.title || title),
             status: normStatus,
@@ -873,7 +886,7 @@ export const composeBlocksController = async (req: Request, res: Response) => {
       });
       if (existing) {
         twa = await prisma.tenantWebArticle.update({
-          where: { id: existing.id },
+          where: { id: existing!.id },
           data: {
             title: webJson.title,
             status: String(webJson.status).toUpperCase(),
@@ -1109,5 +1122,255 @@ Original Source Material:
   } catch (e) {
     console.error('composeSimpleArticleController error', e);
     return res.status(500).json({ error: 'Failed to compose simple article' });
+  }
+};
+
+async function resolveReporterUserId(reporterId: string): Promise<string | null> {
+  try {
+    const rep = await (prisma as any).reporter.findUnique({ where: { id: String(reporterId) }, select: { userId: true } });
+    return rep?.userId ? String(rep.userId) : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectMediaUrls(coverImageUrl: any, media: any): string[] {
+  const urls: string[] = [];
+  const push = (u: any) => {
+    const s = String(u || '').trim();
+    if (!s) return;
+    if (!/^https?:\/\//i.test(s)) return;
+    if (!urls.includes(s)) urls.push(s);
+  };
+  push(coverImageUrl);
+  if (Array.isArray(media)) {
+    for (const m of media) push(m?.url);
+  } else if (media && typeof media === 'object') {
+    if (Array.isArray(media.images)) for (const i of media.images) push(i?.url || i);
+    if (Array.isArray(media.videos)) for (const v of media.videos) push(v?.url || v);
+  }
+  return urls;
+}
+
+export const composeChatGptRewriteController = async (req: Request, res: Response) => {
+  try {
+    const { tenantId, domainName, categoryIds = [], languageCode, coverImageUrl, media, reporterId, rawContent, title } = req.body || {};
+    if (!domainName || !reporterId || !languageCode || !rawContent) return res.status(400).json({ error: 'domainName, reporterId, languageCode, rawContent are required' });
+
+    const dom = await prisma.domain.findUnique({ where: { domain: String(domainName) } });
+    if (!dom) return res.status(400).json({ error: 'Invalid domainName' });
+
+    const lang = await prisma.language.findUnique({ where: { code: String(languageCode) } });
+    if (!lang) return res.status(400).json({ error: 'Invalid languageCode' });
+
+    const authorId = await resolveReporterUserId(String(reporterId));
+    if (!authorId) return res.status(400).json({ error: 'Invalid reporterId' });
+
+    const catIds = (Array.isArray(categoryIds) ? categoryIds : []).map((x: any) => String(x || '').trim()).filter(Boolean);
+    const images = collectMediaUrls(coverImageUrl, media);
+    const finalTitle = String(title || '').trim() || 'Raw Article';
+    const content = String(rawContent || '').trim();
+
+    const article = await prisma.article.create({
+      data: {
+        title: finalTitle,
+        content,
+        type: 'reporter',
+        status: 'DRAFT',
+        authorId,
+        tenantId: String(tenantId || dom.tenantId),
+        languageId: lang.id,
+        images,
+        categories: catIds.length ? { connect: catIds.map((id: string) => ({ id })) } : undefined as any,
+        contentJson: {
+          raw: { title: finalTitle, content, images, categoryIds: catIds, languageCode, aiQueue: { web: true, short: true, newspaper: false } },
+          aiQueue: { web: true, short: true, newspaper: false },
+          aiStatus: 'PENDING'
+        }
+      }
+    });
+
+    return res.status(202).json({ articleId: article.id, queued: true, aiQueue: { web: true, short: true, newspaper: false } });
+  } catch (e) {
+    console.error('composeChatGptRewriteController error', e);
+    return res.status(500).json({ error: 'Failed to queue rewrite' });
+  }
+};
+
+export const composeGeminiRewriteController = async (req: Request, res: Response) => {
+  // Provider selection is key-based in aiProvider; this endpoint queues the same job shape.
+  return composeChatGptRewriteController(req, res);
+};
+
+export const createRawArticleController = async (req: Request, res: Response) => {
+  try {
+    const { tenantId, domainId, reporterId, languageCode, title = '', content, categoryIds = [], coverImageUrl, media } = req.body || {};
+    if (!domainId || !reporterId || !languageCode || !content) return res.status(400).json({ error: 'domainId, reporterId, languageCode, content are required' });
+
+    const dom = await prisma.domain.findUnique({ where: { id: String(domainId) } });
+    if (!dom) return res.status(400).json({ error: 'Invalid domainId' });
+
+    const lang = await prisma.language.findUnique({ where: { code: String(languageCode) } });
+    if (!lang) return res.status(400).json({ error: 'Invalid languageCode' });
+
+    const authorId = await resolveReporterUserId(String(reporterId));
+    if (!authorId) return res.status(400).json({ error: 'Invalid reporterId' });
+
+    const catIds = (Array.isArray(categoryIds) ? categoryIds : []).map((x: any) => String(x || '').trim()).filter(Boolean);
+    const images = collectMediaUrls(coverImageUrl, media);
+
+    const raw = await (prisma as any).rawArticle.create({
+      data: {
+        tenantId: String(tenantId || dom.tenantId),
+        domainId: String(domainId),
+        reporterId: String(reporterId),
+        languageId: lang.id,
+        title: String(title || ''),
+        content: String(content),
+        categoryIds: catIds,
+        coverImageUrl: coverImageUrl || null,
+        media: media || null,
+        status: 'NEW',
+        aiProvider: 'openai'
+      }
+    });
+
+    const baseArticle = await prisma.article.create({
+      data: {
+        title: String(title || '').trim() || 'Raw Article',
+        content: String(content || '').trim(),
+        type: 'reporter',
+        status: 'DRAFT',
+        authorId,
+        tenantId: String(tenantId || dom.tenantId),
+        languageId: lang.id,
+        images,
+        categories: catIds.length ? { connect: catIds.map((id: string) => ({ id })) } : undefined as any,
+        contentJson: {
+          rawArticleId: raw.id,
+          raw: { title, content, images, categoryIds: catIds, languageCode, rawArticleId: raw.id, aiQueue: { web: true, short: true, newspaper: true } },
+          aiQueue: { web: true, short: true, newspaper: true },
+          aiStatus: 'PENDING'
+        }
+      }
+    });
+
+    await (prisma as any).rawArticle.update({
+      where: { id: raw.id },
+      data: { status: 'QUEUED', usage: { articleId: baseArticle.id, queue: 'postgres', queuedAt: new Date().toISOString() } }
+    }).catch(() => null);
+
+    return res.status(201).json({ id: raw.id, status: 'QUEUED', queuedArticleId: baseArticle.id });
+  } catch (e) {
+    console.error('createRawArticleController error', e);
+    return res.status(500).json({ error: 'Failed to store raw article' });
+  }
+};
+
+export const getRawArticleStatusController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params as any;
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const raw = await (prisma as any).rawArticle.findUnique({ where: { id: String(id) } });
+    if (!raw) return res.status(404).json({ error: 'Not Found' });
+    const usage = (raw as any).usage || {};
+    return res.json({ id: raw.id, status: raw.status, errorCode: raw.errorCode || null, usage, webArticleId: raw.webArticleId || null, shortNewsId: raw.shortNewsId || null });
+  } catch (e) {
+    console.error('getRawArticleStatusController error', e);
+    return res.status(500).json({ error: 'Failed to fetch raw article status' });
+  }
+};
+
+export const getArticleAiStatusController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params as any;
+    if (!id) return res.status(400).json({ error: 'id required' });
+
+    const user: any = (req as any).user;
+    const roleName = String(user?.role?.name || '');
+
+    let article: any = null;
+    if (roleName === 'SUPER_ADMIN') {
+      article = await prisma.article.findUnique({
+        where: { id },
+        select: { id: true, tenantId: true, status: true, createdAt: true, updatedAt: true, contentJson: true },
+      });
+    } else {
+      const scope = await resolveTenantScope(req);
+      if ('error' in scope) return res.status(scope.status).json({ error: scope.error });
+      article = await prisma.article.findFirst({
+        where: { id, tenantId: scope.tenantId },
+        select: { id: true, tenantId: true, status: true, createdAt: true, updatedAt: true, contentJson: true },
+      });
+    }
+
+    if (!article) return res.status(404).json({ error: 'Not found' });
+
+    const cj: any = article.contentJson || {};
+    const q: any = cj.aiQueue || {};
+    return res.json({
+      articleId: article.id,
+      tenantId: article.tenantId,
+      status: article.status,
+      ai: {
+        aiStatus: cj.aiStatus || null,
+        aiMode: cj.aiMode || null,
+        aiStartedAt: cj.aiStartedAt || null,
+        aiFinishedAt: cj.aiFinishedAt || null,
+        aiError: cj.aiError || null,
+        aiSkipReason: cj.aiSkipReason || null,
+        queue: {
+          web: Boolean(q.web),
+          short: Boolean(q.short),
+          newspaper: Boolean(q.newspaper),
+        },
+        outputs: {
+          webArticleId: cj.webArticleId || null,
+          shortNewsId: cj.shortNewsId || null,
+          newspaperArticleId: cj.newspaperArticleId || null,
+        },
+      },
+      externalArticleId: cj.externalArticleId || null,
+      rawArticleId: cj.rawArticleId || cj?.raw?.rawArticleId || null,
+      callbackUrl: cj.callbackUrl || null,
+      updatedAt: article.updatedAt,
+      createdAt: article.createdAt,
+    });
+  } catch (e) {
+    console.error('getArticleAiStatusController error', e);
+    return res.status(500).json({ error: 'Failed to fetch AI status' });
+  }
+};
+
+export const processRawArticleNowController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params as any;
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const raw = await (prisma as any).rawArticle.findUnique({ where: { id: String(id) } });
+    if (!raw) return res.status(404).json({ error: 'Not Found' });
+
+    const usage = (raw as any).usage || {};
+    const articleId = usage?.articleId ? String(usage.articleId) : null;
+    if (articleId) {
+      const art = await prisma.article.findUnique({ where: { id: articleId } });
+      if (art) {
+        const cj: any = (art as any).contentJson || {};
+        const nextCJ = {
+          ...cj,
+          rawArticleId: cj.rawArticleId || raw.id,
+          raw: { ...(cj.raw || {}), rawArticleId: cj.rawArticleId || raw.id },
+          aiQueue: { ...(cj.aiQueue || {}), web: true, short: true, newspaper: true },
+          aiStatus: 'PENDING'
+        };
+        await prisma.article.update({ where: { id: articleId }, data: { contentJson: nextCJ } });
+        await (prisma as any).rawArticle.update({ where: { id: raw.id }, data: { status: 'QUEUED' } }).catch(() => null);
+        return res.status(202).json({ id: raw.id, status: 'QUEUED', queuedArticleId: articleId });
+      }
+    }
+
+    return res.status(409).json({ error: 'Raw article is not linked to a base Article yet. Recreate via /articles/raw.' });
+  } catch (e) {
+    console.error('processRawArticleNowController error', e);
+    return res.status(500).json({ error: 'Failed to queue raw article processing' });
   }
 };

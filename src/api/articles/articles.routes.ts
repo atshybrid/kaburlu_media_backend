@@ -2,10 +2,12 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { createArticleController, createTenantArticleController, createWebStoryController, updateArticleController, deleteArticleController } from './articles.controller';
-import { composeAIArticleController, enqueueRawArticleController, composeWebOnlyController, composeBlocksController, composeSimpleArticleController } from './articles.ai.controller';
-import { getWebArticleByIdPublic, getWebArticlesByDomainPublic, listTitlesAndHeroesPublic, listPublicArticles, updateWebArticleStatus } from './articles.public.controller';
+import { composeAIArticleController, enqueueRawArticleController, composeWebOnlyController, composeBlocksController, composeSimpleArticleController, composeChatGptRewriteController, createRawArticleController, composeGeminiRewriteController, processRawArticleNowController, getArticleAiStatusController } from './articles.ai.controller';
+import { getWebArticleByIdPublic, getWebArticlesByDomainPublic, listTitlesAndHeroesPublic, listPublicArticles, updateWebArticleStatus, getWebArticleBySlugPublic } from './articles.public.controller';
+import { listNewspaperArticles, getNewspaperArticle, updateNewspaperArticle, createNewspaperArticle } from './newspaper.controller';
 import prisma from '../../lib/prisma';
 import { requireReporterOrAdmin } from '../middlewares/authz';
+import { getRawArticleStatusController } from './articles.ai.controller';
 
 const router = Router();
 
@@ -73,6 +75,40 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
  *     responses:
  *       201:
  *         description: Created
+ */
+router.get('/raw/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, getRawArticleStatusController);
+
+/**
+ * @swagger
+ * /articles/raw/{id}:
+ *   get:
+ *     summary: Get raw article processing status
+ *     description: Returns the current status of a raw article and any generated output IDs.
+ *     tags: [Articles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: RawArticle ID returned by POST /articles/raw
+ *     responses:
+ *       200:
+ *         description: Status fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "cmixaid2c0000ugo86hnbgrah"
+ *               status: "NEW"
+ *               errorCode: null
+ *               outputs:
+ *                 webArticleId: "cmixbweb0001ug..."
+ *                 shortNewsId: "cmixbsn0002ug..."
+ *                 newspaperArticleId: "cmixbnp0003ug..."
+ *       404:
+ *         description: Not Found
  */
 router.post('/tenant', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createTenantArticleController);
 
@@ -188,6 +224,60 @@ router.post('/webstories', passport.authenticate('jwt', { session: false }), req
  *                     title: "తెలంగాణ బడ్జెట్ 2025"
  *                     status: "published"
  */
+/**
+ * @swagger
+ * /articles/ai/compose:
+ *   post:
+ *     summary: Compose AI article (Web, Short, Newspaper)
+ *     description: |
+ *       Main entry point for AI generation.
+ *       Use header "X-Generate" with values: web, web+short, or web+newspaper.
+ *       Example header: "X-Generate: web+short+newspaper" to get all 3 formats.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: header
+ *         name: X-Generate
+ *         schema: { type: string, enum: ["web", "web+short", "web+newspaper", "web+short+newspaper"] }
+ *         required: false
+ *         description: Control which variants to generate (select one)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, content, categoryIds]
+ *             properties:
+ *               tenantId: { type: string }
+ *               domainId: { type: string }
+ *               languageCode: { type: string, example: 'te' }
+ *               title: { type: string }
+ *               content: { type: string }
+ *               images: { type: array, items: { type: string } }
+ *               categoryIds: { type: array, items: { type: string } }
+ *               isPublished: { type: boolean }
+ *               raw: { type: object, description: 'Original rich payload from editor' }
+ *           example:
+ *             tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *             languageCode: "te"
+ *             title: "Heavy Rains in Hyderabad"
+ *             content: "Detailed report about the rains..."
+ *             categoryIds: ["clq9zsm0d0000vcwz1z2z3z4z"]
+ *             images: ["https://example.com/image.jpg"]
+ *             isPublished: false
+ *             raw: {}
+ *     responses:
+ *       201:
+ *         description: Created
+ *         content:
+ *           application/json:
+ *             example:
+ *               articleId: "cmijx123abc"
+ *               webArticleId: "cmijklm456"
+ *               shortNewsId: "..."
+ *               newspaperArticleId: "..."
+ *     tags: [Articles]
+ */
 router.post('/ai/compose', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeAIArticleController);
 
 /**
@@ -239,7 +329,17 @@ router.post('/ai/compose', passport.authenticate('jwt', { session: false }), req
  *                     title: "Festival Highlights"
  *                     status: "published"
  */
-router.post('/ai/web', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeWebOnlyController);
+/**
+ * @swagger
+ * /articles/ai/web:
+ *   post:
+ *     deprecated: true
+ *     summary: DEPRECATED - use POST /articles/ai/blocks
+ *     tags: [Articles]
+ */
+router.post('/ai/web', (_req, res) => {
+	return res.status(410).json({ error: 'Deprecated. Use POST /articles/ai/blocks' });
+});
 
 /**
  * @swagger
@@ -287,7 +387,111 @@ router.post('/ai/web', passport.authenticate('jwt', { session: false }), require
  *                     title: "Festival Highlights"
  *                     status: "published"
  */
+/**
+ * Note: This is the final POST API for website articles. SUPER_ADMIN and tenant-scoped reporter/admin tokens are allowed.
+ */
 router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeBlocksController);
+
+/**
+ * @swagger
+ * /articles/ai/chatgpt/rewrite:
+ *   post:
+ *     summary: Rewrite via ChatGPT (long SEO article + short news)
+ *     description: Stores raw in Article, calls ChatGPT with rewrite prompt, saves TenantWebArticle and ShortNews.
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [domainName, categoryIds, languageCode, reporterId, rawContent]
+ *             properties:
+ *               tenantId: { type: string }
+ *               domainName: { type: string }
+ *               categoryIds: { type: array, items: { type: string } }
+ *               languageCode: { type: string }
+ *               coverImageUrl: { type: string }
+ *               media:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, enum: [image, video] }
+ *                     url: { type: string }
+ *               reporterId: { type: string }
+ *               rawContent: { type: string }
+ *     responses:
+ *       201:
+ *         description: Created
+ */
+router.post('/ai/chatgpt/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeChatGptRewriteController);
+/**
+ * @swagger
+ * /articles/ai/gemini/rewrite:
+ *   post:
+ *     summary: Rewrite via Gemini (long SEO article + short news)
+ *     description: Stores raw in Article, calls Gemini with rewrite prompt, saves TenantWebArticle and ShortNews.
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [domainName, categoryIds, languageCode, reporterId, rawContent]
+ *             properties:
+ *               tenantId: { type: string }
+ *               domainName: { type: string }
+ *               categoryIds: { type: array, items: { type: string } }
+ *               languageCode: { type: string }
+ *               coverImageUrl: { type: string }
+ *               media:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, enum: [image, video] }
+ *                     url: { type: string }
+ *               reporterId: { type: string }
+ *               rawContent: { type: string }
+ *     responses:
+ *       201:
+ *         description: Created
+ */
+router.post('/ai/gemini/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeGeminiRewriteController);
+
+/**
+ * @swagger
+ * /articles/raw:
+ *   post:
+ *     summary: Store a raw article for later AI processing
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [domainId, reporterId, languageCode, content]
+ *             properties:
+ *               tenantId: { type: string }
+ *               domainId: { type: string }
+ *               reporterId: { type: string }
+ *               languageCode: { type: string }
+ *               title: { type: string }
+ *               content: { type: string }
+ *               categoryIds: { type: array, items: { type: string } }
+ *               coverImageUrl: { type: string }
+ *               media: { type: array, items: { type: object } }
+ *     responses:
+ *       201:
+ *         description: Raw stored
+ */
+router.post('/raw', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createRawArticleController);
 
 /**
  * @swagger
@@ -409,7 +613,17 @@ router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requ
  *       500:
  *         description: Server error while persisting TenantWebArticle
  */
-router.post('/ai/simple', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeSimpleArticleController);
+/**
+ * @swagger
+ * /articles/ai/simple:
+ *   post:
+ *     deprecated: true
+ *     summary: DEPRECATED - use POST /articles/ai/blocks
+ *     tags: [Articles]
+ */
+router.post('/ai/simple', (_req, res) => {
+	return res.status(410).json({ error: 'Deprecated. Use POST /articles/ai/blocks' });
+});
 
 /**
  * @swagger
@@ -526,6 +740,11 @@ router.get('/public/web/list', listTitlesAndHeroesPublic);
  *     summary: List public TenantWebArticles (filter by domain name)
  *     tags: [Articles]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Preferred. Domain name to scope articles (e.g., example.com)
  *       - in: query
  *         name: domainName
  *         schema: { type: string }
@@ -576,6 +795,58 @@ router.get('/public/articles', listPublicArticles);
 
 /**
  * @swagger
+ * /articles/public/articles/{slug}:
+ *   get:
+ *     summary: Get public article by slug (scoped by domain header)
+ *     tags: [Articles]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Preferred. Domain name to scope articles (e.g., example.com)
+ *       - in: query
+ *         name: domainName
+ *         required: false
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Article
+ */
+router.get('/public/articles/:slug', getWebArticleBySlugPublic);
+
+/**
+ * @swagger
+ * /articles/public/web/slug/{slug}:
+ *   get:
+ *     summary: Get public article by slug (scoped by domain header)
+ *     tags: [Articles]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Preferred. Domain name to scope articles (e.g., example.com)
+ *       - in: query
+ *         name: domainName
+ *         required: false
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Article
+ */
+router.get('/public/web/slug/:slug', getWebArticleBySlugPublic);
+
+/**
+ * @swagger
  * /articles/web/{id}/status:
  *   patch:
  *     summary: Update TenantWebArticle status
@@ -586,6 +857,11 @@ router.get('/public/articles', listPublicArticles);
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Preferred. Domain name to scope articles (e.g., example.com)
  *     requestBody:
  *       required: true
  *       content:
@@ -635,6 +911,255 @@ router.patch('/web/:id/status', passport.authenticate('jwt', { session: false })
 
 /**
  * @swagger
+ * /articles/newspaper:
+ *   get:
+ *     summary: List newspaper articles (Print Desk)
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 50 }
+ *         description: Max items to return
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, example: 0 }
+ *         description: Pagination offset
+ *     responses:
+ *       200:
+ *         description: List
+ *         content:
+ *           application/json:
+ *             example:
+ *               total: 1
+ *               items:
+ *                 - id: "cmxxxx"
+ *                   tenantId: "cmtenant"
+ *                   baseArticleId: "cmarticle"
+ *                   title: "Budget Highlights"
+ *                   subTitle: "Key takeaways"
+ *                   heading: "Budget Highlights"
+ *                   points: ["Point one", "Point two"]
+ *                   dateline: "Hyderabad, Dec 21, 2025"
+ *                   placeName: "Hyderabad"
+ *                   status: "DRAFT"
+ *                   createdAt: "2025-12-21T10:00:00.000Z"
+ */
+router.get('/newspaper', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, listNewspaperArticles);
+
+/**
+ * @swagger
+ * /articles/newspaper:
+ *   post:
+ *     summary: Create newspaper article (Tenant Reporter)
+ *     description: |
+ *       Stores a print-ready NewspaperArticle linked to a base Article, and queues AI processing.
+ *
+ *       AI behavior is controlled only by tenant feature flag `TenantFeatureFlags.aiArticleRewriteEnabled`:
+ *       - When enabled (default): `aiMode=FULL` and the worker generates Newspaper + Web + ShortNews using prompt key `ai_rewrite_prompt_true`.
+ *       - When disabled: `aiMode=LIMITED` and the worker generates SEO + ShortNews using prompt key `ai_rewrite_prompt_false` (no newspaper rewrite).
+ *
+ *       SUPER_ADMIN testing override (does not persist):
+ *       - Add query `forceAiRewriteEnabled=true` to force FULL (SUPER_ADMIN only)
+ *       - Add query `forceAiRewriteEnabled=false` to force LIMITED (allowed for Reporter/Admin too)
+ *
+ *       This endpoint always returns `202 Accepted` after storing the records.
+ *     tags: [Articles, AI Rewrite]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: forceAiRewriteEnabled
+ *         required: false
+ *         schema: { type: boolean }
+ *         description: "Forces aiMode for this request without changing tenant subscription. Safety: true is SUPER_ADMIN only; false allowed for Reporter/Admin."
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title]
+ *             properties:
+ *               language:
+ *                 type: string
+ *                 example: 'te'
+ *                 description: Language code (alias of languageCode)
+ *               languageCode:
+ *                 type: string
+ *                 example: 'te'
+ *                 description: Language code
+ *               domainId:
+ *                 type: string
+ *                 description: Optional domain scope for TenantWebArticle (recommended for public slug API). If omitted, server will pick tenant primary/active domain.
+ *               categoryId: { type: string }
+ *               category: { type: string }
+ *               title: { type: string, maxLength: 50 }
+ *               subTitle: { type: string, maxLength: 50 }
+ *               heading: { type: string }
+ *               dateLine: { type: string }
+ *               dateline: { type: string }
+ *               publishedAt: { type: string }
+ *               lead: { type: string }
+ *               content:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, example: 'paragraph' }
+ *                     text: { type: string }
+ *               bulletPoints:
+ *                 type: array
+ *                 maxItems: 5
+ *                 items: { type: string, description: 'Each item max 5 words' }
+ *
+ *               # Media / hero image (optional)
+ *               # Any of these can be provided; server will normalize into Article.images and contentJson.raw.images.
+ *               coverImageUrl:
+ *                 type: string
+ *                 description: Primary hero image URL
+ *                 example: "https://cdn.example.com/cover.webp"
+ *               images:
+ *                 type: array
+ *                 description: Image URLs (first becomes hero if coverImageUrl not provided)
+ *                 items: { type: string }
+ *               mediaUrls:
+ *                 type: array
+ *                 description: Image/video URLs
+ *                 items: { type: string }
+ *               location:
+ *                 type: object
+ *                 description: Location reference used for dateline and shortnews filtering
+ *                 properties:
+ *                   villageId: { type: string, nullable: true }
+ *                   villageName: { type: string, nullable: true }
+ *                   mandalId: { type: string, nullable: true }
+ *                   mandalName: { type: string, nullable: true }
+ *                   districtId: { type: string, nullable: true }
+ *                   districtName: { type: string, nullable: true }
+ *                   stateId: { type: string, nullable: true }
+ *                   stateName: { type: string, nullable: true }
+ *                   city: { type: string, nullable: true }
+ *               media:
+ *                 type: object
+ *                 description: Structured media list (alternative to images/mediaUrls)
+ *                 properties:
+ *                   images:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         url: { type: string }
+ *                         alt: { type: string, nullable: true }
+ *                         caption: { type: string, nullable: true }
+ *                   videos:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         url: { type: string }
+ *                         caption: { type: string, nullable: true }
+ *               seo:
+ *                 type: object
+ *                 properties:
+ *                   metaTitle: { type: string }
+ *                   metaDescription: { type: string }
+ *               tags: { type: array, items: { type: string } }
+ *               status: { type: string, enum: ['draft','published','pending','DRAFT','PUBLISHED','PENDING'] }
+ *
+ *               callbackUrl:
+ *                 type: string
+ *                 description: Optional webhook URL (http/https) to receive AI completion notifications
+ *                 example: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
+ *           examples:
+ *             basic:
+ *               summary: Basic payload
+ *               value:
+ *                 languageCode: "te"
+ *                 title: "Budget Highlights"
+ *                 subTitle: "Key takeaways"
+ *                 lead: "Today the finance minister announced..."
+ *                 coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                 content:
+ *                   - type: "paragraph"
+ *                     text: "Paragraph 1..."
+ *                   - type: "paragraph"
+ *                     text: "Paragraph 2..."
+ *                 bulletPoints: ["Point one", "Point two"]
+ *                 location:
+ *                   districtId: "cmdistrict"
+ *                   districtName: "Hyderabad"
+ *                   stateName: "Telangana"
+ *                 status: "draft"
+ *                 callbackUrl: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
+ *     responses:
+ *       202:
+ *         description: Accepted (stored and queued for background AI processing)
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: "Newspaper article stored; FULL AI rewrite queued"
+ *               externalArticleId: "ART202512210001"
+ *               articleId: "cmarticle"
+ *               baseArticleId: "cmarticle"
+ *               newspaperArticleId: "cmnp"
+ *               tenantAiRewriteEnabled: true
+ *               aiMode: "FULL"
+ *               statusUrl: "/articles/cmarticle/ai-status"
+ *               callbackUrlAccepted: true
+ *       400:
+ *         description: Validation error (e.g., title missing, title>50, subTitle>50, bulletPoints invalid)
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.post('/newspaper', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createNewspaperArticle);
+
+/**
+ * @swagger
+ * /articles/newspaper/{id}:
+ *   get:
+ *     summary: Get single newspaper article
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     responses:
+ *       200: { description: Details }
+ */
+router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, getNewspaperArticle);
+
+/**
+ * @swagger
+ * /articles/newspaper/{id}:
+ *   patch:
+ *     summary: Update newspaper article (Print Desk)
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string }
+ *               heading: { type: string }
+ *               points: { type: array, items: { type: string } }
+ *               status: { type: string }
+ *               content: { type: string }
+ *               dateline: { type: string }
+ *     responses:
+ *       200: { description: Updated }
+ */
+router.patch('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, updateNewspaperArticle);
+
+/**
+ * @swagger
  * /articles/ai/raw:
  *   post:
  *     summary: Enqueue raw article for background AI processing
@@ -665,6 +1190,103 @@ router.patch('/web/:id/status', passport.authenticate('jwt', { session: false })
  *         description: Queued for background processing
  */
 router.post('/ai/raw', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, enqueueRawArticleController);
+
+/**
+ * @swagger
+ * /articles/queue/pending:
+ *   get:
+ *     summary: List pending AI jobs (Articles and RawArticles)
+ *     description: Returns items that are waiting for or currently in AI processing.
+ *     tags: [Articles]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pending items
+ *         content:
+ *           application/json:
+ *             example:
+ *               articles:
+ *                 - id: "cmijx123abc"
+ *                   aiStatus: "PENDING"
+ *                   aiQueue: { web: true, short: false, newspaper: false }
+ *               rawArticles:
+ *                 - id: "cmixaid2c0000ugo86hnbgrah"
+ *                   status: "NEW"
+ */
+router.get('/queue/pending', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, async (_req, res) => {
+	try {
+		const articles = await prisma.article.findMany({
+			where: {
+				OR: [
+					{ contentJson: { path: ['aiStatus'], equals: 'PENDING' } },
+					{ contentJson: { path: ['aiStatus'], equals: 'PROCESSING' } },
+				]
+			},
+			select: { id: true, contentJson: true, createdAt: true }
+		});
+		const rawArticles = await (prisma as any).rawArticle.findMany({
+			where: { status: { in: ['NEW', 'PROCESSING'] } },
+			select: { id: true, status: true, createdAt: true }
+		});
+		return res.json({
+			articles: articles.map(a => ({ id: a.id, aiStatus: (a as any).contentJson?.aiStatus, aiQueue: (a as any).contentJson?.aiQueue, createdAt: a.createdAt })),
+			rawArticles
+		});
+	} catch (e) {
+		console.error('GET /articles/queue/pending error', e);
+		return res.status(500).json({ error: 'Failed to list pending items' });
+	}
+});
+
+/**
+ * @swagger
+ * /articles/raw/{id}/process:
+ *   post:
+ *     summary: Process a raw article immediately (fast rewrite)
+ *     description: Triggers rewrite using Gemini (flash), creates TenantWebArticle and ShortNews, and updates raw outputs.
+ *     tags: [Articles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: RawArticle ID
+ *     responses:
+ *       201:
+ *         description: Processed
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "cmixaid2c0000ugo86hnbgrah"
+ *               status: "DONE"
+ *               outputs:
+ *                 webArticleId: "cmixbweb0001ug..."
+ *                 shortNewsId: "cmixbsn0002ug..."
+ */
+router.post('/raw/:id/process', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, processRawArticleNowController);
+
+/**
+ * @swagger
+ * /articles/{id}/ai-status:
+ *   get:
+ *     summary: Get AI rewrite queue status for an article
+ *     description: Returns current Postgres-queue status (aiMode/aiStatus), queued flags, and generated output IDs.
+ *     tags: [Articles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Status
+ */
+router.get('/:id/ai-status', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, getArticleAiStatusController);
 
 /**
  * @swagger

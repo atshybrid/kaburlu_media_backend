@@ -56,6 +56,11 @@ export const loginController = async (req: Request, res: Response) => {
   } catch (error) {
     // Improve visibility for debugging unexpected login errors
     console.error('[Auth] loginController error:', error);
+      // Map known HttpException-style errors to proper status codes
+      const err: any = error as any;
+      if (typeof err?.status === 'number') {
+        return res.status(err.status).json({ success: false, message: err.message || 'Error' });
+      }
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

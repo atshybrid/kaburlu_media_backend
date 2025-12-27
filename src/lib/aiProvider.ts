@@ -1,4 +1,4 @@
-import { AI_PROVIDER, AI_TIMEOUT_MS, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_OPENAI_MODEL_SEO } from './aiConfig';
+import { AI_PROVIDER, AI_TIMEOUT_MS, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_GEMINI_MODEL_REWRITE, DEFAULT_TEMPERATURE, DEFAULT_MAX_OUTPUT_TOKENS_REWRITE, DEFAULT_MAX_OUTPUT_TOKENS_DEFAULT, DEFAULT_OPENAI_MODEL_SEO } from './aiConfig';
 
 type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article' | 'newspaper';
 
@@ -9,17 +9,31 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-      const modelName = DEFAULT_GEMINI_MODEL_SEO; // reuse for all purposes unless overridden via env
+      // Use a faster model for rewrite/short outputs if available
+      const modelName = (purpose === 'rewrite' || purpose === 'shortnews_ai_article' || purpose === 'newspaper')
+        ? (DEFAULT_GEMINI_MODEL_REWRITE || DEFAULT_GEMINI_MODEL_SEO)
+        : DEFAULT_GEMINI_MODEL_SEO;
       const model = genAI.getGenerativeModel({ model: modelName });
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-      const res = await model.generateContent({ contents: [{ parts: [{ text: prompt }] }] }, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+      // Keep outputs bounded to reduce latency; callers expect plain text or JSON in text form
+      const generationConfig: any = {
+        temperature: DEFAULT_TEMPERATURE,
+        maxOutputTokens: (purpose === 'rewrite' || purpose === 'shortnews_ai_article' || purpose === 'newspaper')
+          ? DEFAULT_MAX_OUTPUT_TOKENS_REWRITE
+          : DEFAULT_MAX_OUTPUT_TOKENS_DEFAULT,
+      };
+      const res = await model.generateContent({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig,
+      }, { signal: ctrl.signal }).finally(() => clearTimeout(t));
       const text = res?.response?.text?.() || '';
       const usage = {
         provider: 'gemini',
         purpose,
         promptChars: prompt.length,
         responseChars: text.length,
+        model: modelName,
       };
       if (text) return { text, usage };
     } catch {}
@@ -29,24 +43,26 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       // Lazy import to avoid bundling
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const axios = require('axios');
-      const model = DEFAULT_OPENAI_MODEL_SEO;
+      const model = 'gpt-5.1';
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      const response = await axios.post('https://api.openai.com/v1/responses', {
         model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 400,
+        input: prompt
       }, {
-        headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+        headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
         signal: ctrl.signal,
       }).finally(() => clearTimeout(t));
-      const content = response?.data?.choices?.[0]?.message?.content || '';
+      const data = response?.data;
+      const content = Array.isArray(data?.output?.[0]?.content)
+        ? data.output[0].content.map((c: any) => c.text || '').join('\n')
+        : (data?.output_text || data?.output || '');
       const usage = {
         provider: 'openai',
         purpose,
-        prompt_tokens: response?.data?.usage?.prompt_tokens,
-        completion_tokens: response?.data?.usage?.completion_tokens,
-        total_tokens: response?.data?.usage?.total_tokens,
+        prompt_tokens: data?.usage?.prompt_tokens,
+        completion_tokens: data?.usage?.completion_tokens,
+        total_tokens: data?.usage?.total_tokens,
         promptChars: prompt.length,
         responseChars: content.length,
         model,
@@ -55,4 +71,18 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
     } catch {}
   }
   return { text: '' };
+}
+
+export async function openaiRespond(input: string, model = 'gpt-5.1'): Promise<{ text: string; raw: any }> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const axios = require('axios');
+  if (!OPENAI_KEY) throw new Error('Missing OPENAI_KEY');
+  const response = await axios.post('https://api.openai.com/v1/responses', { model, input }, {
+    headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' }
+  });
+  const data = response?.data;
+  const text = Array.isArray(data?.output?.[0]?.content)
+    ? data.output[0].content.map((c: any) => c.text || '').join('\n')
+    : (data?.output_text || data?.output || '');
+  return { text, raw: data };
 }

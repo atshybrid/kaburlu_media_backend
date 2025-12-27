@@ -155,7 +155,9 @@ export const listTitlesAndHeroesPublic = async (req: Request, res: Response) => 
 
 export const listPublicArticles = async (req: Request, res: Response) => {
   try {
-    const { domainName } = req.query as any;
+    const { domainName: qDomainName } = req.query as any;
+    const hDomain = (req.headers['x-tenant-domain'] || req.headers['x-tenant'] || req.headers['x-domain']) as string | undefined;
+    const domainName = (qDomainName as string) || hDomain;
     const { limit = '20', offset = '0', status = 'PUBLISHED' } = req.query as any;
     const take = Math.max(1, Math.min(100, parseInt(String(limit)) || 20));
     const skip = Math.max(0, parseInt(String(offset)) || 0);
@@ -251,5 +253,60 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
   } catch (e) {
     console.error('updateWebArticleStatus error', e);
     return res.status(500).json({ error: 'Failed to update status' });
+  }
+};
+
+export const getWebArticleBySlugPublic = async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params as any;
+    const hDomain = (req.headers['x-tenant-domain'] || req.headers['x-tenant'] || req.headers['x-domain']) as string | undefined;
+    const qDomain = (req.query?.domainName as string) || undefined;
+    const domainName = hDomain || qDomain;
+    if (!domainName) return res.status(400).json({ error: 'Domain required. Provide X-Tenant-Domain header or domainName query' });
+    const domain = await prisma.domain.findFirst({ where: { domain: String(domainName) }, select: { id: true } });
+    if (!domain) return res.status(404).json({ error: 'Domain not found' });
+
+    // Only published by default
+    const a = await prisma.tenantWebArticle.findFirst({
+      where: { domainId: domain.id, slug, status: 'PUBLISHED' },
+      select: {
+        id: true, tenantId: true, domainId: true, languageId: true,
+        title: true, slug: true, status: true, coverImageUrl: true,
+        contentJson: true, seoTitle: true, metaDescription: true, jsonLd: true,
+        tags: true, publishedAt: true, authorId: true, createdAt: true, updatedAt: true
+      }
+    });
+    if (!a) return res.status(404).json({ error: 'Not found' });
+    const cj: any = a.contentJson || {};
+    const resp = {
+      meta: {
+        seoTitle: a.seoTitle || cj?.meta?.seoTitle || '',
+        metaDescription: a.metaDescription || cj?.meta?.metaDescription || ''
+      },
+      slug: a.slug,
+      tags: a.tags || cj?.tags || [],
+      audit: cj?.audit || { createdAt: a.createdAt, updatedAt: a.updatedAt, createdBy: a.authorId || '', updatedBy: a.authorId || '' },
+      media: cj?.media || { images: [], videos: [] },
+      title: a.title || cj?.title || '',
+      blocks: cj?.blocks || [],
+      jsonLd: a.jsonLd || cj?.jsonLd || {},
+      status: 'published',
+      authors: cj?.authors || (a.authorId ? [{ id: a.authorId, name: '', role: 'reporter' }] : []),
+      excerpt: cj?.excerpt || '',
+      aiStatus: cj?.aiStatus || undefined,
+      subtitle: cj?.subtitle || '',
+      tenantId: a.tenantId,
+      plainText: cj?.plainText || '',
+      categories: cj?.categories || [],
+      coverImage: cj?.coverImage || { alt: '', url: a.coverImageUrl || '', caption: '' },
+      contentHtml: cj?.contentHtml || '',
+      publishedAt: a.publishedAt || cj?.publishedAt || null,
+      languageCode: cj?.languageCode || '',
+      readingTimeMin: cj?.readingTimeMin || 0
+    };
+    return res.json(resp);
+  } catch (e) {
+    console.error('getWebArticleBySlugPublic error', e);
+    return res.status(500).json({ error: 'Failed to fetch' });
   }
 };

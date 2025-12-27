@@ -1,4 +1,5 @@
 // src/app.ts
+import 'reflect-metadata';
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -61,12 +62,17 @@ const app = express();
  *
  * - Or set CORS_ALLOW_ALL=true to allow all origins (only for dev/testing).
  */
+import { ensureCoreSeeds } from './lib/bootstrap';
 const defaultWhitelist = [
   'http://localhost:3000',
   'http://localhost:8080',
   'https://ai-kaburlu-backend.onrender.com',
   'https://app.kaburlumedia.com'
+
 ];
+
+// Note: Core seeds are triggered from index.ts AFTER Prisma connects to avoid noisy
+// errors during transient DB connectivity. Do not call ensureCoreSeeds here.
 
 const envOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)

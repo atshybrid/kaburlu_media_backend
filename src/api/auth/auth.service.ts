@@ -34,7 +34,14 @@ const validateOtp = async (mobileNumber: string, otp: string): Promise<boolean> 
 export const login = async (loginDto: MpinLoginDto) => {
     console.log("loginDto", loginDto)
   console.log("Attempting to log in with mobile number:", loginDto.mobileNumber);
-  const user = await findUserByMobileNumber(loginDto.mobileNumber);
+    let user: any = null;
+    try {
+      user = await findUserByMobileNumber(loginDto.mobileNumber);
+    } catch (e: any) {
+      console.error('[Auth] DB error while fetching user by mobile:', e?.message || e);
+      // Signal a temporary service outage instead of throwing generic 500
+      throw new HttpException(503, 'Authentication service temporarily unavailable');
+    }
   if (!user) {
     console.log("User not found for mobile number:", loginDto.mobileNumber);
     return null; // User not found
@@ -82,7 +89,7 @@ export const login = async (loginDto: MpinLoginDto) => {
   console.log("User role:", role);
   try {
     // Fetch reporter record linked to this user (if any)
-    const reporter = await prisma.reporter.findUnique({ where: { userId: user.id }, include: { payments: true } });
+      const reporter = await prisma.reporter.findUnique({ where: { userId: user.id }, include: { payments: true } });
     if (reporter && role?.name !== 'SUPER_ADMIN') {
       const now = new Date();
       const currentYear = now.getUTCFullYear();

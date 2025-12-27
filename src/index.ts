@@ -4,6 +4,7 @@ import app from './app';
 import prisma from './lib/prisma';
 import http from 'http';
 import { config } from './config/env';
+import { ensureCoreSeeds } from './lib/bootstrap';
 
 const port = config.port;
 
@@ -22,6 +23,12 @@ async function start() {
           await prisma.$connect();
           connected = true;
           console.log('Prisma connected');
+          // Run core seeds only after successful DB connect
+          try {
+            await ensureCoreSeeds();
+          } catch (e) {
+            console.error('[Bootstrap] Core seed failed', e);
+          }
         } catch (e) {
           console.warn(`Prisma connect failed (attempt ${attempt}/${maxAttempts}):`, (e as any)?.message || e);
           if (attempt >= maxAttempts) {

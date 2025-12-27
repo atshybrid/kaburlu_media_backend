@@ -31,12 +31,19 @@ export const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 export const DEFAULT_GEMINI_MODEL_SEO = process.env.GEMINI_MODEL_SEO || 'gemini-1.5-flash';
 export const DEFAULT_GEMINI_MODEL_MODERATION = process.env.GEMINI_MODEL_MODERATION || 'gemini-1.5-flash';
 export const DEFAULT_GEMINI_MODEL_TRANSLATION = process.env.GEMINI_MODEL_TRANSLATION || 'gemini-1.5-pro';
+// Prefer a faster model for rewrite-style tasks unless explicitly overridden
+export const DEFAULT_GEMINI_MODEL_REWRITE = process.env.GEMINI_MODEL_REWRITE || 'gemini-1.5-flash';
 
 export const DEFAULT_OPENAI_MODEL_SEO = process.env.OPENAI_MODEL_SEO || 'gpt-4o-mini';
 export const DEFAULT_OPENAI_MODEL_MODERATION = process.env.OPENAI_MODEL_MODERATION || 'gpt-4o-mini';
 export const DEFAULT_OPENAI_MODEL_TRANSLATION = process.env.OPENAI_MODEL_TRANSLATION || 'gpt-4o-mini';
 
 export const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 12000);
+
+// Basic generation defaults; individual callers can override
+export const DEFAULT_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.6);
+export const DEFAULT_MAX_OUTPUT_TOKENS_REWRITE = Number(process.env.AI_MAX_OUTPUT_TOKENS_REWRITE || 2048);
+export const DEFAULT_MAX_OUTPUT_TOKENS_DEFAULT = Number(process.env.AI_MAX_OUTPUT_TOKENS_DEFAULT || 1024);
 
 export function aiEnabledFor(feature: 'seo' | 'moderation' | 'translation') {
   if (feature === 'seo') return AI_ENABLE_SEO;

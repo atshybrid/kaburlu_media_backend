@@ -179,4 +179,230 @@ router.get('/razorpay-config/_debug/list', auth, requireSuperAdmin, async (_req,
   }
 });
 
+/**
+ * @swagger
+ * /admin/ai/usage:
+ *   get:
+ *     summary: List AI usage events (SUPER_ADMIN)
+ *     tags: [AI Rewrite]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200: { description: Usage events }
+ */
+router.get('/ai/usage', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const tenantId = String((req.query as any).tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
+    const limitRaw = Number((req.query as any).limit || 50);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 50;
+
+    const rows = await (prisma as any).aiUsageEvent.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return res.json({ tenantId, count: rows.length, items: rows });
+  } catch (e) {
+    console.error('admin ai usage list error', e);
+    return res.status(500).json({ error: 'Failed to list AI usage' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/ai/usage/summary:
+ *   get:
+ *     summary: Summarize AI usage (SUPER_ADMIN)
+ *     tags: [AI Rewrite]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200: { description: Totals }
+ */
+router.get('/ai/usage/summary', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const tenantId = String((req.query as any).tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
+    const fromRaw = (req.query as any).from ? String((req.query as any).from) : '';
+    const toRaw = (req.query as any).to ? String((req.query as any).to) : '';
+    const from = fromRaw ? new Date(fromRaw) : null;
+    const to = toRaw ? new Date(toRaw) : null;
+    if (from && Number.isNaN(from.getTime())) return res.status(400).json({ error: 'Invalid from date' });
+    if (to && Number.isNaN(to.getTime())) return res.status(400).json({ error: 'Invalid to date' });
+
+    const where: any = { tenantId };
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = from;
+      if (to) where.createdAt.lte = to;
+    }
+
+    const agg = await (prisma as any).aiUsageEvent.aggregate({
+      where,
+      _count: { _all: true },
+      _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
+    });
+
+    return res.json({
+      tenantId,
+      range: { from: from ? from.toISOString() : null, to: to ? to.toISOString() : null },
+      count: agg?._count?._all || 0,
+      tokens: {
+        prompt: agg?._sum?.promptTokens || 0,
+        completion: agg?._sum?.completionTokens || 0,
+        total: agg?._sum?.totalTokens || 0,
+      }
+    });
+  } catch (e) {
+    console.error('admin ai usage summary error', e);
+    return res.status(500).json({ error: 'Failed to summarize AI usage' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/tenants/{tenantId}/ai-billing:
+ *   patch:
+ *     summary: Configure tenant AI billing enforcement (SUPER_ADMIN)
+ *     tags: [AI Rewrite]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               aiBillingEnabled: { type: boolean }
+ *               aiMonthlyTokenLimit: { type: integer, nullable: true, description: 'Monthly token cap. Null disables cap (even if billing enabled).' }
+ *           examples:
+ *             enableCap:
+ *               value: { aiBillingEnabled: true, aiMonthlyTokenLimit: 200000 }
+ *             disableBilling:
+ *               value: { aiBillingEnabled: false, aiMonthlyTokenLimit: null }
+ *     responses:
+ *       200: { description: Updated flags }
+ */
+router.patch('/tenants/:tenantId/ai-billing', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const tenantId = String((req.params as any).tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
+
+    const aiBillingEnabled = typeof req.body?.aiBillingEnabled === 'boolean' ? req.body.aiBillingEnabled : undefined;
+    const aiMonthlyTokenLimitRaw = req.body?.aiMonthlyTokenLimit;
+    const aiMonthlyTokenLimit = aiMonthlyTokenLimitRaw === null || typeof aiMonthlyTokenLimitRaw === 'undefined'
+      ? null
+      : Number(aiMonthlyTokenLimitRaw);
+
+    if (typeof aiBillingEnabled === 'undefined') {
+      return res.status(400).json({ error: 'aiBillingEnabled boolean required' });
+    }
+    if (aiMonthlyTokenLimit !== null) {
+      if (!Number.isFinite(aiMonthlyTokenLimit) || aiMonthlyTokenLimit < 0) {
+        return res.status(400).json({ error: 'aiMonthlyTokenLimit must be a non-negative integer or null' });
+      }
+    }
+
+    const upserted = await (prisma as any).tenantFeatureFlags.upsert({
+      where: { tenantId },
+      update: {
+        aiBillingEnabled,
+        aiMonthlyTokenLimit: aiMonthlyTokenLimit === null ? null : Math.floor(aiMonthlyTokenLimit),
+      },
+      create: {
+        tenantId,
+        aiBillingEnabled,
+        aiMonthlyTokenLimit: aiMonthlyTokenLimit === null ? null : Math.floor(aiMonthlyTokenLimit),
+      },
+    });
+
+    return res.json({ tenantId, flags: upserted });
+  } catch (e) {
+    console.error('admin tenant ai-billing patch error', e);
+    return res.status(500).json({ error: 'Failed to update tenant AI billing' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/tenants/{tenantId}/ai-billing/status:
+ *   get:
+ *     summary: Get tenant AI billing status (SUPER_ADMIN)
+ *     tags: [AI Rewrite]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Billing status with current month token usage }
+ */
+router.get('/tenants/:tenantId/ai-billing/status', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const tenantId = String((req.params as any).tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
+
+    const flags = await (prisma as any).tenantFeatureFlags.findUnique({ where: { tenantId } }).catch(() => null);
+    const billingEnabled = flags?.aiBillingEnabled === true;
+    const limit = typeof flags?.aiMonthlyTokenLimit === 'number' ? flags.aiMonthlyTokenLimit : null;
+
+    const nowUtc = new Date();
+    const monthStart = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), 1, 0, 0, 0, 0));
+    const usedAgg = await (prisma as any).aiUsageEvent?.aggregate?.({
+      where: { tenantId, createdAt: { gte: monthStart } },
+      _sum: { totalTokens: true },
+      _count: { _all: true },
+    }).catch(() => null);
+
+    const used = Number(usedAgg?._sum?.totalTokens || 0);
+    const count = Number(usedAgg?._count?._all || 0);
+    const remaining = limit && limit > 0 ? Math.max(0, limit - used) : null;
+    const exceeded = limit && limit > 0 ? used >= limit : false;
+
+    return res.json({
+      tenantId,
+      flags: {
+        aiBillingEnabled: billingEnabled,
+        aiMonthlyTokenLimit: limit,
+      },
+      currentMonth: {
+        monthStartUtc: monthStart.toISOString(),
+        usageEvents: count,
+        usedTokens: used,
+        remainingTokens: remaining,
+        exceeded,
+      }
+    });
+  } catch (e) {
+    console.error('admin tenant ai-billing status error', e);
+    return res.status(500).json({ error: 'Failed to fetch tenant AI billing status' });
+  }
+});
+
 export default router;

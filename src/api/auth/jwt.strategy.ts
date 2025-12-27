@@ -44,6 +44,10 @@ export default (passport: PassportStatic) => {
         }
         return done(null, false);
       } catch (error) {
+        // Map Neon connectivity hiccup to unauthorized with hint
+        if ((error as any)?.code === 'P1001') {
+          return done(null, false, { message: 'Database temporarily unavailable', code: 'P1001' } as any);
+        }
         return done(error, false);
       }
     }),
