@@ -4,6 +4,7 @@ import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../lib/sa
 import { buildNewsArticleJsonLd } from '../lib/seo';
 import { generateAiShortNewsFromPrompt } from '../api/shortnews/shortnews.ai';
 import axios from 'axios';
+import { CORE_NEWS_CATEGORIES, resolveOrCreateCategoryIdByName } from '../lib/categoryAuto';
 
 async function notifyCallback(article: any, status: 'DONE' | 'FAILED' | 'SKIPPED', contentJson: any) {
   const url = String(contentJson?.callbackUrl || '').trim();
@@ -170,6 +171,34 @@ async function inferCategoryIdForArticle(article: any): Promise<string | null> {
     if (!id) return null;
     if (!cats.some(c => c.id === id)) return null;
     return id;
+  } catch {
+    return null;
+  }
+}
+
+async function inferCategoryNameForArticle(article: any): Promise<string | null> {
+  try {
+    const cj: any = article?.contentJson || {};
+    const raw: any = cj.raw || {};
+    const title = String(raw.title || article.title || '').trim();
+    const content = String(raw.content || article.content || '').trim();
+    const text = [title, content].filter(Boolean).join('\n\n').slice(0, 2500);
+    if (!text) return null;
+
+    const options = CORE_NEWS_CATEGORIES.map(c => c.name).join(', ');
+    const prompt =
+      `Choose ONE best news category for this article.\n` +
+      `Prefer these standard categories: ${options}.\n` +
+      `If none fit, return a short 1-3 word category label.\n` +
+      `Return ONLY JSON: {"categoryName": string}.\n\n` +
+      `ARTICLE:\n${text}`;
+
+    const aiRes = await aiGenerateText({ prompt, purpose: 'rewrite' as any });
+    const out = String(aiRes?.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    if (!out) return null;
+    const parsed = JSON.parse(out);
+    const name = parsed?.categoryName ? String(parsed.categoryName).trim() : '';
+    return name || null;
   } catch {
     return null;
   }
@@ -366,40 +395,57 @@ async function processOne(article: any) {
   const domainId = domainResolved.domainId;
   const domainName = domainResolved.domainName;
 
-  // If shortnews is requested but categoryIds missing, infer a category and persist it.
-  if (queue.short && (!Array.isArray(raw.categoryIds) || raw.categoryIds.length === 0)) {
-    const inferred = await inferCategoryIdForArticle(article);
-    if (inferred) {
+  // If ShortNews/Web is requested but categoryIds missing, infer/resolve one and persist it.
+  if ((queue.short || queue.web) && (!Array.isArray(raw.categoryIds) || raw.categoryIds.length === 0)) {
+    let categoryId: string | null = null;
+
+    // 1) Try legacy inference (choose from existing categories by id)
+    categoryId = await inferCategoryIdForArticle(article);
+
+    // 2) Infer category name then resolve/create by >=90% match
+    if (!categoryId) {
+      const inferredName = await inferCategoryNameForArticle(article);
+      if (inferredName) {
+        const resolved = await resolveOrCreateCategoryIdByName({
+          suggestedName: inferredName,
+          languageCode: String(languageCode || '').trim() || undefined,
+          similarityThreshold: 0.9,
+          autoCreate: true,
+        }).catch(() => null);
+        if (resolved?.categoryId) categoryId = resolved.categoryId;
+      }
+    }
+
+    // 3) Final fallback
+    if (!categoryId) categoryId = await fallbackCategoryId();
+
+    if (categoryId) {
       try {
         const updatedCJ = {
           ...contentJson,
-          raw: { ...(contentJson.raw || {}), categoryIds: [inferred] },
-          aiCategoryInferred: { categoryId: inferred, at: nowIsoIST() },
+          raw: { ...(contentJson.raw || {}), categoryIds: [categoryId] },
+          aiCategoryInferred: { categoryId, at: nowIsoIST() },
         } as any;
         await prisma.article.update({
           where: { id: article.id },
           data: {
             contentJson: updatedCJ,
-            categories: { connect: [{ id: inferred }] } as any,
+            categories: { connect: [{ id: categoryId }] } as any,
           },
         });
-        // update local copy for this run
         (contentJson.raw = updatedCJ.raw);
-        (raw.categoryIds = [inferred]);
+        (raw.categoryIds = [categoryId]);
       } catch {
-        // If connect fails due to already-connected, still keep contentJson categoryIds.
         try {
           const updatedCJ = {
             ...contentJson,
-            raw: { ...(contentJson.raw || {}), categoryIds: [inferred] },
-            aiCategoryInferred: { categoryId: inferred, at: nowIsoIST() },
+            raw: { ...(contentJson.raw || {}), categoryIds: [categoryId] },
+            aiCategoryInferred: { categoryId, at: nowIsoIST() },
           } as any;
           await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
           (contentJson.raw = updatedCJ.raw);
-          (raw.categoryIds = [inferred]);
-        } catch {
-          // ignore
-        }
+          (raw.categoryIds = [categoryId]);
+        } catch {}
       }
     }
   }
@@ -600,6 +646,7 @@ async function processOne(article: any) {
               audit: { createdAt: nowIsoIST(), updatedAt: nowIsoIST() },
             };
             const existingWeb = await prisma.tenantWebArticle.findFirst({ where: { tenantId: article.tenantId, authorId: article.authorId, slug: webSlug } }).catch(() => null) as any;
+            const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : undefined;
             if (existingWeb?.id) {
               await prisma.tenantWebArticle.update({
                 where: { id: existingWeb.id },
@@ -607,6 +654,7 @@ async function processOne(article: any) {
                   title: webTitle,
                   slug: webSlug,
                   domainId: domainId || undefined,
+                  categoryId: primaryCategoryId,
                   contentJson: webJson,
                   seoTitle: webJson.meta.seoTitle,
                   metaDescription: webJson.meta.metaDescription,
@@ -625,6 +673,7 @@ async function processOne(article: any) {
                   title: webTitle,
                   slug: webSlug,
                   status: 'DRAFT',
+                  categoryId: primaryCategoryId,
                   contentJson: webJson,
                   seoTitle: webJson.meta.seoTitle,
                   metaDescription: webJson.meta.metaDescription,
@@ -747,6 +796,7 @@ async function processOne(article: any) {
 
           // Try to find existing web article previously created for this base article
           const existingId = contentJson.webArticleId ? String(contentJson.webArticleId) : null;
+          const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : undefined;
           if (existingId) {
             await prisma.tenantWebArticle.update({
               where: { id: existingId },
@@ -754,6 +804,7 @@ async function processOne(article: any) {
                 title: webTitle,
                 slug: webSlug,
                 domainId: domainId || undefined,
+                categoryId: primaryCategoryId,
                 contentJson: webJson,
                 seoTitle: webJson.meta.seoTitle,
                 metaDescription: webJson.meta.metaDescription,
@@ -774,6 +825,7 @@ async function processOne(article: any) {
                 title: webTitle,
                 slug: webSlug,
                 status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                categoryId: primaryCategoryId,
                 contentJson: webJson,
                 seoTitle: webJson.meta.seoTitle,
                 metaDescription: webJson.meta.metaDescription,

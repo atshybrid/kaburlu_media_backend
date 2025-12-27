@@ -207,6 +207,7 @@ model Category {
   children         Category[]            @relation("SubCategories")
   translations     CategoryTranslation[]
   articles         Article[]
+  webArticles      TenantWebArticle[]
   domainCategories DomainCategory[]
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
@@ -286,6 +287,10 @@ model TenantWebArticle {
   status        String  @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   coverImageUrl String?
 
+  // Primary category for the web article (optional; legacy contentJson.categories may still contain an array)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId String?
+
   // Canonical content JSON (blocks, contentHtml, plainText, meta, jsonLd, audit)
   contentJson     Json
   // SEO fields
@@ -302,6 +307,7 @@ model TenantWebArticle {
   // Ensure unique slug per tenant+domain+language to avoid collisions across locales
   @@unique([tenantId, domainId, languageId, slug])
   @@index([tenantId, createdAt])
+  @@index([categoryId])
 }
 
 model RawArticle {

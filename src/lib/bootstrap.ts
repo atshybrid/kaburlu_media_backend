@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { CORE_NEWS_CATEGORIES } from './categoryAuto';
 
 export async function ensureCoreSeeds() {
   // 1. Roles: Check existence first to avoid 9 separate upserts if not needed
@@ -79,5 +80,20 @@ export async function ensureCoreSeeds() {
         skipDuplicates: true
       });
     }
+  }
+
+  // 6. Core Categories (news-industry defaults)
+  try {
+    const existing = await prisma.category.findMany({ where: { slug: { in: CORE_NEWS_CATEGORIES.map(c => c.slug) } }, select: { slug: true } });
+    const existingSlugs = new Set(existing.map(c => c.slug));
+    const missing = CORE_NEWS_CATEGORIES.filter(c => !existingSlugs.has(c.slug));
+    if (missing.length) {
+      await prisma.category.createMany({
+        data: missing.map(c => ({ name: c.name, slug: c.slug })),
+        skipDuplicates: true,
+      });
+    }
+  } catch {
+    // best-effort; categories can be seeded later via scripts
   }
 }

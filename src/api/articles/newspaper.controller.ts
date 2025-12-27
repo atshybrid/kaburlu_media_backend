@@ -3,6 +3,7 @@ import prisma from '../../lib/prisma';
  
 import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../../lib/sanitize';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+import { resolveOrCreateCategoryIdByName } from '../../lib/categoryAuto';
 
 function wordCount(text: string): number {
     return String(text || '').trim().split(/\s+/).filter(Boolean).length;
@@ -321,8 +322,13 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         if (!categoryIds.length && body.category) {
             const name = String(body.category).trim();
             if (name) {
-                const maybe = await prisma.category.findFirst({ where: { name } });
-                if (maybe?.id) categoryIds.push(maybe.id);
+                const resolved = await resolveOrCreateCategoryIdByName({
+                    suggestedName: name,
+                    languageCode: languageCode || undefined,
+                    similarityThreshold: 0.9,
+                    autoCreate: true,
+                }).catch(() => null);
+                if (resolved?.categoryId) categoryIds.push(resolved.categoryId);
             }
         }
 
@@ -434,6 +440,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         title: String(webJson.title || title),
                         slug: String(webJson.slug || slugFromAnyLanguage(title, 120)),
                         status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                        categoryId: categoryIds?.[0] ? String(categoryIds[0]) : undefined,
                         contentJson: webJson,
                         seoTitle: webJson?.meta?.seoTitle,
                         metaDescription: webJson?.meta?.metaDescription,

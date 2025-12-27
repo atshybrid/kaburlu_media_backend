@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { transliterate } from 'transliteration';
+import { resolveOrCreateCategoryIdByName } from '../../lib/categoryAuto';
 import type { Language } from '@prisma/client';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { getCanonicalDomain, buildCanonicalUrl } from '../../lib/domains';
@@ -76,64 +77,30 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
     );
     let suggestedCategoryName = draft.suggestedCategoryName;
     if (!suggestedCategoryName) suggestedCategoryName = 'Community';
-    // Optional: attempt to map suggested category to existing category id (case-insensitive match on base or translation name)
     let matchedCategory: { id: string; name: string } | null = null;
-  let createdCategory = false;
-  let categoryTranslationId: string | null = null;
-  let localizedCategoryName: string | null = null;
+    let createdCategory = false;
+    let categoryTranslationId: string | null = null;
+    let localizedCategoryName: string | null = null;
     try {
-      const baseCats = await prismaClient.category.findMany({ select: { id: true, name: true, slug: true } });
-      const lower = suggestedCategoryName.toLowerCase();
-      matchedCategory = baseCats.find(c => c.name.toLowerCase() === lower) || null;
-      if (!matchedCategory) {
-        // try translations in this language (by language code)
-        const translations = await prismaClient.categoryTranslation.findMany({ where: { language: languageCode as any }, select: { categoryId: true, name: true } });
-        const matchT = translations.find(t => t.name.toLowerCase() === lower);
-        if (matchT) {
-          const cat = baseCats.find(c => c.id === matchT.categoryId);
-          if (cat) matchedCategory = cat;
-        }
-      }
-      // If still not matched, create a new category and its translation for this language
-      if (!matchedCategory) {
-        const baseSlugRaw = transliterate(suggestedCategoryName)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 60) || 'category';
-        let slug = baseSlugRaw;
-        const existingSlugs = new Set(baseCats.map(c => c.slug));
-        let attempt = 1;
-        while (existingSlugs.has(slug) && attempt < 50) {
-          slug = `${baseSlugRaw}-${attempt++}`;
-        }
-        const newCat = await prismaClient.category.create({
-          data: { name: suggestedCategoryName, slug },
-          select: { id: true, name: true }
-        });
-        matchedCategory = newCat;
-        createdCategory = true;
-        // Upsert translation for this language code
+      const resolved = await resolveOrCreateCategoryIdByName({
+        suggestedName: suggestedCategoryName,
+        languageCode,
+        similarityThreshold: 0.9,
+        autoCreate: true,
+      });
+      if (resolved?.categoryId) {
+        const cat = await prismaClient.category.findUnique({ where: { id: resolved.categoryId }, select: { id: true, name: true } }).catch(() => null);
+        if (cat?.id) matchedCategory = cat;
+        createdCategory = Boolean(resolved?.created);
+        localizedCategoryName = suggestedCategoryName;
+        // Ensure translation exists for this language code
         const tr = await prismaClient.categoryTranslation.upsert({
-          where: { categoryId_language: { categoryId: newCat.id, language: languageCode as any } },
+          where: { categoryId_language: { categoryId: resolved.categoryId, language: languageCode as any } },
           update: { name: suggestedCategoryName },
-          create: { categoryId: newCat.id, language: languageCode as any, name: suggestedCategoryName },
+          create: { categoryId: resolved.categoryId, language: languageCode as any, name: suggestedCategoryName },
           select: { id: true }
         });
         categoryTranslationId = tr.id;
-        localizedCategoryName = suggestedCategoryName;
-        // Fire-and-forget background translation for all languages (don't await)
-        translateAndSaveCategoryInBackground(newCat.id, suggestedCategoryName).catch(()=>{});
-      } else {
-        // Ensure a translation exists for this language; upsert with suggested name (does not change base name)
-        const tr = await prismaClient.categoryTranslation.upsert({
-          where: { categoryId_language: { categoryId: matchedCategory.id, language: languageCode as any } },
-          update: { name: suggestedCategoryName },
-          create: { categoryId: matchedCategory.id, language: languageCode as any, name: suggestedCategoryName },
-          select: { id: true }
-        });
-        categoryTranslationId = tr.id;
-        localizedCategoryName = suggestedCategoryName;
       }
     } catch {}
     return res.json({
