@@ -134,16 +134,20 @@ export async function resolveOrCreateCategoryIdByName(opts: {
     select: { id: true, name: true },
   });
 
-  // Ensure translation row for this language (best-effort)
+  // Ensure CategoryTranslation rows exist for all active languages immediately.
+  // (We store the base name as a placeholder; background translation can refine later.)
   try {
-    await prisma.categoryTranslation.upsert({
-      where: { categoryId_language: { categoryId: created.id, language: languageCode as any } },
-      update: { name: suggestedName },
-      create: { categoryId: created.id, language: languageCode as any, name: suggestedName },
-    });
+    const langs = await prisma.language.findMany({ where: { isDeleted: false }, select: { code: true } });
+    const codes = langs.map(l => String(l.code || '').trim()).filter(Boolean);
+    if (codes.length) {
+      await prisma.categoryTranslation.createMany({
+        data: codes.map(code => ({ categoryId: created.id, language: code as any, name: suggestedName })),
+        skipDuplicates: true,
+      });
+    }
   } catch {}
 
-  // Kick off translation for all active languages (fire-and-forget).
+  // Kick off AI translation for all active languages (fire-and-forget; best-effort).
   translateAndSaveCategoryInBackground(created.id, suggestedName).catch(() => {});
 
   return { categoryId: created.id, categoryName: created.name, created: true, matchScore: 0 };
