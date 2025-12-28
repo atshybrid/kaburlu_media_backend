@@ -11,8 +11,50 @@ import { promises as fs } from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
+import { config } from '../../config/env';
+import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunnyStorage';
+import { bunnyStreamUploadVideo, isBunnyStreamConfigured } from '../../lib/bunnyStream';
 
 const router = Router();
+
+function getMediaProvider(): 'r2' | 'bunny' {
+  const p = (config.media?.provider || 'r2').toLowerCase();
+  return (p === 'bunny') ? 'bunny' : 'r2';
+}
+
+/**
+ * @swagger
+ * /media/provider:
+ *   get:
+ *     summary: Get active media provider and configuration status
+ *     tags: [Media]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Provider info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 provider:
+ *                   type: string
+ *                   enum: [r2, bunny]
+ *                 r2Configured:
+ *                   type: boolean
+ *                 bunnyStorageConfigured:
+ *                   type: boolean
+ *                 bunnyStreamConfigured:
+ *                   type: boolean
+ */
+router.get('/provider', passport.authenticate('jwt', { session: false }), async (_req, res) => {
+  const provider = getMediaProvider();
+  const r2Configured = Boolean(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+  const bunnyStorageConfigured = isBunnyStorageConfigured();
+  const bunnyStreamConfigured = isBunnyStreamConfigured();
+  res.json({ provider, r2Configured, bunnyStorageConfigured, bunnyStreamConfigured });
+});
 // Simple configuration guard for R2. Returns a human-readable error if misconfigured.
 function ensureR2Configured(res: any): boolean {
   const missing: string[] = [];
@@ -115,7 +157,13 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  * /media/upload:
  *   post:
  *     summary: Upload a file directly (multipart/form-data)
- *     description: Converts images to WebP (except PNG stays PNG) and videos to WebM before storing in R2.
+ *     description: |
+ *       Uploads media to the configured provider.
+ *
+ *       - When MEDIA_PROVIDER=r2: converts images to WebP (except PNG stays PNG) and converts videos to WebM, then stores in Cloudflare R2.
+ *       - When MEDIA_PROVIDER=bunny: converts images to WebP (except PNG stays PNG) and uploads to Bunny Storage; videos are uploaded as-is to Bunny Stream.
+ *
+ *       Note: Some object-management endpoints (/media/object, /media/list, /media/rename, /media/object DELETE) are R2-only and return 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -154,10 +202,17 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  *                   type: string
  *                 publicUrl:
  *                   type: string
+ *                 contentType:
+ *                   type: string
+ *                 size:
+ *                   type: number
+ *                 kind:
+ *                   type: string
+ *                   enum: [image, video, other]
  */
 router.post('/upload', passport.authenticate('jwt', { session: false }), upload.single('file'), async (req, res) => {
   try {
-    if (!ensureR2Configured(res)) return;
+    const provider = getMediaProvider();
     const file = req.file;
     const { key, filename, kind, folder } = req.body as { key?: string; filename?: string; kind?: 'image' | 'video'; folder?: string };
     if (!file) return res.status(400).json({ error: 'file is required (multipart/form-data)' });
@@ -196,9 +251,15 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
         targetContentType = 'image/webp';
       }
     } else if (isVideo) {
-      // Convert all videos to WebM
-      targetExt = 'webm';
-      targetContentType = 'video/webm';
+      if (provider === 'r2') {
+        // Convert all videos to WebM (R2 pipeline)
+        targetExt = 'webm';
+        targetContentType = 'video/webm';
+      } else {
+        // Bunny Stream can ingest originals and handle transcoding.
+        targetExt = detectedExt;
+        targetContentType = file.mimetype || 'application/octet-stream';
+      }
     }
 
     // If filename is provided, use it (without extension), otherwise generate a timestamp-based name
@@ -244,24 +305,63 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
     }
 
     if (isVideo) {
-      try {
-        uploadBuffer = await transcodeToWebm(file.buffer);
-        uploadContentType = 'video/webm';
-      } catch (vidErr) {
-        console.error('video transcode failed', vidErr);
-        return res.status(500).json({ error: 'Video transcoding failed' });
+      if (provider === 'r2') {
+        try {
+          uploadBuffer = await transcodeToWebm(file.buffer);
+          uploadContentType = 'video/webm';
+        } catch (vidErr) {
+          console.error('video transcode failed', vidErr);
+          return res.status(500).json({ error: 'Video transcoding failed' });
+        }
+      } else {
+        // Bunny Stream upload original
+        uploadBuffer = file.buffer;
+        uploadContentType = file.mimetype || 'application/octet-stream';
       }
     }
 
-    await r2Client.send(new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: finalKey,
-      Body: uploadBuffer,
-      ContentType: uploadContentType,
-      CacheControl: 'public, max-age=31536000, immutable',
-    }));
-
-  const publicUrl = getPublicUrl(finalKey);
+    let publicUrl: string;
+    if (provider === 'r2') {
+      if (!ensureR2Configured(res)) return;
+      await r2Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: finalKey,
+        Body: uploadBuffer,
+        ContentType: uploadContentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+      }));
+      publicUrl = getPublicUrl(finalKey);
+    } else {
+      if (isVideo) {
+        if (!isBunnyStreamConfigured()) {
+          return res.status(500).json({
+            error: 'Storage not configured',
+            missing: ['BUNNY_STREAM_LIBRARY_ID', 'BUNNY_STREAM_API_KEY'],
+          });
+        }
+        const title = (filename ? String(filename) : original).slice(0, 180);
+        const uploaded = await bunnyStreamUploadVideo({
+          title,
+          body: uploadBuffer,
+          contentType: uploadContentType,
+        });
+        finalKey = uploaded.key;
+        publicUrl = uploaded.publicUrl;
+      } else {
+        if (!isBunnyStorageConfigured()) {
+          return res.status(500).json({
+            error: 'Storage not configured',
+            missing: ['BUNNY_STORAGE_ZONE_NAME', 'BUNNY_STORAGE_API_KEY', 'BUNNY_STORAGE_PUBLIC_BASE_URL'],
+          });
+        }
+        const uploaded = await bunnyStoragePutObject({
+          key: finalKey,
+          body: uploadBuffer,
+          contentType: uploadContentType,
+        });
+        publicUrl = uploaded.publicUrl;
+      }
+    }
 
     // Insert DB record (best-effort; if it fails, still return upload success)
     try {
@@ -315,6 +415,7 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
  * /media/object:
  *   get:
  *     summary: Get object metadata (HEAD)
+ *     description: R2-only. Returns 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -345,6 +446,10 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
  */
 router.get('/object', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (getMediaProvider() !== 'r2') {
+      return res.status(501).json({ error: 'Not supported for current MEDIA_PROVIDER' });
+    }
+    if (!ensureR2Configured(res)) return;
     const key = String(req.query.key || '');
     if (!key) return res.status(400).json({ error: 'key is required' });
     const head = await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
@@ -363,6 +468,7 @@ router.get('/object', passport.authenticate('jwt', { session: false }), async (r
  * /media/list:
  *   get:
  *     summary: List objects by prefix
+ *     description: R2-only. Returns 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -407,6 +513,10 @@ router.get('/object', passport.authenticate('jwt', { session: false }), async (r
  */
 router.get('/list', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (getMediaProvider() !== 'r2') {
+      return res.status(501).json({ error: 'Not supported for current MEDIA_PROVIDER' });
+    }
+    if (!ensureR2Configured(res)) return;
     const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
     const prefix = String(req.query.prefix || '');
     const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 50));
@@ -434,6 +544,7 @@ router.get('/list', passport.authenticate('jwt', { session: false }), async (req
  * /media/object:
  *   delete:
  *     summary: Delete an object
+ *     description: R2-only. Returns 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -452,6 +563,10 @@ router.get('/list', passport.authenticate('jwt', { session: false }), async (req
  */
 router.delete('/object', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (getMediaProvider() !== 'r2') {
+      return res.status(501).json({ error: 'Not supported for current MEDIA_PROVIDER' });
+    }
+    if (!ensureR2Configured(res)) return;
     const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
     const { key } = req.body as { key?: string };
     if (!key) return res.status(400).json({ error: 'key is required' });
@@ -474,6 +589,7 @@ router.delete('/object', passport.authenticate('jwt', { session: false }), async
  * /media/rename:
  *   put:
  *     summary: Rename/move an object (copy + delete)
+ *     description: R2-only. Returns 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
  *       - bearerAuth: []
@@ -494,6 +610,10 @@ router.delete('/object', passport.authenticate('jwt', { session: false }), async
  */
 router.put('/rename', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    if (getMediaProvider() !== 'r2') {
+      return res.status(501).json({ error: 'Not supported for current MEDIA_PROVIDER' });
+    }
+    if (!ensureR2Configured(res)) return;
     const { CopyObjectCommand, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
     const { fromKey, toKey } = req.body as { fromKey?: string; toKey?: string };
     if (!fromKey || !toKey) return res.status(400).json({ error: 'fromKey and toKey are required' });

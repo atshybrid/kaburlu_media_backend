@@ -18,20 +18,35 @@ function nowIsoIST(): string {
 
 function monthNameByLang(monthIndex: number, languageCode?: string): string {
     const lc = String(languageCode || '').trim().toLowerCase();
-    // Abbreviations commonly used in Telugu news. (Simple mapping; can be refined later.)
-    const te = ['జన', 'ఫిబ్ర', 'మార్చి', 'ఏప్రి', 'మే', 'జూన్', 'జూలై', 'ఆగ', 'సెప్టెం', 'అక్టో', 'నవం', 'డిసెం'];
-    const en = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    // Full month names (requested: "డిసెంబర్" not "డిసెం").
+    const te = ['జనవరి', 'ఫిబ్రవరి', 'మార్చి', 'ఏప్రిల్', 'మే', 'జూన్', 'జూలై', 'ఆగస్టు', 'సెప్టెంబర్', 'అక్టోబర్', 'నవంబర్', 'డిసెంబర్'];
+    const en = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const list = lc === 'te' ? te : en;
-    return list[monthIndex] || '';
+    return list[monthIndex] || en[monthIndex] || '';
 }
 
-function formatDateline(placeLabel: string | null, publishedAtIso?: string, languageCode?: string): string {
-    const date = publishedAtIso ? new Date(publishedAtIso) : new Date();
+function formatDateline(opts: { placeLabel: string | null; publishedAtIso?: string; languageCode?: string; newspaperName?: string | null }): string {
+    const date = opts.publishedAtIso ? new Date(opts.publishedAtIso) : new Date();
     const d = date.getDate();
-    const m = monthNameByLang(date.getMonth(), languageCode);
-    const y = date.getFullYear();
-    const head = placeLabel ? `${placeLabel}, ` : '';
-    return `${head}${m} ${d}, ${y}`.trim();
+    const m = monthNameByLang(date.getMonth(), opts.languageCode);
+    const head = opts.placeLabel ? `${opts.placeLabel}, ` : '';
+    const paper = opts.newspaperName ? ` (${String(opts.newspaperName).trim()})` : '';
+    // Requested format example:
+    // సంగారెడ్డి/పటాన్‌చెరు, డిసెంబర్ 27 (ప్రశ్న ఆయుధం న్యూస్)
+    return `${head}${m} ${d}${paper}`.trim();
+}
+
+function buildPlaceLabelForDateline(locRef: any): string | null {
+    const districtName = locRef?.districtName ? String(locRef.districtName).trim() : '';
+    const mandalName = locRef?.mandalName ? String(locRef.mandalName).trim() : '';
+    const villageName = locRef?.villageName ? String(locRef.villageName).trim() : '';
+    const stateName = locRef?.stateName ? String(locRef.stateName).trim() : '';
+    const mostSpecific = villageName || mandalName || districtName || stateName || '';
+    // Prefer District/Locality if both exist.
+    if (districtName && (mandalName || villageName)) {
+        return `${districtName}/${mandalName || villageName}`;
+    }
+    return mostSpecific || null;
 }
 
 async function resolveLocationRef(location: any): Promise<any> {
@@ -244,8 +259,16 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const shouldPublish = status === 'PUBLISHED';
         const location = body.location || {};
         const locationRef = await resolveLocationRef(location);
-        const placeName = String(locationRef.displayName || '').trim() || null;
-        const dateline = String(body.dateLine || body.dateline || '').trim() || formatDateline(placeName, publishedAt, languageCode);
+        // Choose a dateline label like "District/Mandal" when possible.
+        const placeLabel = buildPlaceLabelForDateline(locationRef);
+        const placeName = String(placeLabel || locationRef.displayName || '').trim() || null;
+
+        // Newspaper name shown inside parentheses.
+        const tenantEntity = await (prisma as any).tenantEntity.findUnique({ where: { tenantId }, select: { registrationTitle: true } }).catch(() => null);
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }).catch(() => null);
+        const newspaperName = String(body.newspaperName || tenantEntity?.registrationTitle || tenant?.name || '').trim() || null;
+
+        const dateline = String(body.dateLine || body.dateline || '').trim() || formatDateline({ placeLabel, publishedAtIso: publishedAt, languageCode, newspaperName });
         const bulletPoints = Array.isArray(body.bulletPoints)
             ? body.bulletPoints.map((s: any) => String(s || '').trim()).filter(Boolean)
             : [];
@@ -478,6 +501,10 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 dateline,
                 content: contentText || title,
                 placeName,
+                stateId: locationRef?.stateId || null,
+                districtId: locationRef?.districtId || null,
+                mandalId: locationRef?.mandalId || null,
+                villageId: locationRef?.villageId || null,
                 status: status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
             }
         });
@@ -509,11 +536,17 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
         const scope = await resolveTenantScope(req);
         if (scope.error) return res.status(scope.status!).json({ error: scope.error });
 
-        const { date, status, limit = '50', offset = '0' } = req.query;
+        const { date, status, limit = '50', offset = '0', stateId, districtId, mandalId, villageId } = req.query as any;
 
         const where: any = {};
         if (scope.tenantId) where.tenantId = scope.tenantId;
         if (status) where.status = String(status).toUpperCase();
+
+        // Optional location hierarchy filters (any combination)
+        if (stateId) where.stateId = String(stateId);
+        if (districtId) where.districtId = String(districtId);
+        if (mandalId) where.mandalId = String(mandalId);
+        if (villageId) where.villageId = String(villageId);
 
         if (date) {
             // Filter by specific date (start to end of day in UTC roughly or exact match if needed)

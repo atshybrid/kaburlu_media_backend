@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { tenantResolver } from '../../middleware/tenantResolver';
 import prisma from '../../lib/prisma';
+import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 
 // transient any-cast for newly added delegates
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -284,7 +285,7 @@ router.get('/category-translations', async (req, res) => {
  * @swagger
  * /public/articles:
  *   get:
- *     summary: List published articles for this domain
+ *     summary: List published website articles (TenantWebArticle) for this domain
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -308,7 +309,7 @@ router.get('/category-translations', async (req, res) => {
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Paginated articles
+ *         description: Paginated article cards
  *         content:
  *           application/json:
  *             examples:
@@ -318,8 +319,15 @@ router.get('/category-translations', async (req, res) => {
  *                   pageSize: 20
  *                   total: 100
  *                   items:
- *                     - id: "art1"
+ *                     - id: "wa_1"
+ *                       slug: "sangareddy-patancheru-december-27"
  *                       title: "Headline"
+ *                       excerpt: "Short summary..."
+ *                       coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                       publishedAt: "2025-12-27T10:00:00.000Z"
+ *                       category: { id: "cat_1", slug: "politics", name: "రాజకీయాలు" }
+ *                       languageCode: "te"
+ *                       tags: ["breaking", "telangana"]
  */
 router.get('/articles', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -331,54 +339,64 @@ router.get('/articles', async (req, res) => {
   const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
 
   // Allowed categories & languages for domain
-  const [domainCats, domainLangs] = await Promise.all([
+  const [domainCats, domainLangs, activeDomainCount] = await Promise.all([
     p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }),
-    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } })
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }),
+    p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0)
   ]);
   const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
   const allowedLanguageIds = new Set(domainLangs.map((d: any) => d.languageId));
 
-  let categoryFilterIds: string[] | undefined;
+  // Domain scoping: strict to current domain; optionally include orphaned (domainId null) only when tenant has a single active domain.
+  const domainScope: any = activeDomainCount <= 1
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+    : { domainId: domain.id };
+
+  let categoryIdFilter: string | undefined;
   if (categorySlug) {
-    const match = domainCats.find((d: any) => d.category.slug === categorySlug);
+    const match = domainCats.find((d: any) => d.category?.slug === categorySlug);
     if (!match) return res.json({ page, pageSize, total: 0, items: [] });
-    categoryFilterIds = [match.categoryId];
+    categoryIdFilter = match.categoryId;
   }
 
   let languageIdFilter: string | undefined;
   if (languageCode) {
-    const lang = domainLangs.find((d: any) => d.language.code === languageCode);
+    const lang = domainLangs.find((d: any) => d.language?.code === languageCode);
     if (!lang) return res.json({ page, pageSize, total: 0, items: [] });
     languageIdFilter = lang.languageId;
   }
 
-  // Query articles belonging to tenant, published, within allowed filters
   const where: any = {
     tenantId: tenant.id,
-    status: 'PUBLISHED'
+    status: 'PUBLISHED',
+    ...domainScope,
   };
-  if (languageIdFilter) where.languageId = languageIdFilter;
-  if (categoryFilterIds) {
-    where.categories = { some: { id: { in: categoryFilterIds } } };
-  } else {
-    // ensure only allowed categories (if no explicit filter) by restricting join
-    where.categories = { some: { id: { in: Array.from(allowedCategoryIds) } } };
+  if (categoryIdFilter) {
+    where.categoryId = categoryIdFilter;
+  } else if (allowedCategoryIds.size) {
+    where.categoryId = { in: Array.from(allowedCategoryIds) };
   }
-  if (allowedLanguageIds.size) {
-    where.languageId = where.languageId || { in: Array.from(allowedLanguageIds) };
+  if (languageIdFilter) {
+    where.languageId = languageIdFilter;
+  } else if (allowedLanguageIds.size) {
+    where.languageId = { in: Array.from(allowedLanguageIds) };
   }
 
-  const [total, items] = await Promise.all([
-    p.article.count({ where }),
-    p.article.findMany({
+  const [total, rows] = await Promise.all([
+    p.tenantWebArticle.count({ where }),
+    p.tenantWebArticle.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { categories: true, author: { select: { id: true, mobileNumber: true } }, tenant: { select: { id: true, slug: true } }, language: true }
+      include: {
+        category: { select: { id: true, slug: true, name: true } },
+        language: { select: { code: true } }
+      }
     })
   ]);
 
+  const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
   res.json({ page, pageSize, total, items });
 });
 
@@ -386,7 +404,7 @@ router.get('/articles', async (req, res) => {
  * @swagger
  * /public/articles/home:
  *   get:
- *     summary: Latest articles for homepage
+ *     summary: Latest website articles for homepage (TenantWebArticle)
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -405,37 +423,49 @@ router.get('/articles', async (req, res) => {
  *         example: 30
  *     responses:
  *       200:
- *         description: Latest items
+ *         description: Latest card items
  *         content:
  *           application/json:
  *             examples:
  *               sample:
  *                 value:
  *                   items:
- *                     - id: "art1"
+ *                     - id: "wa_1"
+ *                       slug: "sangareddy-patancheru-december-27"
  *                       title: "Headline"
- *                       coverImage: { url: "https://cdn/img.jpg" }
+ *                       excerpt: "Short summary..."
+ *                       coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                       publishedAt: "2025-12-27T10:00:00.000Z"
+ *                       category: { id: "cat_1", slug: "politics", name: "రాజకీయాలు" }
+ *                       languageCode: "te"
+ *                       tags: ["telangana"]
  */
 router.get('/articles/home', async (req, res) => {
   const tenant = (res.locals as any).tenant;
   const domain = (res.locals as any).domain;
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '30'), 10), 1), 100);
-  const items = await p.article.findMany({
-    where: { tenantId: tenant.id, status: 'PUBLISHED' },
-    orderBy: { createdAt: 'desc' },
+
+  const activeDomainCount = await p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0);
+  const domainScope: any = activeDomainCount <= 1
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+    : { domainId: domain.id };
+
+  const rows = await p.tenantWebArticle.findMany({
+    where: { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope },
+    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
     take: limit,
-    select: { id: true, title: true, images: true, createdAt: true }
+    include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
   });
-  const out = items.map((a: any) => ({ id: a.id, title: a.title, coverImage: a.images?.[0] ? { url: a.images[0] } : null, createdAt: a.createdAt }));
-  res.json({ items: out });
+  const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
+  res.json({ items });
 });
 
 /**
  * @swagger
  * /public/articles/by-category/{slug}:
  *   get:
- *     summary: Articles by category slug (domain-allowed)
+ *     summary: Website articles by category slug (domain-allowed)
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -465,8 +495,15 @@ router.get('/articles/home', async (req, res) => {
  *                   pageSize: 20
  *                   total: 10
  *                   items:
- *                     - id: "art1"
+ *                     - id: "wa_2"
+ *                       slug: "politics-headline-1"
  *                       title: "Category headline"
+ *                       excerpt: "Short summary..."
+ *                       coverImageUrl: null
+ *                       publishedAt: "2025-12-28T08:00:00.000Z"
+ *                       category: { id: "cat_1", slug: "politics", name: "రాజకీయాలు" }
+ *                       languageCode: "te"
+ *                       tags: []
  */
 router.get('/articles/by-category/:slug', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -475,14 +512,36 @@ router.get('/articles/by-category/:slug', async (req, res) => {
   const page = Math.max(parseInt(String(req.query.page || '1'), 10), 1);
   const pageSize = Math.min(Math.max(parseInt(String(req.query.pageSize || '20'), 10), 1), 100);
   const slug = String(req.params.slug);
-  const domainCats = await p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } });
-  const match = domainCats.find((d: any) => d.category.slug === slug);
-  if (!match) return res.json({ page, pageSize, total: 0, items: [] });
-  const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categories: { some: { id: match.categoryId } } };
-  const [total, items] = await Promise.all([
-    p.article.count({ where }),
-    p.article.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize })
+
+  const [domainCats, activeDomainCount] = await Promise.all([
+    p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }),
+    p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0)
   ]);
+  const match = domainCats.find((d: any) => d.category?.slug === slug);
+  if (!match) return res.json({ page, pageSize, total: 0, items: [] });
+
+  const domainScope: any = activeDomainCount <= 1
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+    : { domainId: domain.id };
+
+  const where: any = {
+    tenantId: tenant.id,
+    status: 'PUBLISHED',
+    categoryId: match.categoryId,
+    ...domainScope
+  };
+
+  const [total, rows] = await Promise.all([
+    p.tenantWebArticle.count({ where }),
+    p.tenantWebArticle.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    })
+  ]);
+  const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
   res.json({ page, pageSize, total, items });
 });
 
@@ -490,7 +549,7 @@ router.get('/articles/by-category/:slug', async (req, res) => {
  * @swagger
  * /public/articles/latest:
  *   get:
- *     summary: Latest article titles
+ *     summary: Latest website article cards
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -503,30 +562,42 @@ router.get('/articles/by-category/:slug', async (req, res) => {
  *         example: 8
  *     responses:
  *       200:
- *         description: Latest short list
+ *         description: Latest short list of cards
  *         content:
  *           application/json:
  *             examples:
  *               sample:
  *                 value:
  *                   items:
- *                     - id: "art2"
- *                       slug: "art2"
+ *                     - id: "wa_3"
+ *                       slug: "latest-headline-1"
  *                       title: "Latest headline"
+ *                       excerpt: "Short summary..."
+ *                       coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                       publishedAt: "2025-12-28T10:00:00.000Z"
+ *                       category: { id: "cat_9", slug: "national", name: "జాతీయ" }
+ *                       languageCode: "te"
+ *                       tags: ["breaking"]
  */
 router.get('/articles/latest', async (req, res) => {
   const tenant = (res.locals as any).tenant;
   const domain = (res.locals as any).domain;
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '8'), 10), 1), 50);
-  const items = await p.article.findMany({
-    where: { tenantId: tenant.id, status: 'PUBLISHED' },
-    orderBy: { createdAt: 'desc' },
+
+  const activeDomainCount = await p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0);
+  const domainScope: any = activeDomainCount <= 1
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+    : { domainId: domain.id };
+
+  const rows = await p.tenantWebArticle.findMany({
+    where: { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope },
+    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
     take: limit,
-    select: { id: true, title: true, images: true }
+    include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
   });
-  const out = items.map((a: any) => ({ id: a.id, slug: a.id, title: a.title, coverImage: a.images?.[0] ? { url: a.images[0] } : null }));
-  res.json({ items: out });
+  const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
+  res.json({ items });
 });
 
 /**
@@ -606,7 +677,7 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  * @swagger
  * /public/articles/{slug}:
  *   get:
- *     summary: Get a single published article by slug for this domain
+ *     summary: Get a single published website article by slug for this domain
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -620,44 +691,100 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *         name: slug
  *         required: true
  *         schema: { type: string }
+ *       - in: query
+ *         name: languageCode
+ *         required: false
+ *         description: Optional language code (useful when multiple locales publish the same slug).
+ *         schema: { type: string, example: te }
  *     responses:
  *       200:
- *         description: Article or 404
+ *         description: Website article detail
  *         content:
  *           application/json:
  *             examples:
  *               sample:
  *                 value:
- *                   id: "art1"
+ *                   id: "wa_1"
+ *                   tenantId: "t_abc"
+ *                   slug: "sangareddy-patancheru-december-27"
  *                   title: "Headline"
- *                   status: "PUBLISHED"
+ *                   subtitle: ""
+ *                   excerpt: "Short summary..."
+ *                   tags: ["telangana"]
+ *                   status: "published"
+ *                   publishedAt: "2025-12-27T10:00:00.000Z"
+ *                   coverImage: { alt: "", url: "https://cdn.example.com/cover.webp", caption: "" }
+ *                   categories: []
+ *                   blocks: []
+ *                   contentHtml: ""
+ *                   plainText: ""
+ *                   readingTimeMin: 2
+ *                   languageCode: "te"
+ *                   authors: []
+ *                   meta: { seoTitle: "Headline", metaDescription: "Short summary..." }
+ *                   jsonLd: {}
  */
 router.get('/articles/:slug', async (req, res) => {
   const domain = (res.locals as any).domain;
   const tenant = (res.locals as any).tenant;
   if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
-  const slug = req.params.slug;
-  // Allowed categories & languages for domain (could be cached)
-  const [domainCats, domainLangs] = await Promise.all([
+
+  const slug = String(req.params.slug);
+  const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
+
+  const [domainCats, domainLangs, activeDomainCount] = await Promise.all([
     p.domainCategory.findMany({ where: { domainId: domain.id } }),
-    p.domainLanguage.findMany({ where: { domainId: domain.id } })
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }),
+    p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0)
   ]);
   const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
   const allowedLanguageIds = new Set(domainLangs.map((d: any) => d.languageId));
+  const domainScope: any = activeDomainCount <= 1
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+    : { domainId: domain.id };
 
-  const article = await p.article.findFirst({
-    where: {
-      tenantId: tenant.id,
-      status: 'PUBLISHED',
-      OR: [ { title: slug }, { id: slug } ] // fallback if slug stored externally – adapt when real slug field added
-    },
-    include: { categories: true, author: { select: { id: true, mobileNumber: true } }, tenant: { select: { id: true, slug: true } }, language: true }
+  let languageIdFilter: string | undefined;
+  if (languageCode) {
+    const match = domainLangs.find((d: any) => d.language?.code === languageCode);
+    if (!match) return res.status(404).json({ error: 'Not found' });
+    languageIdFilter = match.languageId;
+  }
+
+  const where: any = {
+    tenantId: tenant.id,
+    status: 'PUBLISHED',
+    slug,
+    ...domainScope
+  };
+  if (languageIdFilter) where.languageId = languageIdFilter;
+  if (allowedLanguageIds.size && !where.languageId) where.languageId = { in: Array.from(allowedLanguageIds) };
+  if (allowedCategoryIds.size) where.categoryId = { in: Array.from(allowedCategoryIds) };
+
+  const a = await p.tenantWebArticle.findFirst({
+    where,
+    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true,
+      tenantId: true,
+      domainId: true,
+      languageId: true,
+      title: true,
+      slug: true,
+      status: true,
+      coverImageUrl: true,
+      contentJson: true,
+      seoTitle: true,
+      metaDescription: true,
+      jsonLd: true,
+      tags: true,
+      publishedAt: true,
+      authorId: true,
+      createdAt: true,
+      updatedAt: true
+    }
   });
-  if (!article) return res.status(404).json({ error: 'Not found' });
-  // Filter by allowed categories & language
-  if (!article.categories.some((c: any) => allowedCategoryIds.has(c.id))) return res.status(404).json({ error: 'Not found' });
-  if (article.languageId && allowedLanguageIds.size && !allowedLanguageIds.has(article.languageId)) return res.status(404).json({ error: 'Not found' });
-  res.json(article);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  res.json(toWebArticleDetailDto(a));
 });
 
 /**

@@ -16,7 +16,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), createArticle
 
 // Tenant-scoped article creation (reporter/admin)
 /**
- * @swagger
+ * @internal
  * /articles/tenant:
  *   post:
  *     summary: Create an article scoped to a tenant
@@ -113,7 +113,7 @@ router.get('/raw/:id', passport.authenticate('jwt', { session: false }), require
 router.post('/tenant', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createTenantArticleController);
 
 /**
- * @swagger
+ * @internal
  * /articles/webstories:
  *   post:
  *     summary: Create a web story (scoped to tenant)
@@ -176,7 +176,7 @@ router.post('/tenant', passport.authenticate('jwt', { session: false }), require
 router.post('/webstories', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createWebStoryController);
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/compose:
  *   post:
  *     summary: Compose AI-enhanced article (web, optionally short news)
@@ -225,7 +225,7 @@ router.post('/webstories', passport.authenticate('jwt', { session: false }), req
  *                     status: "published"
  */
 /**
- * @swagger
+ * @internal
  * /articles/ai/compose:
  *   post:
  *     summary: Compose AI article (Web, Short, Newspaper)
@@ -281,7 +281,7 @@ router.post('/webstories', passport.authenticate('jwt', { session: false }), req
 router.post('/ai/compose', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeAIArticleController);
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/web:
  *   post:
  *     summary: Generate and store website article (Gemini)
@@ -330,7 +330,7 @@ router.post('/ai/compose', passport.authenticate('jwt', { session: false }), req
  *                     status: "published"
  */
 /**
- * @swagger
+ * @internal
  * /articles/ai/web:
  *   post:
  *     deprecated: true
@@ -342,7 +342,7 @@ router.post('/ai/web', (_req, res) => {
 });
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/blocks:
  *   post:
  *     summary: Generate using two-block prompt (SEO JSON + Plain Text)
@@ -393,7 +393,7 @@ router.post('/ai/web', (_req, res) => {
 router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeBlocksController);
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/chatgpt/rewrite:
  *   post:
  *     summary: Rewrite via ChatGPT (long SEO article + short news)
@@ -428,7 +428,7 @@ router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requ
  */
 router.post('/ai/chatgpt/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeChatGptRewriteController);
 /**
- * @swagger
+ * @internal
  * /articles/ai/gemini/rewrite:
  *   post:
  *     summary: Rewrite via Gemini (long SEO article + short news)
@@ -464,7 +464,7 @@ router.post('/ai/chatgpt/rewrite', passport.authenticate('jwt', { session: false
 router.post('/ai/gemini/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeGeminiRewriteController);
 
 /**
- * @swagger
+ * @internal
  * /articles/raw:
  *   post:
  *     summary: Store a raw article for later AI processing
@@ -494,7 +494,7 @@ router.post('/ai/gemini/rewrite', passport.authenticate('jwt', { session: false 
 router.post('/raw', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createRawArticleController);
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/simple:
  *   post:
  *     summary: Simple AI article (content + domain/category/media)
@@ -614,7 +614,7 @@ router.post('/raw', passport.authenticate('jwt', { session: false }), requireRep
  *         description: Server error while persisting TenantWebArticle
  */
 /**
- * @swagger
+ * @internal
  * /articles/ai/simple:
  *   post:
  *     deprecated: true
@@ -924,6 +924,22 @@ router.patch('/web/:id/status', passport.authenticate('jwt', { session: false })
  *         name: status
  *         schema: { type: string }
  *       - in: query
+ *         name: stateId
+ *         schema: { type: string }
+ *         description: Optional filter by state id
+ *       - in: query
+ *         name: districtId
+ *         schema: { type: string }
+ *         description: Optional filter by district id
+ *       - in: query
+ *         name: mandalId
+ *         schema: { type: string }
+ *         description: Optional filter by mandal id
+ *       - in: query
+ *         name: villageId
+ *         schema: { type: string }
+ *         description: Optional filter by village id
+ *       - in: query
  *         name: limit
  *         schema: { type: integer, example: 50 }
  *         description: Max items to return
@@ -960,6 +976,10 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *     summary: Create newspaper article (Tenant Reporter)
  *     description: |
  *       Stores a print-ready NewspaperArticle linked to a base Article, and queues AI processing.
+ *
+ *       Location best-practice:
+ *       - Provide any ONE id in `location`: `villageId` OR `mandalId` OR `districtId` OR `stateId`
+ *       - Server derives the rest of the hierarchy and stores it on NewspaperArticle for easy filtering.
  *
  *       AI behavior is controlled only by tenant feature flag `TenantFeatureFlags.aiArticleRewriteEnabled`:
  *       - When enabled (default): `aiMode=FULL` and the worker generates Newspaper + Web + ShortNews using prompt key `ai_rewrite_prompt_true`.
@@ -1004,6 +1024,9 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               heading: { type: string }
  *               dateLine: { type: string }
  *               dateline: { type: string }
+ *               newspaperName:
+ *                 type: string
+ *                 description: Optional newspaper display name used inside dateline parentheses (defaults to TenantEntity.registrationTitle or tenant.name)
  *               publishedAt: { type: string }
  *               lead: { type: string }
  *               content:
@@ -1034,7 +1057,7 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                 items: { type: string }
  *               location:
  *                 type: object
- *                 description: Location reference used for dateline and shortnews filtering
+ *                 description: Location reference used for dateline and filtering. Provide ONE id (village/mandal/district/state); server derives the rest.
  *                 properties:
  *                   villageId: { type: string, nullable: true }
  *                   villageName: { type: string, nullable: true }
@@ -1159,7 +1182,7 @@ router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), r
 router.patch('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, updateNewspaperArticle);
 
 /**
- * @swagger
+ * @internal
  * /articles/ai/raw:
  *   post:
  *     summary: Enqueue raw article for background AI processing
@@ -1240,7 +1263,7 @@ router.get('/queue/pending', passport.authenticate('jwt', { session: false }), r
 });
 
 /**
- * @swagger
+ * @internal
  * /articles/raw/{id}/process:
  *   post:
  *     summary: Process a raw article immediately (fast rewrite)

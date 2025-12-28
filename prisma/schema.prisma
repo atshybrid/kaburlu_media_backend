@@ -523,6 +523,9 @@ model TenantTheme {
   faviconUrl   String?
   primaryColor String?
   headerHtml   String?
+  /// Optional per-style homepage settings JSON.
+  /// Recommended shape: { "style1": { ... }, "style2": { ... } }
+  homepageConfig Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -896,13 +899,24 @@ model NewspaperArticle {
   points    String[] // 3-5 bullet points
   dateline  String // e.g. "Adilabad, Dec 6"
   content   String // Main news body
-  placeName String? // Extracted city
+  // Location hierarchy (derived from reporter selection)
+  // Reporter can pick ANY ONE: village/mandal/district/state; server derives the rest.
+  stateId    String?
+  districtId String?
+  mandalId   String?
+  villageId  String?
+  // Localized most-specific label used for dateline (village/mandal/district/state)
+  placeName String?
 
   status    String   @default("DRAFT")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([stateId])
+  @@index([districtId])
+  @@index([mandalId])
+  @@index([villageId])
 }
 
 /// Unified content read tracking (dual-write while ArticleRead / ShortNewsRead still exist).

@@ -1,4 +1,19 @@
-import { AI_PROVIDER, AI_TIMEOUT_MS, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_GEMINI_MODEL_REWRITE, DEFAULT_TEMPERATURE, DEFAULT_MAX_OUTPUT_TOKENS_REWRITE, DEFAULT_MAX_OUTPUT_TOKENS_DEFAULT, DEFAULT_OPENAI_MODEL_SEO } from './aiConfig';
+import {
+  AI_PROVIDER,
+  AI_TIMEOUT_MS,
+  GEMINI_KEY,
+  OPENAI_KEY,
+  DEFAULT_GEMINI_MODEL_SEO,
+  DEFAULT_GEMINI_MODEL_REWRITE,
+  DEFAULT_GEMINI_MODEL_TRANSLATION,
+  DEFAULT_GEMINI_MODEL_MODERATION,
+  DEFAULT_TEMPERATURE,
+  DEFAULT_MAX_OUTPUT_TOKENS_REWRITE,
+  DEFAULT_MAX_OUTPUT_TOKENS_DEFAULT,
+  DEFAULT_OPENAI_MODEL_SEO,
+  DEFAULT_OPENAI_MODEL_TRANSLATION,
+  DEFAULT_OPENAI_MODEL_MODERATION,
+} from './aiConfig';
 
 type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article' | 'newspaper';
 
@@ -9,10 +24,13 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-      // Use a faster model for rewrite/short outputs if available
-      const modelName = (purpose === 'rewrite' || purpose === 'shortnews_ai_article' || purpose === 'newspaper')
-        ? (DEFAULT_GEMINI_MODEL_REWRITE || DEFAULT_GEMINI_MODEL_SEO)
-        : DEFAULT_GEMINI_MODEL_SEO;
+      // Pick model based on purpose
+      const modelName = (() => {
+        if (purpose === 'rewrite' || purpose === 'shortnews_ai_article' || purpose === 'newspaper') return (DEFAULT_GEMINI_MODEL_REWRITE || DEFAULT_GEMINI_MODEL_SEO);
+        if (purpose === 'translation') return DEFAULT_GEMINI_MODEL_TRANSLATION;
+        if (purpose === 'moderation') return DEFAULT_GEMINI_MODEL_MODERATION;
+        return DEFAULT_GEMINI_MODEL_SEO;
+      })();
       const model = genAI.getGenerativeModel({ model: modelName });
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
@@ -36,14 +54,20 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         model: modelName,
       };
       if (text) return { text, usage };
-    } catch {}
+    } catch (e: any) {
+      if (purpose === 'translation') {
+        console.warn('[AI][gemini] translation call failed:', e?.message || e);
+      }
+    }
   }
   if (OPENAI_KEY) {
     try {
       // Lazy import to avoid bundling
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const axios = require('axios');
-      const model = 'gpt-5.1';
+      const model = purpose === 'translation'
+        ? DEFAULT_OPENAI_MODEL_TRANSLATION
+        : (purpose === 'moderation' ? DEFAULT_OPENAI_MODEL_MODERATION : DEFAULT_OPENAI_MODEL_SEO);
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
       const response = await axios.post('https://api.openai.com/v1/responses', {
@@ -68,7 +92,13 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         model,
       };
       if (content) return { text: content, usage };
-    } catch {}
+    } catch (e: any) {
+      if (purpose === 'translation') {
+        const status = e?.response?.status;
+        const data = e?.response?.data;
+        console.warn('[AI][openai] translation call failed:', status || '', data?.error?.message || e?.message || e);
+      }
+    }
   }
   return { text: '' };
 }

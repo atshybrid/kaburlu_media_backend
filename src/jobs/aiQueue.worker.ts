@@ -560,6 +560,11 @@ async function processOne(article: any) {
           // Update/Upsert NewspaperArticle linked to this base article
           try {
             const existing = await prisma.newspaperArticle.findFirst({ where: { baseArticleId: article.id } }).catch(() => null) as any;
+            let languageId: string | null = null;
+            if (languageCode) {
+              const lang = await prisma.language.findUnique({ where: { code: String(languageCode) } }).catch(() => null);
+              if (lang?.id) languageId = lang.id;
+            }
             const npTitle = parsed.newspaper.title || article.title;
             const npContent = parsed.newspaper.content || article.content;
             const points = (parsed.newspaper.keyPoints || []).slice(0, 5).map(p => {
@@ -569,32 +574,46 @@ async function processOne(article: any) {
               if (w > 5) return s.split(/\s+/).slice(0, 5).join(' ');
               return s;
             });
+            const dateline = String(raw?.dateline || '');
+            const placeName = (raw?.locationRef?.displayName != null) ? String(raw.locationRef.displayName) : null;
+            const loc = raw?.locationRef || {};
             if (existing?.id) {
-              await prisma.newspaperArticle.update({
+              await (prisma as any).newspaperArticle.update({
                 where: { id: existing.id },
                 data: {
                   title: npTitle,
                   subTitle: parsed.newspaper.subtitle || null,
                   heading: parsed.newspaper.subtitle || npTitle,
                   points,
+                  dateline,
                   content: npContent,
+                  placeName,
+                  languageId: languageId || undefined,
+                  stateId: loc?.stateId || null,
+                  districtId: loc?.districtId || null,
+                  mandalId: loc?.mandalId || null,
+                  villageId: loc?.villageId || null,
                 }
               });
               updatedCJ.newspaperArticleId = existing.id;
             } else {
-              const created = await prisma.newspaperArticle.create({
+              const created = await (prisma as any).newspaperArticle.create({
                 data: {
                   tenantId: article.tenantId,
                   authorId: article.authorId,
-                  languageId: null as any,
+                  languageId: languageId || undefined,
                   baseArticleId: article.id,
                   title: npTitle,
                   subTitle: parsed.newspaper.subtitle || null,
                   heading: parsed.newspaper.subtitle || npTitle,
                   points,
-                  dateline: String(raw?.dateline || ''),
+                  dateline,
                   content: npContent,
-                  placeName: String(raw?.locationRef?.displayName || null),
+                  placeName,
+                  stateId: loc?.stateId || null,
+                  districtId: loc?.districtId || null,
+                  mandalId: loc?.mandalId || null,
+                  villageId: loc?.villageId || null,
                   status: 'DRAFT',
                 } as any
               });

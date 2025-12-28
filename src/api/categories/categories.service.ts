@@ -37,6 +37,22 @@ const translateText = async (text: string, targetLanguageHint: string, isEnglish
         const fbOut = (await fbRes.response.text()).trim();
         if (fbOut) return fbOut;
       }
+
+      // If we don't have the local Gemini model available, try a stricter second-pass prompt
+      // through the configured AI provider.
+      const strictPrompt = `You are a translator.
+Task: Translate the news category name into ${targetLanguageHint}.
+Rules:
+- Output ONLY the translated category name.
+- MUST be in the native script of ${targetLanguageHint}.
+- Do NOT output English/Latin letters.
+- No quotes, no punctuation, no explanations.
+
+Category: ${text}`;
+      const strictRes = await aiGenerateText({ prompt: strictPrompt, purpose: 'translation' });
+      const strictOut = String(strictRes?.text || '').trim();
+      const strictLooksLatin = /^[A-Za-z0-9\s\-_.]+$/.test(strictOut);
+      if (strictOut && !strictLooksLatin) return strictOut;
     }
     return out;
   } catch (error) {
@@ -44,6 +60,30 @@ const translateText = async (text: string, targetLanguageHint: string, isEnglish
     return text;
   }
 };
+
+async function ensureCategoryTranslationPlaceholders(categoryId: string, categoryName: string) {
+  // Ensure we have at least placeholder rows for every active language.
+  // These can be refined by AI translation later.
+  try {
+    const languages = await prisma.language.findMany({ where: { isDeleted: false }, select: { code: true } });
+    const codes = languages.map(l => String(l.code || '').trim()).filter(Boolean);
+    if (!codes.length) return;
+    await prisma.categoryTranslation.createMany({
+      data: codes.map(code => ({ categoryId, language: code as any, name: categoryName })),
+      skipDuplicates: true,
+    });
+  } catch {
+    // best-effort only
+  }
+}
+
+async function translateCategoryNameForLanguage(categoryName: string, lang: { code: string; name?: string | null; nativeName?: string | null }) {
+  const isEnglish = (lang.code || '').toLowerCase() === 'en';
+  const hint = `${lang.name || lang.code} (${lang.nativeName || lang.name || lang.code})`;
+  const baseLooksLatin = /^[A-Za-z0-9\s\-_.]+$/.test(String(categoryName || '').trim());
+  if (isEnglish) return baseLooksLatin ? categoryName : await translateText(categoryName, hint, true);
+  return await translateText(categoryName, hint, false);
+}
 
 export const createCategory = async (categoryDto: CreateCategoryDto) => {
   const slug = categoryDto.name.toLowerCase().replace(/ /g, '-');
@@ -56,7 +96,7 @@ export const createCategory = async (categoryDto: CreateCategoryDto) => {
     throw new Error('A category with this name or slug already exists.');
   }
 
-  return await prisma.category.create({
+  const created = await prisma.category.create({
     data: {
       name: categoryDto.name,
       slug,
@@ -65,6 +105,13 @@ export const createCategory = async (categoryDto: CreateCategoryDto) => {
       parentId: categoryDto.parentId === 'null' || !categoryDto.parentId ? null : categoryDto.parentId,
     },
   });
+
+  await ensureCategoryTranslationPlaceholders(created.id, created.name);
+
+  // Fire-and-forget: translate into all languages (including English).
+  translateAndSaveCategoryInBackground(created.id, created.name).catch(() => {});
+
+  return created;
 };
 
 export const translateAndSaveCategoryInBackground = async (categoryId: string, categoryName: string) => {
@@ -76,9 +123,7 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
 
     for (const lang of languages) {
       try {
-        const isEnglish = (lang.code || '').toLowerCase() === 'en';
-        const hint = `${lang.name} (${lang.nativeName})`;
-        const translatedName = isEnglish ? categoryName : await translateText(categoryName, hint, false);
+        const translatedName = await translateCategoryNameForLanguage(categoryName, lang as any);
         // Upsert by composite unique (categoryId, language)
         await prisma.categoryTranslation.upsert({
           where: { categoryId_language: { categoryId, language: lang.code } },
@@ -95,6 +140,43 @@ export const translateAndSaveCategoryInBackground = async (categoryId: string, c
     console.log(`[Background Job] Finished translations for '${categoryName}'. Total attempted: ${languages.length}, successful: ${successfulTranslations}`);
   } catch (error) {
     console.error(`[Background Job] A critical error occurred during translation for category '${categoryName}' (ID: ${categoryId}):`, error);
+  }
+};
+
+export const backfillCategoryTranslationsForNewLanguageInBackground = async (languageCodeRaw: string) => {
+  const languageCode = String(languageCodeRaw || '').trim().toLowerCase();
+  if (!languageCode) return;
+  try {
+    const lang = await prisma.language.findFirst({ where: { code: languageCode, isDeleted: false } });
+    if (!lang) return;
+
+    const categories = await prisma.category.findMany({ where: { isDeleted: false }, select: { id: true, name: true } });
+
+    // 1) Ensure placeholder rows exist.
+    try {
+      await prisma.categoryTranslation.createMany({
+        data: categories.map(c => ({ categoryId: c.id, language: languageCode as any, name: c.name })),
+        skipDuplicates: true,
+      });
+    } catch {
+      // ignore
+    }
+
+    // 2) Translate each category into the new language and upsert.
+    for (const c of categories) {
+      try {
+        const translatedName = await translateCategoryNameForLanguage(c.name, lang as any);
+        await prisma.categoryTranslation.upsert({
+          where: { categoryId_language: { categoryId: c.id, language: languageCode } },
+          update: { name: translatedName },
+          create: { categoryId: c.id, language: languageCode, name: translatedName },
+        });
+      } catch {
+        // best-effort
+      }
+    }
+  } catch (e) {
+    console.error('[Background Job] Failed to backfill category translations for new language:', languageCodeRaw, e);
   }
 };
 
@@ -147,6 +229,9 @@ export const getCategories = async (languageContext: string) => {
 };
 
 export const updateCategory = async (id: string, categoryDto: UpdateCategoryDto) => {
+  const existing = await prisma.category.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!existing) throw new Error('Category not found');
+
   const data: any = { ...categoryDto };
   if (categoryDto.name) {
     data.slug = categoryDto.name.toLowerCase().replace(/ /g, '-');
@@ -157,7 +242,16 @@ export const updateCategory = async (id: string, categoryDto: UpdateCategoryDto)
   if (categoryDto.iconUrl !== undefined) {
     data.iconUrl = categoryDto.iconUrl;
   }
-  return await prisma.category.update({ where: { id }, data });
+
+  const updated = await prisma.category.update({ where: { id }, data });
+
+  // If name changed, ensure translations exist for all languages and retranslate.
+  if (typeof categoryDto.name === 'string' && categoryDto.name.trim() && categoryDto.name !== existing.name) {
+    await ensureCategoryTranslationPlaceholders(updated.id, updated.name);
+    translateAndSaveCategoryInBackground(updated.id, updated.name).catch(() => {});
+  }
+
+  return updated;
 };
 
 export const retranslateCategory = async (id: string) => {

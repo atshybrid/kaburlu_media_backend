@@ -54,7 +54,7 @@ All paths below are relative to your website domain (after the rewrite):
   ```
 
 3) GET `/api/public/articles?categorySlug=politics&page=1&pageSize=20&languageCode=te`
-- Purpose: List published articles for listing pages.
+- Purpose: List published website articles (domain-wise) for listing pages.
 - Query:
   - `categorySlug` (optional)
   - `page` (default 1), `pageSize` (default 20, max 100)
@@ -67,34 +67,38 @@ All paths below are relative to your website domain (after the rewrite):
     "total": 57,
     "items": [
       {
-        "id": "a_1",
+        "id": "wa_1",
+        "slug": "sangareddy-patancheru-december-27",
         "title": "Breaking News",
-        "shortNews": "Short summary...",
-        "longNews": null,
-        "headlines": null,
-        "type": "reporter",
-        "author": { "id": "u_1", "mobileNumber": "+91..." },
-        "language": { "id": "lang_te", "code": "te" },
-        "tenant": { "id": "t_abc", "slug": "kaburlu" },
-        "categories": [{ "id": "cat_1", "name": "రాజకీయాలు", "slug": "politics" }],
-        "tags": ["tag1"],
-        "images": ["https://.../image.jpg"],
-        "isBreakingNews": false,
-        "isTrending": true,
-        "viewCount": 120,
-        "createdAt": "2025-11-06T10:00:00.000Z",
-        "updatedAt": "2025-11-06T10:00:00.000Z",
-        "contentJson": null
+        "excerpt": "Short summary...",
+        "coverImageUrl": "https://.../image.jpg",
+        "publishedAt": "2025-12-27T10:00:00.000Z",
+        "category": { "id": "cat_1", "slug": "politics", "name": "రాజకీయాలు" },
+        "languageCode": "te",
+        "tags": ["tag1"]
       }
     ]
   }
   ```
 
 4) GET `/api/public/articles/{slug}`
-- Purpose: Article detail page. Currently matches by title or id (slug field can be added later).
-- Response: Article object (same fields as in the list `items`).
+- Purpose: Article detail page (SEO-friendly). This matches `TenantWebArticle.slug`.
+- Optional query: `languageCode=te` (if you publish multiple languages for same slug).
+- Response: Canonical web-article JSON built from `TenantWebArticle.contentJson`.
 
-5) GET `/api/public/_health`
+5) GET `/api/public/seo/site`
+- Purpose: Site-level JSON-LD (WebSite + Organization) for SEO.
+
+6) GET `/api/public/seo/article/{slug}`
+- Purpose: NewsArticle JSON-LD for a specific article.
+
+7) GET `/api/public/sitemap.xml`
+- Purpose: XML sitemap for the current domain.
+
+8) GET `/api/public/robots.txt`
+- Purpose: Robots file referencing the sitemap.
+
+9) GET `/api/public/_health`
 - Purpose: Quick connectivity check.
 
 ## Frontend usage examples
@@ -152,4 +156,6 @@ All paths below are relative to your website domain (after the rewrite):
 - `languageCode` must be allowed for the domain; otherwise you’ll get untranslated names (categories) or empty results (articles).
 
 ---
-If you want a dedicated `article.slug` field and a compact `card` response directly from the API, ask and we’ll add the migration + endpoint shape for an even simpler frontend.
+Notes:
+- These website endpoints are domain-wise and backed by `TenantWebArticle`.
+- For multi-domain tenants, content is scoped to the current domain; for single-domain tenants, domainId-null legacy rows may also show.

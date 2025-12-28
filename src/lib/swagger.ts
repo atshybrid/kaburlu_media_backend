@@ -2,6 +2,10 @@
 import swaggerJSDoc from 'swagger-jsdoc';
 import { userSwagger } from '../api/users/users.swagger';
 
+function toPosixPath(p: string) {
+  return p.replace(/\\/g, '/');
+}
+
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
@@ -83,7 +87,18 @@ const swaggerDefinition = {
 
 const options = {
   swaggerDefinition,
-  apis: ['./src/api/**/*.ts']
+  // Important: swagger-jsdoc needs to be able to find the annotated files.
+  // - In dev: we run from TS source under src/
+  // - In prod/build: we run compiled JS under dist/
+  apis: [
+    './src/api/**/*.ts',
+    './src/api/**/*.js',
+    './dist/api/**/*.js',
+    // Also include absolute globs to be resilient to different working directories
+    `${toPosixPath(process.cwd())}/src/api/**/*.ts`,
+    `${toPosixPath(process.cwd())}/src/api/**/*.js`,
+    `${toPosixPath(process.cwd())}/dist/api/**/*.js`
+  ]
 };
 
 const swaggerSpec = swaggerJSDoc(options);

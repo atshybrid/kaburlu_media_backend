@@ -50,7 +50,9 @@ export async function tenantResolver(req: Request, res: Response, next: NextFunc
   if (process.env.MULTI_TENANCY !== 'true') return next();
 
   // Allow explicit override via custom header when calling cross-origin without a reverse proxy
-  const overrideHost = normalizeHost(req.headers['x-tenant-domain'] as any);
+  const overrideHost =
+    normalizeHost(req.headers['x-tenant-domain'] as any) ||
+    normalizeHost((req.query as any)?.domain);
   const overrideSlug = (req.headers['x-tenant-slug'] as string | undefined)?.toString().trim() || undefined;
   const overrideTenantId = (req.headers['x-tenant-id'] as string | undefined)?.toString().trim() || undefined;
   const host = overrideHost || normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);

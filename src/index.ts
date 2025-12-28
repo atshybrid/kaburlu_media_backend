@@ -48,6 +48,15 @@ async function start() {
 
     const server = http.createServer(app);
 
+    server.on('error', (err: any) => {
+      if (err?.code === 'EADDRINUSE') {
+        console.error(`Port ${port} is already in use. Set PORT in .env or stop the other process.`);
+        process.exit(1);
+      }
+      console.error('Server error:', err);
+      process.exit(1);
+    });
+
     server.listen(port, () => {
       console.log(`[Bootstrap] Server running (env=${config.env}) http://localhost:${port}`);
       console.log(`[Bootstrap] Swagger: http://localhost:${port}/api/docs`);
@@ -56,19 +65,29 @@ async function start() {
     // graceful shutdown
     const graceful = async (signal?: string) => {
       console.log(`\nReceived ${signal ?? 'signal'}, shutting down...`);
-      server.close(async (err) => {
-        if (err) {
-          console.error('Error while closing server:', err);
-          process.exit(1);
-        }
+      const disconnectAndExit = async (exitCode: number) => {
         try {
           await prisma.$disconnect();
           console.log('Prisma disconnected');
-          process.exit(0);
         } catch (e) {
           console.error('Error during Prisma disconnect:', e);
-          process.exit(1);
+          exitCode = 1;
         }
+        process.exit(exitCode);
+      };
+
+      if (!server.listening) {
+        await disconnectAndExit(0);
+        return;
+      }
+
+      server.close(async (err) => {
+        if (err) {
+          console.error('Error while closing server:', err);
+          await disconnectAndExit(1);
+          return;
+        }
+        await disconnectAndExit(0);
       });
       // if server doesn't close in 10s, force exit
       setTimeout(() => {

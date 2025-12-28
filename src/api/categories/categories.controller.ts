@@ -29,10 +29,6 @@ export const createCategoryController = async (req: Request, res: Response) => {
     // 2. Respond to the user immediately.
     res.status(201).json(category);
 
-    // 3. Start the background job. The API does NOT wait for this to finish.
-    // We add a `void` prefix to explicitly state we are not awaiting the promise.
-    void translateAndSaveCategoryInBackground(category.id, category.name);
-
   } catch (error: any) {
     if (error.message.includes('already exists')) {
       return res.status(409).json({ error: error.message });

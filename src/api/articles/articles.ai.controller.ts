@@ -406,6 +406,7 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
     // Persist a normalized TenantWebArticle record (upsert by tenant+domain+language+slug)
     const coverImageUrl = (webJson?.coverImage?.url) || (Array.isArray(images) && images[0]) || null;
     const normStatus = String(webJson?.status || (isPublished ? 'PUBLISHED' : 'DRAFT')).toUpperCase();
+    const primaryCategoryId = Array.isArray(categoryIds) && categoryIds[0] ? String(categoryIds[0]) : undefined;
     let twa: any;
     try {
       const existing = await prisma.tenantWebArticle.findFirst({
@@ -423,6 +424,7 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
             title: String(webJson.title || title),
             status: normStatus,
             coverImageUrl: coverImageUrl || undefined,
+            categoryId: primaryCategoryId,
             contentJson: webJson,
             seoTitle: (webJson?.meta?.seoTitle) ? String(webJson.meta.seoTitle) : undefined,
             metaDescription: (webJson?.meta?.metaDescription) ? String(webJson.meta.metaDescription) : undefined,
@@ -443,6 +445,7 @@ export const composeAIArticleController = async (req: Request, res: Response) =>
             slug: String(webJson.slug),
             status: normStatus,
             coverImageUrl: coverImageUrl || undefined,
+            categoryId: primaryCategoryId,
             contentJson: webJson,
             seoTitle: (webJson?.meta?.seoTitle) ? String(webJson.meta.seoTitle) : undefined,
             metaDescription: (webJson?.meta?.metaDescription) ? String(webJson.meta.metaDescription) : undefined,

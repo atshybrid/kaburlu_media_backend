@@ -89,6 +89,23 @@ export const config = {
     endpoint: process.env.R2_ENDPOINT,
   },
 
+  media: {
+    provider: (process.env.MEDIA_PROVIDER || 'r2').toLowerCase(),
+    bunny: {
+      storage: {
+        zoneName: process.env.BUNNY_STORAGE_ZONE_NAME,
+        apiKey: process.env.BUNNY_STORAGE_API_KEY,
+        publicBaseUrl: process.env.BUNNY_STORAGE_PUBLIC_BASE_URL,
+      },
+      stream: {
+        libraryId: process.env.BUNNY_STREAM_LIBRARY_ID,
+        apiKey: process.env.BUNNY_STREAM_API_KEY,
+        // Default embed base URL for playback.
+        embedBaseUrl: process.env.BUNNY_STREAM_EMBED_BASE_URL || 'https://iframe.mediadelivery.net/embed',
+      },
+    },
+  },
+
   seo: {
     publisherName: process.env.SEO_PUBLISHER_NAME || 'Kaburlu',
     publisherLogo: process.env.SEO_PUBLISHER_LOGO,
