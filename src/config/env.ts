@@ -109,6 +109,8 @@ export const config = {
   seo: {
     publisherName: process.env.SEO_PUBLISHER_NAME || 'Kaburlu',
     publisherLogo: process.env.SEO_PUBLISHER_LOGO,
+    publisherLogoWidth: parseIntSafe(process.env.SEO_PUBLISHER_LOGO_WIDTH, 600),
+    publisherLogoHeight: parseIntSafe(process.env.SEO_PUBLISHER_LOGO_HEIGHT, 60),
   },
 
   slug: {

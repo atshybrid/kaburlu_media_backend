@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { tenantResolver } from '../../middleware/tenantResolver';
 import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
+import { buildNewsArticleJsonLd } from '../../lib/seo';
 
 // transient any-cast for newly added delegates
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -962,7 +963,14 @@ router.get('/articles/:slug', async (req, res) => {
   const tenant = (res.locals as any).tenant;
   if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
 
-  const slug = String(req.params.slug);
+  const slugRaw = String(req.params.slug);
+  const slug = (() => {
+    try {
+      return decodeURIComponent(slugRaw);
+    } catch {
+      return slugRaw;
+    }
+  })();
   const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
 
   const [domainCats, domainLangs, activeDomainCount] = await Promise.all([
@@ -972,9 +980,9 @@ router.get('/articles/:slug', async (req, res) => {
   ]);
   const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
   const allowedLanguageIds = new Set(domainLangs.map((d: any) => d.languageId));
-  const domainScope: any = activeDomainCount <= 1
-    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
-    : { domainId: domain.id };
+  // Best practice: always include shared tenant website articles (domainId=null)
+  // so multi-domain tenants still see the content they published as shared.
+  const domainScope: any = { OR: [{ domainId: domain.id }, { domainId: null }] };
 
   let languageIdFilter: string | undefined;
   if (languageCode) {
@@ -983,24 +991,40 @@ router.get('/articles/:slug', async (req, res) => {
     languageIdFilter = match.languageId;
   }
 
+  const and: any[] = [domainScope];
+
+  // Language filters:
+  // - If languageCode is explicitly provided, match exactly that language.
+  // - Otherwise, restrict to allowed languages, but also include legacy rows where languageId is null.
+  if (languageIdFilter) {
+    and.push({ languageId: languageIdFilter });
+  } else if (allowedLanguageIds.size) {
+    and.push({ OR: [{ languageId: { in: Array.from(allowedLanguageIds) } }, { languageId: null }] });
+  }
+
+  // Category filters: if domain has an allowed list, allow uncategorized rows too
+  // (many ingested TenantWebArticle rows can have categoryId=null).
+  if (allowedCategoryIds.size) {
+    and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+  }
+
   const where: any = {
     tenantId: tenant.id,
     status: 'PUBLISHED',
-    slug,
-    ...domainScope
+    AND: and,
+    OR: [{ slug }, { id: slug }]
   };
-  if (languageIdFilter) where.languageId = languageIdFilter;
-  if (allowedLanguageIds.size && !where.languageId) where.languageId = { in: Array.from(allowedLanguageIds) };
-  if (allowedCategoryIds.size) where.categoryId = { in: Array.from(allowedCategoryIds) };
 
-  const a = await p.tenantWebArticle.findFirst({
+  const [a, tenantTheme] = await Promise.all([
+    p.tenantWebArticle.findFirst({
     where,
     orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-    select: {
+    include: {
       id: true,
       tenantId: true,
       domainId: true,
       languageId: true,
+      language: { select: { code: true } },
       title: true,
       slug: true,
       status: true,
@@ -1013,11 +1037,81 @@ router.get('/articles/:slug', async (req, res) => {
       publishedAt: true,
       authorId: true,
       createdAt: true,
-      updatedAt: true
+      updatedAt: true,
+      category: { select: { slug: true, name: true } }
     }
-  });
+  }),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
+  ]);
+
   if (!a) return res.status(404).json({ error: 'Not found' });
-  res.json(toWebArticleDetailDto(a));
+
+  const detail: any = toWebArticleDetailDto(a);
+
+  const canonicalUrl = `https://${domain.domain}/articles/${encodeURIComponent(detail.slug)}`;
+  const imageUrls = [detail?.coverImage?.url].filter(Boolean) as string[];
+  const authorNameRaw = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
+  const authorName = (authorNameRaw && String(authorNameRaw).trim()) ? String(authorNameRaw).trim() : `${tenant.name} Reporter`;
+  const sectionName = (a as any)?.category?.name || (a as any)?.category?.slug || null;
+  const resolvedLanguageCode = (a as any)?.language?.code || detail?.languageCode || undefined;
+  const keywords = Array.isArray(detail?.tags) ? detail.tags.filter((t: any) => typeof t === 'string' && t.trim()).slice(0, 15) : undefined;
+  const publisherLogoUrl = (tenantTheme as any)?.logoUrl || null;
+  const cover = (a as any)?.contentJson?.coverImage || (detail as any)?.coverImage || null;
+  const imageWidth = cover && Number.isFinite(Number(cover.w)) ? Number(cover.w) : undefined;
+  const imageHeight = cover && Number.isFinite(Number(cover.h)) ? Number(cover.h) : undefined;
+
+  const generated = buildNewsArticleJsonLd({
+    // Use the full article title for JSON-LD headline (avoid shortened SEO title).
+    headline: detail.title,
+    description: detail.meta?.metaDescription || detail.excerpt || undefined,
+    canonicalUrl,
+    imageUrls,
+    imageWidth,
+    imageHeight,
+    languageCode: resolvedLanguageCode || undefined,
+    datePublished: detail.publishedAt || undefined,
+    dateModified: (a as any)?.updatedAt ? new Date((a as any).updatedAt).toISOString() : (detail.publishedAt || undefined),
+    authorName: authorName || undefined,
+    publisherName: tenant.name,
+    publisherLogoUrl: publisherLogoUrl || undefined,
+    keywords,
+    articleSection: sectionName || undefined,
+    isAccessibleForFree: true,
+  });
+
+  // Merge: keep stored jsonLd values when they are meaningful, but fill missing bits from generated.
+  const existing = detail.jsonLd && typeof detail.jsonLd === 'object' ? detail.jsonLd : {};
+  const merged: any = { ...generated };
+  const preferGenerated = new Set(['headline', 'image', 'author', 'articleSection']);
+  const looksLikeInternalId = (value: any) => {
+    const s = String(value || '').trim();
+    if (!s) return false;
+    // cuid/uuid-like or long opaque ids
+    if (/^c[a-z0-9]{20,}$/i.test(s)) return true;
+    if (/^[a-f0-9]{24,}$/i.test(s)) return true;
+    if (/^[a-f0-9-]{32,}$/i.test(s) && s.includes('-')) return true;
+    return false;
+  };
+
+  for (const [k, v] of Object.entries(existing)) {
+    if (preferGenerated.has(k)) continue;
+    if (k === 'articleSection' && looksLikeInternalId(v)) continue;
+    const isEmpty = v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as any).length === 0);
+    if (!isEmpty) merged[k] = v;
+  }
+  // Nested fill: publisher.logo
+  if (merged.publisher && typeof merged.publisher === 'object') {
+    const existingPublisher = (existing as any).publisher;
+    if (existingPublisher && typeof existingPublisher === 'object') {
+      merged.publisher = { ...merged.publisher, ...existingPublisher };
+      if ((existingPublisher as any).logo && typeof (existingPublisher as any).logo === 'object') {
+        merged.publisher.logo = { ...(merged.publisher.logo || {}), ...(existingPublisher as any).logo };
+      }
+    }
+  }
+
+  detail.jsonLd = merged;
+  res.json(detail);
 });
 
 /**

@@ -35,7 +35,15 @@ Output JSON keys and rules:
 - contentHtml: sanitized HTML rendering of blocks (allow only <p>, <h1>-<h3>, <ul>, <ol>, <li>, <strong>, <em>, <a>, <figure>, <img>, <figcaption>)
 - plainText: text-only rendering (headings on new lines, lists as "- item")
 - meta: { seoTitle: <=60 chars, metaDescription: 110–155 chars }
-- jsonLd: Schema.org NewsArticle with headline, image[], datePublished, dateModified, author, publisher (use publisher name "Kaburlu" or empty if unknown; logo can be empty "")
+- jsonLd: MUST be Schema.org NewsArticle and Discover-friendly:
+  - headline: MUST be the full article title (do NOT shorten)
+  - image: if coverImage.url exists, use ImageObject: { "@type": "ImageObject", "url": "...", "width": 1200, "height": 675 } (width/height optional if unknown)
+  - datePublished/dateModified: ISO with +05:30
+  - author: REQUIRED: { "@type": "Person", "name": "Kaburlu Reporter" }
+  - publisher: REQUIRED and include logo ImageObject (include width=600,height=60 when possible)
+  - articleSection: REQUIRED and MUST be a human-readable category label like "Politics" or "Local News" (NEVER an internal id)
+  - keywords: array of strings (use tags)
+  - isAccessibleForFree: true
 - audit: { createdAt: current +05:30 timestamp, updatedAt: same, createdBy: "{{AUTHOR_ID}}", updatedBy: "{{AUTHOR_ID}}" }
 
 Hard requirements:

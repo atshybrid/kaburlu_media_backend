@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { tenantResolver } from '../../middleware/tenantResolver';
 import prisma from '../../lib/prisma';
-import { buildNewsArticleJsonLd, toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
+import { buildNewsArticleJsonLd as buildLegacyNewsArticleJsonLd, toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
+import { buildNewsArticleJsonLd } from '../../lib/seo';
 import crypto from 'crypto';
 
 // transient any-cast for newly added delegates
@@ -190,6 +191,8 @@ router.get('/domain/settings', async (req, res) => {
   const out: any = { ...(effective || {}) };
   out.seo = { ...(out.seo || {}) };
   if (!out.seo.canonicalBaseUrl) out.seo.canonicalBaseUrl = `https://${domain.domain}`;
+  // Best practice for Google Discover large images (frontend should render as: <meta name="robots" content="max-image-preview:large">)
+  if (!out.seo.robots) out.seo.robots = 'max-image-preview:large';
 
   out.branding = { ...(out.branding || {}) };
   if (!out.branding.siteName) out.branding.siteName = tenant?.name || domain.domain;
@@ -1455,22 +1458,60 @@ router.get('/seo/article/:slug', async (req, res) => {
 
   const detail = toWebArticleDetailDto(row);
   const imageUrls = [detail.coverImage?.url].filter(Boolean) as string[];
-  const authorName = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
-  const jsonLd = buildNewsArticleJsonLd({
-    domain,
-    tenantName: tenant.name,
-    slug: detail.slug,
-    title: detail.meta.seoTitle || detail.title,
-    description: detail.meta.metaDescription || detail.excerpt || null,
+  const authorNameRaw = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
+  const authorName = (authorNameRaw && String(authorNameRaw).trim()) ? String(authorNameRaw).trim() : `${tenant.name} Reporter`;
+  const canonicalUrl = `https://${domain}/articles/${encodeURIComponent(detail.slug)}`;
+  const publisherLogoUrl = (await p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null) as any)?.logoUrl || null;
+  const keywords = Array.isArray(detail.tags) ? detail.tags.filter((t: any) => typeof t === 'string' && t.trim()).slice(0, 15) : undefined;
+  const sectionName = row.category?.name || row.category?.slug || null;
+  const cover: any = (row as any)?.contentJson?.coverImage || (detail as any)?.coverImage || null;
+  const imageWidth = cover && Number.isFinite(Number(cover.w)) ? Number(cover.w) : undefined;
+  const imageHeight = cover && Number.isFinite(Number(cover.h)) ? Number(cover.h) : undefined;
+
+  const generated = buildNewsArticleJsonLd({
+    headline: detail.title,
+    description: detail.meta.metaDescription || detail.excerpt || undefined,
+    canonicalUrl,
     imageUrls,
-    publishedAt: detail.publishedAt,
-    modifiedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
-    authorName,
-    section: row.category?.slug || null,
-    inLanguage: row.language?.code || null
+    imageWidth,
+    imageHeight,
+    languageCode: row.language?.code || detail.languageCode || undefined,
+    datePublished: detail.publishedAt || undefined,
+    dateModified: row.updatedAt ? new Date(row.updatedAt).toISOString() : (detail.publishedAt || undefined),
+    authorName: authorName || undefined,
+    publisherName: tenant.name,
+    publisherLogoUrl: publisherLogoUrl || undefined,
+    keywords,
+    articleSection: sectionName || undefined,
+    isAccessibleForFree: true,
   });
 
-  res.json(jsonLd);
+  // Preserve any stored jsonLd fields from the article, but fill missing from generated.
+  const existing = (detail as any).jsonLd && typeof (detail as any).jsonLd === 'object' ? (detail as any).jsonLd : {};
+  const out: any = { ...generated };
+  const preferGenerated = new Set(['headline', 'image', 'author', 'articleSection']);
+  const looksLikeInternalId = (value: any) => {
+    const s = String(value || '').trim();
+    if (!s) return false;
+    if (/^c[a-z0-9]{20,}$/i.test(s)) return true;
+    if (/^[a-f0-9]{24,}$/i.test(s)) return true;
+    if (/^[a-f0-9-]{32,}$/i.test(s) && s.includes('-')) return true;
+    return false;
+  };
+  for (const [k, v] of Object.entries(existing)) {
+    if (preferGenerated.has(k)) continue;
+    if (k === 'articleSection' && looksLikeInternalId(v)) continue;
+    const isEmpty = v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as any).length === 0);
+    if (!isEmpty) out[k] = v;
+  }
+  if (out.publisher && typeof out.publisher === 'object' && existing && (existing as any).publisher && typeof (existing as any).publisher === 'object') {
+    out.publisher = { ...out.publisher, ...(existing as any).publisher };
+    if ((existing as any).publisher.logo && typeof (existing as any).publisher.logo === 'object') {
+      out.publisher.logo = { ...(out.publisher.logo || {}), ...(existing as any).publisher.logo };
+    }
+  }
+
+  res.json(out);
 });
 
 /**

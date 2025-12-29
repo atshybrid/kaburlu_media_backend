@@ -103,8 +103,18 @@ RULES:
      }
    }
 
-12. **JSON-LD (NewsArticle)**
-   - Valid JSON-LD with headline, image, datePublished, dateModified, author, publisher.
+12. **JSON-LD (NewsArticle) - BEST PRACTICE (Google Discover ready)**
+    - MUST output Schema.org NewsArticle JSON-LD.
+    - headline MUST be the full title (do NOT shorten).
+    - image MUST be ImageObject when coverImage.url exists:
+       { "@type": "ImageObject", "url": "...", "width": 1200, "height": 675 }
+       (width/height optional if unknown, but prefer Discover sizes).
+    - author REQUIRED: { "@type": "Person", "name": "Kaburlu Reporter" }
+    - publisher REQUIRED with logo ImageObject (include width=600,height=60 if possible):
+       { "@type": "Organization", "name": "Kaburlu", "logo": { "@type": "ImageObject", "url": "...", "width": 600, "height": 60 } }
+    - articleSection REQUIRED and MUST be human readable (e.g., "Politics", "Local News"). Never internal ids.
+    - keywords: use tags
+    - isAccessibleForFree: true
 
 13. **AUDIT**
    audit = {
