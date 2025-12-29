@@ -1019,7 +1019,7 @@ router.get('/articles/:slug', async (req, res) => {
     p.tenantWebArticle.findFirst({
     where,
     orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-    include: {
+    select: {
       id: true,
       tenantId: true,
       domainId: true,
