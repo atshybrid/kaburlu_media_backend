@@ -177,8 +177,227 @@ router.get('/domain/settings', async (req, res) => {
   const tenant = (res.locals as any).tenant;
   const domain = (res.locals as any).domain;
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
-  const effective = await getEffectiveSettings(tenant.id, domain.id);
-  res.json({ domain: domain.domain, tenantId: tenant.id, effective });
+  const [effective, tenantTheme, tenantEntity, domainCats, domainLangs] = await Promise.all([
+    getEffectiveSettings(tenant.id, domain.id),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null),
+    p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }).catch(() => []),
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }).catch(() => [])
+  ]);
+
+  // Ensure stable public contract keys.
+  // Keep defaults minimal and predictable; prefer configured values when present.
+  const out: any = { ...(effective || {}) };
+  out.seo = { ...(out.seo || {}) };
+  if (!out.seo.canonicalBaseUrl) out.seo.canonicalBaseUrl = `https://${domain.domain}`;
+
+  out.branding = { ...(out.branding || {}) };
+  if (!out.branding.siteName) out.branding.siteName = tenant?.name || domain.domain;
+  if (!out.branding.logoUrl) out.branding.logoUrl = (tenantTheme as any)?.logoUrl || null;
+
+  out.contact = { ...(out.contact || {}) };
+  if (!Object.prototype.hasOwnProperty.call(out.contact, 'email')) out.contact.email = null;
+  if (!Object.prototype.hasOwnProperty.call(out.contact, 'phone')) out.contact.phone = null;
+  if (!Object.prototype.hasOwnProperty.call(out.contact, 'city')) out.contact.city = null;
+  if (!Object.prototype.hasOwnProperty.call(out.contact, 'region')) out.contact.region = null;
+  if (!Object.prototype.hasOwnProperty.call(out.contact, 'country')) out.contact.country = null;
+
+  out.social = { ...(out.social || {}) };
+  if (!Object.prototype.hasOwnProperty.call(out.social, 'facebook')) out.social.facebook = null;
+  if (!Object.prototype.hasOwnProperty.call(out.social, 'x')) out.social.x = null;
+  if (!Object.prototype.hasOwnProperty.call(out.social, 'instagram')) out.social.instagram = null;
+  if (!Object.prototype.hasOwnProperty.call(out.social, 'youtube')) out.social.youtube = null;
+  if (!Object.prototype.hasOwnProperty.call(out.social, 'telegram')) out.social.telegram = null;
+
+  // Resolve tenant default language from TenantEntity.language (authoritative default for website).
+  const tenantDefaultLangCode = (tenantEntity as any)?.language?.code ? String((tenantEntity as any).language.code) : null;
+  const supportedLanguageCodes = new Set<string>();
+  for (const dl of (domainLangs || []) as any[]) {
+    const code = dl?.language?.code ? String(dl.language.code) : null;
+    if (code) supportedLanguageCodes.add(code);
+  }
+  if (tenantDefaultLangCode) supportedLanguageCodes.add(tenantDefaultLangCode);
+  if (Array.isArray((out as any)?.content?.supportedLanguages)) {
+    for (const c of (out as any).content.supportedLanguages) {
+      if (typeof c === 'string' && c.trim()) supportedLanguageCodes.add(c.trim());
+    }
+  }
+
+  out.content = { ...(out.content || {}) };
+  out.content.supportedLanguages = Array.from(supportedLanguageCodes);
+  if (tenantDefaultLangCode) {
+    out.content.defaultLanguage = tenantDefaultLangCode;
+  } else if (!out.content.defaultLanguage) {
+    out.content.defaultLanguage = out.content.supportedLanguages?.[0] || 'en';
+  }
+
+  // Navigation: ensure domain-selected categories appear, and provide both base + translated names.
+  // We keep existing items, but append any missing domain categories.
+  const domainCategories = (domainCats || []).map((dc: any) => dc.category).filter(Boolean);
+  const categoryIds = domainCategories.map((c: any) => c.id);
+  const translations = tenantDefaultLangCode
+    ? await p.categoryTranslation.findMany({ where: { language: tenantDefaultLangCode, categoryId: { in: categoryIds } } }).catch(() => [])
+    : [];
+  const translatedNameByCategoryId = new Map<string, string>((translations || []).map((t: any) => [t.categoryId, t.name]));
+  const categoryBySlug = new Map<string, any>(domainCategories.map((c: any) => [c.slug, c]));
+
+  out.navigation = { ...(out.navigation || {}) };
+  const menu: any[] = Array.isArray(out.navigation.menu) ? [...out.navigation.menu] : [];
+  const ensureHome = () => {
+    const hasHome = menu.some((m: any) => String(m?.href || '') === '/');
+    if (!hasHome) menu.unshift({ href: '/', label: 'Home' });
+  };
+  ensureHome();
+
+  const extractCategorySlugFromHref = (href: string) => {
+    const h = String(href || '');
+    const m = h.match(/^\/category\/([^/?#]+)/i);
+    return m?.[1] ? String(m[1]) : null;
+  };
+
+  const existingCategorySlugs = new Set<string>();
+  for (const item of menu) {
+    const slug = extractCategorySlugFromHref(String(item?.href || ''));
+    if (slug) existingCategorySlugs.add(slug);
+  }
+
+  // Enrich existing menu items (category links) with base+translated labels.
+  for (const item of menu) {
+    const slug = extractCategorySlugFromHref(String(item?.href || ''));
+    if (!slug) continue;
+    const cat = categoryBySlug.get(slug);
+    if (!cat) continue;
+    const baseName = cat?.name ? String(cat.name) : slug;
+    const translatedName = translatedNameByCategoryId.get(String(cat.id)) || null;
+    item.categorySlug = slug;
+    item.labels = { base: baseName, translated: translatedName };
+    // Keep compatibility: label remains a string. Prefer tenant language label when available.
+    item.labelEn = baseName;
+    item.labelNative = translatedName;
+    if (translatedName) item.label = translatedName;
+    else if (!item.label) item.label = baseName;
+  }
+
+  // Append any missing domain categories.
+  for (const cat of domainCategories) {
+    const slug = String(cat.slug);
+    if (!slug || existingCategorySlugs.has(slug)) continue;
+    const baseName = cat?.name ? String(cat.name) : slug;
+    const translatedName = translatedNameByCategoryId.get(String(cat.id)) || null;
+    menu.push({
+      href: `/category/${slug}`,
+      label: translatedName || baseName,
+      categorySlug: slug,
+      labels: { base: baseName, translated: translatedName },
+      labelEn: baseName,
+      labelNative: translatedName
+    });
+    existingCategorySlugs.add(slug);
+  }
+
+  out.navigation.menu = menu;
+
+  res.json({ domain: domain.domain, tenantId: tenant.id, effective: out });
+});
+
+/**
+ * @swagger
+ * /public/ads:
+ *   get:
+ *     summary: Get website ads for the resolved domain
+ *     description: |
+ *       Returns ads stored under TenantSettings.data.ads, filtered for the resolved domain.
+ *
+ *       By default, returns `visibility=PRIVATE` ads (tenant's own website placements).
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
+ *       - in: query
+ *         name: placement
+ *         required: false
+ *         description: Filter by placement key (e.g. homepage_top)
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: visibility
+ *         required: false
+ *         description: Filter by visibility (default PRIVATE)
+ *         schema:
+ *           type: string
+ *           enum: [PRIVATE, PUBLIC, all]
+ *     responses:
+ *       200:
+ *         description: Ads list
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   domain: "example.com"
+ *                   tenantId: "TENANT_ID"
+ *                   ads:
+ *                     - id: "ad_1"
+ *                       placement: "homepage_top"
+ *                       title: "Sponsor"
+ *                       imageUrl: "https://cdn.example.com/ad.webp"
+ *                       clickUrl: "https://sponsor.example.com"
+ *                       enabled: true
+ *                       visibility: "PRIVATE"
+ *                       domainId: null
+ *                       startsAt: null
+ *                       endsAt: null
+ *                       priority: 10
+ */
+router.get('/ads', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
+
+  const placement = req.query.placement ? String(req.query.placement).trim() : null;
+  const visibilityRaw = req.query.visibility ? String(req.query.visibility).trim() : 'PRIVATE';
+  const visibility = String(visibilityRaw).toUpperCase();
+
+  const row = await p.tenantSettings.findUnique({ where: { tenantId: tenant.id } }).catch(() => null);
+  const data = (row && typeof row.data === 'object' && row.data) ? row.data : {};
+  const ads: any[] = Array.isArray((data as any).ads) ? (data as any).ads : [];
+
+  const now = Date.now();
+  const filtered = ads
+    .filter((a: any) => a && typeof a === 'object')
+    .filter((a: any) => {
+      if (placement && String(a.placement || '').trim() !== placement) return false;
+
+      const enabled = Object.prototype.hasOwnProperty.call(a, 'enabled') ? !!a.enabled : true;
+      if (!enabled) return false;
+
+      const v = String(a.visibility || 'PRIVATE').toUpperCase();
+      if (visibility !== 'ALL' && v !== visibility) return false;
+
+      const adDomainId = Object.prototype.hasOwnProperty.call(a, 'domainId') ? (a.domainId ?? null) : null;
+      if (adDomainId && String(adDomainId) !== String(domain.id)) return false;
+
+      const startsAt = a.startsAt ? Date.parse(String(a.startsAt)) : NaN;
+      const endsAt = a.endsAt ? Date.parse(String(a.endsAt)) : NaN;
+      if (Number.isFinite(startsAt) && now < startsAt) return false;
+      if (Number.isFinite(endsAt) && now > endsAt) return false;
+      return true;
+    })
+    .sort((a: any, b: any) => {
+      const pa = Number.isFinite(Number(a.priority)) ? Number(a.priority) : 0;
+      const pb = Number.isFinite(Number(b.priority)) ? Number(b.priority) : 0;
+      if (pb !== pa) return pb - pa;
+      const ta = a.updatedAt ? Date.parse(String(a.updatedAt)) : 0;
+      const tb = b.updatedAt ? Date.parse(String(b.updatedAt)) : 0;
+      return tb - ta;
+    });
+
+  res.json({ domain: domain.domain, tenantId: tenant.id, ads: filtered });
 });
 
 /**
@@ -331,6 +550,15 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *
  *       - Default response (no query params): legacy shape `{ hero, topStories, sections, ... }`.
  *       - Style1 contract: pass `?v=1` (or `?shape=style1`) to get `{ version, tenant, theme, uiTokens, sections, data }`.
+ *       - Style2 (legacy) composition: pass `?shape=style2` (or `?themeKey=style2`) to load sections from TenantTheme.homepageConfig.style2.
+ *
+ *       Best practice (Style2 website):
+ *       1) Admin config (JWT):
+ *          - POST `/tenant-theme/{tenantId}/homepage/style2/apply-default`
+ *          - PATCH `/tenant-theme/{tenantId}/homepage/style2/sections` with `{ sections: [{ key, title, position, categorySlug, limit }] }`
+ *       2) Frontend load:
+ *          - GET `/public/homepage?shape=style2` (one call returns hero + topStories + each section items)
+ *          - Optionally GET `/public/ads?placement=...` for ads
  *     tags: [Public - Website]
  *     parameters:
  *       - in: header
@@ -361,7 +589,7 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *         description: Alternative to `v=1`; set to `style1` for Style1 contract.
  *         schema:
  *           type: string
- *           enum: ['style1']
+ *           enum: ['style1','style2']
  *           example: style1
  *       - in: query
  *         name: themeKey
@@ -413,6 +641,36 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
   *                   config:
   *                     heroCount: 1
   *                     topStoriesCount: 5
+   *               style2:
+   *                 summary: Style2 response (use ?shape=style2)
+   *                 value:
+   *                   hero:
+   *                     - id: "wa_101"
+   *                       slug: "headline-1"
+   *                       title: "Top headline"
+   *                       image: "https://cdn.example.com/cover.webp"
+   *                       excerpt: "..."
+   *                       category: { slug: "politics", name: "Politics" }
+   *                       publishedAt: "2025-12-29T10:00:00.000Z"
+   *                       tags: ["breaking"]
+   *                       languageCode: "en"
+   *                   topStories: []
+   *                   sections:
+   *                     - key: "politics"
+   *                       title: "Politics"
+   *                       position: 10
+   *                       style: "grid"
+   *                       limit: 6
+   *                       categorySlug: "politics"
+   *                       items: []
+   *                   config:
+   *                     heroCount: 1
+   *                     topStoriesCount: 5
+   *                     sections:
+   *                       - key: "politics"
+   *                         position: 10
+   *                         limit: 6
+   *                         categorySlug: "politics"
   *               style1V1:
   *                 summary: Style1 contract (use ?v=1)
   *                 value:
@@ -452,20 +710,23 @@ router.get('/homepage', async (_req, res) => {
   const requestId = getOrCreateRequestId(req);
   res.setHeader('X-Request-Id', requestId);
 
-  const wantsV1 = String((req.query as any)?.v || '').trim() === '1' || String((req.query as any)?.shape || '').toLowerCase() === 'style1';
-  const themeKey = String((req.query as any)?.themeKey || 'style1');
+  const shape = String((req.query as any)?.shape || '').toLowerCase().trim();
+  const wantsV1 = String((req.query as any)?.v || '').trim() === '1' || shape === 'style1';
+  // Convenience: allow `shape=style2` to behave like `themeKey=style2` for legacy homepage.
+  const themeKey = String((req.query as any)?.themeKey || (shape && shape !== 'style1' ? shape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
   }
 
 
-  const [domainCats, activeDomainCount, effective, languageId, tenantTheme] = await Promise.all([
+  const [domainCats, activeDomainCount, effective, languageId, tenantTheme, tenantEntity] = await Promise.all([
     domain?.id ? p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }) : Promise.resolve([]),
     p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0),
     domain?.id ? getEffectiveSettings(tenant.id, domain.id) : Promise.resolve({}),
     resolveLanguageId(langCode),
-    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null)
   ]);
 
   if (wantsV1 && langCode && !languageId) {
@@ -473,17 +734,60 @@ router.get('/homepage', async (_req, res) => {
   }
 
   const allowedCategoryIds = new Set((domainCats || []).map((d: any) => d.categoryId));
+  // Homepage should show both domain-specific and tenant-shared articles.
+  // If a tenant has multiple domains, many existing articles may have domainId=null (shared);
+  // excluding them makes the homepage appear empty.
   const domainScope: any = domain?.id
-    ? (activeDomainCount <= 1 ? { OR: [{ domainId: domain.id }, { domainId: null }] } : { domainId: domain.id })
+    ? { OR: [{ domainId: domain.id }, { domainId: null }] }
     : {};
 
   const categoryBySlug = new Map<string, any>((domainCats || []).map((d: any) => [d.category?.slug, d.category]));
+
+  // Best practice: choose a preferred language for labels/translations.
+  // - If caller provides ?lang=xx, use it (already validated when wantsV1).
+  // - Otherwise, use TenantEntity.language.code as the tenant's default website language (when available).
+  const tenantDefaultLangCode = (tenantEntity as any)?.language?.code ? String((tenantEntity as any).language.code) : null;
+  const preferredLangCodeForLabels = (langCode || tenantDefaultLangCode || null) as string | null;
+  const categoryTranslations = preferredLangCodeForLabels
+    ? await p.categoryTranslation
+        .findMany({ where: { language: preferredLangCodeForLabels, categoryId: { in: (domainCats || []).map((d: any) => d.categoryId) } } })
+        .catch(() => [])
+    : [];
+  const translatedNameByCategoryId = new Map<string, string>((categoryTranslations || []).map((t: any) => [t.categoryId, t.name]));
 
   const defaultSections: HomepageSectionConfig[] = [
     { key: 'politics', title: 'Politics', position: 10, style: 'grid', limit: 6, categorySlug: 'politics' },
     { key: 'technology', title: 'Technology', position: 20, style: 'grid', limit: 6, categorySlug: 'technology' },
     { key: 'sports', title: 'Sports', position: 30, style: 'grid', limit: 6, categorySlug: 'sports' },
   ];
+
+  const buildDomainCategorySections = (opts?: { limit?: number; style?: string; perSectionLimit?: number }) => {
+    const maxSections = Math.min(Math.max(Number(opts?.limit || 8), 1), 25);
+    const style = String(opts?.style || 'grid');
+    const perLimit = Math.min(Math.max(Number(opts?.perSectionLimit || 6), 1), 50);
+    const cats = (domainCats || [])
+      .map((d: any) => d.category)
+      .filter(Boolean)
+      .slice()
+      .sort((a: any, b: any) => String(a?.name || '').localeCompare(String(b?.name || '')));
+    const outSections: HomepageSectionConfig[] = [];
+    let pos = 10;
+    for (const c of cats) {
+      if (!c?.slug) continue;
+      const translated = translatedNameByCategoryId.get(String(c.id)) || null;
+      outSections.push({
+        key: String(c.slug),
+        title: translated || String(c.name || c.slug),
+        position: pos,
+        style,
+        limit: perLimit,
+        categorySlug: String(c.slug)
+      });
+      pos += 10;
+      if (outSections.length >= maxSections) break;
+    }
+    return outSections;
+  };
 
   // Prefer homepage config stored in TenantTheme (per style) to avoid touching global settings JSON.
   const themeHome: any = (tenantTheme as any)?.homepageConfig || null;
@@ -493,12 +797,35 @@ router.get('/homepage', async (_req, res) => {
   const cfg: any = themeHomeForStyle || (effective as any)?.homepage || {};
   const heroCount = Math.min(Math.max(parseInt(String(cfg.heroCount || '1'), 10) || 1, 1), 10);
   const topStoriesCount = Math.min(Math.max(parseInt(String(cfg.topStoriesCount || '5'), 10) || 5, 1), 20);
-  const sectionsCfg: HomepageSectionConfig[] = Array.isArray(cfg.sections) && cfg.sections.length ? cfg.sections : defaultSections;
+  // Sections selection best practices:
+  // - If sections are missing entirely => fall back to demo defaults.
+  // - For style2, if sections are present but empty => auto-fill using domain-selected categories
+  //   to avoid an "empty homepage" on fresh tenants.
+  let sectionsCfg: HomepageSectionConfig[];
+  if (Array.isArray(cfg.sections)) {
+    if (themeKey === 'style2' && cfg.sections.length === 0) {
+      sectionsCfg = buildDomainCategorySections({ limit: 8, style: 'grid', perSectionLimit: 6 });
+    } else {
+      sectionsCfg = cfg.sections;
+    }
+  } else {
+    sectionsCfg = defaultSections;
+  }
 
   // Base pool for hero/topStories (latest)
-  const baseWhere: any = { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope };
-  if (allowedCategoryIds.size) baseWhere.categoryId = { in: Array.from(allowedCategoryIds) };
-  if (languageId) baseWhere.languageId = languageId;
+  // Best practice:
+  // - Always include shared domain content (domainId=null)
+  // - When a language is requested, also include rows with languageId=null (legacy/unknown language)
+  const baseAnd: any[] = [];
+  if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) baseAnd.push(domainScope);
+  if (languageId) baseAnd.push({ OR: [{ languageId }, { languageId: null }] });
+  // Some ingested TenantWebArticle rows may be uncategorized (categoryId=null).
+  // When the domain restricts categories, still allow uncategorized rows so the homepage doesn't go empty.
+  if (allowedCategoryIds.size) {
+    baseAnd.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+  }
+  const baseWhere: any = { tenantId: tenant.id, status: 'PUBLISHED' };
+  if (baseAnd.length) baseWhere.AND = baseAnd;
 
   const baseRows = await p.tenantWebArticle.findMany({
     where: baseWhere,
@@ -593,11 +920,6 @@ router.get('/homepage', async (_req, res) => {
     const seen = new Set<string>();
     const data: Record<string, any[]> = {};
 
-    // Prime dedupe set using base hero/topStories (since legacy clients treat them as first sections)
-    for (const c of [...hero, ...topStories]) {
-      if (c?.id) seen.add(String(c.id));
-    }
-
     const timers: Record<string, number> = {};
 
     async function fetchLatest(limit: number) {
@@ -619,8 +941,12 @@ router.get('/homepage', async (_req, res) => {
         timers.category = (timers.category || 0) + (Date.now() - t0);
         return [];
       }
-      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope, categoryId: resolvedCategory.id };
-      if (languageId) where.languageId = languageId;
+      const and: any[] = [];
+      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: resolvedCategory.id };
+      if (and.length) where.AND = and;
       const rows = await p.tenantWebArticle.findMany({
         where,
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -645,14 +971,17 @@ router.get('/homepage', async (_req, res) => {
       const target = (uiTokens.imageTargets as any)[targetKey] || null;
 
       const out: any[] = [];
-      const want = Number(
-        s.ui?.itemCount ||
-          s.ui?.count ||
-          s.ui?.rows?.count ||
-          s.ui?.hero?.count ||
-          s.query?.limit ||
-          10
-      );
+      let want = 10;
+      if (s.type === 'heroStack') {
+        const heroN = Number(s.ui?.hero?.count || 0) || 0;
+        const mediumN = Number(s.ui?.medium?.count || 0) || 0;
+        const rowsN = Number(s.ui?.rows?.count || 0) || 0;
+        want = heroN + mediumN + rowsN;
+        if (!want) want = Number(s.query?.limit || 10) || 10;
+      } else {
+        want = Number(s.ui?.itemCount ?? s.ui?.count ?? s.query?.limit ?? 10) || 10;
+      }
+      want = Math.min(Math.max(want, 1), 50);
       for (const r of rows) {
         if (!r?.id) continue;
         if (seen.has(r.id)) continue;
@@ -664,7 +993,20 @@ router.get('/homepage', async (_req, res) => {
       data[s.id] = out;
     }
 
-    await Promise.all(sections.map(buildSection));
+    // Deterministic ordering is important because we dedupe across sections.
+    // We also prioritize the main story stack before less critical rails/tickers.
+    const sectionPriority = (s: V1Section) => {
+      if (s.type === 'heroStack') return 0;
+      if (s.type === 'ticker') return 1;
+      if (s.type === 'titlesOnly') return 3;
+      return 2;
+    };
+
+    const buildOrder = [...sections].sort((a, b) => sectionPriority(a) - sectionPriority(b));
+    for (const s of buildOrder) {
+      // eslint-disable-next-line no-await-in-loop
+      await buildSection(s);
+    }
     console.log('[homepage:v1]', { requestId, tenant: tenant.slug, domain: domain?.domain, langCode, timingsMs: timers });
 
     return res.json({
@@ -692,9 +1034,15 @@ router.get('/homepage', async (_req, res) => {
   const sectionRows = await Promise.all(normalized
     .sort((a: any, b: any) => a.position - b.position)
     .map(async (s: HomepageSectionConfig) => {
-      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope };
-      if (allowedCategoryIds.size) where.categoryId = { in: Array.from(allowedCategoryIds) };
-      if (languageId) where.languageId = languageId;
+      const and: any[] = [];
+      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+      if (allowedCategoryIds.size) {
+        and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+      }
+
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED' };
+      if (and.length) where.AND = and;
 
       let resolvedCategory: any = null;
       if (s.categorySlug) {
@@ -714,9 +1062,11 @@ router.get('/homepage', async (_req, res) => {
         take: s.limit || 6,
         include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
       });
+
+      const translatedTitle = resolvedCategory?.id ? (translatedNameByCategoryId.get(String(resolvedCategory.id)) || null) : null;
       return {
         ...s,
-        title: s.title || (resolvedCategory?.name || s.key),
+        title: s.title || translatedTitle || (resolvedCategory?.name || s.key),
         categorySlug: s.categorySlug || null,
         items: rows.map(toCard)
       };

@@ -58,6 +58,7 @@ const swaggerDefinition = {
     { name: 'Tenants', description: 'Tenant CRUD & PRGI fields' },
     { name: 'Domains', description: 'Domain verification & status management' },
     { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
+    { name: 'Tenant Ads', description: 'Tenant-scoped website ads (CRUD) stored in TenantSettings.data.ads' },
     { name: 'Reporters', description: 'Reporter hierarchy & roles' },
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },

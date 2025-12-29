@@ -59,6 +59,15 @@ function buildDefaultHomepageConfigForStyle(style: string) {
       ]
     };
   }
+  if (style === 'style2') {
+    // Style2 is the "legacy" /public/homepage shape with category-linked sections.
+    // Admins can link each section to a categorySlug and control per-section limits.
+    return {
+      heroCount: 1,
+      topStoriesCount: 5,
+      sections: []
+    };
+  }
   return { heroCount: 1, topStoriesCount: 5, sections: [] };
 }
 
@@ -67,7 +76,10 @@ function buildDefaultHomepageConfigForStyle(style: string) {
  * /tenant-theme/{tenantId}/homepage/{style}:
  *   get:
  *     summary: Get tenant homepage config for a style (TENANT_ADMIN scoped or SUPER_ADMIN)
- *     description: Returns TenantTheme.homepageConfig[style] (or null if unset).
+ *     description: |
+ *       Returns TenantTheme.homepageConfig[style] (or null if unset).
+ *
+ *       Style2 note: style=style2 powers /public/homepage?shape=style2 section composition.
  *     tags: [Tenant Theme]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -139,7 +151,11 @@ router.get(
  * /tenant-theme/{tenantId}/homepage/{style}/apply-default:
  *   post:
  *     summary: Apply default homepage config for a style to a tenant (TENANT_ADMIN scoped or SUPER_ADMIN)
- *     description: Overwrites TenantTheme.homepageConfig[style] with the server default for that style.
+ *     description: |
+ *       Overwrites TenantTheme.homepageConfig[style] with the server default for that style.
+ *
+ *       Style2 note: Apply defaults for style2 first, then PATCH sections via
+ *       /tenant-theme/{tenantId}/homepage/style2/sections.
  *     tags: [Tenant Theme]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -228,6 +244,27 @@ router.post(
  *                   - key: sports
  *                     title: "Sports"
  *                     categorySlug: sports
+ *                     limit: 6
+ *             style2Homepage:
+ *               summary: Style2 homepage sections (drives /public/homepage?shape=style2)
+ *               value:
+ *                 sections:
+ *                   - key: hero
+ *                     title: "Latest"
+ *                     position: 1
+ *                     style: "hero"
+ *                     limit: 1
+ *                   - key: politics
+ *                     title: "Politics"
+ *                     position: 10
+ *                     style: "grid"
+ *                     categorySlug: "politics"
+ *                     limit: 6
+ *                   - key: sports
+ *                     title: "Sports"
+ *                     position: 20
+ *                     style: "grid"
+ *                     categorySlug: "sports"
  *                     limit: 6
  *     responses:
  *       200: { description: Updated tenant theme }

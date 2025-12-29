@@ -421,6 +421,28 @@ router.get('/articles', async (req, res) => {
  *           minimum: 1
  *           maximum: 100
  *         example: 30
+ *       - in: query
+ *         name: shape
+ *         required: false
+ *         description: Optional response shape. `homepage` returns hero/topStories + section-wise data driven by tenant theme homepage settings.
+ *         schema:
+ *           type: string
+ *           enum: ['flat', 'homepage']
+ *         example: homepage
+ *       - in: query
+ *         name: themeKey
+ *         required: false
+ *         description: Theme key used to read TenantTheme.homepageConfig (e.g. style1). Defaults to style1.
+ *         schema:
+ *           type: string
+ *           example: style1
+ *       - in: query
+ *         name: lang
+ *         required: false
+ *         description: Optional language code filter (must be allowed for domain).
+ *         schema:
+ *           type: string
+ *           example: te
  *     responses:
  *       200:
  *         description: Latest card items
@@ -439,6 +461,22 @@ router.get('/articles', async (req, res) => {
  *                       category: { id: "cat_1", slug: "politics", name: "రాజకీయాలు" }
  *                       languageCode: "te"
  *                       tags: ["telangana"]
+ *               homepage:
+ *                 summary: Section-wise homepage response (use ?shape=homepage)
+ *                 value:
+ *                   hero: []
+ *                   topStories: []
+ *                   sections:
+ *                     - key: "politics"
+ *                       title: "Politics"
+ *                       position: 10
+ *                       limit: 6
+ *                       categorySlug: "politics"
+ *                       items: []
+ *                   config:
+ *                     heroCount: 1
+ *                     topStoriesCount: 5
+ *                     themeKey: "style1"
  */
 router.get('/articles/home', async (req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -446,19 +484,214 @@ router.get('/articles/home', async (req, res) => {
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '30'), 10), 1), 100);
 
+  const shape = String(req.query.shape || 'flat').toLowerCase();
+  const themeKey = String(req.query.themeKey || 'style1').trim() || 'style1';
+  const langCode = (req.query.lang ? String(req.query.lang) : '').trim() || null;
+
   const activeDomainCount = await p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0);
   const domainScope: any = activeDomainCount <= 1
     ? { OR: [{ domainId: domain.id }, { domainId: null }] }
     : { domainId: domain.id };
 
-  const rows = await p.tenantWebArticle.findMany({
-    where: { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope },
+  // Resolve optional language filter (must be allowed for domain)
+  let languageId: string | null = null;
+  if (langCode) {
+    const domainLangs = await p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }).catch(() => []);
+    const match = (domainLangs || []).find((dl: any) => dl.language?.code === langCode);
+    if (!match) {
+      // Unknown/disabled language => empty result (safe)
+      return res.json(shape === 'homepage'
+        ? { hero: [], topStories: [], sections: [], config: { heroCount: 1, topStoriesCount: 5, themeKey, lang: langCode } }
+        : { items: [] }
+      );
+    }
+    languageId = match.languageId;
+  }
+
+  // Default/legacy response: flat list
+  if (shape !== 'homepage') {
+    const rows = await p.tenantWebArticle.findMany({
+      where: { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope, ...(languageId ? { languageId } : {}) },
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+    const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
+    return res.json({ items });
+  }
+
+  // Homepage response: hero/topStories + configurable sections
+  type HomepageSectionCfg = {
+    key: string;
+    title?: string;
+    label?: string;
+    position?: number;
+    limit?: number;
+    categorySlug?: string;
+    tagsHas?: string;
+  };
+
+  const [domainCats, tenantTheme] = await Promise.all([
+    p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }).catch(() => []),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
+  ]);
+  const categoryBySlug = new Map<string, any>((domainCats || []).map((d: any) => [d.category?.slug, d.category]));
+  const allowedCategoryIds = new Set((domainCats || []).map((d: any) => d.categoryId));
+
+  const themeHomeAny: any = (tenantTheme as any)?.homepageConfig || null;
+  const themeCfg: any = themeHomeAny && typeof themeHomeAny === 'object'
+    ? (themeHomeAny[themeKey] ?? themeHomeAny)
+    : null;
+
+  const cfg: any = themeCfg || {};
+  const clampInt = (value: any, min: number, max: number, fallback: number) => {
+    const n = parseInt(String(value), 10);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(Math.max(n, min), max);
+  };
+  const heroCount = clampInt(cfg.heroCount, 1, 10, 1);
+  const topStoriesCount = clampInt(cfg.topStoriesCount, 1, 20, 5);
+
+  const defaultSections: HomepageSectionCfg[] = [
+    { key: 'politics', title: 'Politics', position: 10, limit: 6, categorySlug: 'politics' },
+    { key: 'technology', title: 'Technology', position: 20, limit: 6, categorySlug: 'technology' },
+    { key: 'sports', title: 'Sports', position: 30, limit: 6, categorySlug: 'sports' }
+  ];
+  const rawSections: HomepageSectionCfg[] = Array.isArray(cfg.sections) && cfg.sections.length ? cfg.sections : defaultSections;
+  const sectionsCfg: HomepageSectionCfg[] = rawSections
+    .map((s: any) => ({
+      key: String(s?.key || '').trim(),
+      title: typeof s?.title === 'string' ? s.title : undefined,
+      label: typeof s?.label === 'string' ? s.label : undefined,
+      position: typeof s?.position === 'number' ? s.position : (parseInt(String(s?.position || '999'), 10) || 999),
+      limit: clampInt(s?.limit, 1, 50, 6),
+      categorySlug: typeof s?.categorySlug === 'string' ? s.categorySlug : undefined,
+      tagsHas: typeof s?.tagsHas === 'string' ? s.tagsHas : undefined,
+    }))
+    .filter((s: any) => s.key)
+    .sort((a: any, b: any) => a.position - b.position)
+    .slice(0, 25);
+
+  const baseWhere: any = { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope };
+  if (allowedCategoryIds.size) baseWhere.categoryId = { in: Array.from(allowedCategoryIds) };
+  if (languageId) baseWhere.languageId = languageId;
+
+  // Pull a pool of latest articles once, to build hero/topStories + dedupe
+  const poolTake = Math.min(
+    100,
+    Math.max(limit, heroCount + topStoriesCount + sectionsCfg.reduce((sum, s) => sum + (s.limit || 0), 0) + 25)
+  );
+  const latestPoolRows = await p.tenantWebArticle.findMany({
+    where: baseWhere,
     orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-    take: limit,
+    take: poolTake,
     include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
   });
-  const items = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
-  res.json({ items });
+  const latestPool = latestPoolRows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
+
+  const hero = latestPool.slice(0, heroCount);
+  const topStories = latestPool.slice(heroCount, heroCount + topStoriesCount);
+  const seen = new Set<string>();
+  for (const c of [...hero, ...topStories]) {
+    if (c?.id) seen.add(String(c.id));
+  }
+
+  async function fetchSectionItems(s: HomepageSectionCfg) {
+    const want = Math.min(Math.max(Number(s.limit || 6), 1), 50);
+
+    // Prefer category-specific query when categorySlug is provided.
+    if (s.categorySlug) {
+      const resolvedCategory = categoryBySlug.get(s.categorySlug) || null;
+      if (!resolvedCategory) {
+        return {
+          key: s.key,
+          title: s.label || s.title || s.key,
+          position: s.position,
+          limit: want,
+          categorySlug: s.categorySlug,
+          items: []
+        };
+      }
+
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', ...domainScope, categoryId: resolvedCategory.id };
+      if (languageId) where.languageId = languageId;
+      if (s.tagsHas) where.tags = { has: s.tagsHas };
+
+      const rows = await p.tenantWebArticle.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: Math.min(want + 25, 75),
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      const cards = rows.map((a: any) => toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null }));
+      const items: any[] = [];
+      for (const c of cards) {
+        if (!c?.id) continue;
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        items.push(c);
+        if (items.length >= want) break;
+      }
+      return {
+        key: s.key,
+        title: s.label || s.title || resolvedCategory.name || s.key,
+        position: s.position,
+        limit: want,
+        categorySlug: s.categorySlug,
+        items
+      };
+    }
+
+    // Otherwise: latest pool (optionally filtered by tagsHas)
+    const items: any[] = [];
+    for (const c of latestPool) {
+      if (!c?.id) continue;
+      if (seen.has(c.id)) continue;
+      if (s.tagsHas) {
+        const tags = Array.isArray((c as any).tags) ? (c as any).tags : [];
+        if (!tags.includes(s.tagsHas)) continue;
+      }
+      seen.add(c.id);
+      items.push(c);
+      if (items.length >= want) break;
+    }
+    return {
+      key: s.key,
+      title: s.label || s.title || s.key,
+      position: s.position,
+      limit: want,
+      categorySlug: s.categorySlug || null,
+      items
+    };
+  }
+
+  const sections = await Promise.all(sectionsCfg.map(fetchSectionItems));
+
+  // Frontend convenience: also expose a map keyed by section key.
+  const data: Record<string, any[]> = {};
+  for (const s of sections as any[]) {
+    if (s?.key) data[String(s.key)] = Array.isArray(s.items) ? s.items : [];
+  }
+
+  const out: any = {
+    hero,
+    topStories,
+    sections,
+    data,
+    config: {
+      heroCount,
+      topStoriesCount,
+      themeKey,
+      lang: langCode
+    }
+  };
+
+  // Optional convenience fields if configured by section keys.
+  if (data.latest) out.latest = data.latest;
+  if (data.trending) out.trending = data.trending;
+  if (data.breaking) out.breaking = data.breaking;
+
+  return res.json(out);
 });
 
 /**
