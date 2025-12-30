@@ -114,6 +114,73 @@ function normalizeStatus(input: any): string {
     return s.toUpperCase();
 }
 
+function isHttpUrl(u: any): boolean {
+    const s = String(u || '').trim();
+    return Boolean(s) && /^https?:\/\//i.test(s);
+}
+
+function getReporterAutoPublishFromKycData(kycData: any): boolean {
+    try {
+        if (!kycData || typeof kycData !== 'object') return false;
+        if ((kycData as any).autoPublish === true) return true;
+        if ((kycData as any)?.settings?.autoPublish === true) return true;
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+function normalizeNewspaperMedia(body: any): { images: string[]; videos: string[]; coverImageUrl: string | null } {
+    const imagesSet = new Set<string>();
+    const videosSet = new Set<string>();
+
+    const addImage = (u: any) => {
+        const url = String(u || '').trim();
+        if (!isHttpUrl(url)) return;
+        imagesSet.add(url);
+    };
+    const addVideo = (u: any) => {
+        const url = String(u || '').trim();
+        if (!isHttpUrl(url)) return;
+        videosSet.add(url);
+    };
+
+    // Common payload forms
+    if (isHttpUrl(body?.coverImageUrl)) addImage(body.coverImageUrl);
+    if (Array.isArray(body?.images)) for (const u of body.images) addImage(u);
+    if (Array.isArray(body?.videos)) for (const u of body.videos) addVideo(u);
+
+    // Back-compat: mediaUrls can contain either; assume image unless video extension is obvious
+    if (Array.isArray(body?.mediaUrls)) {
+        for (const u of body.mediaUrls) {
+            const url = String(u || '').trim();
+            if (!isHttpUrl(url)) continue;
+            if (/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url)) addVideo(url);
+            else addImage(url);
+        }
+    }
+
+    // Structured media
+    const mediaImages = Array.isArray(body?.media?.images) ? body.media.images : [];
+    for (const img of mediaImages) addImage(img?.url);
+    const mediaVideos = Array.isArray(body?.media?.videos) ? body.media.videos : [];
+    for (const v of mediaVideos) addVideo(v?.url);
+
+    // Inline blocks
+    const contentArr = Array.isArray(body?.content) ? body.content : [];
+    for (const item of contentArr) {
+        if (!item || typeof item !== 'object') continue;
+        const t = String((item as any).type || '').toLowerCase();
+        if (t === 'image' || t === 'img') addImage((item as any).url || (item as any).src);
+        if (t === 'video') addVideo((item as any).url || (item as any).src);
+    }
+
+    const images = Array.from(imagesSet);
+    const videos = Array.from(videosSet);
+    const coverImageUrl = images.length ? images[0] : null;
+    return { images, videos, coverImageUrl };
+}
+
 function buildWebJsonFromNewspaperPayload(payload: any, opts?: { domain?: string | null; languageCode?: string; categoryIds?: string[]; publishedAt?: string | null }) {
     const title = String(payload?.title || '').trim();
     const subTitle = payload?.subTitle ? String(payload.subTitle).trim() : '';
@@ -218,7 +285,7 @@ async function resolveTenantScope(req: Request): Promise<{ tenantId?: string, er
     }
 
     // Reporters/Admins are scoped to their tenant
-    if (['TENANT_ADMIN', 'REPORTER', 'ADMIN_EDITOR', 'NEWS_MODERATOR'].includes(user.role.name)) {
+    if (['TENANT_ADMIN', 'TENANT_EDITOR', 'REPORTER', 'ADMIN_EDITOR', 'NEWS_MODERATOR'].includes(user.role.name)) {
         const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { tenantId: true } });
         if (!rep?.tenantId) return { error: 'Reporter profile not linked to tenant', status: 403 };
         return { tenantId: rep.tenantId };
@@ -255,9 +322,31 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const subTitle = body.subTitle != null ? String(body.subTitle).trim() : undefined;
         const heading = String(body.heading || title || '').trim();
         const publishedAt = body.publishedAt ? String(body.publishedAt) : undefined;
-        const status = normalizeStatus(body.status);
-        const shouldPublish = status === 'PUBLISHED';
-        const location = body.location || {};
+        const requestedStatus = normalizeStatus(body.status);
+        let reporterAutoPublish = false;
+        if (user?.role?.name === 'REPORTER') {
+            const rep = await (prisma as any).reporter.findFirst({ where: { userId: authorId }, select: { kycData: true } }).catch(() => null);
+            reporterAutoPublish = getReporterAutoPublishFromKycData(rep?.kycData);
+        }
+
+        const effectiveStatus = (user?.role?.name === 'REPORTER')
+            ? (reporterAutoPublish ? 'PUBLISHED' : 'DRAFT')
+            : requestedStatus;
+        const shouldPublish = effectiveStatus === 'PUBLISHED';
+        const location = body.location;
+        if (!location || typeof location !== 'object') {
+            return res.status(400).json({
+                error: 'location is required',
+                details: 'Provide location with any ONE id: villageId OR mandalId OR districtId OR stateId'
+            });
+        }
+        const hasAnyLocationId = Boolean((location as any).villageId || (location as any).mandalId || (location as any).districtId || (location as any).stateId);
+        if (!hasAnyLocationId) {
+            return res.status(400).json({
+                error: 'location id is required',
+                details: 'Provide any ONE id in location: villageId OR mandalId OR districtId OR stateId'
+            });
+        }
         const locationRef = await resolveLocationRef(location);
         // Choose a dateline label like "District/Mandal" when possible.
         const placeLabel = buildPlaceLabelForDateline(locationRef);
@@ -338,10 +427,10 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             languageId = lang.id;
         }
 
-        // Attempt to infer categoryIds from payload (optional)
+        // Category is mandatory for newspaper posting.
+        // Backward-compat: if categoryId is missing but `category` string is provided, try to resolve it.
         const categoryIds: string[] = [];
         if (body.categoryId) categoryIds.push(String(body.categoryId));
-        // category name is optional; we only connect if we can find a matching category
         if (!categoryIds.length && body.category) {
             const name = String(body.category).trim();
             if (name) {
@@ -354,6 +443,17 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 if (resolved?.categoryId) categoryIds.push(resolved.categoryId);
             }
         }
+        if (!categoryIds.length) {
+            return res.status(400).json({
+                error: 'categoryId is required',
+                details: 'Pass categoryId (recommended). Legacy: pass category (string) and server will resolve.'
+            });
+        }
+        // Validate category exists (avoid writing invalid foreign keys)
+        const categoryOk = await prisma.category.findFirst({ where: { id: categoryIds[0], isDeleted: false }, select: { id: true } }).catch(() => null);
+        if (!categoryOk?.id) {
+            return res.status(400).json({ error: 'Invalid categoryId' });
+        }
 
         // Always queue shortnews; worker will infer/fallback category when missing.
         const shortQueued = true;
@@ -361,35 +461,24 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
     const domainId = domainResolved.domainId;
     const domainName = domainResolved.domainName;
 
-        // Collect image/video URLs (optional)
-        const mediaUrlsSet = new Set<string>();
-        const addUrl = (u: any) => {
-            const url = String(u || '').trim();
-            if (!url) return;
-            if (!/^https?:\/\//i.test(url)) return;
-            mediaUrlsSet.add(url);
+        // Collect media URLs (optional)
+        const normalizedMedia = normalizeNewspaperMedia(body);
+        const images: string[] = normalizedMedia.images;
+        const videos: string[] = normalizedMedia.videos;
+
+        // Normalize payload for downstream helpers (ensures media.images/videos exist)
+        const normalizedBody: any = {
+            ...body,
+            media: {
+                ...(body?.media || {}),
+                images: Array.isArray(body?.media?.images) && body.media.images.length
+                    ? body.media.images
+                    : (normalizedMedia.coverImageUrl ? [{ url: normalizedMedia.coverImageUrl }] : []),
+                videos: Array.isArray(body?.media?.videos)
+                    ? body.media.videos
+                    : videos.map(url => ({ url })),
+            },
         };
-
-        // Common payload forms
-        addUrl(body.coverImageUrl);
-        if (Array.isArray(body.images)) for (const u of body.images) addUrl(u);
-        if (Array.isArray(body.mediaUrls)) for (const u of body.mediaUrls) addUrl(u);
-
-        // Structured media
-        const mediaImages = Array.isArray(body?.media?.images) ? body.media.images : [];
-        for (const img of mediaImages) addUrl(img?.url);
-        const mediaVideos = Array.isArray(body?.media?.videos) ? body.media.videos : [];
-        for (const v of mediaVideos) addUrl(v?.url);
-
-        // Inline blocks
-        for (const item of contentArr) {
-            if (!item || typeof item !== 'object') continue;
-            const t = String((item as any).type || '').toLowerCase();
-            if (t === 'image' || t === 'img') addUrl((item as any).url || (item as any).src);
-            if (t === 'video') addUrl((item as any).url || (item as any).src);
-        }
-
-        const images: string[] = Array.from(mediaUrlsSet);
 
         // Generate external ID (best-effort, tenant-local, day-scoped)
         const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
@@ -407,6 +496,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 authorId,
                 tenantId,
                 languageId,
+                // Keep Article.images as images-only for backward compatibility
                 images,
                 tags: Array.isArray(body.tags) ? body.tags.map((t: any) => String(t || '').trim()).filter(Boolean).slice(0, 10) : [],
                 categories: categoryIds.length ? { connect: categoryIds.map(id => ({ id })) } : undefined as any,
@@ -421,13 +511,15 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         languageCode: languageCode || '',
                         domainId,
                         images,
-                        coverImageUrl: images?.[0] || null,
+                        videos,
+                        media: { images, videos },
+                        coverImageUrl: normalizedMedia.coverImageUrl,
                         locationRef,
                         publishedAt,
                         dateline,
                         bulletPoints,
                     },
-                    rawNewspaper: body,
+                    rawNewspaper: normalizedBody,
                     location,
                     locationRef,
                     callbackUrl,
@@ -453,7 +545,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         // The worker will later update SEO fields (and publish/desk status based on base Article status).
         if (aiMode === 'LIMITED') {
             try {
-                const webJson = buildWebJsonFromNewspaperPayload(body, { domain: domainName, languageCode, categoryIds, publishedAt: publishedAt || null });
+                const webJson = buildWebJsonFromNewspaperPayload(normalizedBody, { domain: domainName, languageCode, categoryIds, publishedAt: publishedAt || null });
                 const web = await prisma.tenantWebArticle.create({
                     data: {
                         tenantId,
@@ -469,7 +561,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         metaDescription: webJson?.meta?.metaDescription,
                         jsonLd: webJson?.jsonLd || undefined,
                         tags: Array.isArray(webJson?.tags) ? webJson.tags : [],
-                        coverImageUrl: (images?.[0] || undefined),
+                        coverImageUrl: (normalizedMedia.coverImageUrl || undefined),
                         publishedAt: shouldPublish ? (publishedAt ? new Date(publishedAt) as any : new Date()) : null,
                     } as any
                 });
@@ -494,6 +586,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 authorId,
                 languageId: languageId || undefined,
                 baseArticleId: baseArticle.id,
+                categoryId: categoryIds?.[0] ? String(categoryIds[0]) : null,
                 title,
                 subTitle: subTitle || null,
                 heading,
@@ -505,7 +598,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 districtId: locationRef?.districtId || null,
                 mandalId: locationRef?.mandalId || null,
                 villageId: locationRef?.villageId || null,
-                status: status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
+                status: effectiveStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
             }
         });
 
@@ -524,6 +617,9 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             queued: { web: true, short: shortQueued, newspaper: aiMode === 'FULL' },
             statusUrl: `/articles/${baseArticle.id}/ai-status`,
             callbackUrlAccepted,
+            requestedStatus,
+            effectiveStatus,
+            reporterAutoPublishApplied: user?.role?.name === 'REPORTER' ? reporterAutoPublish : undefined,
         });
     } catch (e) {
         console.error('createNewspaperArticle error', e);
@@ -603,11 +699,24 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
         const scope = await resolveTenantScope(req);
         if (scope.error) return res.status(scope.status!).json({ error: scope.error });
 
+        const user: any = (req as any).user;
+        const roleName = user?.role?.name;
+        let reporterAutoPublish = false;
+        if (roleName === 'REPORTER') {
+            const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { kycData: true } }).catch(() => null);
+            reporterAutoPublish = getReporterAutoPublishFromKycData(rep?.kycData);
+        }
+
         const existing = await (prisma as any).newspaperArticle.findUnique({ where: { id } });
         if (!existing) return res.status(404).json({ error: 'Not found' });
         if (scope.tenantId && existing.tenantId !== scope.tenantId) return res.status(403).json({ error: 'Access denied' });
 
         const { title, heading, subTitle, points, dateline, placeName, content, status } = req.body;
+
+        const nextStatus = status !== undefined ? normalizeStatus(status) : undefined;
+        if (nextStatus === 'PUBLISHED' && roleName === 'REPORTER' && !reporterAutoPublish) {
+            return res.status(403).json({ error: 'Reporter publish disabled. Ask Tenant Admin/Editor to publish.' });
+        }
 
         const updated = await (prisma as any).newspaperArticle.update({
             where: { id },
@@ -619,9 +728,36 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                 dateline: dateline !== undefined ? dateline : undefined,
                 placeName: placeName !== undefined ? placeName : undefined,
                 content: content !== undefined ? content : undefined,
-                status: status !== undefined ? status : undefined,
+                status: nextStatus !== undefined ? nextStatus : undefined,
             }
         });
+
+        // Best-effort propagation: if status changed, sync base Article + linked TenantWebArticle.
+        if (nextStatus && existing?.baseArticleId) {
+            try {
+                await prisma.article.update({
+                    where: { id: String(existing.baseArticleId) },
+                    data: { status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT' }
+                });
+            } catch {}
+
+            try {
+                const base = await prisma.article.findUnique({
+                    where: { id: String(existing.baseArticleId) },
+                    select: { contentJson: true }
+                });
+                const webId = (base as any)?.contentJson?.webArticleId ? String((base as any).contentJson.webArticleId) : null;
+                if (webId) {
+                    await prisma.tenantWebArticle.updateMany({
+                        where: { id: webId },
+                        data: {
+                            status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT',
+                            publishedAt: nextStatus === 'PUBLISHED' ? new Date() : null,
+                        } as any
+                    });
+                }
+            } catch {}
+        }
 
         res.json(updated);
     } catch (e) {

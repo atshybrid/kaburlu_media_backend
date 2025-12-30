@@ -54,7 +54,16 @@ export function requireReporterOrAdmin(req: Request, res: Response, next: NextFu
     const user: any = (req as any).user;
     if (!user || !user.role) return res.status(401).json({ error: 'Unauthorized' });
     const roleName = user.role.name;
-    if (roleName === 'SUPER_ADMIN' || roleName === 'TENANT_ADMIN' || roleName === 'REPORTER') return next();
+    if (
+      roleName === 'SUPER_ADMIN' ||
+      roleName === 'TENANT_ADMIN' ||
+      roleName === 'TENANT_EDITOR' ||
+      roleName === 'ADMIN_EDITOR' ||
+      roleName === 'NEWS_MODERATOR' ||
+      roleName === 'REPORTER'
+    ) {
+      return next();
+    }
     return res.status(403).json({ error: 'Forbidden: Reporter or Admin only' });
   } catch {
     return res.status(500).json({ error: 'Authorization check failed' });

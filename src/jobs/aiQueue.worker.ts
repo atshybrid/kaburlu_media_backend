@@ -242,6 +242,34 @@ async function resolveDomainForTenant(tenantId: string, domainId?: string | null
   return { domainId: anyDom?.id || null, domainName: anyDom?.domain || null };
 }
 
+async function backfillInferredCategory(opts: {
+  baseArticleId: string;
+  categoryId: string;
+  contentJson?: any;
+}) {
+  const baseArticleId = String(opts.baseArticleId || '').trim();
+  const categoryId = String(opts.categoryId || '').trim();
+  if (!baseArticleId || !categoryId) return;
+
+  // Best-effort only: never break the job if these fail.
+  try {
+    const webArticleId = opts?.contentJson?.webArticleId ? String(opts.contentJson.webArticleId).trim() : '';
+    if (webArticleId) {
+      await prisma.tenantWebArticle.updateMany({
+        where: { id: webArticleId, categoryId: null },
+        data: { categoryId },
+      });
+    }
+  } catch {}
+
+  try {
+    await (prisma as any).newspaperArticle.updateMany({
+      where: { baseArticleId, categoryId: null },
+      data: { categoryId },
+    });
+  } catch {}
+}
+
 type ParsedTrue = {
   newspaper: { title: string; subtitle: string; keyPoints: string[]; content: string };
   web: { seoTitle: string; metaDescription: string; slug: string; keywords: string[]; content: string };
@@ -447,6 +475,46 @@ async function processOne(article: any) {
           (raw.categoryIds = [categoryId]);
         } catch {}
       }
+
+      // Also backfill into already-created linked records (LIMITED newspaper flow creates web/newspaper early).
+      await backfillInferredCategory({ baseArticleId: article.id, categoryId, contentJson });
+    }
+  }
+
+  // Extra guard: if inference failed for any reason, still pick a stable fallback category
+  // so ShortNews and TenantWebArticle stay consistent.
+  if ((queue.short || queue.web) && (!Array.isArray(raw.categoryIds) || raw.categoryIds.length === 0)) {
+    const fb = await fallbackCategoryId();
+    if (fb) {
+      try {
+        const updatedCJ = {
+          ...contentJson,
+          raw: { ...(contentJson.raw || {}), categoryIds: [fb] },
+          aiCategoryInferred: { categoryId: fb, at: nowIsoIST(), reason: 'fallback' },
+        } as any;
+        await prisma.article.update({
+          where: { id: article.id },
+          data: {
+            contentJson: updatedCJ,
+            categories: { connect: [{ id: fb }] } as any,
+          },
+        });
+        (contentJson.raw = updatedCJ.raw);
+        (raw.categoryIds = [fb]);
+      } catch {
+        try {
+          const updatedCJ = {
+            ...contentJson,
+            raw: { ...(contentJson.raw || {}), categoryIds: [fb] },
+            aiCategoryInferred: { categoryId: fb, at: nowIsoIST(), reason: 'fallback' },
+          } as any;
+          await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
+          (contentJson.raw = updatedCJ.raw);
+          (raw.categoryIds = [fb]);
+        } catch {}
+      }
+
+      await backfillInferredCategory({ baseArticleId: article.id, categoryId: fb, contentJson });
     }
   }
 
@@ -577,6 +645,7 @@ async function processOne(article: any) {
             const dateline = String(raw?.dateline || '');
             const placeName = (raw?.locationRef?.displayName != null) ? String(raw.locationRef.displayName) : null;
             const loc = raw?.locationRef || {};
+            const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : null;
             if (existing?.id) {
               await (prisma as any).newspaperArticle.update({
                 where: { id: existing.id },
@@ -589,6 +658,7 @@ async function processOne(article: any) {
                   content: npContent,
                   placeName,
                   languageId: languageId || undefined,
+                  categoryId: primaryCategoryId,
                   stateId: loc?.stateId || null,
                   districtId: loc?.districtId || null,
                   mandalId: loc?.mandalId || null,
@@ -603,6 +673,7 @@ async function processOne(article: any) {
                   authorId: article.authorId,
                   languageId: languageId || undefined,
                   baseArticleId: article.id,
+                  categoryId: primaryCategoryId,
                   title: npTitle,
                   subTitle: parsed.newspaper.subtitle || null,
                   heading: parsed.newspaper.subtitle || npTitle,
@@ -665,7 +736,9 @@ async function processOne(article: any) {
               audit: { createdAt: nowIsoIST(), updatedAt: nowIsoIST() },
             };
             const existingWeb = await prisma.tenantWebArticle.findFirst({ where: { tenantId: article.tenantId, authorId: article.authorId, slug: webSlug } }).catch(() => null) as any;
-            const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : undefined;
+            const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0]
+              ? String(raw.categoryIds[0])
+              : (await fallbackCategoryId() || undefined);
             if (existingWeb?.id) {
               await prisma.tenantWebArticle.update({
                 where: { id: existingWeb.id },
@@ -815,7 +888,9 @@ async function processOne(article: any) {
 
           // Try to find existing web article previously created for this base article
           const existingId = contentJson.webArticleId ? String(contentJson.webArticleId) : null;
-          const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : undefined;
+          const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0]
+            ? String(raw.categoryIds[0])
+            : (await fallbackCategoryId() || undefined);
           if (existingId) {
             await prisma.tenantWebArticle.update({
               where: { id: existingId },

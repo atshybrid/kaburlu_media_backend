@@ -18,6 +18,25 @@ function mapReporterContact(r: any) {
   return { ...rest, fullName, mobileNumber };
 }
 
+async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: true; tenantId: string } | { ok: false; status: number; error: string }> {
+  const { tenantId } = req.params as any;
+  const user: any = req.user;
+  if (!user?.role?.name) return { ok: false, status: 401, error: 'Unauthorized' };
+
+  const roleName = String(user.role.name);
+  const allowed = ['SUPER_ADMIN', 'TENANT_ADMIN', 'TENANT_EDITOR', 'ADMIN_EDITOR', 'NEWS_MODERATOR'];
+  if (!allowed.includes(roleName)) return { ok: false, status: 403, error: 'Forbidden' };
+  if (!tenantId) return { ok: false, status: 400, error: 'tenantId param required' };
+
+  if (roleName === 'SUPER_ADMIN') return { ok: true, tenantId: String(tenantId) };
+
+  // Tenant roles: ensure user is linked to a Reporter profile in the same tenant
+  const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { tenantId: true } }).catch(() => null);
+  if (!rep?.tenantId) return { ok: false, status: 403, error: 'Reporter profile not linked to tenant' };
+  if (String(rep.tenantId) !== String(tenantId)) return { ok: false, status: 403, error: 'Tenant scope mismatch' };
+  return { ok: true, tenantId: String(tenantId) };
+}
+
 // POST /tenants/:tenantId/reporters - upsert user/profile and create reporter
 /**
  * @swagger
@@ -250,6 +269,76 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
     }
     console.error('list tenant reporters error', e);
     res.status(500).json({ error: 'Failed to list reporters' });
+  }
+});
+
+// PATCH /tenants/:tenantId/reporters/:reporterId/auto-publish
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{reporterId}/auto-publish:
+ *   patch:
+ *     summary: Set reporter auto-publish (tenant editorial)
+ *     description: |
+ *       Controls whether REPORTER-created newspaper articles are auto-published.
+ *       Stored in Reporter.kycData.autoPublish (boolean).
+ *       - When true: reporter POST /articles/newspaper becomes PUBLISHED
+ *       - When false: reporter POST /articles/newspaper becomes DRAFT and requires Tenant Admin/Editor to publish
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: reporterId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [autoPublish]
+ *             properties:
+ *               autoPublish: { type: boolean }
+ *           examples:
+ *             enable:
+ *               summary: Enable auto publish
+ *               value: { autoPublish: true }
+ *             disable:
+ *               summary: Disable auto publish
+ *               value: { autoPublish: false }
+ *     responses:
+ *       200:
+ *         description: Updated
+ *         content:
+ *           application/json:
+ *             example: { success: true, reporterId: "cmrep", tenantId: "cmtenant", autoPublish: true }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Reporter not found }
+ */
+router.patch('/tenants/:tenantId/reporters/:reporterId/auto-publish', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, reporterId } = req.params;
+    const autoPublish = Boolean((req.body || {}).autoPublish);
+
+    const existing = await (prisma as any).reporter.findFirst({ where: { id: reporterId, tenantId }, select: { id: true, kycData: true } }).catch(() => null);
+    if (!existing?.id) return res.status(404).json({ error: 'Reporter not found' });
+
+    const current = (existing as any).kycData && typeof (existing as any).kycData === 'object' ? (existing as any).kycData : {};
+    const next = { ...current, autoPublish };
+
+    await (prisma as any).reporter.update({ where: { id: reporterId }, data: { kycData: next } });
+    return res.json({ success: true, reporterId, tenantId, autoPublish });
+  } catch (e: any) {
+    console.error('set reporter autoPublish error', e);
+    return res.status(500).json({ error: 'Failed to update reporter auto publish' });
   }
 });
 

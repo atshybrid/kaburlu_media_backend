@@ -53,6 +53,10 @@ function buildDefaultHomepageConfigForStyle(style: string) {
       sections: [
         { key: 'flashTicker', label: 'Flash News', limit: 12 },
         { key: 'heroStack', label: 'Top Stories' },
+        // Style1 category blocks: by default, the public API will pick categories from domain navigation.
+        // Admins can override by providing `categorySlugs: string[]` via PATCH /homepage/style1/sections.
+        { key: 'categoryHub', label: 'Categories', limit: 5 },
+        { key: 'hgBlock', label: 'Highlights', limit: 5 },
         { key: 'lastNews', label: 'Last News', categorySlug: 'politics', limit: 8 },
         { key: 'trendingCategory', label: 'Trending News', categorySlug: 'sports', limit: 6 },
         { key: 'rightRailTrendingTitles', label: 'Trending News', limit: 8 }
@@ -65,7 +69,43 @@ function buildDefaultHomepageConfigForStyle(style: string) {
     return {
       heroCount: 1,
       topStoriesCount: 5,
-      sections: []
+      sections: [],
+      // Style2 v2: richer homepage composition contract (opt-in via /public/homepage?shape=style2&v=2)
+      // Stored under homepageConfig.style2.v2
+      v2: {
+        // `key` values map to v2 section ids.
+        sections: [
+          { key: 'flashTicker', label: 'Flash News', limit: 10 },
+          {
+            key: 'toiGrid3',
+            label: 'Top Stories',
+            // Left rail category (optional). If unset, backend will pick from tenant navigation.
+            leftCategorySlug: null,
+            // Center always latest.
+            centerLimit: 6,
+            // Right rail blocks (latest slices). This is not true "most read".
+            rightLatestLimit: 8,
+            rightMostReadLimit: 8,
+            rightLatestLabel: 'Latest News',
+            rightMostReadLabel: 'Most Read'
+          },
+          { key: 'topStoriesGrid', label: 'Top Stories', limit: 9 },
+          {
+            key: 'section3',
+            label: 'More News',
+            // 3 category columns.
+            categorySlugs: ['technology', 'education', 'also-in-news'],
+            perCategoryLimit: 5
+          },
+          {
+            key: 'section4',
+            label: 'Categories',
+            rows: 3,
+            cols: 3,
+            perCategoryLimit: 5
+          }
+        ]
+      }
     };
   }
   return { heroCount: 1, topStoriesCount: 5, sections: [] };
@@ -104,7 +144,6 @@ router.get(
     const { tenantId } = req.params;
     const style = normalizeStyleKey(req.params.style);
     if (!style) return res.status(400).json({ error: 'Invalid style' });
-
     const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
     const homepageConfig = (theme as any)?.homepageConfig;
     const styleConfig = isPlainObject(homepageConfig) ? (homepageConfig as any)[style] : null;
@@ -112,6 +151,299 @@ router.get(
   }
 );
 
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style2/v2:
+ *   get:
+ *     summary: Get Style2 v2 homepage config for a tenant
+ *     description: |
+ *       Returns the effective Style2 v2 config stored under `TenantTheme.homepageConfig.style2.v2`.
+ *
+ *       Best practice:
+ *       1) POST `/tenant-theme/{tenantId}/homepage/style2/v2/apply-default`
+ *       2) PATCH `/tenant-theme/{tenantId}/homepage/style2/v2/sections`
+ *       3) Verify via GET `/public/homepage?shape=style2&v=2`
+ *     tags: [Tenant Theme]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Style2 v2 config
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.get(
+  '/:tenantId/homepage/style2/v2',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const tenantId = req.params.tenantId;
+
+    const tenantTheme = await prisma.tenantTheme.findFirst({ where: { tenantId } });
+    const homepageConfig = (tenantTheme?.homepageConfig as any) ?? {};
+    const style2 = homepageConfig.style2 ?? {};
+    const v2 = style2.v2 ?? buildDefaultHomepageConfigForStyle('style2')?.v2;
+
+    return res.json({ tenantId, style: 'style2', v: 2, config: v2 });
+  }
+);
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style2/v2/apply-default:
+ *   post:
+ *     summary: Apply default Style2 v2 homepage config to a tenant
+ *     description: |
+ *       Creates/updates `TenantTheme.homepageConfig.style2.v2` with server defaults.
+ *
+ *       Use this first, then PATCH sections to customize category slugs and labels.
+ *     tags: [Tenant Theme]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Updated tenant theme
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.post(
+  '/:tenantId/homepage/style2/v2/apply-default',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const tenantId = req.params.tenantId;
+    const defaultStyle2 = buildDefaultHomepageConfigForStyle('style2');
+
+    // Merge update safely (Prisma JSON merge isn't automatic for nested objects)
+    const current = await prisma.tenantTheme.findFirst({ where: { tenantId } });
+    const existing = (current?.homepageConfig as any) ?? {};
+    const merged = {
+      ...existing,
+      style2: {
+        ...(existing.style2 ?? {}),
+        v2: defaultStyle2.v2
+      }
+    };
+
+    const updated = await prisma.tenantTheme.upsert({
+      where: { tenantId },
+      create: { tenantId, homepageConfig: merged as any },
+      update: { homepageConfig: merged as any }
+    });
+
+    return res.json(updated);
+  }
+);
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style2/v2/sections:
+ *   patch:
+ *     summary: Patch Style2 v2 homepage sections for a tenant (labels + category slugs)
+ *     description: |
+ *       Partial merge by `key` against `homepageConfig.style2.v2.sections[]`.
+ *
+ *       Notes:
+ *       - `toiGrid3.centerLimit` stays "latest" in the public homepage response.
+ *       - `toiGrid3.rightMostReadLabel` only changes UI label; the data comes from `TenantWebArticle.viewCount`.
+ *     tags: [Tenant Theme]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               sections:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     key:
+ *                       type: string
+ *                       example: toiGrid3
+ *                     label:
+ *                       type: string
+ *                       example: Top Stories
+ *                     limit:
+ *                       type: number
+ *                       example: 10
+ *                     leftCategorySlug:
+ *                       type: string
+ *                       nullable: true
+ *                       example: politics
+ *                     centerLimit:
+ *                       type: number
+ *                       example: 6
+ *                     rightLatestLimit:
+ *                       type: number
+ *                       example: 8
+ *                     rightMostReadLimit:
+ *                       type: number
+ *                       example: 8
+ *                     rightLatestLabel:
+ *                       type: string
+ *                       example: Latest News
+ *                     rightMostReadLabel:
+ *                       type: string
+ *                       example: Most Read
+ *                     categorySlugs:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: [technology, education, also-in-news]
+ *                     perCategoryLimit:
+ *                       type: number
+ *                       example: 5
+ *                     rows:
+ *                       type: number
+ *                       example: 4
+ *                     cols:
+ *                       type: number
+ *                       example: 3
+ *           examples:
+ *             updateStyle2V2:
+ *               value:
+ *                 sections:
+ *                   - key: flashTicker
+ *                     label: Breaking
+ *                     limit: 10
+ *                   - key: toiGrid3
+ *                     label: Top Stories
+ *                     leftCategorySlug: politics
+ *                     centerLimit: 6
+ *                     rightLatestLimit: 8
+ *                     rightMostReadLimit: 8
+ *                     rightLatestLabel: Latest News
+ *                     rightMostReadLabel: Most Read
+ *                   - key: topStoriesGrid
+ *                     label: Top Stories
+ *                     limit: 9
+ *                   - key: section3
+ *                     label: Highlights
+ *                     categorySlugs: [technology, education, sports]
+ *                     perCategoryLimit: 5
+ *                   - key: section4
+ *                     label: Categories
+ *                     rows: 4
+ *                     cols: 3
+ *                     perCategoryLimit: 5
+ *     responses:
+ *       200:
+ *         description: Updated tenant theme
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.patch(
+  '/:tenantId/homepage/style2/v2/sections',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const tenantId = req.params.tenantId;
+    const incomingSections = Array.isArray(req.body?.sections) ? req.body.sections : [];
+
+    const tenantTheme = await prisma.tenantTheme.findFirst({ where: { tenantId } });
+    const existing = (tenantTheme?.homepageConfig as any) ?? {};
+
+    const defaults = buildDefaultHomepageConfigForStyle('style2');
+    const existingV2 = existing?.style2?.v2 ?? defaults.v2;
+    const existingSections = Array.isArray(existingV2?.sections) ? existingV2.sections : [];
+
+    const byKey = new Map<string, any>();
+    for (const sec of existingSections) {
+      if (sec && typeof sec.key === 'string') byKey.set(sec.key, sec);
+    }
+
+    for (const patch of incomingSections) {
+      if (!patch || typeof patch.key !== 'string') continue;
+      const current = byKey.get(patch.key) ?? { key: patch.key };
+
+      const next = {
+        ...current,
+        ...(typeof patch.label === 'string' ? { label: patch.label } : {}),
+        ...(typeof patch.limit === 'number' ? { limit: patch.limit } : {}),
+        ...(typeof patch.leftCategorySlug === 'string' || patch.leftCategorySlug === null
+          ? { leftCategorySlug: patch.leftCategorySlug }
+          : {}),
+        ...(typeof patch.centerLimit === 'number' ? { centerLimit: patch.centerLimit } : {}),
+        ...(typeof patch.rightLatestLimit === 'number' ? { rightLatestLimit: patch.rightLatestLimit } : {}),
+        ...(typeof patch.rightMostReadLimit === 'number' ? { rightMostReadLimit: patch.rightMostReadLimit } : {}),
+        ...(typeof patch.rightLatestLabel === 'string' ? { rightLatestLabel: patch.rightLatestLabel } : {}),
+        ...(typeof patch.rightMostReadLabel === 'string' ? { rightMostReadLabel: patch.rightMostReadLabel } : {}),
+        ...(Array.isArray(patch.categorySlugs)
+          ? { categorySlugs: patch.categorySlugs.filter((s: any) => typeof s === 'string') }
+          : {}),
+        ...(typeof patch.perCategoryLimit === 'number' ? { perCategoryLimit: patch.perCategoryLimit } : {}),
+        ...(typeof patch.rows === 'number' ? { rows: patch.rows } : {}),
+        ...(typeof patch.cols === 'number' ? { cols: patch.cols } : {})
+      };
+
+      byKey.set(patch.key, next);
+    }
+
+    // Preserve original order; append any new keys at the end.
+    const orderedKeys = existingSections.map((s: any) => s?.key).filter((k: any) => typeof k === 'string');
+    const seen = new Set<string>();
+    const mergedSections: any[] = [];
+    for (const k of orderedKeys) {
+      const sec = byKey.get(k);
+      if (sec && !seen.has(k)) {
+        mergedSections.push(sec);
+        seen.add(k);
+      }
+    }
+    for (const [k, sec] of byKey.entries()) {
+      if (!seen.has(k)) mergedSections.push(sec);
+    }
+
+    const merged = {
+      ...existing,
+      style2: {
+        ...(existing.style2 ?? {}),
+        v2: {
+          ...(existing?.style2?.v2 ?? {}),
+          sections: mergedSections
+        }
+      }
+    };
+
+    const updated = await prisma.tenantTheme.upsert({
+      where: { tenantId },
+      create: { tenantId, homepageConfig: merged as any },
+      update: { homepageConfig: merged as any }
+    });
+
+    return res.json(updated);
+  }
+);
 /**
  * @swagger
  * /tenant-theme/{tenantId}/homepage/{style}/default:
@@ -230,6 +562,10 @@ router.post(
  *                     title: { type: string, example: "Politics" }
  *                     label: { type: string, example: "Politics" }
  *                     categorySlug: { type: string, example: "politics" }
+ *                     categorySlugs:
+ *                       type: array
+ *                       items: { type: string }
+ *                       example: ["national","international","environment","technology"]
  *                     limit: { type: number, example: 6 }
  *                     position: { type: number, example: 10 }
  *                     style: { type: string, example: "grid" }
@@ -245,6 +581,18 @@ router.post(
  *                     title: "Sports"
  *                     categorySlug: sports
  *                     limit: 6
+ *             style1CategoryHub:
+ *               summary: Style1 categoryHub + HG block (drives /public/homepage?v=1)
+ *               value:
+ *                 sections:
+ *                   - key: categoryHub
+ *                     label: "Categories"
+ *                     categorySlugs: ["national","international","environment","technology"]
+ *                     limit: 5
+ *                   - key: hgBlock
+ *                     label: "Highlights"
+ *                     categorySlugs: ["national","international"]
+ *                     limit: 5
  *             style2Homepage:
  *               summary: Style2 homepage sections (drives /public/homepage?shape=style2)
  *               value:
@@ -294,6 +642,7 @@ router.patch(
         if (Object.prototype.hasOwnProperty.call(s, 'title')) patch.title = s.title;
         if (Object.prototype.hasOwnProperty.call(s, 'label')) patch.label = s.label;
         if (Object.prototype.hasOwnProperty.call(s, 'categorySlug')) patch.categorySlug = s.categorySlug;
+        if (Object.prototype.hasOwnProperty.call(s, 'categorySlugs')) patch.categorySlugs = s.categorySlugs;
         if (Object.prototype.hasOwnProperty.call(s, 'limit')) patch.limit = s.limit;
         if (Object.prototype.hasOwnProperty.call(s, 'position')) patch.position = s.position;
         if (Object.prototype.hasOwnProperty.call(s, 'style')) patch.style = s.style;

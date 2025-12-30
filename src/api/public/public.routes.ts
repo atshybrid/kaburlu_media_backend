@@ -1046,6 +1046,12 @@ router.get('/articles/:slug', async (req, res) => {
 
   if (!a) return res.status(404).json({ error: 'Not found' });
 
+  // Best-effort view tracking for website analytics.
+  // This is intentionally fire-and-forget to avoid slowing down article detail responses.
+  void p.tenantWebArticle
+    .update({ where: { id: a.id }, data: { viewCount: { increment: 1 } } })
+    .catch(() => null);
+
   const detail: any = toWebArticleDetailDto(a);
 
   const canonicalUrl = `https://${domain.domain}/articles/${encodeURIComponent(detail.slug)}`;

@@ -208,6 +208,7 @@ model Category {
   translations     CategoryTranslation[]
   articles         Article[]
   webArticles      TenantWebArticle[]
+  newspaperArticles NewspaperArticle[]
   domainCategories DomainCategory[]
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
@@ -299,6 +300,9 @@ model TenantWebArticle {
   jsonLd          Json?
   tags            String[]
 
+  // Simple website analytics (incremented when /public/articles/:slug is fetched)
+  viewCount       Int       @default(0)
+
   // Timestamps
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
@@ -308,6 +312,7 @@ model TenantWebArticle {
   @@unique([tenantId, domainId, languageId, slug])
   @@index([tenantId, createdAt])
   @@index([categoryId])
+  @@index([tenantId, viewCount])
 }
 
 model RawArticle {
@@ -889,6 +894,10 @@ model NewspaperArticle {
   language   Language? @relation(fields: [languageId], references: [id])
   languageId String?
 
+  // Optional category (kept in sync with TenantWebArticle/ShortNews when possible)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId String?
+
   // Link to the central platform article (which holds the raw content)
   baseArticle   Article? @relation("ArticleToNewspaper", fields: [baseArticleId], references: [id])
   baseArticleId String?
@@ -913,6 +922,7 @@ model NewspaperArticle {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([categoryId])
   @@index([stateId])
   @@index([districtId])
   @@index([mandalId])

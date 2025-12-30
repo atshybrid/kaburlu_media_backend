@@ -990,6 +990,10 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *       - Add query `forceAiRewriteEnabled=false` to force LIMITED (allowed for Reporter/Admin too)
  *
  *       This endpoint always returns `202 Accepted` after storing the records.
+ *
+ *       Publishing rule (best practice):
+ *       - For role REPORTER, `status` from request is ignored. Server auto-derives status using Reporter.kycData.autoPublish.
+ *       - Tenant Admin/Editor/Superadmin can publish later via PATCH /articles/newspaper/{id}.
  *     tags: [Articles, AI Rewrite]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -1004,7 +1008,30 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *         application/json:
  *           schema:
  *             type: object
- *             required: [title]
+ *             required: [title, categoryId, location]
+ *             example:
+ *               languageCode: "te"
+ *               categoryId: "cmcat123"
+ *               title: "Budget Highlights"
+ *               subTitle: "Key takeaways"
+ *               lead: "Today the finance minister announced..."
+ *               media:
+ *                 images:
+ *                   - url: "https://cdn.example.com/cover.webp"
+ *                     caption: "Cover"
+ *                 videos:
+ *                   - url: "https://cdn.example.com/clip.mp4"
+ *                     caption: "现场 clip"
+ *               content:
+ *                 - type: "paragraph"
+ *                   text: "Paragraph 1..."
+ *                 - type: "paragraph"
+ *                   text: "Paragraph 2..."
+ *               bulletPoints: ["Point one", "Point two"]
+ *               location:
+ *                 districtId: "cmdistrict"
+ *               status: "draft"
+ *               callbackUrl: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
  *             properties:
  *               language:
  *                 type: string
@@ -1017,7 +1044,9 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               domainId:
  *                 type: string
  *                 description: Optional domain scope for TenantWebArticle (recommended for public slug API). If omitted, server will pick tenant primary/active domain.
- *               categoryId: { type: string }
+ *               categoryId:
+ *                 type: string
+ *                 description: Mandatory category id (preferred). Server links base Article + NewspaperArticle + TenantWebArticle to this category.
  *               category: { type: string }
  *               title: { type: string, maxLength: 50 }
  *               subTitle: { type: string, maxLength: 50 }
@@ -1042,7 +1071,10 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                 items: { type: string, description: 'Each item max 5 words' }
  *
  *               # Media / hero image (optional)
- *               # Any of these can be provided; server will normalize into Article.images and contentJson.raw.images.
+ *               # Any of these can be provided; server will normalize into:
+ *               # - Article.images (images only)
+ *               # - Article.contentJson.raw.images (images)
+ *               # - Article.contentJson.raw.videos (videos)
  *               coverImageUrl:
  *                 type: string
  *                 description: Primary hero image URL
@@ -1051,13 +1083,27 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                 type: array
  *                 description: Image URLs (first becomes hero if coverImageUrl not provided)
  *                 items: { type: string }
+ *               videos:
+ *                 type: array
+ *                 description: Video URLs
+ *                 items: { type: string }
  *               mediaUrls:
  *                 type: array
  *                 description: Image/video URLs
  *                 items: { type: string }
  *               location:
  *                 type: object
- *                 description: Location reference used for dateline and filtering. Provide ONE id (village/mandal/district/state); server derives the rest.
+ *                 description: |
+ *                   Location reference used for dateline and filtering.
+ *                   Rule: Provide any ONE id in location: villageId OR mandalId OR districtId OR stateId.
+ *                   - If you provide villageId and the Village exists in DB, server derives mandalId/districtId/stateId.
+ *                   - If you provide mandalId, server derives districtId/stateId.
+ *                   - If you provide districtId, server derives stateId.
+ *                 oneOf:
+ *                   - required: [villageId]
+ *                   - required: [mandalId]
+ *                   - required: [districtId]
+ *                   - required: [stateId]
  *                 properties:
  *                   villageId: { type: string, nullable: true }
  *                   villageName: { type: string, nullable: true }
@@ -1093,21 +1139,34 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                   metaTitle: { type: string }
  *                   metaDescription: { type: string }
  *               tags: { type: array, items: { type: string } }
- *               status: { type: string, enum: ['draft','published','pending','DRAFT','PUBLISHED','PENDING'] }
+ *               status:
+ *                 type: string
+ *                 enum: ['draft','published','pending','DRAFT','PUBLISHED','PENDING']
+ *                 description: |
+ *                   Optional requested status.
+ *                   - For role REPORTER: ignored; server derives status from Reporter.kycData.autoPublish.
+ *                   - For Tenant Admin/Editor/Superadmin: respected.
  *
  *               callbackUrl:
  *                 type: string
  *                 description: Optional webhook URL (http/https) to receive AI completion notifications
  *                 example: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
  *           examples:
- *             basic:
- *               summary: Basic payload
+ *             modern:
+ *               summary: Recommended (structured media)
  *               value:
  *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
  *                 title: "Budget Highlights"
  *                 subTitle: "Key takeaways"
  *                 lead: "Today the finance minister announced..."
- *                 coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                 media:
+ *                   images:
+ *                     - url: "https://cdn.example.com/cover.webp"
+ *                       caption: "Cover"
+ *                   videos:
+ *                     - url: "https://cdn.example.com/clip.mp4"
+ *                       caption: "现场 clip"
  *                 content:
  *                   - type: "paragraph"
  *                     text: "Paragraph 1..."
@@ -1120,6 +1179,58 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                   stateName: "Telangana"
  *                 status: "draft"
  *                 callbackUrl: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
+ *             locationVillage:
+ *               summary: Location using villageId (most specific)
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "Village level news"
+ *                 lead: "Village event details..."
+ *                 location:
+ *                   villageId: "cmvillage"
+ *             locationMandal:
+ *               summary: Location using mandalId
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "Mandal level news"
+ *                 lead: "Mandal event details..."
+ *                 location:
+ *                   mandalId: "cmmandal"
+ *             locationDistrict:
+ *               summary: Location using districtId
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "District level news"
+ *                 lead: "District event details..."
+ *                 location:
+ *                   districtId: "cmdistrict"
+ *             locationState:
+ *               summary: Location using stateId
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "State level news"
+ *                 lead: "State event details..."
+ *                 location:
+ *                   stateId: "cmstate"
+ *             legacy:
+ *               summary: Legacy (coverImageUrl/images/mediaUrls)
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "Budget Highlights"
+ *                 subTitle: "Key takeaways"
+ *                 lead: "Today the finance minister announced..."
+ *                 coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                 images: ["https://cdn.example.com/cover.webp"]
+ *                 mediaUrls: ["https://cdn.example.com/clip.mp4"]
+ *                 content:
+ *                   - type: "paragraph"
+ *                     text: "Paragraph 1..."
+ *                 bulletPoints: ["Point one", "Point two"]
+ *                 status: "draft"
  *     responses:
  *       202:
  *         description: Accepted (stored and queued for background AI processing)

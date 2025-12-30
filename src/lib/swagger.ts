@@ -60,6 +60,7 @@ const swaggerDefinition = {
     { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
     { name: 'Tenant Ads', description: 'Tenant-scoped website ads (CRUD) stored in TenantSettings.data.ads' },
     { name: 'Reporters', description: 'Reporter hierarchy & roles' },
+    { name: 'TenantReporters', description: 'Tenant-scoped reporter management (admin/editor controls)' },
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
@@ -91,15 +92,23 @@ const options = {
   // Important: swagger-jsdoc needs to be able to find the annotated files.
   // - In dev: we run from TS source under src/
   // - In prod/build: we run compiled JS under dist/
-  apis: [
-    './src/api/**/*.ts',
-    './src/api/**/*.js',
-    './dist/api/**/*.js',
-    // Also include absolute globs to be resilient to different working directories
-    `${toPosixPath(process.cwd())}/src/api/**/*.ts`,
-    `${toPosixPath(process.cwd())}/src/api/**/*.js`,
-    `${toPosixPath(process.cwd())}/dist/api/**/*.js`
-  ]
+  apis: (() => {
+    const here = toPosixPath(__dirname);
+    const isDistRuntime = here.includes('/dist/');
+    if (isDistRuntime) {
+      return [
+        './dist/api/**/*.js',
+        `${toPosixPath(process.cwd())}/dist/api/**/*.js`
+      ];
+    }
+    return [
+      './src/api/**/*.ts',
+      './src/api/**/*.js',
+      // Also include absolute globs to be resilient to different working directories
+      `${toPosixPath(process.cwd())}/src/api/**/*.ts`,
+      `${toPosixPath(process.cwd())}/src/api/**/*.js`
+    ];
+  })()
 };
 
 const swaggerSpec = swaggerJSDoc(options);

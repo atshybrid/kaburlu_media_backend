@@ -33,6 +33,8 @@
     "jobs:ai-cron": "ts-node src/jobs/aiQueue.cron.ts",
     "jobs:ai-queue:prod": "node dist/jobs/aiQueue.worker.js",
     "jobs:ai-cron:prod": "node dist/jobs/aiQueue.cron.js",
+    "backfill:web-category": "ts-node scripts/backfill_webarticle_category.ts",
+    "backfill:web-category:dry": "ts-node scripts/backfill_webarticle_category.ts --dry-run",
     "prod:build": "npm run build",
     "prod:pm2:start": "npm run prod:build && npx pm2 start ecosystem.config.cjs",
     "prod:pm2:restart": "npx pm2 restart ecosystem.config.cjs",

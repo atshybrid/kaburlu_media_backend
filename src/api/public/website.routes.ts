@@ -554,6 +554,34 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       - Default response (no query params): legacy shape `{ hero, topStories, sections, ... }`.
  *       - Style1 contract: pass `?v=1` (or `?shape=style1`) to get `{ version, tenant, theme, uiTokens, sections, data }`.
  *       - Style2 (legacy) composition: pass `?shape=style2` (or `?themeKey=style2`) to load sections from TenantTheme.homepageConfig.style2.
+ *       - Style2 v2 contract: pass `?shape=style2&v=2` to get `{ version, tenant, theme, sections, data }`.
+ *
+ *       Best practice (recommended flows):
+ *
+ *       Style1 (v=1):
+ *       1) Admin config (JWT):
+ *          - POST `/tenant-theme/{tenantId}/homepage/style1/apply-default`
+ *          - PATCH `/tenant-theme/{tenantId}/homepage/style1/sections` to override labels/limits/categories
+ *       2) Frontend load:
+ *          - GET `/public/homepage?v=1` (or `/public/homepage?shape=style1`) with optional `lang=te`
+ *
+ *       Style2 legacy (shape=style2):
+ *       1) Admin config (JWT):
+ *          - POST `/tenant-theme/{tenantId}/homepage/style2/apply-default`
+ *          - PATCH `/tenant-theme/{tenantId}/homepage/style2/sections` with `{ sections: [{ key, title, position, categorySlug, limit }] }`
+ *       2) Frontend load:
+ *          - GET `/public/homepage?shape=style2`
+ *
+ *       Style2 v2 (shape=style2&v=2):
+ *       1) Admin config (JWT):
+ *          - POST `/tenant-theme/{tenantId}/homepage/style2/v2/apply-default`
+ *          - PATCH `/tenant-theme/{tenantId}/homepage/style2/v2/sections` (update labels, leftCategorySlug, right labels, section3 categorySlugs, section4 rows/cols)
+ *       2) Frontend load:
+ *          - GET `/public/homepage?shape=style2&v=2`
+ *
+ *       Notes:
+ *       - `X-Tenant-Domain` header is the safest way to target a tenant/domain in local testing.
+ *       - Style2 v2 TOI center is always latest; TOI rightMostRead uses `TenantWebArticle.viewCount`.
  *
  *       Best practice (Style2 website):
  *       1) Admin config (JWT):
@@ -581,10 +609,10 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       - in: query
  *         name: v
  *         required: false
- *         description: Set to 1 to return the Style1 homepage composition contract.
+ *         description: Set to 1 for Style1 contract, or 2 for Style2 v2 contract (requires shape=style2).
  *         schema:
  *           type: string
- *           enum: ['1']
+ *           enum: ['1','2']
  *           example: '1'
  *       - in: query
  *         name: shape
@@ -693,6 +721,16 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
   *                       label: "Flash News"
   *                       ui: { itemCount: 12, titleMaxLines: 1 }
   *                       query: { kind: "latest", limit: 12 }
+   *                     - id: "categoryHub"
+   *                       type: "categoryHub"
+   *                       label: "Categories"
+   *                       ui: { columns: 4, perCategoryCount: 5, image: "card16x9", titleMaxLines: 2 }
+   *                       query: { kind: "navCategories", count: 4, perCategoryLimit: 5 }
+   *                     - id: "hgBlock"
+   *                       type: "HGBlock"
+   *                       label: "Highlights"
+   *                       ui: { categoryCount: 2, perCategoryCount: 5, image: "card16x9", titleMaxLines: 2 }
+   *                       query: { kind: "navCategories", count: 2, perCategoryLimit: 5 }
   *                   data:
   *                     flashTicker:
   *                       - id: "a1"
@@ -701,6 +739,43 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
   *                         excerpt: "..."
   *                         coverImage: { url: "https://cdn.example.com/cover.webp", w: 320, h: 180 }
   *                         publishedAt: "2025-12-28T10:00:00.000Z"
+   *                     categoryHub:
+   *                       - category: { slug: "national", name: "జాతీయ" }
+   *                         items:
+   *                           - id: "a2"
+   *                             slug: "..."
+   *                             title: "..."
+   *                             excerpt: "..."
+   *                             coverImage: { url: "https://cdn.example.com/cover.webp", w: 900, h: 506 }
+   *                             publishedAt: "2025-12-28T10:00:00.000Z"
+  *               style2V2:
+  *                 summary: Style2 v2 contract (use ?shape=style2&v=2)
+  *                 value:
+  *                   version: "2.0"
+  *                   tenant: { id: "t1", slug: "demo", name: "Kaburlu Demo" }
+  *                   theme: { key: "style2" }
+  *                   sections:
+  *                     - id: "flashTicker"
+  *                       type: "flashTicker"
+  *                       label: "Flash News"
+  *                       query: { kind: "latest", limit: 10 }
+  *                     - id: "toiGrid3"
+  *                       type: "toiGrid3"
+  *                       label: "Top Stories"
+  *                       query:
+  *                         kind: "toiGrid3"
+  *                         left: { kind: "category", categorySlug: "politics", limit: 12 }
+  *                         center: { kind: "latest", limit: 6 }
+  *                         rightLatest: { kind: "latest", label: "Latest News", limit: 8, offset: 6 }
+  *                         rightMostRead: { kind: "mostRead", label: "Most Read", metric: "viewCount", limit: 8 }
+  *                   data:
+  *                     flashTicker: []
+  *                     toiGrid3:
+  *                       left: { category: { slug: "politics", name: "Politics", href: "/category/politics" }, items: [] }
+  *                       center: []
+  *                       right:
+  *                         latest: { label: "Latest News", kind: "latest", items: [] }
+  *                         mostRead: { label: "Most Read", kind: "mostRead", metric: "viewCount", items: [] }
  *       500:
  *         description: Domain context missing
  */
@@ -715,11 +790,15 @@ router.get('/homepage', async (_req, res) => {
 
   const shape = String((req.query as any)?.shape || '').toLowerCase().trim();
   const wantsV1 = String((req.query as any)?.v || '').trim() === '1' || shape === 'style1';
+  const wantsStyle2V2 = String((req.query as any)?.v || '').trim() === '2' && shape === 'style2';
   // Convenience: allow `shape=style2` to behave like `themeKey=style2` for legacy homepage.
   const themeKey = String((req.query as any)?.themeKey || (shape && shape !== 'style1' ? shape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
+  }
+  if (wantsStyle2V2 && themeKey !== 'style2') {
+    return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Use shape=style2&v=2 (or themeKey=style2) for Style2 v2' });
   }
 
 
@@ -838,7 +917,20 @@ router.get('/homepage', async (_req, res) => {
   });
   const baseCards = baseRows.map(toCard);
   const hero = baseCards.slice(0, heroCount);
-  const topStories = baseCards.slice(heroCount, heroCount + topStoriesCount);
+  const topStories: any[] = baseCards.slice(heroCount, heroCount + topStoriesCount);
+  // Best practice: if the tenant has too few published articles, fill topStories with repeats
+  // rather than returning an empty array (frontend usually expects a populated rail).
+  if (topStoriesCount > 0 && topStories.length < topStoriesCount) {
+    const seenTop = new Set<string>();
+    for (const c of topStories) if (c?.id) seenTop.add(String(c.id));
+    for (const c of baseCards) {
+      if (topStories.length >= topStoriesCount) break;
+      if (!c?.id) continue;
+      if (seenTop.has(String(c.id))) continue;
+      seenTop.add(String(c.id));
+      topStories.push(c);
+    }
+  }
 
   // Style1 one-API response (opt-in)
   if (wantsV1) {
@@ -875,6 +967,11 @@ router.get('/homepage', async (_req, res) => {
         },
         query: { kind: 'latest', limit: 12, dedupeKey: 'heroStack' }
       },
+      // Style1 category blocks (tenant/domain-driven):
+      // - categoryHub uses the first 4 category items from navigation.menu (or domain categories fallback)
+      // - hgBlock uses the first 2 category items from navigation.menu (or domain categories fallback)
+      { id: 'categoryHub', type: 'categoryHub', label: 'Categories', ui: { columns: 4, perCategoryCount: 5, image: 'card16x9', titleMaxLines: 2 }, query: { kind: 'navCategories', count: 4, perCategoryLimit: 5 } },
+      { id: 'hgBlock', type: 'HGBlock', label: 'Highlights', ui: { categoryCount: 2, perCategoryCount: 5, image: 'card16x9', titleMaxLines: 2 }, query: { kind: 'navCategories', count: 2, perCategoryLimit: 5 } },
       { id: 'lastNews', type: 'listWithThumb', label: 'Last News', ui: { count: 7, image: 'thumbWide', titleMaxLines: 2 }, query: { kind: 'category', categorySlug: 'politics', limit: 8 } },
       { id: 'trendingCategory', type: 'twoColRows', label: 'Trending News', ui: { count: 6, image: 'thumbWide', titleMaxLines: 2 }, query: { kind: 'category', categorySlug: 'sports', limit: 6, sort: 'latest' } },
       { id: 'rightRailTrendingTitles', type: 'titlesOnly', label: 'Trending News', ui: { count: 8, titleMaxLines: 2 }, query: { kind: 'latest', limit: 8 } }
@@ -916,7 +1013,21 @@ router.get('/homepage', async (_req, res) => {
         } else if (s.type === 'titlesOnly' || s.type === 'listWithThumb' || s.type === 'twoColRows') {
           s.ui.count = limit;
           s.query.limit = limit;
+        } else if (s.type === 'categoryHub' || s.type === 'HGBlock') {
+          s.ui.perCategoryCount = limit;
+          s.query.perCategoryLimit = limit;
         }
+      }
+
+      // Optional overrides for nav-category based sections
+      // Example (TenantTheme.homepageConfig.style1.sections):
+      // { key: 'categoryHub', categorySlugs: ['national','international',...], limit: 5 }
+      if ((s.type === 'categoryHub' || s.type === 'HGBlock') && Array.isArray(ov?.categorySlugs)) {
+        const slugs = (ov.categorySlugs as any[])
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+          .slice(0, 25);
+        if (slugs.length) s.query.categorySlugs = slugs;
       }
     }
 
@@ -960,9 +1071,88 @@ router.get('/homepage', async (_req, res) => {
       return rows;
     }
 
+    function extractCategorySlugFromHref(href: string) {
+      const h = String(href || '');
+      const m = h.match(/^\/category\/([^/?#]+)/i);
+      return m?.[1] ? String(m[1]) : null;
+    }
+
+    function resolveNavCategorySlugs(count: number) {
+      const want = Math.min(Math.max(Number(count) || 0, 0), 25);
+      const navMenu: any[] = Array.isArray((effective as any)?.navigation?.menu) ? (effective as any).navigation.menu : [];
+      const seenSlugs = new Set<string>();
+      const out: string[] = [];
+
+      // 1) Keep configured navigation order (if any)
+      for (const item of navMenu) {
+        const slug = extractCategorySlugFromHref(String(item?.href || ''));
+        if (!slug) continue;
+        if (seenSlugs.has(slug)) continue;
+        // Only include categories that exist for this domain (DomainCategory)
+        if (!categoryBySlug.get(slug)) continue;
+        seenSlugs.add(slug);
+        out.push(slug);
+        if (out.length >= want) return out;
+      }
+
+      // 2) Append missing domain categories deterministically
+      const domainCatsSorted = (domainCats || [])
+        .map((d: any) => d.category)
+        .filter(Boolean)
+        .slice()
+        .sort((a: any, b: any) => {
+          const an = (translatedNameByCategoryId.get(String(a?.id)) || a?.name || a?.slug || '').toString();
+          const bn = (translatedNameByCategoryId.get(String(b?.id)) || b?.name || b?.slug || '').toString();
+          return an.localeCompare(bn);
+        });
+
+      for (const c of domainCatsSorted) {
+        const slug = c?.slug ? String(c.slug) : '';
+        if (!slug) continue;
+        if (seenSlugs.has(slug)) continue;
+        seenSlugs.add(slug);
+        out.push(slug);
+        if (out.length >= want) return out;
+      }
+
+      return out;
+    }
+
     async function buildSection(s: V1Section) {
       const t0 = Date.now();
       let rows: any[] = [];
+
+      // Nav-category hub sections return an array of category blocks:
+      // [{ category: { slug, name }, items: V1Article[] }]
+      if (s.query?.kind === 'navCategories') {
+        const count = Math.min(Math.max(Number(s.query?.count ?? s.ui?.categoryCount ?? s.ui?.columns ?? 0) || 0, 0), 25);
+        const perCategoryLimit = Math.min(Math.max(Number(s.query?.perCategoryLimit ?? s.ui?.perCategoryCount ?? 5) || 5, 1), 50);
+        const explicitSlugs = Array.isArray(s.query?.categorySlugs)
+          ? (s.query.categorySlugs as any[]).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+          : [];
+        const slugs = explicitSlugs.length ? explicitSlugs.slice(0, count) : resolveNavCategorySlugs(count);
+
+        const targetKey = String(s.ui?.image || '') as keyof typeof uiTokens.imageTargets;
+        const target = (uiTokens.imageTargets as any)[targetKey] || null;
+
+        const blocks: any[] = [];
+        for (const slug of slugs) {
+          // eslint-disable-next-line no-await-in-loop
+          const catRows = await fetchCategory(String(slug), perCategoryLimit);
+          const cat = categoryBySlug.get(String(slug)) || null;
+          const catName = cat?.id
+            ? (translatedNameByCategoryId.get(String(cat.id)) || String(cat?.name || slug))
+            : String(slug);
+          blocks.push({
+            category: { slug: String(slug), name: catName },
+            items: (catRows || []).slice(0, perCategoryLimit).map((r: any) => toV1Article(r, target || undefined))
+          });
+        }
+
+        timers[s.id] = Date.now() - t0;
+        data[s.id] = blocks;
+        return;
+      }
 
       if (s.query?.kind === 'latest') {
         rows = await fetchLatest(Number(s.query.limit || 10) + 25);
@@ -974,6 +1164,7 @@ router.get('/homepage', async (_req, res) => {
       const target = (uiTokens.imageTargets as any)[targetKey] || null;
 
       const out: any[] = [];
+      const outIds = new Set<string>();
       let want = 10;
       if (s.type === 'heroStack') {
         const heroN = Number(s.ui?.hero?.count || 0) || 0;
@@ -985,13 +1176,44 @@ router.get('/homepage', async (_req, res) => {
         want = Number(s.ui?.itemCount ?? s.ui?.count ?? s.query?.limit ?? 10) || 10;
       }
       want = Math.min(Math.max(want, 1), 50);
-      for (const r of rows) {
-        if (!r?.id) continue;
-        if (seen.has(r.id)) continue;
-        seen.add(r.id);
+
+      const pushRow = (r: any, opts?: { allowSeen?: boolean }) => {
+        if (!r?.id) return;
+        if (outIds.has(r.id)) return;
+        const allowSeen = Boolean(opts?.allowSeen);
+        if (!allowSeen && seen.has(r.id)) return;
+        if (!allowSeen) seen.add(r.id);
+        outIds.add(r.id);
         out.push(toV1Article(r, target || undefined));
+      };
+
+      // Phase 1: fill with unseen items from the section's primary query.
+      for (const r of rows) {
+        pushRow(r, { allowSeen: false });
         if (out.length >= want) break;
       }
+
+      // Phase 2: if category slug is missing/empty (or category has low volume), backfill from latest.
+      // Keep global de-dupe semantics in this phase.
+      let latestPool: any[] | null = null;
+      if (out.length < want && s.query?.kind !== 'latest') {
+        latestPool = await fetchLatest(Number(s.query?.limit || 10) + 25);
+        for (const r of (latestPool ?? [])) {
+          pushRow(r, { allowSeen: false });
+          if (out.length >= want) break;
+        }
+      }
+
+      // Phase 3 (last resort): if the tenant has too few published articles after global de-dupe,
+      // allow repeats from latest so the UI isn't empty.
+      if (out.length < want) {
+        if (!latestPool) latestPool = s.query?.kind === 'latest' ? rows : await fetchLatest(Number(s.query?.limit || 10) + 25);
+        for (const r of (latestPool ?? [])) {
+          pushRow(r, { allowSeen: true });
+          if (out.length >= want) break;
+        }
+      }
+
       timers[s.id] = Date.now() - t0;
       data[s.id] = out;
     }
@@ -1022,6 +1244,284 @@ router.get('/homepage', async (_req, res) => {
     });
   }
 
+  // Style2 v2: one-API response that matches the common "Style2 sections" (flashTicker, toiGrid3, topStoriesGrid, section3, section4)
+  // Controlled by TenantTheme.homepageConfig.style2.v2.sections[] and fetched from the same backend DB.
+  if (wantsStyle2V2) {
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+
+    const defaultV2Sections: any[] = [
+      { key: 'flashTicker', label: 'Flash News', limit: 10 },
+      { key: 'toiGrid3', label: 'Top Stories', leftCategorySlug: null, centerLimit: 6, rightLatestLimit: 8, rightMostReadLimit: 8 },
+      { key: 'topStoriesGrid', label: 'Top Stories', limit: 9 },
+      { key: 'section3', label: 'More News', categorySlugs: ['technology', 'education', 'also-in-news'], perCategoryLimit: 5 },
+      { key: 'section4', label: 'Categories', rows: 3, cols: 3, perCategoryLimit: 5 }
+    ];
+
+    const v2Cfg = (cfg as any)?.v2;
+    const cfgSections = Array.isArray(v2Cfg?.sections) ? v2Cfg.sections : defaultV2Sections;
+    const byKey = new Map<string, any>();
+    for (const s of cfgSections) {
+      const key = String(s?.key || '').trim();
+      if (!key) continue;
+      byKey.set(key, s);
+    }
+
+    const clampInt = (value: any, min: number, max: number, fallback: number) => {
+      const n = parseInt(String(value), 10);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.min(Math.max(n, min), max);
+    };
+
+    function extractCategorySlugFromHref(href: string) {
+      const h = String(href || '');
+      const m = h.match(/^\/category\/([^/?#]+)/i);
+      return m?.[1] ? String(m[1]) : null;
+    }
+
+    function resolveNavCategorySlugs(count: number) {
+      const want = Math.min(Math.max(Number(count) || 0, 0), 25);
+      const navMenu: any[] = Array.isArray((effective as any)?.navigation?.menu) ? (effective as any).navigation.menu : [];
+      const seenSlugs = new Set<string>();
+      const out: string[] = [];
+
+      for (const item of navMenu) {
+        const slug = extractCategorySlugFromHref(String(item?.href || ''));
+        if (!slug) continue;
+        if (seenSlugs.has(slug)) continue;
+        if (!categoryBySlug.get(slug)) continue;
+        seenSlugs.add(slug);
+        out.push(slug);
+        if (out.length >= want) return out;
+      }
+
+      const domainCatsSorted = (domainCats || [])
+        .map((d: any) => d.category)
+        .filter(Boolean)
+        .slice()
+        .sort((a: any, b: any) => {
+          const an = (translatedNameByCategoryId.get(String(a?.id)) || a?.name || a?.slug || '').toString();
+          const bn = (translatedNameByCategoryId.get(String(b?.id)) || b?.name || b?.slug || '').toString();
+          return an.localeCompare(bn);
+        });
+
+      for (const c of domainCatsSorted) {
+        const slug = c?.slug ? String(c.slug) : '';
+        if (!slug) continue;
+        if (seenSlugs.has(slug)) continue;
+        seenSlugs.add(slug);
+        out.push(slug);
+        if (out.length >= want) return out;
+      }
+
+      return out;
+    }
+
+    async function fetchLatestCards(limit: number, offset = 0) {
+      const take = Math.min(Math.max(limit, 1), 50);
+      const skip = Math.max(parseInt(String(offset || 0), 10) || 0, 0);
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take,
+        skip,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    async function fetchMostReadCards(limit: number, excludeIds?: Set<string>) {
+      const want = Math.min(Math.max(limit, 1), 50);
+      const take = Math.min(want + 25, 75);
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+
+      const out: any[] = [];
+      const seen = excludeIds ?? new Set<string>();
+      for (const r of rows) {
+        if (!r?.id) continue;
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        out.push(toCard(r));
+        if (out.length >= want) break;
+      }
+      return out;
+    }
+
+    async function fetchCategoryCards(categorySlug: string, limit: number) {
+      const slug = String(categorySlug || '').trim();
+      if (!slug) return [];
+      const resolvedCategory = categoryBySlug.get(slug) || null;
+      if (!resolvedCategory) return [];
+
+      const and: any[] = [];
+      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: resolvedCategory.id };
+      if (and.length) where.AND = and;
+
+      const rows = await p.tenantWebArticle.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: Math.min(Math.max(limit, 1), 50),
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    const flashTicker = byKey.get('flashTicker') ?? defaultV2Sections[0];
+    const toiGrid3 = byKey.get('toiGrid3') ?? defaultV2Sections[1];
+    const topStoriesGrid = byKey.get('topStoriesGrid') ?? defaultV2Sections[2];
+    const section3 = byKey.get('section3') ?? defaultV2Sections[3];
+    const section4 = byKey.get('section4') ?? defaultV2Sections[4];
+
+    const makeCategoryInfo = (slugRaw: string, cat: any | null) => {
+      const slug = String(slugRaw || '').trim();
+      const name = cat?.id
+        ? (translatedNameByCategoryId.get(String(cat.id)) || String(cat?.name || slug))
+        : String(slug);
+      // Backend stays frontend-agnostic: give a canonical website path.
+      // Frontend can prefix tenant route if needed.
+      const href = slug ? `/category/${encodeURIComponent(slug)}` : null;
+      return { slug, name, href };
+    };
+
+    const flashTickerLimit = clampInt(flashTicker?.limit, 1, 50, 10);
+    const centerLimit = clampInt(toiGrid3?.centerLimit, 1, 50, 6);
+    const rightLatestLimit = clampInt(toiGrid3?.rightLatestLimit, 1, 50, 8);
+    const rightMostReadLimit = clampInt(toiGrid3?.rightMostReadLimit, 1, 50, 8);
+
+    const rightLatestLabel =
+      typeof (toiGrid3 as any)?.rightLatestLabel === 'string' && String((toiGrid3 as any).rightLatestLabel).trim()
+        ? String((toiGrid3 as any).rightLatestLabel).trim()
+        : 'Latest News';
+    const rightMostReadLabel =
+      typeof (toiGrid3 as any)?.rightMostReadLabel === 'string' && String((toiGrid3 as any).rightMostReadLabel).trim()
+        ? String((toiGrid3 as any).rightMostReadLabel).trim()
+        : 'Most Read';
+
+    const navSlugs = resolveNavCategorySlugs(25);
+    const leftCategorySlug =
+      typeof toiGrid3?.leftCategorySlug === 'string' && toiGrid3.leftCategorySlug.trim()
+        ? toiGrid3.leftCategorySlug.trim()
+        : (navSlugs[0] || null);
+
+    const topStoriesLimit = clampInt(topStoriesGrid?.limit, 1, 50, 9);
+
+    const section3PerCategoryLimit = clampInt(section3?.perCategoryLimit, 1, 50, 5);
+    const section3Slugs = Array.isArray(section3?.categorySlugs)
+      ? (section3.categorySlugs as any[]).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean).slice(0, 3)
+      : navSlugs.slice(0, 3);
+
+    const rows = clampInt(section4?.rows, 1, 10, 3);
+    const cols = clampInt(section4?.cols, 1, 10, 3);
+    const section4PerCategoryLimit = clampInt(section4?.perCategoryLimit, 1, 50, 5);
+    const gridCount = Math.min(rows * cols, 25);
+    const gridSlugs = navSlugs.slice(0, gridCount);
+
+    const [tickerItems, toiCenter, toiRightLatest] = await Promise.all([
+      fetchLatestCards(flashTickerLimit, 0),
+      fetchLatestCards(centerLimit, 0),
+      fetchLatestCards(rightLatestLimit, centerLimit)
+    ]);
+
+    const excludeMostRead = new Set<string>();
+    for (const c of toiCenter) if (c?.id) excludeMostRead.add(String(c.id));
+    for (const c of toiRightLatest) if (c?.id) excludeMostRead.add(String(c.id));
+    const toiRightMostRead = await fetchMostReadCards(rightMostReadLimit, excludeMostRead);
+
+    const leftCategory = leftCategorySlug ? categoryBySlug.get(leftCategorySlug) || null : null;
+    const toiLeftItems = leftCategorySlug
+      ? await fetchCategoryCards(leftCategorySlug, 12)
+      : [];
+
+    const topStoriesItems = await fetchLatestCards(topStoriesLimit, 0);
+
+    const section3Blocks: any[] = [];
+    for (const slug of section3Slugs) {
+      const cat = categoryBySlug.get(slug) || null;
+      if (!cat) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const items = await fetchCategoryCards(slug, section3PerCategoryLimit);
+      section3Blocks.push({ category: makeCategoryInfo(slug, cat), items });
+    }
+
+    const section4Cards: any[] = [];
+    for (const slug of gridSlugs) {
+      const cat = categoryBySlug.get(slug) || null;
+      if (!cat) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const items = await fetchCategoryCards(slug, section4PerCategoryLimit);
+      section4Cards.push({ category: makeCategoryInfo(slug, cat), items });
+    }
+
+    const sections = [
+      { id: 'flashTicker', type: 'flashTicker', label: String(flashTicker?.label || 'Flash News'), query: { kind: 'latest', limit: flashTickerLimit } },
+      {
+        id: 'toiGrid3',
+        type: 'toiGrid3',
+        label: String(toiGrid3?.label || 'Top Stories'),
+        query: {
+          kind: 'toiGrid3',
+          left: { kind: 'category', categorySlug: leftCategorySlug, limit: 12 },
+          center: { kind: 'latest', limit: centerLimit },
+          // "Most Read" uses TenantWebArticle.viewCount (incremented when article detail is fetched).
+          rightLatest: { kind: 'latest', label: rightLatestLabel, limit: rightLatestLimit, offset: centerLimit },
+          rightMostRead: {
+            kind: 'mostRead',
+            label: rightMostReadLabel,
+            limit: rightMostReadLimit,
+            metric: 'viewCount'
+          }
+        }
+      },
+      { id: 'topStoriesGrid', type: 'topStoriesGrid', label: String(topStoriesGrid?.label || 'Top Stories'), query: { kind: 'latest', limit: topStoriesLimit } },
+      {
+        id: 'section3',
+        type: 'section3',
+        label: String(section3?.label || 'More News'),
+        query: { kind: 'categories', categorySlugs: section3Slugs, perCategoryLimit: section3PerCategoryLimit }
+      },
+      {
+        id: 'section4',
+        type: 'section4',
+        label: String(section4?.label || 'Categories'),
+        query: { kind: 'categoriesGrid', rows, cols, categorySlugs: gridSlugs, perCategoryLimit: section4PerCategoryLimit }
+      }
+    ];
+
+    const data = {
+      flashTicker: tickerItems,
+      toiGrid3: {
+        left: leftCategorySlug
+          ? {
+              category: makeCategoryInfo(leftCategorySlug, leftCategory),
+              items: toiLeftItems.length ? toiLeftItems : []
+            }
+          : { category: null, items: [] },
+        center: toiCenter,
+        right: {
+          latest: { label: rightLatestLabel, kind: 'latest', items: toiRightLatest },
+          mostRead: { label: rightMostReadLabel, kind: 'mostRead', metric: 'viewCount', items: toiRightMostRead }
+        }
+      },
+      topStoriesGrid: topStoriesItems,
+      section3: section3Blocks,
+      section4: { rows, cols, cards: section4Cards }
+    };
+
+    return res.json({
+      version: '2.0',
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      theme: { key: 'style2' },
+      sections,
+      data
+    });
+  }
+
   const normalized = sectionsCfg
     .map((s: any) => ({
       key: String(s.key || ''),
@@ -1034,47 +1534,149 @@ router.get('/homepage', async (_req, res) => {
     }))
     .filter((s: any) => s.key);
 
-  const sectionRows = await Promise.all(normalized
-    .sort((a: any, b: any) => a.position - b.position)
-    .map(async (s: HomepageSectionConfig) => {
-      const and: any[] = [];
-      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
-      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
-      if (allowedCategoryIds.size) {
-        and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
-      }
+  const sortedSections = normalized.sort((a: any, b: any) => a.position - b.position);
 
-      const where: any = { tenantId: tenant.id, status: 'PUBLISHED' };
-      if (and.length) where.AND = and;
+  const usedArticleIds = new Set<string>();
+  for (const c of [...hero, ...topStories]) if (c?.id) usedArticleIds.add(String(c.id));
+  const usedCategorySlugs = new Set<string>();
 
-      let resolvedCategory: any = null;
-      if (s.categorySlug) {
-        resolvedCategory = categoryBySlug.get(s.categorySlug) || null;
-        if (!resolvedCategory) {
-          return { ...s, title: s.title || s.key, items: [], categorySlug: s.categorySlug };
+  // When DomainCategory is not configured for a domain, fall back to global Category lookup.
+  const hasDomainCategoryConfig = (domainCats || []).length > 0;
+  const globalCategoryCache = new Map<string, any>();
+  async function resolveCategoryBySlug(slug: string) {
+    const s = String(slug || '').trim();
+    if (!s) return null;
+    const fromDomain = categoryBySlug.get(s) || null;
+    if (fromDomain) return fromDomain;
+    if (hasDomainCategoryConfig) return null;
+    if (globalCategoryCache.has(s)) return globalCategoryCache.get(s);
+    const row = await p.category.findUnique({ where: { slug: s } }).catch(() => null);
+    const safe = row && !row.isDeleted ? row : null;
+    globalCategoryCache.set(s, safe);
+    return safe;
+  }
+
+  const candidateCategorySlugs: string[] = [];
+  const seenCandidate = new Set<string>();
+  // Prefer domain categories when available.
+  for (const d of (domainCats || [])) {
+    const slug = d?.category?.slug ? String(d.category.slug) : '';
+    if (!slug || seenCandidate.has(slug)) continue;
+    seenCandidate.add(slug);
+    candidateCategorySlugs.push(slug);
+  }
+  // Otherwise, infer from latest content.
+  if (!candidateCategorySlugs.length) {
+    for (const r of baseRows) {
+      const slug = r?.category?.slug ? String(r.category.slug) : '';
+      if (!slug || seenCandidate.has(slug)) continue;
+      seenCandidate.add(slug);
+      candidateCategorySlugs.push(slug);
+      if (candidateCategorySlugs.length >= 25) break;
+    }
+  }
+
+  function pushCardsDedup(out: any[], rows: any[], want: number, opts?: { allowSeen?: boolean }) {
+    const allowSeen = Boolean(opts?.allowSeen);
+    for (const r of rows) {
+      if (out.length >= want) break;
+      if (!r?.id) continue;
+      const id = String(r.id);
+      if (!allowSeen && usedArticleIds.has(id)) continue;
+      if (!allowSeen) usedArticleIds.add(id);
+      out.push(toCard(r));
+    }
+  }
+
+  async function fetchLatestRows(take: number, tagsHas?: string | null) {
+    const where: any = { ...baseWhere };
+    if (tagsHas) where.tags = { has: tagsHas };
+    return p.tenantWebArticle.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take: Math.min(Math.max(take, 1), 100),
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+  }
+
+  async function fetchCategoryRows(categoryId: string, take: number, tagsHas?: string | null) {
+    const and: any[] = [];
+    if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+    if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+    if (allowedCategoryIds.size) {
+      and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+    }
+
+    const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId };
+    if (and.length) where.AND = and;
+    if (tagsHas) where.tags = { has: tagsHas };
+
+    return p.tenantWebArticle.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take: Math.min(Math.max(take, 1), 100),
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+  }
+
+  const sectionRows: any[] = [];
+  for (const s of sortedSections as any[]) {
+    const want = Math.min(Math.max(Number((s as any).limit || 6) || 6, 1), 50);
+
+    let effectiveSlug = (s as any).categorySlug ? String((s as any).categorySlug) : '';
+    let resolvedCategory = effectiveSlug ? await resolveCategoryBySlug(effectiveSlug) : null;
+
+    // Phase 1: primary category (if configured)
+    let primaryRows: any[] = [];
+    if (resolvedCategory?.id) {
+      primaryRows = await fetchCategoryRows(String(resolvedCategory.id), want + 25, (s as any).tagsHas || null);
+    }
+
+    const items: any[] = [];
+    pushCardsDedup(items, primaryRows, want, { allowSeen: false });
+
+    // Phase 2: if configured category is missing or has no volume, pick a fallback category that exists and has content.
+    if (!items.length) {
+      for (const slug of candidateCategorySlugs) {
+        if (!slug || usedCategorySlugs.has(slug)) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const cat = await resolveCategoryBySlug(slug);
+        if (!cat?.id) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const rows = await fetchCategoryRows(String(cat.id), want + 25, (s as any).tagsHas || null);
+        const tmp: any[] = [];
+        pushCardsDedup(tmp, rows, want, { allowSeen: false });
+        if (tmp.length) {
+          effectiveSlug = slug;
+          resolvedCategory = cat;
+          items.push(...tmp);
+          break;
         }
-        where.categoryId = resolvedCategory.id;
       }
-      if (s.tagsHas) {
-        where.tags = { has: s.tagsHas };
-      }
+    }
 
-      const rows = await p.tenantWebArticle.findMany({
-        where,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: s.limit || 6,
-        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
-      });
+    // Phase 3: backfill from latest if still short.
+    if (items.length < want) {
+      const latestRows = await fetchLatestRows(want + 50, (s as any).tagsHas || null);
+      pushCardsDedup(items, latestRows, want, { allowSeen: false });
+    }
 
-      const translatedTitle = resolvedCategory?.id ? (translatedNameByCategoryId.get(String(resolvedCategory.id)) || null) : null;
-      return {
-        ...s,
-        title: s.title || translatedTitle || (resolvedCategory?.name || s.key),
-        categorySlug: s.categorySlug || null,
-        items: rows.map(toCard)
-      };
-    })
-  );
+    // Phase 4 (last resort): allow repeats so UI never goes empty.
+    if (items.length < want) {
+      const latestRows = await fetchLatestRows(want + 50, (s as any).tagsHas || null);
+      pushCardsDedup(items, latestRows, want, { allowSeen: true });
+    }
+
+    if (effectiveSlug) usedCategorySlugs.add(effectiveSlug);
+
+    const translatedTitle = resolvedCategory?.id ? (translatedNameByCategoryId.get(String(resolvedCategory.id)) || null) : null;
+    sectionRows.push({
+      ...s,
+      title: (s as any).title || translatedTitle || (resolvedCategory?.name || (s as any).key),
+      categorySlug: effectiveSlug || null,
+      items
+    });
+  }
 
   // Backward-compat: expose section items also at top-level by key
   const sectionsByKey: any = {};
