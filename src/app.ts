@@ -52,6 +52,7 @@ import idCardsRoutes from './api/idCards/idCards.routes';
 import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
 import aiTestRoutes from './api/ai/ai.routes';
+import dashboardRoutes from './api/dashboard/dashboard.routes';
 
 const app = express();
 
@@ -177,6 +178,7 @@ app.use('/prompts', promptsRoutes);
 app.use('/ai', aiTestRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
+app.use('/dashboard', dashboardRoutes);
 // Mount reporter payments routes at root so absolute paths inside work (e.g., /tenants/:tenantId/reporters/:id/payments/order)
 app.use('/', reporterPaymentsRoutes);
 // family & kin-relations removed
@@ -218,6 +220,7 @@ apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/ai', aiTestRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
+apiV1.use('/dashboard', dashboardRoutes);
 // Mount reporter payments under versioned root as well for absolute paths
 apiV1.use('/', reporterPaymentsRoutes);
 // family & kin-relations removed

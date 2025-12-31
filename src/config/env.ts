@@ -116,6 +116,17 @@ export const config = {
   slug: {
     requireUnique: parseBool(process.env.SLUG_REQUIRE_UNIQUE, true),
   },
+
+  whatsapp: {
+    enabled: parseBool(process.env.WHATSAPP_OTP_ENABLED, false),
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    defaultCountryCode: process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91',
+    otpTemplateName: process.env.WHATSAPP_OTP_TEMPLATE_NAME || 'kaburlu_app_otp',
+    otpTemplateLang: process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en_US',
+    supportMobile: process.env.WHATSAPP_SUPPORT_MOBILE || '',
+    ttlText: process.env.WHATSAPP_OTP_TTL_TEXT || '10 minutes',
+  },
 };
 
 // Soft warnings for critical secrets in production

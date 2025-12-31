@@ -2,6 +2,8 @@ import { RequestOtpDto, VerifyOtpDto, SetMpinDto } from './otp.dto';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { sendToUser } from '../../lib/fcm';
+import { config } from '../../config/env';
+import { sendWhatsappOtpTemplate } from '../../lib/whatsapp';
 
 export class OtpService {
     async requestOtp(data: RequestOtpDto) {
@@ -21,6 +23,9 @@ export class OtpService {
         const user = await prisma.user.findUnique({ where: { mobileNumber: data.mobileNumber } });
         const isRegistered = !!user;
 
+        // Derive purpose label for template (best-effort).
+        const purpose = isRegistered && user?.mpin ? 'reset mpin' : 'login';
+
         // Optional: deliver OTP via push notification to existing user's devices
         let notification: { successCount: number; failureCount: number } | undefined;
         if (user) {
@@ -37,9 +42,31 @@ export class OtpService {
             }
         }
 
+        // Optional: deliver OTP via WhatsApp Cloud API template
+        let whatsapp: any | undefined;
+        if (config.whatsapp.enabled) {
+            const supportMobile = config.whatsapp.supportMobile || data.mobileNumber;
+            const ttlText = config.whatsapp.ttlText || '10 minutes';
+            const resp = await sendWhatsappOtpTemplate({
+                toMobileNumber: data.mobileNumber,
+                otp,
+                purpose,
+                ttlText,
+                supportMobile,
+                templateName: config.whatsapp.otpTemplateName,
+                templateLang: config.whatsapp.otpTemplateLang,
+                defaultCountryCode: config.whatsapp.defaultCountryCode,
+                phoneNumberId: config.whatsapp.phoneNumberId,
+                accessToken: config.whatsapp.accessToken,
+            });
+            whatsapp = resp.ok
+                ? { ok: true, messageId: resp.messageId }
+                : { ok: false, error: resp.error, details: resp.details };
+        }
+
         // In a real application, you would also send the OTP via SMS.
         console.log(`OTP for ${data.mobileNumber} is ${otp}`);
-        return { success: true, id: otpLog.id, isRegistered, notification };
+        return { success: true, id: otpLog.id, isRegistered, notification, whatsapp };
     }
 
     async verifyOtp(data: VerifyOtpDto) {

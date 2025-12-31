@@ -43,6 +43,27 @@ const otpController = new OtpController();
  *                       type: number
  *                     failureCount:
  *                       type: number
+ *                 whatsapp:
+ *                   type: object
+ *                   nullable: true
+ *                   description: Present when WHATSAPP_OTP_ENABLED=true
+ *                   properties:
+ *                     ok:
+ *                       type: boolean
+ *                     messageId:
+ *                       type: string
+ *                       nullable: true
+ *                     error:
+ *                       type: string
+ *                       nullable: true
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   success: true
+ *                   id: "ckotp_01HXYZ"
+ *                   isRegistered: true
+ *                   notification: { successCount: 1, failureCount: 0 }
+ *                   whatsapp: { ok: true, messageId: "wamid.HBgMOTE5MT..." }
  *       400:
  *         description: Invalid mobile number
  */
