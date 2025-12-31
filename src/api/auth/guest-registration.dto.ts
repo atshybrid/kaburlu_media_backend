@@ -92,19 +92,25 @@ class DeviceDetailsDto {
  *     GuestRegistrationDto:
  *       type: object
  *       required:
- *         - languageId
  *         - deviceDetails
  *       properties:
  *         languageId:
  *           type: string
- *           description: The unique identifier for the user's selected language (e.g., '1', '2').
+ *           description: Language DB id (cuid). Optional if languageCode is provided.
+ *         languageCode:
+ *           type: string
+ *           description: Language code (e.g., 'en', 'te'). Optional if languageId is provided.
  *         deviceDetails:
  *           $ref: '#/components/schemas/DeviceDetailsGuestDto'
  */
 export class GuestRegistrationDto {
   @IsString()
-  @IsNotEmpty()
-  languageId!: string;
+  @IsOptional()
+  languageId?: string;
+
+  @IsString()
+  @IsOptional()
+  languageCode?: string;
 
   @ValidateNested()
   @Type(() => DeviceDetailsDto)

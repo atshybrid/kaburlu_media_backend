@@ -222,8 +222,16 @@ export const refresh = async (refreshDto: RefreshDto) => {
 
 export const registerGuestUser = async (guestDto: GuestRegistrationDto, existingAnonId?: string) => {
   try {
-    const language = await prisma.language.findUnique({ where: { id: guestDto.languageId } });
-    if (!language) throw new HttpException(400, `Invalid languageId: '${guestDto.languageId}'.`);
+    // Accept either a language DB id OR a language code (e.g., 'en', 'te').
+    // Backward-compat: some clients send languageCode in languageId field.
+    const languageKey = (guestDto.languageId || guestDto.languageCode || '').trim();
+    if (!languageKey) throw new HttpException(400, 'languageId or languageCode is required.');
+    const language = await prisma.language.findFirst({
+      where: {
+        OR: [{ id: languageKey }, { code: languageKey }],
+      },
+    });
+    if (!language) throw new HttpException(400, `Invalid languageId/languageCode: '${languageKey}'.`);
     const guestRole = await prisma.role.findUnique({ where: { name: 'GUEST' } });
     if (!guestRole) throw new Error('Critical server error: GUEST role not found.');
 
@@ -236,12 +244,8 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
       device = await prisma.device.findUnique({ where: { deviceId: guestDto.deviceDetails.deviceId } });
     }
     let linkedUser: any = null;
-    let deviceRole: any = null;
     if (device?.userId) {
       linkedUser = await prisma.user.findUnique({ where: { id: device.userId }, include: { role: true } });
-    }
-    if ((device as any)?.roleId) {
-      deviceRole = await prisma.role.findUnique({ where: { id: (device as any).roleId } });
     }
 
     // If device linked to a user already => return user token (upgraded flow)
@@ -261,8 +265,6 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
           deviceId: guestDto.deviceDetails.deviceId,
           deviceModel: guestDto.deviceDetails.deviceModel,
           pushToken: guestDto.deviceDetails.pushToken,
-          roleId: guestRole.id,
-          languageId: language.id,
           latitude: guestDto.deviceDetails.location?.latitude,
           longitude: guestDto.deviceDetails.location?.longitude,
           accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
@@ -277,8 +279,6 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
         where: { id: device.id },
         data: {
           pushToken: guestDto.deviceDetails.pushToken,
-          roleId: guestRole.id,
-          languageId: language.id,
           latitude: guestDto.deviceDetails.location?.latitude,
           longitude: guestDto.deviceDetails.location?.longitude,
           accuracyMeters: guestDto.deviceDetails.location?.accuracyMeters as any,
@@ -290,9 +290,15 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
       });
     }
 
-    // Re-fetch role for payload
-    deviceRole = await prisma.role.findUnique({ where: { id: (device as any).roleId } });
-    const payload = { sub: device.id, subType: 'device', role: deviceRole?.name, permissions: deviceRole?.permissions };
+    // Device principals don't have roleId in DB; role is implied as GUEST
+    const payload = {
+      sub: device.id,
+      subType: 'device',
+      role: guestRole.name,
+      permissions: guestRole.permissions,
+      languageId: language.id,
+      languageCode: language.code,
+    };
     const jwtToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
     const refreshToken = jwt.sign({ sub: device.id, subType: 'device' }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
 
@@ -303,8 +309,9 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
       anonId: device.id,
       device: {
         deviceId: device.deviceId,
-        role: deviceRole?.name,
-        languageId: (device as any).languageId ?? null,
+        role: guestRole.name,
+        languageId: language.id,
+        languageCode: language.code,
       }
     };
   } catch (error) {

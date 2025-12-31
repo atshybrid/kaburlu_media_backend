@@ -94,6 +94,10 @@ export const registerGuestController = async (req: Request, res: Response) => {
     res.status(200).json(result);
   } catch (error) {
     console.error('[Auth] registerGuestController error:', error);
+    const err: any = error as any;
+    if (typeof err?.status === 'number') {
+      return res.status(err.status).json({ success: false, message: err.message || 'Error' });
+    }
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

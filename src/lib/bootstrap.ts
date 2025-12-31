@@ -5,7 +5,7 @@ export async function ensureCoreSeeds() {
   // 1. Roles: Check existence first to avoid 9 separate upserts if not needed
   const coreRoles = [
     'SUPER_ADMIN', 'LANGUAGE_ADMIN', 'TENANT_ADMIN', 'ADMIN_EDITOR',
-    'NEWS_MODERATOR', 'PARENT_REPORTER', 'REPORTER', 'CITIZEN_REPORTER', 'GUEST_REPORTER'
+    'NEWS_MODERATOR', 'PARENT_REPORTER', 'REPORTER', 'CITIZEN_REPORTER', 'GUEST', 'GUEST_REPORTER'
   ];
   const existingRoles = await prisma.role.findMany({ where: { name: { in: coreRoles } }, select: { name: true } });
   const existingRoleNames = new Set(existingRoles.map(r => r.name));
