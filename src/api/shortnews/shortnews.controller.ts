@@ -739,7 +739,9 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt((req.query.limit as string) || '10', 10), 50);
     const cursorRaw = (req.query.cursor as string) || '';
-    const languageIdParam = (req.query.languageId as string) || '';
+    const qLanguageId = (req.query.languageId as string) || '';
+    const qLanguageCode = (req.query.languageCode as string) || '';
+    const languageKey = (qLanguageId || qLanguageCode).trim();
     // Optional language filter: if provided, validate exists; else show all languages
     let cursor: { id: string; date: string } | null = null;
     if (cursorRaw) {
@@ -751,15 +753,17 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         }
       } catch {}
     }
-    // Validate languageId if provided
-    if (languageIdParam) {
-      const langCheck = await prisma.language.findUnique({ where: { id: languageIdParam } });
-      if (!langCheck) {
-        return res.status(400).json({ success: false, error: 'Invalid languageId' });
+    // Validate language filter if provided (accept either language id or language code)
+    let filterLang: any = null;
+    if (languageKey) {
+      filterLang = await prisma.language.findFirst({ where: { OR: [{ id: languageKey }, { code: languageKey }] } });
+      if (!filterLang) {
+        return res.status(400).json({ success: false, error: 'Invalid languageId/languageCode' });
       }
     }
     const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED'] } };
-    if (languageIdParam) where.language = languageIdParam;
+    // ShortNews.language is a string (historically may store either Language.id or Language.code)
+    if (filterLang) where.language = { in: [filterLang.id, filterLang.code] };
 
     // Optional geo filter: if both lat and lon provided, filter within ~30km radius
     const latStr = (req.query.latitude as string) || '';
@@ -825,15 +829,32 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const slice = filtered.slice(0, limit);
     const last = slice[slice.length - 1];
     const nextCursor = last ? Buffer.from(JSON.stringify({ id: last.id, date: last.createdAt.toISOString() })).toString('base64') : null;
-    // attach language info
-    const langIds = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
-    const langs = await prisma.language.findMany({ where: { id: { in: langIds } } });
-    const langMap = new Map(langs.map((l) => [l.id, l]));
+    // attach language info (support both stored id and stored code)
+    const langKeys = Array.from(new Set(slice.map((i) => i.language).filter((x): x is string => !!x)));
+    const langs = await prisma.language.findMany({
+      where: {
+        OR: [{ id: { in: langKeys } }, { code: { in: langKeys } }],
+      },
+    });
+    const langMap = new Map<string, any>();
+    for (const l of langs) {
+      langMap.set(l.id, l);
+      langMap.set(l.code, l);
+    }
+    const sliceLangCodes = Array.from(
+      new Set(
+        slice
+          .map((i: any) => {
+            const l = i.language ? langMap.get(i.language as any) : undefined;
+            return (l?.code || i.language || '').trim() || null;
+          })
+          .filter((x: any): x is string => !!x)
+      )
+    );
     // category names (language-aware: use each item's language)
     const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
-    const sliceLangIds = Array.from(new Set(slice.map((i: any) => i.language).filter((x: any) => !!x)));
     const [catTranslations, cats] = await Promise.all([
-      prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: { in: sliceLangIds as any } } }),
+      prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: { in: sliceLangCodes as any } } }),
       prisma.category.findMany({ where: { id: { in: categoryIds } } }),
     ]);
     const catNameById = new Map<string, string>();
@@ -859,15 +880,16 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     }
     const data = slice.map((i: any) => {
       const l = i.language ? langMap.get(i.language as any) : undefined;
-  const categoryName = i.categoryId ? (catNameByCatLang.get(`${i.categoryId}:${i.language}`) ?? catNameById.get(i.categoryId) ?? null) : null;
+      const resolvedLangCode = (l?.code || i.language || '').trim() || null;
+  const categoryName = i.categoryId ? (catNameByCatLang.get(`${i.categoryId}:${resolvedLangCode}`) ?? catNameById.get(i.categoryId) ?? null) : null;
   const author = i.author as any;
   const authorName = author?.profile?.fullName || author?.email || author?.mobileNumber || null;
       const loc = authorLocByUser.get(i.authorId) as any;
       const placeName = i.placeName ?? (loc as any)?.placeName ?? null;
       const address = i.address ?? (loc as any)?.address ?? null;
       // derive canonical url and primary media
-      const languageCode = l?.code || 'en';
-      const canonicalUrl = buildCanonicalUrl(languageCode, i.slug || i.id, 'short');
+      const canonicalLangCode = resolvedLangCode || 'en';
+      const canonicalUrl = buildCanonicalUrl(canonicalLangCode, i.slug || i.id, 'short');
       const mediaUrls = Array.isArray(i.mediaUrls) ? i.mediaUrls : [];
       const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
       const videoUrls = mediaUrls.filter((u: string) => /\.(webm|mp4|mov|ogg)$/i.test(u));
@@ -881,7 +903,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
           description: ((i.seo as any)?.metaDescription || i.content?.slice(0, 160)),
           canonicalUrl,
           imageUrls: imageUrls.slice(0, 5),
-          languageCode,
+          languageCode: canonicalLangCode,
           datePublished: i.createdAt,
           dateModified: i.updatedAt,
           videoUrl: primaryVideoUrl || undefined,
@@ -898,9 +920,9 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         primaryVideoUrl,
         canonicalUrl,
         jsonLd,
-        languageId: i.language ?? null,
+        languageId: l?.id ?? null,
         languageName: l?.name ?? null,
-        languageCode: l?.code ?? null,
+        languageCode: resolvedLangCode,
         categoryName,
         authorName,
         author: {
@@ -963,8 +985,8 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'ShortNews not found' });
     }
 
-    // Get language info
-    const lang = item.language ? await prisma.language.findUnique({ where: { id: item.language as any } }) : null;
+    // Get language info (support stored id or stored code)
+    const lang = item.language ? await prisma.language.findFirst({ where: { OR: [{ id: item.language as any }, { code: item.language as any }] } }) : null;
 
     // Get category name (in the item's language if available)
     let categoryName: string | null = null;
@@ -1006,7 +1028,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
     const address = item.address ?? authorLoc?.address ?? null;
 
     // Build canonical URL and media URLs
-    const languageCode = lang?.code || 'en';
+    const languageCode = lang?.code || (typeof item.language === 'string' && item.language ? item.language : 'en');
     const canonicalUrl = buildCanonicalUrl(languageCode, item.slug || item.id, 'short');
     const mediaUrls = Array.isArray(item.mediaUrls) ? item.mediaUrls : [];
     const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
@@ -1037,9 +1059,9 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       primaryVideoUrl,
       canonicalUrl,
       jsonLd,
-      languageId: item.language ?? null,
+      languageId: lang?.id ?? null,
       languageName: lang?.name ?? null,
-      languageCode: lang?.code ?? null,
+      languageCode: lang?.code ?? (typeof item.language === 'string' ? item.language : null),
       categoryName,
       authorName,
       author: {
