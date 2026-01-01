@@ -146,6 +146,54 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       return res.status(201).json(reporter.idCard);
     }
 
+    // Generation pre-conditions
+    if (String(reporter.kycStatus || '') !== 'APPROVED') {
+      return res.status(403).json({ error: 'KYC must be APPROVED to generate ID card' });
+    }
+
+    // Require profile photo (either Reporter.profilePhotoUrl or UserProfile.profilePhotoUrl)
+    let hasPhoto = !!reporter.profilePhotoUrl;
+    if (!hasPhoto && reporter.userId) {
+      const profile = await (prisma as any).userProfile.findUnique({ where: { userId: reporter.userId }, select: { profilePhotoUrl: true } }).catch(() => null);
+      hasPhoto = !!profile?.profilePhotoUrl;
+    }
+    if (!hasPhoto) {
+      return res.status(403).json({ error: 'Profile photo is required to generate ID card' });
+    }
+
+    // Payment requirements
+    // - If idCardCharge > 0: onboarding payment must be PAID
+    // - If subscriptionActive=true and monthlySubscriptionAmount>0: current month subscription payment must be PAID
+    if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+      const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
+        where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
+        select: { id: true },
+      });
+      if (!onboardingPaid) {
+        return res.status(403).json({ error: 'Onboarding payment must be PAID to generate ID card' });
+      }
+    }
+
+    if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1; // 1-12
+      const monthlyPaid = await (prisma as any).reporterPayment.findFirst({
+        where: {
+          tenantId,
+          reporterId: reporter.id,
+          type: 'MONTHLY_SUBSCRIPTION',
+          year: currentYear,
+          month: currentMonth,
+          status: 'PAID',
+        },
+        select: { id: true },
+      });
+      if (!monthlyPaid) {
+        return res.status(403).json({ error: 'Monthly subscription payment must be PAID to generate ID card' });
+      }
+    }
+
     const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId } });
     if (!settings) return res.status(404).json({ error: 'Tenant ID card settings not configured' });
 
