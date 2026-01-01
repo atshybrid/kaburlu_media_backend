@@ -96,4 +96,46 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort; categories can be seeded later via scripts
   }
+
+  // 7. Global Reporter Designations
+  // Public endpoint GET /reporter-designations returns tenantId=null rows when tenantId isn't provided.
+  // Seed a sensible global default set so clients don't see an empty list on fresh databases.
+  try {
+    const defaults: { level: string; code: string; name: string }[] = [
+      { level: 'STATE', code: 'EDITOR_IN_CHIEF', name: 'Editor-in-Chief' },
+      { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief' },
+      { level: 'STATE', code: 'STATE_EDITOR', name: 'State Editor' },
+      { level: 'STATE', code: 'STATE_REPORTER', name: 'State Reporter' },
+      { level: 'DISTRICT', code: 'DISTRICT_BUREAU_CHIEF', name: 'District Bureau Chief' },
+      { level: 'DISTRICT', code: 'SENIOR_CORRESPONDENT', name: 'Senior Correspondent' },
+      { level: 'DISTRICT', code: 'DISTRICT_REPORTER', name: 'District Reporter' },
+      { level: 'DISTRICT', code: 'DISTRICT_DESK', name: 'District Desk' },
+      { level: 'ASSEMBLY', code: 'ASSEMBLY_INCHARGE', name: 'Assembly Incharge' },
+      { level: 'ASSEMBLY', code: 'ASSEMBLY_REPORTER', name: 'Assembly Reporter' },
+      { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter' },
+      { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' },
+    ];
+
+    const existing = await (prisma as any).reporterDesignation.findMany({
+      where: { tenantId: null, code: { in: defaults.map(d => d.code) } },
+      select: { id: true, code: true },
+    });
+    const byCode = new Map<string, string>();
+    for (const row of existing as any[]) {
+      if (!byCode.has(String(row.code))) byCode.set(String(row.code), String(row.id));
+    }
+
+    const ops: any[] = [];
+    for (const d of defaults) {
+      const id = byCode.get(d.code);
+      if (id) {
+        ops.push((prisma as any).reporterDesignation.update({ where: { id }, data: { level: d.level, name: d.name } }));
+      } else {
+        ops.push((prisma as any).reporterDesignation.create({ data: { tenantId: null, level: d.level, code: d.code, name: d.name } }));
+      }
+    }
+    if (ops.length) await (prisma as any).$transaction(ops);
+  } catch {
+    // best-effort; designations can be seeded later via tenant seed endpoint
+  }
 }

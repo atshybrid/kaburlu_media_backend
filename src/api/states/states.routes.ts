@@ -11,13 +11,11 @@ const router = Router();
  *   get:
  *     summary: List states
  *     tags: [States]
- *     security:
- *       - bearerAuth: []
  *     responses:
  *       "200":
  *         description: Array of states
  */
-router.get('/', passport.authenticate('jwt', { session: false }), getStatesController);
+router.get('/', getStatesController);
 
 /**
  * @swagger

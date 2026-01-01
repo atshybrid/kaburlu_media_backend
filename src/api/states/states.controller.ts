@@ -6,15 +6,7 @@ import { validate } from 'class-validator';
 
 export const getStatesController = async (req: Request, res: Response) => {
   try {
-    const { languageId } = req.query;
-    // @ts-ignore
-    const { role } = req.user;
-
-  if (role.name !== 'SUPER_ADMIN' && !languageId) {
-      return res.status(400).json({ error: 'languageId is required' });
-    }
-
-    const states = await getStates(languageId as string);
+    const states = await getStates();
     res.status(200).json({ success: true, data: states });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Internal server error' });
