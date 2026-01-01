@@ -18,6 +18,56 @@ function mapReporterContact(r: any) {
   return { ...rest, fullName, mobileNumber };
 }
 
+type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'MANDAL' | 'ASSEMBLY';
+
+function getLocationKeyFromLevel(
+  level: ReporterLevelInput,
+  body: any
+): { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId'; id: string } {
+  if (level === 'STATE') return { field: 'stateId', id: String(body?.stateId || '') };
+  if (level === 'DISTRICT') return { field: 'districtId', id: String(body?.districtId || '') };
+  if (level === 'ASSEMBLY') return { field: 'assemblyConstituencyId', id: String(body?.assemblyConstituencyId || '') };
+  return { field: 'mandalId', id: String(body?.mandalId || '') };
+}
+
+function pickReporterLimitMax(
+  settingsData: any,
+  input: { designationId: string; level: ReporterLevelInput; location: { field: string; id: string } }
+): number | undefined {
+  const limits = settingsData?.reporterLimits;
+  if (!limits || limits.enabled !== true) return undefined;
+
+  const rules: any[] = Array.isArray(limits.rules) ? limits.rules : [];
+  const defaultMax = typeof limits.defaultMax === 'number' ? limits.defaultMax : 1;
+
+  const locationField = input.location.field;
+  const locationId = input.location.id;
+
+  const exact = rules.find(
+    (r) =>
+      String(r?.designationId || '') === input.designationId &&
+      String(r?.level || '') === input.level &&
+      String(r?.[locationField] || '') === locationId
+  );
+  if (typeof exact?.max === 'number') return exact.max;
+
+  const wildcardLocation = rules.find(
+    (r) =>
+      String(r?.designationId || '') === input.designationId &&
+      String(r?.level || '') === input.level &&
+      !r?.stateId &&
+      !r?.districtId &&
+      !r?.mandalId &&
+      !r?.assemblyConstituencyId
+  );
+  if (typeof wildcardLocation?.max === 'number') return wildcardLocation.max;
+
+  const wildcardDesignation = rules.find((r) => String(r?.designationId || '') === input.designationId && !r?.level);
+  if (typeof wildcardDesignation?.max === 'number') return wildcardDesignation.max;
+
+  return defaultMax;
+}
+
 /**
  * @swagger
  * tags:
@@ -278,6 +328,51 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
       designationId = (dTenant || dGlobal)?.id || null;
       if (!designationId) return res.status(400).json({ error: 'Unknown designationCode' });
     }
+
+    // Enforce per-tenant limits (if configured) when designationId is provided.
+    // This prevents tenant admins/reporters from bypassing the availability rules.
+    const lvl = String(level) as ReporterLevelInput;
+    if (designationId && ['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(lvl)) {
+      const locationKey = getLocationKeyFromLevel(lvl, body);
+      if (locationKey.id) {
+        const designation = await (prisma as any).reporterDesignation
+          .findFirst({ where: { id: String(designationId) }, select: { id: true, tenantId: true, level: true } })
+          .catch(() => null);
+        if (designation?.id) {
+          if (designation.tenantId && String(designation.tenantId) !== String(tenantId)) {
+            return res.status(400).json({ error: 'designationId does not belong to this tenant' });
+          }
+          if (String(designation.level) !== lvl) {
+            return res.status(400).json({ error: 'designationId does not match requested level' });
+          }
+
+          const tenantSettingsRow = await (prisma as any).tenantSettings
+            .findUnique({ where: { tenantId }, select: { data: true } })
+            .catch(() => null);
+          const maxAllowed = pickReporterLimitMax((tenantSettingsRow as any)?.data, {
+            designationId: String(designationId),
+            level: lvl,
+            location: locationKey,
+          });
+          if (typeof maxAllowed === 'number') {
+            const where: any = { tenantId, active: true, designationId: String(designationId), level: lvl };
+            where[locationKey.field] = locationKey.id;
+            const current = await (prisma as any).reporter.count({ where }).catch(() => 0);
+            if (current >= maxAllowed) {
+              return res.status(409).json({
+                error: 'Reporter limit reached',
+                maxAllowed,
+                current,
+                designationId: String(designationId),
+                level: lvl,
+                [locationKey.field]: locationKey.id,
+              });
+            }
+          }
+        }
+      }
+    }
+
     const data: any = {
       tenantId,
       level,
@@ -647,6 +742,48 @@ router.post('/register', passport.authenticate('jwt', { session: false }), async
     }
 
     const level = body.level || null;
+
+    // Enforce per-tenant limits (if configured) when designation + level are provided.
+    if (designationId && level && ['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(String(level))) {
+      const lvl = String(level) as ReporterLevelInput;
+      const locationKey = getLocationKeyFromLevel(lvl, body);
+      if (!locationKey.id) {
+        return res.status(400).json({ error: `${locationKey.field} required for ${lvl} level` });
+      }
+
+      const designation = await (prisma as any).reporterDesignation
+        .findFirst({ where: { id: String(designationId) }, select: { id: true, tenantId: true, level: true } })
+        .catch(() => null);
+      if (!designation?.id) return res.status(400).json({ error: 'Invalid designationId' });
+      if (designation.tenantId && String(designation.tenantId) !== String(tenantId)) {
+        return res.status(400).json({ error: 'designationId does not belong to this tenant' });
+      }
+      if (String(designation.level) !== lvl) {
+        return res.status(400).json({ error: 'designationId does not match requested level' });
+      }
+
+      const tenantSettingsRow = await (prisma as any).tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
+      const maxAllowed = pickReporterLimitMax((tenantSettingsRow as any)?.data, {
+        designationId: String(designationId),
+        level: lvl,
+        location: locationKey,
+      });
+      if (typeof maxAllowed === 'number') {
+        const where: any = { tenantId, active: true, designationId: String(designationId), level: lvl };
+        where[locationKey.field] = locationKey.id;
+        const current = await (prisma as any).reporter.count({ where }).catch(() => 0);
+        if (current >= maxAllowed) {
+          return res.status(409).json({
+            error: 'Reporter limit reached',
+            maxAllowed,
+            current,
+            designationId: String(designationId),
+            level: lvl,
+            [locationKey.field]: locationKey.id,
+          });
+        }
+      }
+    }
 
     const reporterData: any = {
       tenantId,
