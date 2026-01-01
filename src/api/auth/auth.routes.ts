@@ -37,6 +37,13 @@ const router = Router();
  *                 jwt: <token>
  *                 refreshToken: <refresh>
  *                 expiresIn: 86400
+ *                 # Present for TENANT_ADMIN users
+ *                 tenantId: <tenant_id>
+ *                 domainId: <domain_id>
+ *                 domainSettings:
+ *                   id: <domain_settings_id>
+ *                   data: {}
+ *                   updatedAt: 2026-01-01T00:00:00.000Z
  *       401:
  *         description: Invalid credentials
  */
@@ -206,6 +213,13 @@ router.post('/device', upsertDeviceController);
  *                   userId: u_123
  *                   role: CITIZEN_REPORTER
  *                   languageId: lang_1
+ *                 # Present for TENANT_ADMIN users
+ *                 tenantId: <tenant_id>
+ *                 domainId: <domain_id>
+ *                 domainSettings:
+ *                   id: <domain_settings_id>
+ *                   data: {}
+ *                   updatedAt: 2026-01-01T00:00:00.000Z
  *                 location:
  *                   latitude: 17.385
  *                   longitude: 78.486

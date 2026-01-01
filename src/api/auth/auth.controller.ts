@@ -25,7 +25,7 @@ export const checkUserExistsController = async (req: Request, res: Response) => 
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-import { login, refresh, registerGuestUser } from './auth.service';
+import { getTenantAdminLoginContext, login, refresh, registerGuestUser } from './auth.service';
 import { MpinLoginDto } from './mpin-login.dto';
 import { RefreshDto } from './refresh.dto';
 import { validate } from 'class-validator';
@@ -433,6 +433,22 @@ export const loginWithGoogleController = async (req: Request, res: Response) => 
       expiresIn: 86400,
       user: { userId: user.id, role: role?.name, languageId: user.languageId },
     };
+
+    // Tenant Admin login response should include tenant + domain context.
+    if (role?.name === 'TENANT_ADMIN') {
+      try {
+        const ctx = await getTenantAdminLoginContext(user.id);
+        if (ctx) {
+          result.tenantId = ctx.tenantId;
+          result.domainId = ctx.domainId;
+          result.tenant = ctx.tenant;
+          result.domain = ctx.domain;
+          result.domainSettings = ctx.domainSettings;
+        }
+      } catch (e) {
+        console.warn('[Auth] Failed to attach tenant admin context for user', user.id, e);
+      }
+    }
     try {
       const loc = await prisma.userLocation.findUnique({ where: { userId: user.id } });
       if (loc) {

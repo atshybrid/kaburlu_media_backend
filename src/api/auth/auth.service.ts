@@ -16,6 +16,47 @@ import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 
+type TenantAdminLoginContext = {
+  tenantId: string;
+  domainId?: string;
+  tenant?: { id: string; name: string; slug: string };
+  domain?: { id: string; domain: string; isPrimary: boolean; status: string };
+  domainSettings?: { id: string; data: unknown; updatedAt: string };
+};
+
+export const getTenantAdminLoginContext = async (userId: string): Promise<TenantAdminLoginContext | null> => {
+  const reporter = await prisma.reporter.findUnique({
+    where: { userId },
+    select: {
+      tenantId: true,
+      tenant: { select: { id: true, name: true, slug: true } },
+    },
+  });
+  if (!reporter) return null;
+
+  const domain = await prisma.domain.findFirst({
+    where: { tenantId: reporter.tenantId },
+    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true, domain: true, isPrimary: true, status: true },
+  });
+
+  const domainSettingsRow = domain
+    ? await prisma.domainSettings
+        .findUnique({ where: { domainId: domain.id }, select: { id: true, data: true, updatedAt: true } })
+        .catch(() => null)
+    : null;
+
+  return {
+    tenantId: reporter.tenantId,
+    domainId: domain?.id,
+    tenant: reporter.tenant,
+    domain: domain || undefined,
+    domainSettings: domainSettingsRow
+      ? { id: domainSettingsRow.id, data: domainSettingsRow.data as unknown, updatedAt: domainSettingsRow.updatedAt.toISOString() }
+      : undefined,
+  };
+};
+
 // A simple exception class for HTTP errors
 class HttpException extends Error {
     status: number;
@@ -167,6 +208,22 @@ export const login = async (loginDto: MpinLoginDto) => {
       languageId: user.languageId,
     },
   };
+
+  // Tenant Admin login response should include tenant + domain context.
+  if (role?.name === 'TENANT_ADMIN') {
+    try {
+      const ctx = await getTenantAdminLoginContext(user.id);
+      if (ctx) {
+        (result as any).tenantId = ctx.tenantId;
+        (result as any).domainId = ctx.domainId;
+        (result as any).tenant = ctx.tenant;
+        (result as any).domain = ctx.domain;
+        (result as any).domainSettings = ctx.domainSettings;
+      }
+    } catch (e) {
+      console.warn('[Auth] Failed to attach tenant admin context for user', user.id, e);
+    }
+  }
   // Attach last known user location if available
   try {
     const loc = await prisma.userLocation.findUnique({ where: { userId: user.id } });
