@@ -373,9 +373,13 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const callbackUrl = callbackUrlRaw && /^https?:\/\//i.test(callbackUrlRaw) ? callbackUrlRaw : null;
         const callbackUrlAccepted = Boolean(callbackUrl);
 
+        const TITLE_MAX_CHARS = 100;
+        const SUBTITLE_MAX_CHARS = 100;
+        const BULLET_POINT_MAX_CHARS = 100;
+
         if (!title) return res.status(400).json({ error: 'title is required' });
-        if (title.length > 50) return res.status(400).json({ error: 'title max 50 characters' });
-        if (subTitle && subTitle.length > 50) return res.status(400).json({ error: 'subTitle max 50 characters' });
+        if (title.length > TITLE_MAX_CHARS) return res.status(400).json({ error: `title max ${TITLE_MAX_CHARS} characters` });
+        if (subTitle && subTitle.length > SUBTITLE_MAX_CHARS) return res.status(400).json({ error: `subTitle max ${SUBTITLE_MAX_CHARS} characters` });
         if (!heading) return res.status(400).json({ error: 'heading is required (or provide title)' });
 
         if (contentText && wordCount(contentText) > 2000) {
@@ -386,8 +390,9 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'bulletPoints max 5 items' });
         }
         for (const p of bulletPoints) {
-            const wc = wordCount(p);
-            if (wc > 5) return res.status(400).json({ error: 'Each bulletPoint max 5 words', bulletPoint: p });
+            if (p.length > BULLET_POINT_MAX_CHARS) {
+                return res.status(400).json({ error: `Each bulletPoint max ${BULLET_POINT_MAX_CHARS} characters`, bulletPoint: p });
+            }
         }
 
         // Tenant-level AI feature flag ONLY (no reporter subscription check)
@@ -712,6 +717,28 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
         if (scope.tenantId && existing.tenantId !== scope.tenantId) return res.status(403).json({ error: 'Access denied' });
 
         const { title, heading, subTitle, points, dateline, placeName, content, status } = req.body;
+
+        const TITLE_MAX_CHARS = 100;
+        const SUBTITLE_MAX_CHARS = 100;
+        const BULLET_POINT_MAX_CHARS = 100;
+        const MAX_BULLET_ITEMS = 5;
+
+        if (title !== undefined && String(title).trim().length > TITLE_MAX_CHARS) {
+            return res.status(400).json({ error: `title max ${TITLE_MAX_CHARS} characters` });
+        }
+        if (subTitle !== undefined && String(subTitle).trim() && String(subTitle).trim().length > SUBTITLE_MAX_CHARS) {
+            return res.status(400).json({ error: `subTitle max ${SUBTITLE_MAX_CHARS} characters` });
+        }
+        if (points !== undefined) {
+            if (!Array.isArray(points)) return res.status(400).json({ error: 'points must be an array of strings' });
+            const cleaned = points.map((s: any) => String(s || '').trim()).filter(Boolean);
+            if (cleaned.length > MAX_BULLET_ITEMS) return res.status(400).json({ error: `points max ${MAX_BULLET_ITEMS} items` });
+            for (const p of cleaned) {
+                if (p.length > BULLET_POINT_MAX_CHARS) {
+                    return res.status(400).json({ error: `Each point max ${BULLET_POINT_MAX_CHARS} characters`, point: p });
+                }
+            }
+        }
 
         const nextStatus = status !== undefined ? normalizeStatus(status) : undefined;
         if (nextStatus === 'PUBLISHED' && roleName === 'REPORTER' && !reporterAutoPublish) {

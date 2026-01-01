@@ -1048,8 +1048,8 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                 type: string
  *                 description: Mandatory category id (preferred). Server links base Article + NewspaperArticle + TenantWebArticle to this category.
  *               category: { type: string }
- *               title: { type: string, maxLength: 50 }
- *               subTitle: { type: string, maxLength: 50 }
+ *               title: { type: string, maxLength: 100 }
+ *               subTitle: { type: string, maxLength: 100 }
  *               heading: { type: string }
  *               dateLine: { type: string }
  *               dateline: { type: string }
@@ -1068,7 +1068,7 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               bulletPoints:
  *                 type: array
  *                 maxItems: 5
- *                 items: { type: string, description: 'Each item max 5 words' }
+ *                 items: { type: string, maxLength: 100, description: 'Each item max 100 characters' }
  *
  *               # Media / hero image (optional)
  *               # Any of these can be provided; server will normalize into:
