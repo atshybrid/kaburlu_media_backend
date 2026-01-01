@@ -65,6 +65,7 @@ const swaggerDefinition = {
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
     { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
+    { name: 'Public - Reporter Join', description: 'Public endpoints to check reporter slot availability & initiate onboarding payments' },
     { name: 'Webhooks' }
   ],
   components: {

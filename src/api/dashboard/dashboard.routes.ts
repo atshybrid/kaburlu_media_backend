@@ -153,6 +153,13 @@ router.get('/me', auth, async (req, res) => {
  *                     id: ten_01HABC
  *                     name: Kaburlu Adilabad
  *                     slug: kaburlu-adilabad
+ *                   domain:
+ *                     id: dmn_01HXYZ
+ *                     domain: adilabad.kaburlu.com
+ *                   branding:
+ *                     logoUrl: https://cdn.kaburlu.com/logos/tenant.png
+ *                     primaryColor: "#0D47A1"
+ *                     secondaryColor: "#FFC107"
  *                   cards:
  *                     - key: web_articles
  *                       title: Web Articles
@@ -219,7 +226,12 @@ router.get('/admin/overview', auth, async (req, res) => {
     newspaperPublished30d,
     reportersWithIdCard,
     idCardsExpiring30d,
-    tenantSettings,
+    tenantSettingsRow,
+    tenantThemeRow,
+    idCardSettingsRow,
+    domainRow,
+    entitySettingsRow,
+    tenantWebsiteSettingsRow,
   ] = await Promise.all([
     p.reporter.count({ where: { tenantId } }).catch(() => 0),
     p.reporter.count({ where: { tenantId, kycStatus: 'PENDING' } }).catch(() => 0),
@@ -233,14 +245,57 @@ router.get('/admin/overview', auth, async (req, res) => {
     p.reporter.count({ where: { tenantId, idCard: { isNot: null } } }).catch(() => 0),
     p.reporterIDCard.count({ where: { expiresAt: { gte: now, lte: days30Ahead }, reporter: { tenantId } } }).catch(() => 0),
     p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null),
+    p.tenantTheme.findUnique({ where: { tenantId }, select: { logoUrl: true, faviconUrl: true, primaryColor: true } }).catch(() => null),
+    p.tenantIdCardSettings.findUnique({ where: { tenantId }, select: { frontLogoUrl: true, primaryColor: true, secondaryColor: true } }).catch(() => null),
+    p.domain
+      .findFirst({ where: { tenantId, status: 'ACTIVE' }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }], select: { id: true, domain: true, isPrimary: true, status: true } })
+      .catch(() => null),
+    p.entitySettings.findFirst({ select: { data: true } }).catch(() => null),
+    p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null),
   ]);
 
-  const adsRaw = (tenantSettings as any)?.data?.ads;
+  const adsRaw = (tenantSettingsRow as any)?.data?.ads;
   const adsCount = Array.isArray(adsRaw) ? adsRaw.length : 0;
+
+  const domainSettingsRow = domainRow?.id
+    ? await p.domainSettings.findUnique({ where: { domainId: domainRow.id }, select: { data: true } }).catch(() => null)
+    : null;
+
+  const effectiveWebsiteSettings = {
+    ...((entitySettingsRow as any)?.data || {}),
+    ...((tenantWebsiteSettingsRow as any)?.data || {}),
+    ...((domainSettingsRow as any)?.data || {}),
+  };
+
+  const effectiveLogoUrl =
+    (effectiveWebsiteSettings as any)?.branding?.logoUrl ||
+    (effectiveWebsiteSettings as any)?.logoUrl ||
+    (tenantThemeRow as any)?.logoUrl ||
+    (idCardSettingsRow as any)?.frontLogoUrl ||
+    null;
+
+  const effectivePrimaryColor =
+    (effectiveWebsiteSettings as any)?.theme?.colors?.primary ||
+    (effectiveWebsiteSettings as any)?.primaryColor ||
+    (tenantThemeRow as any)?.primaryColor ||
+    (idCardSettingsRow as any)?.primaryColor ||
+    null;
+
+  const effectiveSecondaryColor =
+    (effectiveWebsiteSettings as any)?.theme?.colors?.secondary ||
+    (effectiveWebsiteSettings as any)?.secondaryColor ||
+    (idCardSettingsRow as any)?.secondaryColor ||
+    null;
 
   return res.json({
     kind: 'tenant_admin_overview',
     tenant: reporter?.tenant || { id: tenantId },
+    domain: domainRow ? { id: domainRow.id, domain: domainRow.domain } : null,
+    branding: {
+      logoUrl: effectiveLogoUrl,
+      primaryColor: effectivePrimaryColor,
+      secondaryColor: effectiveSecondaryColor,
+    },
     cards: [
       {
         key: 'web_articles',

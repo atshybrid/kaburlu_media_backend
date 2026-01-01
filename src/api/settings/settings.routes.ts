@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { getEntitySettings, upsertEntitySettings, getTenantSettings, upsertTenantSettings, getDomainSettings, upsertDomainSettings, listDomainSettings } from './settings.controller';
+import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
+import prisma from '../../lib/prisma';
 
 const router = Router();
 
@@ -98,17 +100,13 @@ const router = Router();
  *                   showTicker: true
  *                   supportedLanguages: ["en","te"]
  */
-router.get('/entity/settings', passport.authenticate('jwt', { session: false }), getEntitySettings);
-router.put('/entity/settings', passport.authenticate('jwt', { session: false }), upsertEntitySettings);
-router.patch('/entity/settings', passport.authenticate('jwt', { session: false }), upsertEntitySettings);
-
 /** Tenant Settings */
 /**
  * @swagger
  * /tenants/{tenantId}/settings:
  *   get:
  *     summary: Get tenant settings (resolved)
- *     description: TENANT_ADMIN or SUPER_ADMIN. Shows tenant settings and effective (merged with entity).
+ *     description: SUPER_ADMIN only. Shows tenant settings and effective (merged with entity).
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -137,7 +135,7 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *                     secondaryColor: "#FFC107"
  *   put:
  *     summary: Replace tenant settings
- *     description: TENANT_ADMIN or SUPER_ADMIN. Replaces entire tenant settings JSON.
+ *     description: SUPER_ADMIN only. Replaces entire tenant settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -158,6 +156,27 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *                 primaryColor: "#1B5E20"
  *                 secondaryColor: "#E64A19"
  *                 fontFamily: "Inter"
+ *             reporterLimitsApplyAll:
+ *               summary: Reporter limits (apply to all designations)
+ *               value:
+ *                 reporterLimits:
+ *                   enabled: true
+ *                   defaultMax: 1
+ *                   rules: []
+ *             reporterLimitsOneByOne:
+ *               summary: Reporter limits (one-by-one rules)
+ *               value:
+ *                 reporterLimits:
+ *                   enabled: true
+ *                   rules:
+ *                     - designationId: "desg_abc"
+ *                       level: "MANDAL"
+ *                       mandalId: "mandal_xyz"
+ *                       max: 2
+ *                     - designationId: "desg_abc"
+ *                       level: "DISTRICT"
+ *                       districtId: "district_pqr"
+ *                       max: 1
  *     responses:
  *       200:
  *         description: Tenant settings saved
@@ -174,7 +193,7 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *                     fontFamily: "Inter"
  *   patch:
  *     summary: Update parts of tenant settings
- *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates tenant settings JSON.
+ *     description: SUPER_ADMIN only. Partially updates tenant settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -188,6 +207,32 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             reporterLimitsApplyAll:
+ *               summary: Apply max to all designations
+ *               value:
+ *                 reporterLimits:
+ *                   enabled: true
+ *                   defaultMax: 1
+ *             reporterLimitsDesignationLevelAnyLocation:
+ *               summary: Apply to a designation for all locations of a level
+ *               value:
+ *                 reporterLimits:
+ *                   enabled: true
+ *                   rules:
+ *                     - designationId: "desg_abc"
+ *                       level: "MANDAL"
+ *                       max: 2
+ *             reporterLimitsDesignationLevelLocation:
+ *               summary: Apply to a designation at a specific location
+ *               value:
+ *                 reporterLimits:
+ *                   enabled: true
+ *                   rules:
+ *                     - designationId: "desg_abc"
+ *                       level: "MANDAL"
+ *                       mandalId: "mandal_xyz"
+ *                       max: 2
  *     responses:
  *       200:
  *         description: Tenant settings updated (merged)
@@ -201,9 +246,169 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
  *                     theme: "dark"
  *                     accentColor: "#03A9F4"
  */
-router.get('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), getTenantSettings);
-router.put('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), upsertTenantSettings);
-router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), upsertTenantSettings);
+router.get('/entity/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, getEntitySettings);
+router.put('/entity/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertEntitySettings);
+router.patch('/entity/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertEntitySettings);
+
+router.get('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, getTenantSettings);
+router.put('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertTenantSettings);
+router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertTenantSettings);
+
+// ---------------- Reporter Pricing (TENANT_ADMIN scoped or SUPER_ADMIN) ----------------
+
+// transient any-cast for newly added delegates
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const p: any = prisma;
+
+type ReporterPricingConfig = {
+	subscriptionEnabled?: boolean;
+	currency?: string;
+	defaultMonthlyAmount?: number;
+	defaultIdCardCharge?: number;
+	byDesignation?: Array<{ designationId: string; monthlyAmount?: number; idCardCharge?: number }>;
+};
+
+function normalizeReporterPricing(value: any): ReporterPricingConfig {
+	if (!value || typeof value !== 'object') return {};
+	return value as ReporterPricingConfig;
+}
+
+function mergeReporterPricing(existing: ReporterPricingConfig, patch: ReporterPricingConfig): ReporterPricingConfig {
+	const out: ReporterPricingConfig = { ...(existing || {}) };
+	if (typeof patch.subscriptionEnabled === 'boolean') out.subscriptionEnabled = patch.subscriptionEnabled;
+	if (typeof patch.currency === 'string' && patch.currency) out.currency = patch.currency;
+	if (typeof patch.defaultMonthlyAmount === 'number') out.defaultMonthlyAmount = patch.defaultMonthlyAmount;
+	if (typeof patch.defaultIdCardCharge === 'number') out.defaultIdCardCharge = patch.defaultIdCardCharge;
+	if (Object.prototype.hasOwnProperty.call(patch, 'byDesignation')) {
+		out.byDesignation = Array.isArray(patch.byDesignation) ? patch.byDesignation : [];
+	}
+	return out;
+}
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporter-pricing:
+ *   get:
+ *     summary: Get tenant reporter pricing (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: |
+ *       Reads `TenantSettings.data.reporterPricing`.
+ *       Amounts are in the smallest currency unit (e.g. paise).
+ *     tags: [Settings (Admin)]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Reporter pricing configuration
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "tenant_123"
+ *                   reporterPricing:
+ *                     subscriptionEnabled: true
+ *                     currency: "INR"
+ *                     defaultMonthlyAmount: 9900
+ *                     defaultIdCardCharge: 19900
+ *                     byDesignation:
+ *                       - designationId: "desg_1"
+ *                         monthlyAmount: 9900
+ *                         idCardCharge: 19900
+ */
+router.get('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+	try {
+		const { tenantId } = req.params;
+		const tenant = await p.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }).catch(() => null);
+		if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+		const row = await p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
+		const pricing = normalizeReporterPricing(row?.data?.reporterPricing);
+		return res.json({ tenantId, reporterPricing: pricing });
+	} catch (e: any) {
+		console.error('get reporter pricing error', e);
+		return res.status(500).json({ error: 'Failed to get reporter pricing' });
+	}
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporter-pricing:
+ *   patch:
+ *     summary: Update tenant reporter pricing (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: |
+ *       Updates only `TenantSettings.data.reporterPricing`.
+ *
+ *       Merge rules:
+ *       - scalar fields are merged
+ *       - if `byDesignation` is provided, it replaces the entire array
+ *
+ *       Best-practice: reporter creation snapshots these prices into each Reporter row.
+ *     tags: [Settings (Admin)]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reporterPricing:
+ *                 type: object
+ *           examples:
+ *             enableWithDefaults:
+ *               value:
+ *                 reporterPricing:
+ *                   subscriptionEnabled: true
+ *                   currency: "INR"
+ *                   defaultMonthlyAmount: 9900
+ *                   defaultIdCardCharge: 19900
+ *             designationOverride:
+ *               value:
+ *                 reporterPricing:
+ *                   byDesignation:
+ *                     - designationId: "desg_1"
+ *                       monthlyAmount: 14900
+ *                       idCardCharge: 19900
+ *     responses:
+ *       200:
+ *         description: Updated pricing
+ */
+router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+	try {
+		const { tenantId } = req.params;
+		const body = req.body || {};
+		const patch = normalizeReporterPricing(body.reporterPricing ?? body);
+
+		const tenant = await p.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }).catch(() => null);
+		if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+		const existing = await p.tenantSettings.findUnique({ where: { tenantId }, select: { id: true, data: true } }).catch(() => null);
+		const existingData = existing?.data && typeof existing.data === 'object' ? existing.data : {};
+		const currentPricing = normalizeReporterPricing((existingData as any).reporterPricing);
+		const nextPricing = mergeReporterPricing(currentPricing, patch);
+		const nextData = { ...(existingData as any), reporterPricing: nextPricing };
+
+		const saved = await p.tenantSettings.upsert({
+			where: { tenantId },
+			create: { tenantId, data: nextData },
+			update: { data: nextData },
+			select: { tenantId: true, data: true },
+		});
+
+		return res.json({ tenantId: saved.tenantId, reporterPricing: (saved.data as any)?.reporterPricing || {} });
+	} catch (e: any) {
+		console.error('patch reporter pricing error', e);
+		return res.status(500).json({ error: 'Failed to update reporter pricing' });
+	}
+});
 
 /** Domain Settings */
 /**
@@ -211,7 +416,7 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  * /tenants/{tenantId}/domains/{domainId}/settings:
  *   get:
  *     summary: Get domain settings (resolved)
- *     description: TENANT_ADMIN or SUPER_ADMIN. Domain is canonical for website config. Effective merges entity→tenant→domain.
+ *     description: SUPER_ADMIN only. Domain is canonical for website config. Effective merges entity→tenant→domain.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -245,7 +450,7 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
  *                     secondaryColor: "#CDDC39"
  *   put:
  *     summary: Replace domain settings
- *     description: TENANT_ADMIN or SUPER_ADMIN. Replaces entire domain settings JSON.
+ *     description: SUPER_ADMIN only. Replaces entire domain settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -325,7 +530,7 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
 	 *                     customCss: "body{font-family:Inter;}"
  *   patch:
  *     summary: Update parts of domain settings
- *     description: TENANT_ADMIN or SUPER_ADMIN. Partially updates domain settings JSON.
+ *     description: SUPER_ADMIN only. Partially updates domain settings JSON.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -385,16 +590,16 @@ router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { sessi
 	 *                         primary: "#0D47A1"
 	 *                         secondary: "#FFC107"
  */
-router.get('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), getDomainSettings);
-router.put('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), upsertDomainSettings);
-router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), upsertDomainSettings);
+router.get('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, getDomainSettings);
+router.put('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertDomainSettings);
+router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertDomainSettings);
 
 /**
  * @swagger
  * /tenants/{tenantId}/domains/settings:
  *   get:
  *     summary: List domain settings for tenant
- *     description: TENANT_ADMIN or SUPER_ADMIN. Paginated list for managing multiple domains.
+ *     description: SUPER_ADMIN only. Paginated list for managing multiple domains.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -426,6 +631,6 @@ router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authentic
  *                         primaryColor: "#0D47A1"
  *                         secondaryColor: "#FFC107"
  */
-router.get('/tenants/:tenantId/domains/settings', passport.authenticate('jwt', { session: false }), listDomainSettings);
+router.get('/tenants/:tenantId/domains/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, listDomainSettings);
 
 export default router;

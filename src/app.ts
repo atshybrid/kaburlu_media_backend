@@ -35,6 +35,7 @@ import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.rout
 import castesRoutes from './api/castes/castes.routes';
 import publicRoutes from './api/public/public.routes';
 import websitePublicRoutes from './api/public/website.routes';
+import publicReporterJoinRoutes from './api/public/publicReporterJoin.routes';
 import tenantsRoutes from './api/tenants/tenants.routes';
 import domainsRoutes from './api/domains/domains.routes';
 import reportersRoutes from './api/reporters/reporters.routes';
@@ -49,6 +50,7 @@ import assemblyConstituenciesRoutes from './api/assembly/assemblyConstituencies.
 import adminRoutes from './api/admin/admin.routes';
 import webhooksRoutes from './api/webhooks/webhooks.routes';
 import idCardsRoutes from './api/idCards/idCards.routes';
+import reporterDesignationsPublicRoutes from './api/reporters/reporterDesignations.public.routes';
 import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
 import aiTestRoutes from './api/ai/ai.routes';
@@ -228,6 +230,8 @@ apiV1.use('/castes', castesRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);
+// Public helper: used by public join to list designation options
+apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);
 apiV1.use('/reporter-payments', reporterPaymentsRoutes);
 apiV1.use('/tenant-theme', tenantThemeRoutes);
 apiV1.use('/', tenantAdsRoutes);
@@ -236,6 +240,8 @@ apiV1.use('/admin', adminRoutes);
 apiV1.use('/webhooks', webhooksRoutes);
 // Public ID Card render APIs (JSON/HTML/PDF)
 apiV1.use('/id-cards', idCardsRoutes);
+// Public reporter join (tenantId-based; does not rely on Host)
+apiV1.use('/public-join', publicReporterJoinRoutes);
 // Versioned public read-only routes (duplicate of /api/public for convenience in Swagger testing)
 apiV1.use('/public', publicRoutes);
 apiV1.use('/public', websitePublicRoutes);
@@ -243,9 +249,11 @@ apiV1.use('/public', websitePublicRoutes);
 // Preferred mount without version/prefix for frontend consumption
 app.use('/public', publicRoutes);
 app.use('/public', websitePublicRoutes);
+app.use('/public-join', publicReporterJoinRoutes);
 // Backward compatibility mounts (still available)
 app.use('/api/public', publicRoutes);
 app.use('/api/public', websitePublicRoutes);
+app.use('/api/public-join', publicReporterJoinRoutes);
 app.use('/api/v1', apiV1);
 
 // Protected sample route

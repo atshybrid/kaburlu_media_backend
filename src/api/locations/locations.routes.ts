@@ -125,6 +125,112 @@ router.get('/search', async (req, res) => {
 
 /**
  * @swagger
+ * /locations/search-combined:
+ *   get:
+ *     summary: Combined location search (village/mandal/district/state with hierarchy)
+ *     description: |
+ *       Searches by name across State, District, Mandal and Village.
+ *
+ *       Each result includes the full hierarchy (state → district → mandal → village) with both `id` and `name`.
+ *       This is intended for UI selection in public reporter join flows.
+ *
+ *       Notes:
+ *       - Villages are tenant-scoped; pass `tenantId` to search villages for a specific tenant.
+ *     tags: [Locations]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *         description: Search term (e.g., "adil" or "ఆదిల")
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional; when provided, village search is restricted to that tenant.
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+ *     responses:
+ *       200:
+ *         description: Matching locations with hierarchy
+ *         content:
+ *           application/json:
+ *             examples:
+ *               villageMatch:
+ *                 value:
+ *                   q: "Bodhan"
+ *                   count: 1
+ *                   items:
+ *                     - type: "VILLAGE"
+ *                       match: { id: "vlg_1", name: "Bodhan" }
+ *                       state: { id: "st_1", name: "Telangana" }
+ *                       district: { id: "dst_1", name: "Nizamabad" }
+ *                       mandal: { id: "mdl_1", name: "Bodhan" }
+ *                       village: { id: "vlg_1", name: "Bodhan" }
+ *       404:
+ *         description: No matching area found
+ *         content:
+ *           application/json:
+ *             examples:
+ *               notFound:
+ *                 value:
+ *                   error: "Area Not adding contact admin"
+ */
+router.get('/search-combined', async (req, res) => {
+    try {
+        const q = String((req.query.q as any) || '').trim();
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const tenantId = req.query.tenantId ? String(req.query.tenantId) : undefined;
+
+        if (!q) return res.status(400).json({ error: 'q is required' });
+
+        const rawItems: any[] = await locationService.searchGeoLocations({
+            q,
+            limit,
+            tenantId,
+            types: ['STATE', 'DISTRICT', 'MANDAL', 'VILLAGE'],
+            includeVillage: false,
+        });
+
+        const items = rawItems.map((it: any) => {
+            const type = String(it.type || '').toUpperCase();
+            const state = it.stateId ? { id: it.stateId, name: it.stateName } : null;
+            const district = it.districtId ? { id: it.districtId, name: it.districtName } : null;
+            const mandal = it.mandalId ? { id: it.mandalId, name: it.mandalName } : null;
+            const village = it.villageId ? { id: it.villageId, name: it.villageName } : null;
+
+            // "match" points to the entity that matched (state/district/mandal/village)
+            let match: any = { id: it.id ?? null, name: it.name ?? null };
+            if (type === 'STATE') match = state;
+            if (type === 'DISTRICT') match = district;
+            if (type === 'MANDAL') match = mandal;
+            if (type === 'VILLAGE') match = village;
+
+            return {
+                type,
+                match,
+                state,
+                district,
+                mandal,
+                village,
+            };
+        });
+
+        if (items.length === 0) {
+            return res.status(404).json({ error: 'Area Not adding contact admin' });
+        }
+
+        return res.json({ q, count: items.length, items });
+    } catch (e: any) {
+        console.error('GET /locations/search-combined error', e);
+        return res.status(500).json({ error: 'Failed to search locations' });
+    }
+});
+
+/**
+ * @swagger
  * /locations/villages:
  *   post:
  *     summary: Create village (tenant-scoped)

@@ -424,6 +424,7 @@ model Tenant {
   reporterDesignations    ReporterDesignation[]
   entity                  TenantEntity?            @relation("Tenant_TenantEntity")
   reporterPayments        ReporterPayment[]
+  reporterOnboardingOrders ReporterOnboardingOrder[]
   razorpayConfig          RazorpayConfig?
   idCardSettings          TenantIdCardSettings?
   settings                TenantSettings?          @relation("Tenant_TenantSettings")
@@ -718,6 +719,7 @@ model ReporterDesignation {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   reporters Reporter[]
+  onboardingOrders ReporterOnboardingOrder[]
 
   @@unique([tenantId, code])
   @@index([tenantId, level])
@@ -798,6 +800,44 @@ model ReporterPayment {
   updatedAt         DateTime              @updatedAt
 
   @@unique([reporterId, type, year, month])
+  @@index([status])
+}
+
+/// Payment-first public onboarding order.
+/// Stores pre-registration details keyed by `razorpayOrderId` so a reporter slot
+/// isn't consumed until payment is captured.
+model ReporterOnboardingOrder {
+  id                    String   @id @default(cuid())
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId              String
+
+  mobileNumber          String
+  fullName              String
+  languageId            String?
+
+  designation           ReporterDesignation @relation(fields: [designationId], references: [id])
+  designationId         String
+  level                 ReporterLevel
+  stateId               String?
+  districtId            String?
+  mandalId              String?
+  assemblyConstituencyId String?
+
+  subscriptionEnabled   Boolean  @default(true)
+  monthlySubscriptionAmount Int?
+  idCardCharge          Int?
+  amount                Int
+  currency              String   @default("INR")
+  status                String   @default("PENDING") // PENDING | PAID | EXPIRED | CANCELLED | PAID_NO_SLOT | DUPLICATE
+
+  razorpayOrderId       String   @unique
+  razorpayPaymentId     String?
+  meta                  Json?
+  expiresAt             DateTime
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([tenantId, mobileNumber])
   @@index([status])
 }
 
