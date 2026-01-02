@@ -18,8 +18,11 @@ const router = Router();
  *     summary: Razorpay payment webhook
  *     description: |
  *       Validates the X-Razorpay-Signature header using the shared webhook secret.
- *       On successful payment events, updates the related ReporterPayment row to PAID.
- *       Expected payload includes `payload.payment.entity.id` and notes with `reporterId`, `tenantId`, `type`.
+ *       On captured payments, reconciles:
+ *       - Tenant billing invoice payments (notes.type=TENANT_BILLING_INVOICE)
+ *       - Reporter payments (legacy)
+ *
+ *       Header required: `X-Razorpay-Signature`.
  *     tags: [Webhooks]
  *     requestBody:
  *       required: true
@@ -27,6 +30,53 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
+ *           examples:
+ *             tenantInvoiceCaptured:
+ *               summary: Tenant billing invoice paid (subscription or topup)
+ *               value:
+ *                 event: "payment.captured"
+ *                 payload:
+ *                   payment:
+ *                     entity:
+ *                       id: "pay_ABC123"
+ *                       order_id: "order_RZP_456"
+ *                       status: "captured"
+ *                       notes:
+ *                         type: "TENANT_BILLING_INVOICE"
+ *                         tenantId: "tenant_01"
+ *                         invoiceId: "inv_01"
+ *                         kind: "SUBSCRIPTION"
+ *             designTopupCaptured:
+ *               summary: Design-page topup invoice paid (credits will be added)
+ *               value:
+ *                 event: "payment.captured"
+ *                 payload:
+ *                   payment:
+ *                     entity:
+ *                       id: "pay_DEF456"
+ *                       order_id: "order_RZP_789"
+ *                       status: "captured"
+ *                       notes:
+ *                         type: "TENANT_BILLING_INVOICE"
+ *                         tenantId: "tenant_01"
+ *                         invoiceId: "inv_topup_01"
+ *                         kind: "TOPUP"
+ *                         component: "NEWSPAPER_DESIGN_PAGE"
+ *                         pages: 60
+ *             reporterOnboardingCaptured:
+ *               summary: Reporter onboarding payment paid (legacy flow)
+ *               value:
+ *                 event: "payment.captured"
+ *                 payload:
+ *                   payment:
+ *                     entity:
+ *                       id: "pay_XYZ000"
+ *                       order_id: "order_RZP_111"
+ *                       status: "captured"
+ *                       notes:
+ *                         reporterId: "rep_01"
+ *                         tenantId: "tenant_01"
+ *                         type: "ONBOARDING"
  *     responses:
  *       200: { description: Acknowledged }
  *       400: { description: Invalid signature or payload }
@@ -39,7 +89,7 @@ router.post('/razorpay', async (req, res) => {
     const signature = req.header('X-Razorpay-Signature');
     if (!signature) return res.status(400).json({ error: 'Missing signature header' });
 
-    const bodyString = JSON.stringify(req.body || {});
+    const bodyString = ((req as any).rawBody ? (req as any).rawBody.toString('utf8') : null) || JSON.stringify(req.body || {});
     const expected = crypto
       .createHmac('sha256', secret)
       .update(bodyString)
@@ -57,6 +107,8 @@ router.post('/razorpay', async (req, res) => {
     const status = paymentEntity.status; // captured, authorized, failed, etc.
     const notes = paymentEntity.notes || {};
     const tenantIdFromNotes = notes.tenantId;
+    const invoiceIdFromNotes = notes.invoiceId;
+    const typeFromNotes = notes.type;
 
     if (!orderId) return res.status(400).json({ error: 'order_id missing' });
 
@@ -67,7 +119,8 @@ router.post('/razorpay', async (req, res) => {
 
     function pickReporterLimitMax(settingsData: any, input: { designationId: string; level: string; location: { field: string; id: string } }): number | undefined {
       const limits = settingsData?.reporterLimits;
-      if (!limits || limits.enabled !== true) return undefined;
+      // Limits are always enforced. Default is max=1 when not configured.
+      if (!limits) return 1;
 
       const rules: any[] = Array.isArray(limits.rules) ? limits.rules : [];
       const defaultMax = typeof limits.defaultMax === 'number' ? limits.defaultMax : 1;
@@ -102,6 +155,50 @@ router.post('/razorpay', async (req, res) => {
 
     // Update ReporterPayment if captured
     if (status === 'captured') {
+      // Tenant Billing invoice payment
+      if (invoiceIdFromNotes && tenantIdFromNotes && String(typeFromNotes) === 'TENANT_BILLING_INVOICE') {
+        const tenantId = String(tenantIdFromNotes);
+        const inv = await (prisma as any)
+          .billingInvoice
+          .findFirst({ where: { id: String(invoiceIdFromNotes), tenantId }, include: { lineItems: true } })
+          .catch(() => null);
+
+        if (inv?.id && String(inv.status) !== 'PAID') {
+          await (prisma as any).$transaction(async (tx: any) => {
+            // Mark invoice as paid
+            await tx.billingInvoice.update({
+              where: { id: inv.id },
+              data: {
+                status: 'PAID',
+                razorpayOrderId: orderId || inv.razorpayOrderId,
+                razorpayPaymentId: paymentId,
+                paidAt: new Date(),
+                meta: paymentEntity,
+              },
+            });
+
+            // Prepaid credit top-ups: add credits once
+            if (String(inv.kind) === 'TOPUP') {
+              const items = Array.isArray(inv.lineItems) ? inv.lineItems : [];
+              for (const li of items) {
+                const component = li?.component ? String(li.component) : null;
+                const qty = typeof li?.quantity === 'number' ? li.quantity : parseInt(String(li?.quantity ?? 0), 10);
+                if (!component || !Number.isFinite(qty) || qty <= 0) continue;
+
+                // Currently only design pages are used for prepaid credits
+                if (component === 'NEWSPAPER_DESIGN_PAGE') {
+                  await tx.billingCreditBalance.upsert({
+                    where: { tenantId_component: { tenantId, component } },
+                    create: { tenantId, component, balance: qty },
+                    update: { balance: { increment: qty } },
+                  });
+                }
+              }
+            }
+          });
+        }
+      }
+
       const rp = await (prisma as any).reporterPayment.findFirst({ where: { razorpayOrderId: orderId } }).catch(() => null);
       if (rp) {
         await (prisma as any).reporterPayment

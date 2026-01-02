@@ -47,8 +47,50 @@ router.post('/simple/mark', passport.authenticate('jwt', { session: false }), as
 });
 
 // Legacy simple endpoint (deprecated) - prefer /progress or /batch
+/**
+ * @swagger
+ * /articles/read:
+ *   post:
+ *     deprecated: true
+ *     summary: DEPRECATED - Mark an article as read
+ *     description: Deprecated. Use ShortNews read tracking endpoints instead.
+ *     tags: [Engagement - Read Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [articleId]
+ *             properties:
+ *               articleId: { type: string }
+ *     responses:
+ *       201:
+ *         description: Marked as read
+ */
 router.post('/', passport.authenticate('jwt', { session: false }), validationMiddleware, (req, res) => controller.markAsRead(req, res));
 // Legacy status (deprecated) - prefer /status/multi
+/**
+ * @swagger
+ * /articles/read/{articleId}:
+ *   get:
+ *     deprecated: true
+ *     summary: DEPRECATED - Get read status for an article
+ *     description: Deprecated. Use ShortNews read tracking endpoints instead.
+ *     tags: [Engagement - Read Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: articleId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Status
+ */
 router.get('/:articleId', passport.authenticate('jwt', { session: false }), validationMiddleware, (req, res) => controller.getReadStatus(req, res));
 
 // New batched progress submission
@@ -62,5 +104,41 @@ router.post('/progress', passport.authenticate('jwt', { session: false }), gone)
 router.get('/status/multi', passport.authenticate('jwt', { session: false }), gone);
 router.get('/aggregate/article/:articleId', passport.authenticate('jwt', { session: false }), gone);
 router.get('/aggregate/author/:authorId', passport.authenticate('jwt', { session: false }), gone);
+
+/**
+ * @swagger
+ * /articles/read/batch:
+ *   post:
+ *     deprecated: true
+ *     summary: DEPRECATED - batch read tracking
+ *     tags: [Engagement - Read Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       410:
+ *         description: Gone
+ *
+ * /articles/read/progress:
+ *   post:
+ *     deprecated: true
+ *     summary: DEPRECATED - progress read tracking
+ *     tags: [Engagement - Read Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       410:
+ *         description: Gone
+ *
+ * /articles/read/status/multi:
+ *   get:
+ *     deprecated: true
+ *     summary: DEPRECATED - multi status
+ *     tags: [Engagement - Read Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       410:
+ *         description: Gone
+ */
 
 export default router;

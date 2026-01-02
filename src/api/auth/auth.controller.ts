@@ -82,6 +82,10 @@ export const refreshController = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
   } catch (error) {
     console.error('[Auth] refreshController error:', error);
+    const err: any = error as any;
+    if (typeof err?.status === 'number') {
+      return res.status(err.status).json({ success: false, message: err.message || 'Error' });
+    }
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

@@ -16,6 +16,7 @@
     "prisma:studio": "npx prisma studio",
     "prisma:seed": "npm run seed",
     "seed:reporter-designations": "ts-node scripts/seed_reporter_designations.ts",
+    "migrate:designations:global": "ts-node scripts/migrate_designations_to_global.ts",
     "seed:minimal": "ts-node scripts/seed_minimal.ts",
     "seed:demo-prashna": "ts-node scripts/seed_demo_prashna.ts",
     "seed:adilabad-mandals": "ts-node scripts/seed_adilabad_mandals.ts",

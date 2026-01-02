@@ -66,6 +66,11 @@ class HttpException extends Error {
     }
 }
 
+function addUtcDays(now: Date, days: number) {
+  const ms = now.getTime() + days * 24 * 60 * 60 * 1000;
+  return new Date(ms);
+}
+
 // This is a placeholder. In a real app, you would have a robust OTP system.
 const validateOtp = async (mobileNumber: string, otp: string): Promise<boolean> => {
   console.log(`Validating OTP ${otp} for ${mobileNumber}`);
@@ -131,6 +136,19 @@ export const login = async (loginDto: MpinLoginDto) => {
   try {
     // Fetch reporter record linked to this user (if any)
       const reporter = await prisma.reporter.findUnique({ where: { userId: user.id }, include: { payments: true } });
+
+    // Manual login access gating (tenant-admin managed)
+    // Only applies when reporter.subscriptionActive=false and manualLoginEnabled=true.
+    if (reporter && role?.name === 'REPORTER') {
+      if (reporter.manualLoginEnabled && !reporter.subscriptionActive) {
+        const now = new Date();
+        const expiresAt = (reporter as any).manualLoginExpiresAt ? new Date((reporter as any).manualLoginExpiresAt as any) : null;
+        if (!expiresAt || expiresAt.getTime() <= now.getTime()) {
+          throw new HttpException(403, 'Reporter login access expired. Please contact tenant admin to reactivate.');
+        }
+      }
+    }
+
     if (reporter && role?.name !== 'SUPER_ADMIN') {
       const now = new Date();
       const currentYear = now.getUTCFullYear();
@@ -185,6 +203,11 @@ export const login = async (loginDto: MpinLoginDto) => {
       }
     }
   } catch (e) {
+    // IMPORTANT: don't swallow intentional HTTP blocks (e.g. manual login expired)
+    const err: any = e as any;
+    if (typeof err?.status === 'number') {
+      throw e;
+    }
     console.error('[Auth] Failed reporter payment gating check', e);
   }
 
@@ -260,6 +283,25 @@ export const refresh = async (refreshDto: RefreshDto) => {
       },
     });
 
+    // Manual login access gating (tenant-admin managed)
+    // Best-practice: refresh token must NOT bypass manual expiry.
+    if (role?.name === 'REPORTER') {
+      const reporter = await prisma.reporter
+        .findUnique({
+          where: { userId: user.id },
+          select: { subscriptionActive: true, manualLoginEnabled: true, manualLoginExpiresAt: true },
+        })
+        .catch(() => null);
+
+      if (reporter && reporter.manualLoginEnabled && !reporter.subscriptionActive) {
+        const now = new Date();
+        const expiresAt = reporter.manualLoginExpiresAt ? new Date(reporter.manualLoginExpiresAt as any) : null;
+        if (!expiresAt || expiresAt.getTime() <= now.getTime()) {
+          throw new HttpException(403, 'Reporter login access expired. Please contact tenant admin to reactivate.');
+        }
+      }
+    }
+
     const payload = {
       sub: user.id,
       role: role?.name,
@@ -273,6 +315,10 @@ export const refresh = async (refreshDto: RefreshDto) => {
   expiresIn: 86400, // seconds (1 day)
     };
   } catch (error) {
+    const err: any = error as any;
+    if (typeof err?.status === 'number') {
+      throw error;
+    }
     return null;
   }
 };

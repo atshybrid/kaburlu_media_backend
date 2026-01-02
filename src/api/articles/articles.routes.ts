@@ -11,12 +11,60 @@ import { getRawArticleStatusController } from './articles.ai.controller';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Articles
+ *     description: News articles (tenant web articles, raw/AI processing, newspaper articles)
+ *   - name: AI Rewrite
+ *     description: AI compose/rewrite endpoints for articles (requires auth)
+ */
+
 // Legacy short-news creation (citizen)
+/**
+ * @swagger
+ * /articles:
+ *   post:
+ *     summary: Create an article (legacy)
+ *     description: Legacy authenticated create endpoint.
+ *     tags: [Articles]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string }
+ *               content: { type: string }
+ *               categoryIds: { type: array, items: { type: string } }
+ *               languageCode: { type: string, example: 'te' }
+ *               images: { type: array, items: { type: string } }
+ *               isPublished: { type: boolean }
+ *           examples:
+ *             create:
+ *               value:
+ *                 title: "Road accident update"
+ *                 content: "Two cars collided near main circle. Police arrived."
+ *                 categoryIds: ["cmcat123"]
+ *                 languageCode: "te"
+ *                 images: ["https://cdn.example.com/1.webp"]
+ *                 isPublished: false
+ *     responses:
+ *       201:
+ *         description: Created
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
 router.post('/', passport.authenticate('jwt', { session: false }), createArticleController);
 
 // Tenant-scoped article creation (reporter/admin)
 /**
- * @internal
+ * @swagger
  * /articles/tenant:
  *   post:
  *     summary: Create an article scoped to a tenant
@@ -113,7 +161,7 @@ router.get('/raw/:id', passport.authenticate('jwt', { session: false }), require
 router.post('/tenant', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createTenantArticleController);
 
 /**
- * @internal
+ * @swagger
  * /articles/webstories:
  *   post:
  *     summary: Create a web story (scoped to tenant)
@@ -176,7 +224,7 @@ router.post('/tenant', passport.authenticate('jwt', { session: false }), require
 router.post('/webstories', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createWebStoryController);
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/compose:
  *   post:
  *     summary: Compose AI-enhanced article (web, optionally short news)
@@ -224,64 +272,10 @@ router.post('/webstories', passport.authenticate('jwt', { session: false }), req
  *                     title: "తెలంగాణ బడ్జెట్ 2025"
  *                     status: "published"
  */
-/**
- * @internal
- * /articles/ai/compose:
- *   post:
- *     summary: Compose AI article (Web, Short, Newspaper)
- *     description: |
- *       Main entry point for AI generation.
- *       Use header "X-Generate" with values: web, web+short, or web+newspaper.
- *       Example header: "X-Generate: web+short+newspaper" to get all 3 formats.
- *     security: [ { bearerAuth: [] } ]
- *     parameters:
- *       - in: header
- *         name: X-Generate
- *         schema: { type: string, enum: ["web", "web+short", "web+newspaper", "web+short+newspaper"] }
- *         required: false
- *         description: Control which variants to generate (select one)
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [title, content, categoryIds]
- *             properties:
- *               tenantId: { type: string }
- *               domainId: { type: string }
- *               languageCode: { type: string, example: 'te' }
- *               title: { type: string }
- *               content: { type: string }
- *               images: { type: array, items: { type: string } }
- *               categoryIds: { type: array, items: { type: string } }
- *               isPublished: { type: boolean }
- *               raw: { type: object, description: 'Original rich payload from editor' }
- *           example:
- *             tenantId: "cmidgq4v80004ugv8dtqv4ijk"
- *             languageCode: "te"
- *             title: "Heavy Rains in Hyderabad"
- *             content: "Detailed report about the rains..."
- *             categoryIds: ["clq9zsm0d0000vcwz1z2z3z4z"]
- *             images: ["https://example.com/image.jpg"]
- *             isPublished: false
- *             raw: {}
- *     responses:
- *       201:
- *         description: Created
- *         content:
- *           application/json:
- *             example:
- *               articleId: "cmijx123abc"
- *               webArticleId: "cmijklm456"
- *               shortNewsId: "..."
- *               newspaperArticleId: "..."
- *     tags: [Articles]
- */
 router.post('/ai/compose', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeAIArticleController);
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/web:
  *   post:
  *     summary: Generate and store website article (Gemini)
@@ -330,7 +324,7 @@ router.post('/ai/compose', passport.authenticate('jwt', { session: false }), req
  *                     status: "published"
  */
 /**
- * @internal
+ * @swagger
  * /articles/ai/web:
  *   post:
  *     deprecated: true
@@ -342,7 +336,7 @@ router.post('/ai/web', (_req, res) => {
 });
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/blocks:
  *   post:
  *     summary: Generate using two-block prompt (SEO JSON + Plain Text)
@@ -393,7 +387,7 @@ router.post('/ai/web', (_req, res) => {
 router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeBlocksController);
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/chatgpt/rewrite:
  *   post:
  *     summary: Rewrite via ChatGPT (long SEO article + short news)
@@ -428,7 +422,7 @@ router.post('/ai/blocks', passport.authenticate('jwt', { session: false }), requ
  */
 router.post('/ai/chatgpt/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeChatGptRewriteController);
 /**
- * @internal
+ * @swagger
  * /articles/ai/gemini/rewrite:
  *   post:
  *     summary: Rewrite via Gemini (long SEO article + short news)
@@ -464,7 +458,7 @@ router.post('/ai/chatgpt/rewrite', passport.authenticate('jwt', { session: false
 router.post('/ai/gemini/rewrite', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, composeGeminiRewriteController);
 
 /**
- * @internal
+ * @swagger
  * /articles/raw:
  *   post:
  *     summary: Store a raw article for later AI processing
@@ -494,7 +488,7 @@ router.post('/ai/gemini/rewrite', passport.authenticate('jwt', { session: false 
 router.post('/raw', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, createRawArticleController);
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/simple:
  *   post:
  *     summary: Simple AI article (content + domain/category/media)
@@ -614,7 +608,7 @@ router.post('/raw', passport.authenticate('jwt', { session: false }), requireRep
  *         description: Server error while persisting TenantWebArticle
  */
 /**
- * @internal
+ * @swagger
  * /articles/ai/simple:
  *   post:
  *     deprecated: true
@@ -1293,7 +1287,7 @@ router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), r
 router.patch('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, updateNewspaperArticle);
 
 /**
- * @internal
+ * @swagger
  * /articles/ai/raw:
  *   post:
  *     summary: Enqueue raw article for background AI processing
@@ -1374,7 +1368,7 @@ router.get('/queue/pending', passport.authenticate('jwt', { session: false }), r
 });
 
 /**
- * @internal
+ * @swagger
  * /articles/raw/{id}/process:
  *   post:
  *     summary: Process a raw article immediately (fast rewrite)

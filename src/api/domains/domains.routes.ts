@@ -21,7 +21,23 @@ const auth = passport.authenticate('jwt', { session: false });
  *     summary: List domains
  *     tags: [Domains]
  *     responses:
- *       200: { description: List domains }
+ *       200:
+ *         description: List domains
+ *         content:
+ *           application/json:
+ *             examples:
+ *               domains:
+ *                 value:
+ *                   - id: "dom_01"
+ *                     tenantId: "tenant_01"
+ *                     host: "example.com"
+ *                     status: "ACTIVE"
+ *                     kind: "NEWS"
+ *                   - id: "dom_02"
+ *                     tenantId: "tenant_01"
+ *                     host: "epaper.example.com"
+ *                     status: "ACTIVE"
+ *                     kind: "EPAPER"
  */
 router.get('/', async (_req, res) => {
   const domains = await (prisma as any).domain.findMany({ include: { tenant: true }, take: 200 });
@@ -49,6 +65,11 @@ router.get('/', async (_req, res) => {
  *             properties:
  *               method: { type: string, enum: [DNS_TXT, MANUAL], default: DNS_TXT }
  *               force: { type: boolean, default: false }
+ *           examples:
+ *             manual:
+ *               value: { method: "MANUAL" }
+ *             forceActive:
+ *               value: { method: "DNS_TXT", force: true }
  *     responses:
  *       200: { description: Result }
  */
@@ -66,6 +87,50 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
   } catch (e: any) {
     console.error('verify domain error', e);
     res.status(500).json({ error: 'Failed to verify domain' });
+  }
+});
+
+/**
+ * @swagger
+ * /domains/{id}/kind:
+ *   patch:
+ *     summary: Set a domain kind for billing (NEWS vs EPAPER) [Superadmin]
+ *     tags: [Domains]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [kind]
+ *             properties:
+ *               kind: { type: string, enum: [NEWS, EPAPER] }
+ *           examples:
+ *             epaper:
+ *               value: { kind: "EPAPER" }
+ *     responses:
+ *       200: { description: Updated domain }
+ *       400: { description: Validation error }
+ *       404: { description: Domain not found }
+ */
+router.patch('/:id/kind', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const kind = String(req.body?.kind || '').toUpperCase();
+    if (!['NEWS', 'EPAPER'].includes(kind)) return res.status(400).json({ error: 'kind must be NEWS or EPAPER' });
+    const d = await (prisma as any).domain.findUnique({ where: { id } });
+    if (!d) return res.status(404).json({ error: 'Domain not found' });
+    const updated = await (prisma as any).domain.update({ where: { id }, data: { kind } });
+    return res.json({ ok: true, domain: updated });
+  } catch (e: any) {
+    console.error('set domain kind error', e);
+    return res.status(500).json({ error: 'Failed to set domain kind' });
   }
 });
 

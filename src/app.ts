@@ -38,6 +38,7 @@ import websitePublicRoutes from './api/public/website.routes';
 import publicReporterJoinRoutes from './api/public/publicReporterJoin.routes';
 import tenantsRoutes from './api/tenants/tenants.routes';
 import domainsRoutes from './api/domains/domains.routes';
+import billingRoutes from './api/billing/billing.routes';
 import reportersRoutes from './api/reporters/reporters.routes';
 import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
 import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
@@ -112,7 +113,13 @@ const corsOptions: CorsOptions = {
 app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 
 // JSON body parse error handler (must be BEFORE other routes' logic error handling) –
@@ -171,6 +178,8 @@ app.use('/mandals', mandalsRoutes);
 app.use('/', assemblyConstituenciesRoutes);
 // Tenant-scoped reporter management (mount root so internal paths /tenants/:tenantId/... work)
 app.use('/', tenantReportersRoutes);
+// Billing routes include both /billing/* and /tenants/:tenantId/billing/*
+app.use('/', billingRoutes);
 app.use('/translate', translateRoutes);
 app.use('/profiles', profileRoutes);
 app.use('/media', mediaRoutes);
@@ -213,6 +222,7 @@ apiV1.use('/mandals', mandalsRoutes);
 apiV1.use('/', assemblyConstituenciesRoutes);
 // Tenant-scoped reporter management under versioned API as well
 apiV1.use('/', tenantReportersRoutes);
+apiV1.use('/', billingRoutes);
 apiV1.use('/translate', translateRoutes);
 apiV1.use('/profiles', profileRoutes);
 apiV1.use('/media', mediaRoutes);

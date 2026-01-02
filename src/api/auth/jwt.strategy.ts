@@ -34,6 +34,28 @@ export default (passport: PassportStatic) => {
         // Default: user principal
         const user = await findUserById(payload.sub);
         if (user) {
+          // Enforce reporter manual-login access on *every* request.
+          // This prevents a still-valid JWT from working after manualLoginExpiresAt.
+          if ((user as any)?.role?.name === 'REPORTER') {
+            const reporter = await prisma.reporter
+              .findUnique({
+                where: { userId: user.id },
+                select: { subscriptionActive: true, manualLoginEnabled: true, manualLoginExpiresAt: true },
+              })
+              .catch(() => null);
+
+            if (reporter && reporter.manualLoginEnabled && !reporter.subscriptionActive) {
+              const expiresAt = reporter.manualLoginExpiresAt ? new Date(reporter.manualLoginExpiresAt as any) : null;
+              const now = new Date();
+              if (!expiresAt || expiresAt.getTime() <= now.getTime()) {
+                return done(null, false, {
+                  message: 'Reporter login access expired. Please contact tenant admin to reactivate.',
+                  code: 'MANUAL_LOGIN_EXPIRED',
+                } as any);
+              }
+            }
+          }
+
           const principal: Express.User = {
             kind: 'user',
             id: user.id,

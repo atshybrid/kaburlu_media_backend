@@ -353,6 +353,12 @@ enum DomainStatus {
   DECOMMISSIONED
 }
 
+/// Distinguish between a news website domain and an ePaper subdomain/domain for billing & feature gating.
+enum DomainKind {
+  NEWS
+  EPAPER
+}
+
 enum ReporterRole {
   SUPER_ADMIN
   TENANT_ADMIN
@@ -431,6 +437,12 @@ model Tenant {
   domainSettings          DomainSettings[]         @relation("Tenant_DomainSettings")
   newspaperArticles       NewspaperArticle[]
   aiUsageEvents           AiUsageEvent[]
+
+  // Billing
+  subscriptions           TenantSubscription[]
+  billingUsageEvents      BillingUsageEvent[]
+  billingInvoices         BillingInvoice[]
+  billingCreditBalances   BillingCreditBalance[]
 }
 
 model Domain {
@@ -439,6 +451,7 @@ model Domain {
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenantId           String
   isPrimary          Boolean            @default(false)
+  kind               DomainKind         @default(NEWS)
   status             DomainStatus       @default(PENDING)
   verificationToken  String?
   verificationMethod String? // DNS_TXT | HTTPS_FILE | MANUAL
@@ -452,6 +465,172 @@ model Domain {
   checkLogs          DomainCheckLog[]
   settings           DomainSettings?    @relation("Domain_DomainSettings")
   webArticles        TenantWebArticle[] @relation("Domain_WebArticles")
+}
+
+/// ---------------- Tenant Billing / Subscription Models ----------------
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+/// Amounts are stored in minor currency units (e.g., paise for INR).
+enum BillingCurrency {
+  INR
+  USD
+}
+
+enum BillingComponent {
+  NEWS_DOMAIN
+  EPAPER_SUBDOMAIN
+  NEWSPAPER_DESIGN_PAGE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+}
+
+/// Invoice purpose. SUBSCRIPTION is the regular period invoice; TOPUP is prepaid credit purchase.
+enum BillingInvoiceKind {
+  SUBSCRIPTION
+  TOPUP
+}
+
+model BillingPlan {
+  id              String               @id @default(cuid())
+  name            String
+  currency        BillingCurrency      @default(INR)
+  cycle           BillingCycle         @default(MONTHLY)
+  baseAmountMinor Int                  @default(0)
+  isActive        Boolean              @default(true)
+  components      BillingPlanComponent[]
+  subscriptions   TenantSubscription[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([isActive, createdAt])
+}
+
+model BillingPlanComponent {
+  id              String          @id @default(cuid())
+  plan            BillingPlan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId          String
+  component       BillingComponent
+  includedUnits   Int             @default(0)
+  unitAmountMinor Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([planId, component])
+  @@index([component])
+}
+
+model TenantSubscription {
+  id                 String             @id @default(cuid())
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId           String
+  plan               BillingPlan        @relation(fields: [planId], references: [id])
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  usageEvents        BillingUsageEvent[]
+  invoices           BillingInvoice[]
+
+  @@index([tenantId, status])
+  @@index([planId])
+}
+
+/// Usage events for metered / one-time charges.
+/// Example: newspaper design pages => component=NEWSPAPER_DESIGN_PAGE, quantity=number of pages.
+model BillingUsageEvent {
+  id             String            @id @default(cuid())
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId       String
+  subscription   TenantSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionId String?
+  component      BillingComponent
+  quantity       Int               @default(1)
+  occurredAt     DateTime          @default(now())
+  meta           Json?
+  createdAt      DateTime          @default(now())
+
+  @@index([tenantId, occurredAt])
+  @@index([subscriptionId, occurredAt])
+  @@index([component, occurredAt])
+}
+
+/// Prepaid credit balance per tenant and component.
+/// Used to enforce prepaid usage (e.g., design pages beyond includedUnits).
+model BillingCreditBalance {
+  id        String          @id @default(cuid())
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String
+  component BillingComponent
+  balance   Int             @default(0)
+  updatedAt DateTime        @updatedAt
+  createdAt DateTime        @default(now())
+
+  @@unique([tenantId, component])
+  @@index([tenantId])
+  @@index([component])
+}
+
+model BillingInvoice {
+  id               String            @id @default(cuid())
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId         String
+  subscription     TenantSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionId   String?
+  kind             BillingInvoiceKind @default(SUBSCRIPTION)
+  status           InvoiceStatus      @default(DRAFT)
+  currency         BillingCurrency    @default(INR)
+  periodStart      DateTime
+  periodEnd        DateTime
+  totalAmountMinor Int               @default(0)
+  lineItems        BillingInvoiceLineItem[]
+  // Razorpay identifiers (when paid via Razorpay)
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  paidAt           DateTime?
+  meta             Json?
+  externalRef      String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([tenantId, periodStart, periodEnd])
+  @@index([status, createdAt])
+  @@unique([razorpayOrderId])
+}
+
+model BillingInvoiceLineItem {
+  id              String          @id @default(cuid())
+  invoice         BillingInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  component       BillingComponent?
+  description     String
+  quantity        Int             @default(1)
+  unitAmountMinor Int             @default(0)
+  amountMinor     Int             @default(0)
+  createdAt       DateTime        @default(now())
+
+  @@index([invoiceId])
 }
 
 model DomainCategory {
@@ -684,6 +863,12 @@ model Reporter {
   kycStatus                 KycStatus             @default(PENDING)
   kycData                   Json? // Arbitrary structured KYC payload (documents, verification notes)
   profilePhotoUrl           String? // Optional direct URL to reporter profile photo
+  // Manual time-based login access (only meaningful when subscriptionActive=false)
+  // Tenant admins can enable and grant N days; after expiry, reporter login is blocked until reactivated.
+  manualLoginEnabled         Boolean               @default(false)
+  manualLoginDays            Int?
+  manualLoginActivatedAt     DateTime?
+  manualLoginExpiresAt       DateTime?
   active                    Boolean               @default(true)
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
@@ -693,6 +878,7 @@ model Reporter {
   @@index([tenantId, level])
   @@index([designationId])
   @@index([kycStatus])
+  @@index([manualLoginEnabled, manualLoginExpiresAt])
 }
 
 model AssemblyConstituency {

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
+import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 
 const router = Router();
 
@@ -10,17 +11,33 @@ const includeReporterContact = {
   user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } }
 } as const;
 
+function getAutoPublishFromKycData(kycData: any): boolean {
+  try {
+    if (!kycData || typeof kycData !== 'object') return false;
+    if ((kycData as any).autoPublish === true) return true;
+    if ((kycData as any)?.settings?.autoPublish === true) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function mapReporterContact(r: any) {
   if (!r) return r;
   const fullName = r?.user?.profile?.fullName || null;
   const mobileNumber = r?.user?.mobileNumber || null;
+  const autoPublish = getAutoPublishFromKycData(r?.kycData);
   const { user, ...rest } = r;
-  return { ...rest, fullName, mobileNumber };
+  return { ...rest, fullName, mobileNumber, autoPublish };
 }
 
 type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'MANDAL' | 'ASSEMBLY';
 
 type RoleName = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'REPORTER' | string;
+
+function addUtcDays(now: Date, days: number) {
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
 
 function isAllowedCreatorRole(roleName: RoleName) {
   return roleName === 'SUPER_ADMIN' || roleName === 'TENANT_ADMIN' || roleName === 'REPORTER';
@@ -139,7 +156,8 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
 
 function pickReporterLimitMax(settingsData: any, input: { designationId: string; level: ReporterLevelInput; location: { field: string; id: string } }): number | undefined {
   const limits = settingsData?.reporterLimits;
-  if (!limits || limits.enabled !== true) return undefined;
+  // Limits are always enforced. Default is max=1 when not configured.
+  if (!limits) return 1;
 
   const rules: any[] = Array.isArray(limits.rules) ? limits.rules : [];
   const defaultMax = typeof limits.defaultMax === 'number' ? limits.defaultMax : 1;
@@ -258,6 +276,15 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *               subscriptionActive: { type: boolean }
  *               monthlySubscriptionAmount: { type: integer, description: 'Smallest currency unit' }
  *               idCardCharge: { type: integer, description: 'Smallest currency unit' }
+ *               manualLoginEnabled:
+ *                 type: boolean
+ *                 description: Tenant-admin managed time-based login access (only valid when subscriptionActive=false)
+ *               manualLoginDays:
+ *                 type: integer
+ *                 description: Required when manualLoginEnabled=true (e.g. 30)
+ *               autoPublish:
+ *                 type: boolean
+ *                 description: When true, REPORTER-created newspaper articles auto-publish (stored in Reporter.kycData.autoPublish)
  *               fullName: { type: string }
  *               mobileNumber: { type: string }
  *           examples:
@@ -268,6 +295,9 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 level: STATE
  *                 stateId: cmit7pjf30001ugaov86j0ed5
  *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 30
+ *                 autoPublish: true
  *                 monthlySubscriptionAmount: 0
  *                 idCardCharge: 0
  *                 fullName: Nishchay Reddy
@@ -278,8 +308,24 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 designationId: cmit7cpar0001ugkojh66y6ww
  *                 level: DISTRICT
  *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 7
+ *                 autoPublish: false
  *                 fullName: District Reporter
  *                 mobileNumber: '9502000000'
+ *             districtReporterSubscription:
+ *               summary: DISTRICT reporter with subscription (manual login disabled)
+ *               value:
+ *                 designationId: cmit7cpar0001ugkojh66y6ww
+ *                 level: DISTRICT
+ *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: true
+ *                 monthlySubscriptionAmount: 19900
+ *                 idCardCharge: 0
+ *                 autoPublish: true
+ *                 fullName: District Reporter Subscribed
+ *                 mobileNumber: '9502000001'
  *     responses:
  *       201:
  *         description: Created
@@ -299,6 +345,18 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 subscriptionActive: { type: boolean }
  *                 monthlySubscriptionAmount: { type: integer, nullable: true }
  *                 idCardCharge: { type: integer, nullable: true }
+ *                 manualLoginEnabled:
+ *                   type: boolean
+ *                   description: Tenant-admin managed time-based login access (only valid when subscriptionActive=false)
+ *                 manualLoginDays:
+ *                   type: integer
+ *                   description: Required when manualLoginEnabled=true (e.g. 30)
+ *                 autoPublish:
+ *                   type: boolean
+ *                   description: Reporter editorial setting for auto-publish; derived from Reporter.kycData.autoPublish
+ *                 kycData:
+ *                   type: object
+ *                   description: Includes reporter editorial settings like autoPublish
  *                 fullName: { type: string, nullable: true }
  *                 mobileNumber: { type: string, nullable: true }
  *       400: { description: Validation error }
@@ -328,6 +386,19 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     const { designationId, level, stateId, districtId, mandalId, assemblyConstituencyId } = body;
     const fullName: string | undefined = body.fullName;
     const mobileNumber: string | undefined = body.mobileNumber;
+
+    const manualLoginEnabled: boolean = body.manualLoginEnabled === true;
+    const manualLoginDaysRaw = body.manualLoginDays;
+    const manualLoginDays = typeof manualLoginDaysRaw === 'number' ? manualLoginDaysRaw : Number(manualLoginDaysRaw);
+
+    // Optional editorial setting for reporter-created articles
+    const autoPublish: boolean | undefined = typeof body.autoPublish === 'boolean' ? body.autoPublish : undefined;
+
+    // Manual login can be enabled only when subscriptionActive=false.
+    if (manualLoginEnabled) {
+      if (body.subscriptionActive === true) return res.status(400).json({ error: 'manualLoginEnabled requires subscriptionActive=false' });
+      if (!Number.isFinite(manualLoginDays) || manualLoginDays <= 0) return res.status(400).json({ error: 'manualLoginDays must be a positive number' });
+    }
     if (!designationId || !level) return res.status(400).json({ error: 'designationId and level required' });
     if (!mobileNumber || !fullName) return res.status(400).json({ error: 'mobileNumber and fullName required' });
 
@@ -471,8 +542,16 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
                       ? (body.subscriptionActive ? pricingResolved.monthlySubscriptionAmount : 0)
                       : pricingResolved.monthlySubscriptionAmount),
               idCardCharge: typeof body.idCardCharge === 'number' ? body.idCardCharge : pricingResolved.idCardCharge,
+              manualLoginEnabled: manualLoginEnabled === true,
+              manualLoginDays: manualLoginEnabled === true ? manualLoginDays : null,
+              manualLoginActivatedAt: manualLoginEnabled === true ? new Date() : null,
+              manualLoginExpiresAt: manualLoginEnabled === true ? addUtcDays(new Date(), manualLoginDays) : null,
               userId: user.id,
             };
+
+            if (autoPublish !== undefined) {
+              data.kycData = { autoPublish };
+            }
 
             // Normalize subscription amount when subscription is off.
             if (!data.subscriptionActive) {
@@ -555,6 +634,7 @@ export default router;
  *                     subscriptionActive: false
  *                     monthlySubscriptionAmount: 0
  *                     idCardCharge: 0
+ *                     autoPublish: false
  *                     kycStatus: "PENDING"
  *                     profilePhotoUrl: "https://cdn.example.com/profile.jpg"
  *                     active: true
@@ -725,6 +805,7 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
       const fullName = r?.user?.profile?.fullName || null;
       const mobileNumber = r?.user?.mobileNumber || null;
       const computedProfilePhotoUrl = r?.profilePhotoUrl || r?.user?.profile?.profilePhotoUrl || null;
+      const autoPublish = getAutoPublishFromKycData(r?.kycData);
       const authorId = r?.userId ? String(r.userId) : null;
       const pay = paymentByReporterId.get(String(r.id)) || null;
 
@@ -732,6 +813,7 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
       return {
         ...rest,
         profilePhotoUrl: computedProfilePhotoUrl,
+        autoPublish,
         fullName,
         mobileNumber,
         stats: {
@@ -873,6 +955,7 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/auto-publish', passport.a
  *                   subscriptionActive: false
  *                   monthlySubscriptionAmount: 0
  *                   idCardCharge: 0
+ *                   autoPublish: false
  *                   kycStatus: "PENDING"
  *                   profilePhotoUrl: "https://cdn.example.com/profile.jpg"
  *                   active: true
@@ -920,6 +1003,7 @@ router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
     const fullName = r?.user?.profile?.fullName || null;
     const mobileNumber = r?.user?.mobileNumber || null;
     const computedProfilePhotoUrl = r?.profilePhotoUrl || r?.user?.profile?.profilePhotoUrl || null;
+    const autoPublish = getAutoPublishFromKycData(r?.kycData);
 
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -996,6 +1080,7 @@ router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
     return res.json({
       ...rest,
       profilePhotoUrl: computedProfilePhotoUrl,
+      autoPublish,
       fullName,
       mobileNumber,
       stats: {
@@ -1060,6 +1145,96 @@ router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
  */
 router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   res.status(501).json({ error: 'Not implemented in this build' });
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/login-access:
+ *   patch:
+ *     summary: Set reporter manual login access (tenant admin)
+ *     description: |
+ *       Allows TENANT_ADMIN/SUPER_ADMIN to enable/disable time-based reporter login access.
+ *       When enabled, `manualLoginDays` grants login access for that many days from now.
+ *       This is only valid when the reporter has `subscriptionActive=false`.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               manualLoginEnabled: { type: boolean }
+ *               manualLoginDays: { type: integer, description: 'Required when manualLoginEnabled=true' }
+ *     responses:
+ *       200: { description: Updated }
+ *       400: { description: Validation error }
+ *       403: { description: Forbidden }
+ *       404: { description: Reporter not found }
+ */
+router.patch('/tenants/:tenantId/reporters/:id/login-access', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    const body = req.body || {};
+
+    const manualLoginEnabled: boolean | undefined = typeof body.manualLoginEnabled === 'boolean' ? body.manualLoginEnabled : undefined;
+    const manualLoginDaysRaw = body.manualLoginDays;
+    const manualLoginDays = typeof manualLoginDaysRaw === 'number' ? manualLoginDaysRaw : Number(manualLoginDaysRaw);
+
+    if (manualLoginEnabled === undefined) return res.status(400).json({ error: 'manualLoginEnabled is required' });
+    if (manualLoginEnabled === true && (!Number.isFinite(manualLoginDays) || manualLoginDays <= 0)) {
+      return res.status(400).json({ error: 'manualLoginDays must be a positive number' });
+    }
+
+    const reporter = await prisma.reporter.findFirst({ where: { id, tenantId }, select: { id: true, tenantId: true, subscriptionActive: true } }).catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    if (manualLoginEnabled === true && reporter.subscriptionActive) {
+      return res.status(400).json({ error: 'manualLoginEnabled requires subscriptionActive=false' });
+    }
+
+    const now = new Date();
+    const updated = await prisma.reporter.update({
+      where: { id },
+      data: manualLoginEnabled
+        ? {
+            manualLoginEnabled: true,
+            manualLoginDays: manualLoginDays,
+            manualLoginActivatedAt: now,
+            manualLoginExpiresAt: addUtcDays(now, manualLoginDays),
+          }
+        : {
+            manualLoginEnabled: false,
+            manualLoginDays: null,
+            manualLoginActivatedAt: null,
+            manualLoginExpiresAt: null,
+          },
+      select: {
+        id: true,
+        tenantId: true,
+        manualLoginEnabled: true,
+        manualLoginDays: true,
+        manualLoginActivatedAt: true,
+        manualLoginExpiresAt: true,
+        subscriptionActive: true,
+      },
+    });
+
+    return res.json(updated);
+  } catch (e: any) {
+    console.error('tenant reporter login-access patch error', e);
+    return res.status(500).json({ error: 'Failed to update login access' });
+  }
 });
 
 /**

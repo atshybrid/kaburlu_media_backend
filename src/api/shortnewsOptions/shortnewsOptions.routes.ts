@@ -35,7 +35,20 @@ const router = Router();
  *                 shortNewsId: "sn123"
  *                 content: "Need more water tankers"
  *     responses:
- *       201: { description: Created }
+ *       201:
+ *         description: Created
+ *         content:
+ *           application/json:
+ *             examples:
+ *               created:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     id: "sno_01"
+ *                     shortNewsId: "sn123"
+ *                     userId: "user_01"
+ *                     content: "Need more water tankers"
+ *                     createdAt: "2026-01-02T10:00:00.000Z"
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  *       404: { description: ShortNews not found }
@@ -104,7 +117,26 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: List }
+ *       200:
+ *         description: List
+ *         content:
+ *           application/json:
+ *             examples:
+ *               list:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     - id: "sno_01"
+ *                       shortNewsId: "sn123"
+ *                       userId: "user_01"
+ *                       content: "Need more water tankers"
+ *                       createdAt: "2026-01-02T10:00:00.000Z"
+ *                       shortNews:
+ *                         id: "sn123"
+ *                         title: "Heavy rain in market"
+ *                         content: "Water logging near market..."
+ *                         mediaUrls: []
+ *                         createdAt: "2026-01-02T09:30:00.000Z"
  *       401: { description: Unauthorized }
  */
 
@@ -136,7 +168,24 @@ router.get('/by-user/:userId', passport.authenticate('jwt', { session: false }),
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: List }
+ *       200:
+ *         description: List
+ *         content:
+ *           application/json:
+ *             examples:
+ *               list:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     - id: "sno_01"
+ *                       shortNewsId: "sn123"
+ *                       userId: "user_01"
+ *                       content: "Need more water tankers"
+ *                       createdAt: "2026-01-02T10:00:00.000Z"
+ *                       user:
+ *                         id: "user_01"
+ *                         name: "Suresh"
+ *                         profilePhotoUrl: "https://cdn.example.com/u1.webp"
  *       401: { description: Unauthorized }
  */
 
@@ -192,7 +241,20 @@ router.get('/by-shortnews/:shortNewsId', passport.authenticate('jwt', { session:
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Option }
+ *       200:
+ *         description: Option
+ *         content:
+ *           application/json:
+ *             examples:
+ *               option:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     id: "sno_01"
+ *                     shortNewsId: "sn123"
+ *                     userId: "user_01"
+ *                     content: "Need more water tankers"
+ *                     createdAt: "2026-01-02T10:00:00.000Z"
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
@@ -245,7 +307,19 @@ router.get('/by-user/:userId/shortnews/:shortNewsId', passport.authenticate('jwt
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Option }
+ *       200:
+ *         description: Option
+ *         content:
+ *           application/json:
+ *             examples:
+ *               mine:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     id: "sno_01"
+ *                     shortNewsId: "sn123"
+ *                     userId: "user_01"
+ *                     content: "Need more water tankers"
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
@@ -289,7 +363,19 @@ router.get('/by-shortnews/:shortNewsId/me', passport.authenticate('jwt', { sessi
  *             properties:
  *               content: { type: string, maxLength: 50 }
  *     responses:
- *       200: { description: Updated }
+ *       200:
+ *         description: Updated
+ *         content:
+ *           application/json:
+ *             examples:
+ *               updated:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     id: "sno_01"
+ *                     shortNewsId: "sn123"
+ *                     userId: "user_01"
+ *                     content: "Need more water tankers ASAP"
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
@@ -331,7 +417,13 @@ router.put('/:id', passport.authenticate('jwt', { session: false }), async (req,
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Deleted }
+ *       200:
+ *         description: Deleted
+ *         content:
+ *           application/json:
+ *             examples:
+ *               deleted:
+ *                 value: { success: true }
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  *       404: { description: Not found }

@@ -51,7 +51,10 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
 
 function pickReporterLimitMax(settingsData: any, input: { designationId: string; level: ReporterLevelInput; location: { field: string; id: string } }): number | undefined {
   const limits = settingsData?.reporterLimits;
-  if (!limits || limits.enabled !== true) return undefined;
+  // Limits are always enforced.
+  // Default behavior (when not configured): allow max=1 per (designationId + level + location)
+  // so the UI can rely on stable availability behavior.
+  if (!limits) return 1;
 
   const rules: any[] = Array.isArray(limits.rules) ? limits.rules : [];
   const defaultMax = typeof limits.defaultMax === 'number' ? limits.defaultMax : 1;
@@ -110,6 +113,63 @@ function resolvePricingForDesignation(pricing: ReporterPricingConfig, designatio
     // Requirement: when subscription is disabled, public join should not require any payment.
     monthlySubscriptionAmount: subscriptionEnabled ? monthlySubscriptionAmount : 0,
     idCardCharge: subscriptionEnabled ? idCardCharge : 0,
+  };
+}
+
+async function resolveTenantDesignationContext(params: {
+  tenantId: string;
+  designationId: string;
+  level: ReporterLevelInput;
+}): Promise<{ designation: { id: string; tenantId: string | null; level: ReporterLevelInput; code: string }; effectiveDesignationId: string; designationIds: string[] }> {
+  const { tenantId, designationId, level } = params;
+
+  let designation = await p.reporterDesignation
+    .findFirst({ where: { id: designationId }, select: { id: true, tenantId: true, level: true, code: true } })
+    .catch(() => null);
+
+  if (!designation?.id) throw httpError(404, { error: 'Designation not found' });
+  if (String(designation.level) !== level) throw httpError(400, { error: `Designation level must be ${level}` });
+
+  // Best-practice: designations are global. If client sends an old cached designationId from another tenant,
+  // treat it as a pointer to the (code+level) and map it to the global designation.
+  if (designation.tenantId && String(designation.tenantId) !== tenantId) {
+    const global = await p.reporterDesignation
+      .findFirst({ where: { tenantId: null, code: String(designation.code), level }, select: { id: true, tenantId: true, level: true, code: true } })
+      .catch(() => null);
+    if (!global?.id) throw httpError(404, { error: 'Global designation not found for this code' });
+    designation = global;
+  }
+
+  // If a tenant has its own designation row for the same code, prefer it for pricing/limits storage.
+  const tenantOverride = await p.reporterDesignation
+    .findFirst({ where: { tenantId, code: String(designation.code), level }, select: { id: true } })
+    .catch(() => null);
+
+  const effectiveDesignationId = String(tenantOverride?.id || designation.id);
+
+  // For counting (and to support global-id clients with tenant-id reporters), consider both tenant+global ids for same code.
+  const idsRows = await p.reporterDesignation
+    .findMany({
+      where: {
+        level,
+        code: String(designation.code),
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+      select: { id: true },
+    })
+    .catch(() => []);
+
+  const designationIds = Array.from(new Set([effectiveDesignationId, ...(idsRows as any[]).map((r) => String(r.id))]));
+
+  return {
+    designation: {
+      id: String(designation.id),
+      tenantId: designation.tenantId ? String(designation.tenantId) : null,
+      level: String(designation.level) as ReporterLevelInput,
+      code: String(designation.code),
+    },
+    effectiveDesignationId,
+    designationIds,
   };
 }
 
@@ -205,15 +265,32 @@ router.get('/tenants/:tenantId/reporter-pricing', async (req, res) => {
         typeof pricing.defaultIdCardCharge === 'number' ? pricing.defaultIdCardCharge : DEFAULT_REPORTER_PRICING.defaultIdCardCharge,
     };
 
-    const designations = await p.reporterDesignation
+    const allDesignations = await p.reporterDesignation
       .findMany({
-        where: { tenantId },
+        where: { OR: [{ tenantId }, { tenantId: null }] },
         orderBy: [{ level: 'asc' }, { name: 'asc' }],
-        select: { id: true, level: true, code: true, name: true },
+        select: { id: true, tenantId: true, level: true, code: true, name: true },
       })
       .catch(() => []);
 
-    const list = (designations as any[]).map((d) => {
+    // Merge by (level+code) and prefer tenant-specific rows over global rows.
+    const mergedByKey = new Map<string, any>();
+    const sorted = (allDesignations as any[]).slice().sort((a, b) => {
+      const ar = String(a?.tenantId || '') === tenantId ? 0 : 1;
+      const br = String(b?.tenantId || '') === tenantId ? 0 : 1;
+      if (ar !== br) return ar - br;
+      const al = String(a?.level || '');
+      const bl = String(b?.level || '');
+      if (al !== bl) return al.localeCompare(bl);
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
+
+    for (const d of sorted) {
+      const key = `${String(d.level)}:${String(d.code)}`;
+      if (!mergedByKey.has(key)) mergedByKey.set(key, d);
+    }
+
+    const list = Array.from(mergedByKey.values()).map((d) => {
       const amounts = resolvePricingForDesignation(pricing, String(d.id));
       return {
         designationId: d.id,
@@ -308,23 +385,20 @@ router.post('/tenants/:tenantId/reporters/availability', async (req, res) => {
     const loc = getLocationKeyFromLevel(level, body);
     if (!loc.id) return res.status(400).json({ error: `${loc.field} is required for level ${level}` });
 
-    const designation = await p.reporterDesignation.findFirst({ where: { id: designationId }, select: { id: true, tenantId: true, level: true } }).catch(() => null);
-    if (!designation?.id) return res.status(404).json({ error: 'Designation not found' });
-    if (String(designation.tenantId || '') !== tenantId) return res.status(400).json({ error: 'Designation does not belong to this tenant' });
-    if (String(designation.level) !== level) return res.status(400).json({ error: `Designation level must be ${level}` });
+    const { effectiveDesignationId, designationIds } = await resolveTenantDesignationContext({ tenantId, designationId, level });
 
     const settingsRow = await p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
-    const maxAllowed = pickReporterLimitMax(settingsRow?.data, { designationId, level, location: loc });
+    const maxAllowed = pickReporterLimitMax(settingsRow?.data, { designationId: effectiveDesignationId, level, location: loc });
 
     let current = 0;
     if (typeof maxAllowed === 'number') {
-      const where: any = { tenantId, active: true, designationId, level };
+      const where: any = { tenantId, active: true, designationId: { in: designationIds }, level };
       where[loc.field] = loc.id;
       current = await p.reporter.count({ where }).catch(() => 0);
     }
 
     const pricing = normalizePricingFromSettings(settingsRow?.data);
-    const amounts = resolvePricingForDesignation(pricing, designationId);
+    const amounts = resolvePricingForDesignation(pricing, effectiveDesignationId);
 
     const payableAmount = Math.max(0, Number(amounts.monthlySubscriptionAmount || 0) + Number(amounts.idCardCharge || 0));
     const paymentRequired = payableAmount > 0;
@@ -345,6 +419,7 @@ router.post('/tenants/:tenantId/reporters/availability', async (req, res) => {
       },
     });
   } catch (e: any) {
+    if (e?.status && e?.payload) return res.status(Number(e.status)).json(e.payload);
     console.error('public reporter availability error', e);
     return res.status(500).json({ error: 'Failed to check availability' });
   }
@@ -577,19 +652,14 @@ router.post('/tenants/:tenantId/reporters/join', async (req, res) => {
     const loc = getLocationKeyFromLevel(level, body);
     if (!loc.id) return res.status(400).json({ error: `${loc.field} is required for level ${level}` });
 
-    const designation = await p.reporterDesignation
-      .findFirst({ where: { id: designationId }, select: { id: true, tenantId: true, level: true } })
-      .catch(() => null);
-    if (!designation?.id) return res.status(404).json({ error: 'Designation not found' });
-    if (String(designation.tenantId || '') !== tenantId) return res.status(400).json({ error: 'Designation does not belong to this tenant' });
-    if (String(designation.level) !== level) return res.status(400).json({ error: `Designation level must be ${level}` });
+    const { effectiveDesignationId, designationIds } = await resolveTenantDesignationContext({ tenantId, designationId, level });
 
     const settingsRow = await p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
 
     // Limits check (same behavior as tenant admin create)
-    const maxAllowed = pickReporterLimitMax(settingsRow?.data, { designationId, level, location: loc });
+    const maxAllowed = pickReporterLimitMax(settingsRow?.data, { designationId: effectiveDesignationId, level, location: loc });
     if (typeof maxAllowed === 'number') {
-      const where: any = { tenantId, active: true, designationId, level };
+      const where: any = { tenantId, active: true, designationId: { in: designationIds }, level };
       where[loc.field] = loc.id;
       const current = await p.reporter.count({ where }).catch(() => 0);
       if (current >= maxAllowed) {
@@ -615,7 +685,7 @@ router.post('/tenants/:tenantId/reporters/join', async (req, res) => {
 
     // Pricing snapshot (used either for free immediate register, or for onboarding order when payment is required)
     const pricing = normalizePricingFromSettings(settingsRow?.data);
-    const amounts = resolvePricingForDesignation(pricing, designationId);
+    const amounts = resolvePricingForDesignation(pricing, effectiveDesignationId);
     const subscriptionAmount = amounts.subscriptionEnabled ? amounts.monthlySubscriptionAmount : 0;
     const idCardAmount = amounts.subscriptionEnabled ? amounts.idCardCharge || 0 : 0;
     const totalAmount = Math.max(0, Number(subscriptionAmount) + Number(idCardAmount));
@@ -659,7 +729,7 @@ router.post('/tenants/:tenantId/reporters/join', async (req, res) => {
       const createData: any = {
         tenantId,
         userId: user.id,
-        designationId,
+        designationId: effectiveDesignationId,
         level,
         subscriptionActive: false,
         monthlySubscriptionAmount: 0,
@@ -720,7 +790,7 @@ router.post('/tenants/:tenantId/reporters/join', async (req, res) => {
         mobileNumber,
         fullName,
         languageId: languageIdForOnboarding,
-        designationId,
+        designationId: effectiveDesignationId,
         level,
         stateId: loc.field === 'stateId' ? loc.id : null,
         districtId: loc.field === 'districtId' ? loc.id : null,

@@ -35,7 +35,8 @@ function pickReporterLimitMax(
   input: { designationId: string; level: ReporterLevelInput; location: { field: string; id: string } }
 ): number | undefined {
   const limits = settingsData?.reporterLimits;
-  if (!limits || limits.enabled !== true) return undefined;
+  // Limits are always enforced. Default is max=1 when not configured.
+  if (!limits) return 1;
 
   const rules: any[] = Array.isArray(limits.rules) ? limits.rules : [];
   const defaultMax = typeof limits.defaultMax === 'number' ? limits.defaultMax : 1;
@@ -504,24 +505,13 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), async (r
  *     responses:
  *       200: { description: List }
  */
-// Merge global and tenant-specific designation overrides (tenant overrides replace by code)
+// Global reporter designations (shared by all tenants).
 router.get('/designations', async (req, res) => {
-  const { tenantId, level } = req.query as Record<string, string>;
+  const { level } = req.query as Record<string, string>;
   const whereGlobal: any = { tenantId: null };
-  const whereTenant: any = tenantId ? { tenantId } : null;
-  if (level) { whereGlobal.level = level; if (whereTenant) whereTenant.level = level; }
-  const [global, tenantRows] = await Promise.all([
-    (prisma as any).reporterDesignation.findMany({ where: whereGlobal }),
-    whereTenant ? (prisma as any).reporterDesignation.findMany({ where: whereTenant }) : []
-  ]);
-  if (!tenantId) {
-    return res.json(global.sort((a: any,b: any)=> a.level.localeCompare(b.level)));
-  }
-  const byCode: Record<string, any> = {};
-  for (const g of global) byCode[g.code] = g;
-  for (const t of tenantRows) byCode[t.code] = t; // override
-  const merged = Object.values(byCode).sort((a: any,b: any)=> a.level.localeCompare(b.level));
-  res.json(merged);
+  if (level) whereGlobal.level = level;
+  const global = await (prisma as any).reporterDesignation.findMany({ where: whereGlobal });
+  return res.json(global.sort((a: any, b: any) => String(a.level).localeCompare(String(b.level))));
 });
 
 /**
@@ -549,9 +539,15 @@ router.get('/designations', async (req, res) => {
  */
 router.post('/designations', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    const authUser: any = (req as any).user;
+    const roleName = String(authUser?.role?.name || '');
+    if (roleName !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
+
     const { tenantId, level, code, name } = req.body || {};
     if (!level || !code || !name) return res.status(400).json({ error: 'level, code, name required' });
-    const created = await (prisma as any).reporterDesignation.create({ data: { tenantId: tenantId || null, level, code, name } });
+    if (tenantId) return res.status(400).json({ error: 'tenantId is not allowed; designations are global' });
+
+    const created = await (prisma as any).reporterDesignation.create({ data: { tenantId: null, level, code, name } });
     res.status(201).json(created);
   } catch (e: any) {
     if (e?.code === 'P2002') return res.status(409).json({ error: 'Designation code already exists for tenant' });
@@ -586,9 +582,14 @@ router.post('/designations', passport.authenticate('jwt', { session: false }), a
  */
 router.patch('/designations/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    const authUser: any = (req as any).user;
+    const roleName = String(authUser?.role?.name || '');
+    if (roleName !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
+
     const { id } = req.params;
     const existing = await (prisma as any).reporterDesignation.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Designation not found' });
+    if (existing.tenantId) return res.status(400).json({ error: 'Tenant-specific designations are disabled' });
     const updated = await (prisma as any).reporterDesignation.update({ where: { id }, data: { name: req.body.name || existing.name } });
     res.json(updated);
   } catch (e: any) {
@@ -616,7 +617,15 @@ router.patch('/designations/:id', passport.authenticate('jwt', { session: false 
  */
 router.delete('/designations/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
+    const authUser: any = (req as any).user;
+    const roleName = String(authUser?.role?.name || '');
+    if (roleName !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
+
     const { id } = req.params;
+    const existing = await (prisma as any).reporterDesignation.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Designation not found' });
+    if (existing.tenantId) return res.status(400).json({ error: 'Tenant-specific designations are disabled' });
+
     const count = await (prisma as any).reporter.count({ where: { designationId: id } });
     if (count > 0) return res.status(409).json({ error: 'Designation in use by reporters' });
     await (prisma as any).reporterDesignation.delete({ where: { id } });
@@ -645,34 +654,10 @@ router.delete('/designations/:id', passport.authenticate('jwt', { session: false
  */
 router.post('/tenants/:tenantId/reporter-designations/seed', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-    const defaults: { level: string; code: string; name: string }[] = [
-      { level: 'STATE', code: 'EDITOR_IN_CHIEF', name: 'Editor-in-Chief' },
-      { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief' },
-      { level: 'STATE', code: 'STATE_EDITOR', name: 'State Editor' },
-      { level: 'STATE', code: 'STATE_REPORTER', name: 'State Reporter' },
-      { level: 'DISTRICT', code: 'DISTRICT_BUREAU_CHIEF', name: 'District Bureau Chief' },
-      { level: 'DISTRICT', code: 'SENIOR_CORRESPONDENT', name: 'Senior Correspondent' },
-      { level: 'DISTRICT', code: 'DISTRICT_REPORTER', name: 'District Reporter' },
-      { level: 'DISTRICT', code: 'DISTRICT_DESK', name: 'District Desk' },
-      { level: 'ASSEMBLY', code: 'ASSEMBLY_INCHARGE', name: 'Assembly Incharge' },
-      { level: 'ASSEMBLY', code: 'ASSEMBLY_REPORTER', name: 'Assembly Reporter' },
-      { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter' },
-      { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' },
-    ];
-    const ops = [] as any[];
-    for (const d of defaults) {
-      ops.push((prisma as any).reporterDesignation.upsert({
-        where: { tenantId_code: { tenantId, code: d.code } },
-        update: { name: d.name, level: d.level },
-        create: { tenantId, level: d.level, code: d.code, name: d.name }
-      }));
-    }
-    await (prisma as any).$transaction(ops);
-    const list = await (prisma as any).reporterDesignation.findMany({ where: { tenantId }, orderBy: { level: 'asc' } });
-    res.json({ seeded: list.length, items: list });
+    return res.status(410).json({
+      error: 'Tenant-specific designation seeding is disabled. Designations are global (tenantId=null).',
+      hint: 'Restart the server to run bootstrap seeding, or run npm run seed:reporter-designations',
+    });
   } catch (e: any) {
     console.error('seed designations error', e);
     res.status(500).json({ error: 'Failed to seed designations' });
