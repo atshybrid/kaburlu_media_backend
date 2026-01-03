@@ -151,6 +151,7 @@ model State {
   country        Country        @relation(fields: [countryId], references: [id])
   countryId      String
   isDeleted      Boolean        @default(false)
+  translations   StateTranslation[]
   districts      District[]
   userProfiles   UserProfile[]  @relation("UserProfile_state")
   contentReads   ContentRead[]  @relation("ContentRead_state")
@@ -161,12 +162,25 @@ model State {
   updatedAt      DateTime       @updatedAt
 }
 
+model StateTranslation {
+  id        String @id @default(cuid())
+  state     State  @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  stateId   String
+  language  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stateId, language])
+}
+
 model District {
   id                        String                 @id @default(cuid())
   name                      String
   state                     State                  @relation(fields: [stateId], references: [id])
   stateId                   String
   isDeleted                 Boolean                @default(false)
+  translations              DistrictTranslation[]
   mandals                   Mandal[]
   userProfiles              UserProfile[]          @relation("UserProfile_district")
   contentReads              ContentRead[]          @relation("ContentRead_district")
@@ -178,12 +192,25 @@ model District {
   updatedAt                 DateTime               @updatedAt
 }
 
+model DistrictTranslation {
+  id         String   @id @default(cuid())
+  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  districtId String
+  language   String
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([districtId, language])
+}
+
 model Mandal {
   id                        String         @id @default(cuid())
   name                      String
   district                  District       @relation(fields: [districtId], references: [id])
   districtId                String
   isDeleted                 Boolean        @default(false)
+  translations              MandalTranslation[]
   // True if this mandal name matches an Assembly Constituency center
   isAssemblyConstituency    Boolean        @default(false)
   userProfiles              UserProfile[]  @relation("UserProfile_mandal")
@@ -194,6 +221,18 @@ model Mandal {
   tenantEntitiesPrinting    TenantEntity[] @relation("TenantEntity_printingMandal")
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
+}
+
+model MandalTranslation {
+  id        String @id @default(cuid())
+  mandal    Mandal @relation(fields: [mandalId], references: [id], onDelete: Cascade)
+  mandalId  String
+  language  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([mandalId, language])
 }
 
 model Category {
@@ -957,6 +996,7 @@ model Village {
   mandalId  String
   name      String
   isDeleted Boolean  @default(false)
+  translations VillageTranslation[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -964,6 +1004,18 @@ model Village {
   @@index([tenantId])
   @@index([mandalId])
   @@index([name])
+}
+
+model VillageTranslation {
+  id        String  @id @default(cuid())
+  village   Village @relation(fields: [villageId], references: [id], onDelete: Cascade)
+  villageId String
+  language  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([villageId, language])
 }
 
 model ReporterPayment {

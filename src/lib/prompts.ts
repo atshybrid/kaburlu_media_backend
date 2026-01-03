@@ -4,6 +4,7 @@ type PromptKey =
   | 'SEO_GENERATION'
   | 'MODERATION'
   | 'CATEGORY_TRANSLATION'
+  | 'LOCATION_TRANSLATION'
   | 'SHORTNEWS_REWRITE'
   | 'SHORTNEWS_AI_ARTICLE'
   | 'ai_web_article_json'
@@ -34,6 +35,24 @@ Rules:
 - No quotes, no extra words, no punctuation.
 - Use the native script of {{targetLanguage}}{{latinGuard}}.
 Category: {{text}}`,
+
+  LOCATION_TRANSLATION: `You are a translator and transliteration expert.
+
+Task: Convert a PLACE NAME into {{targetLanguage}}.
+
+Rules:
+- Output ONLY the translated/transliterated place name.
+- No quotes, no punctuation, no extra words.
+- Do NOT translate meaning. Prefer transliteration (sound-based) into the target script.
+- Use the native script of {{targetLanguage}}{{latinGuard}}.
+
+Inputs:
+- PlaceType: {{placeType}}
+- PlaceName: {{text}}
+- Context (may help disambiguate): {{context}}
+
+Output:
+<place name only>`,
 
   SHORTNEWS_REWRITE: `You are a professional short news assistant. Rewrite the provided raw user text into a concise, factual short news draft in the SAME language as the input (language code: {{languageCode}}).
 Constraints:

@@ -1,6 +1,6 @@
 
 import { Router } from 'express';
-import { getLanguagesController, createLanguageController, backfillCategoryTranslationsController } from './languages.controller';
+import { getLanguagesController, createLanguageController, backfillAllLocationTranslationsController, backfillCategoryTranslationsController, backfillLocationTranslationsForLanguageController } from './languages.controller';
 import passport from 'passport';
 import { requireSuperAdmin } from '../middlewares/authz';
 
@@ -78,6 +78,53 @@ router.post(
 	passport.authenticate('jwt', { session: false }),
 	requireSuperAdmin,
 	backfillCategoryTranslationsController
+);
+
+/**
+ * @swagger
+ * /languages/{code}/backfill-location-translations:
+ *   post:
+ *     summary: Backfill location translations for a language
+ *     description: SUPER_ADMIN only. Ensures translation rows exist for all State/District/Mandal/Village for the given language code, then runs AI transliteration/translation to populate names.
+ *     tags: [Languages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: te
+ *     responses:
+ *       "202":
+ *         description: Backfill started
+ */
+router.post(
+	'/:code/backfill-location-translations',
+	passport.authenticate('jwt', { session: false }),
+	requireSuperAdmin,
+	backfillLocationTranslationsForLanguageController
+);
+
+/**
+ * @swagger
+ * /languages/backfill-location-translations:
+ *   post:
+ *     summary: Backfill location translations for all languages
+ *     description: SUPER_ADMIN only. Runs location translation backfill across all active languages.
+ *     tags: [Languages]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       "202":
+ *         description: Backfill started
+ */
+router.post(
+	'/backfill-location-translations',
+	passport.authenticate('jwt', { session: false }),
+	requireSuperAdmin,
+	backfillAllLocationTranslationsController
 );
 
 export default router;
