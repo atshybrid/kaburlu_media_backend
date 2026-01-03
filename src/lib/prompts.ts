@@ -130,41 +130,52 @@ Original Source Material:
   TELUGU_HEADLINE_EDITOR: `You are a professional Telugu newspaper headline editor.
 
 INPUT:
-You will receive a long news title and/or article content.
+You will receive:
+1. One main news title.
+2. A list of bullet point titles related to the same news.
 
 TASK:
-1. Check if the given title fits within 60 characters.
-2. If it fits, rewrite it only for clarity (do not increase length).
-3. If it does NOT fit, generate SHORT newspaper-style titles.
-4. Generate MINIMUM 1 and MAXIMUM 5 title options.
+- Rewrite EACH bullet point title into short newspaper-style titles.
 
 RULES:
-- Each title must be <= 60 characters.
-- Each title must clearly describe WHAT happened.
+- Each rewritten title must be <= 60 characters.
 - Use simple, pure Telugu.
 - Neutral, professional newspaper tone.
-- Suitable for print and mobile.
+- Clearly describe WHAT happened.
+- Do not add new facts.
+- Do not repeat unnecessary words.
 - No emojis, no hashtags, no symbols.
-- Do not include names unless necessary.
-- Avoid unnecessary words like "ఆధ్వర్యంలో", "సహకారంతో" unless critical.
+
+LIMITS:
+- For EACH bullet point, generate MINIMUM 1 and MAXIMUM 5 rewritten titles.
 
 OUTPUT FORMAT (STRICT):
-Titles:
-1. <short Telugu title>
-2. <short Telugu title>
-3. <short Telugu title>
-4. <short Telugu title>
-5. <short Telugu title>
+{
+  "main_title": "<shortened main title if needed>",
+  "bullets": [
+    {
+      "original": "<original bullet title>",
+      "rewrites": [
+        "<short title 1>",
+        "<short title 2>",
+        "<short title 3>",
+        "<short title 4>",
+        "<short title 5>"
+      ]
+    }
+  ]
+}
 
-NOTE:
-- Output only as many titles as needed (maximum 5).
+IMPORTANT:
+- If a bullet point already fits within 60 characters, still rewrite it for clarity.
 - Do not include explanations or extra text.
+- Return ONLY valid JSON.
 
-INPUT TITLE:
-{{title}}
+Main Title:
+{{mainTitle}}
 
-INPUT CONTENT:
-{{content}}`
+Bullet Titles:
+{{bulletTitles}}`
 };
 
 // Export a helper to retrieve the raw default (bypasses DB row) for maintenance scripts

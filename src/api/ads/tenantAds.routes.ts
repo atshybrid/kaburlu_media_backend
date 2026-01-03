@@ -3,6 +3,7 @@ import passport from 'passport';
 import crypto from 'crypto';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
+import { buildEffectiveStyle1AdsResponse, normalizeStyle1AdsConfig } from '../../lib/adsStyle1';
 
 // transient any-cast for newly added delegates
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +69,21 @@ async function saveTenantAds(tenantId: string, existingRow: any | null, nextAds:
   return p.tenantSettings.create({ data: { tenantId, data: nextData } });
 }
 
+async function loadTenantAdsStyle1(tenantId: string): Promise<{ row: any | null; adsStyle1: any; data: any }> {
+  const row = await p.tenantSettings.findUnique({ where: { tenantId } }).catch(() => null);
+  const data = (row && typeof row.data === 'object' && row.data) ? row.data : {};
+  const adsStyle1 = (data as any).adsStyle1 && typeof (data as any).adsStyle1 === 'object' ? (data as any).adsStyle1 : {};
+  return { row, adsStyle1, data };
+}
+
+async function saveTenantAdsStyle1(tenantId: string, existingRow: any | null, nextAdsStyle1: any, baseData: any) {
+  const nextData = { ...(baseData || {}), adsStyle1: nextAdsStyle1 };
+  if (existingRow) {
+    return p.tenantSettings.update({ where: { tenantId }, data: { data: nextData } });
+  }
+  return p.tenantSettings.create({ data: { tenantId, data: nextData } });
+}
+
 /**
  * @swagger
  * tags:
@@ -120,6 +136,158 @@ router.get(
     const { tenantId } = req.params;
     const { ads } = await loadTenantAds(tenantId);
     res.json(ads);
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style1:
+ *   get:
+ *     summary: Get style1 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Returns the stored style1 ads config from TenantSettings.data.adsStyle1.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Style1 ads config
+ */
+router.get(
+  '/tenants/:tenantId/ads/style1',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const { adsStyle1 } = await loadTenantAdsStyle1(tenantId);
+    res.json({ ads: buildEffectiveStyle1AdsResponse(adsStyle1, { includeAllSlots: true }) });
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style1:
+ *   put:
+ *     summary: Replace style1 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Stores config under TenantSettings.data.adsStyle1.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ads:
+ *                 type: object
+ *                 description: Style1 ads config ({enabled, debug, googleAdsense, slots})
+ *           examples:
+ *             googleExample:
+ *               value:
+ *                 ads:
+ *                   enabled: true
+ *                   debug: false
+ *                   googleAdsense: { client: "ca-pub-1234567890123456" }
+ *                   slots:
+ *                     home_top_banner:
+ *                       enabled: true
+ *                       provider: google
+ *                       google: { slot: "1000000001", format: "auto", responsive: true }
+ *                     article_inline:
+ *                       enabled: true
+ *                       provider: google
+ *                       google: { slot: "1000000012", format: "auto", responsive: true }
+ *             localExample:
+ *               value:
+ *                 ads:
+ *                   enabled: true
+ *                   debug: false
+ *                   slots:
+ *                     home_top_banner:
+ *                       enabled: true
+ *                       provider: local
+ *                       local:
+ *                         imageUrl: "https://cdn.example.com/ads/home-top-728x90.jpg"
+ *                         clickUrl: "https://sponsor.example.com/home-top"
+ *                         alt: "Home Top Sponsor"
+ *     responses:
+ *       200:
+ *         description: Saved
+ */
+router.put(
+  '/tenants/:tenantId/ads/style1',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const incoming = (body && typeof body === 'object' && (body as any).ads) ? (body as any).ads : body;
+
+    const normalized = normalizeStyle1AdsConfig(incoming);
+    const { row, data } = await loadTenantAdsStyle1(tenantId);
+    await saveTenantAdsStyle1(tenantId, row, normalized, data);
+    res.json({ ok: true, ads: buildEffectiveStyle1AdsResponse(normalized, { includeAllSlots: true }) });
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style1:
+ *   patch:
+ *     summary: Update style1 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Deep-merges slots; supports sending only a few slot keys.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ads:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Updated
+ */
+router.patch(
+  '/tenants/:tenantId/ads/style1',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const incoming = (body && typeof body === 'object' && (body as any).ads) ? (body as any).ads : body;
+
+    const { row, adsStyle1, data } = await loadTenantAdsStyle1(tenantId);
+    const prev = normalizeStyle1AdsConfig(adsStyle1);
+    const nextPatch = normalizeStyle1AdsConfig(incoming);
+
+    const merged = {
+      ...prev,
+      ...nextPatch,
+      googleAdsense: (nextPatch as any).googleAdsense ?? (prev as any).googleAdsense,
+      slots: { ...(prev.slots || {}), ...(nextPatch.slots || {}) }
+    };
+
+    const normalized = normalizeStyle1AdsConfig(merged);
+    await saveTenantAdsStyle1(tenantId, row, normalized, data);
+    res.json({ ok: true, ads: buildEffectiveStyle1AdsResponse(normalized, { includeAllSlots: true }) });
   }
 );
 

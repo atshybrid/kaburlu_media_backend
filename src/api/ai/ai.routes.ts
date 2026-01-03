@@ -120,12 +120,74 @@ function parseHeadlineOutput(text: string, maxTitles: number): { titles: string[
   return { titles: titles.slice(0, maxTitles), subtitle };
 }
 
+function parseBulletPointsOutput(text: string, maxPoints: number): { points: string[] } {
+  const cleaned = stripCodeFences(text);
+  const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  const points: string[] = [];
+  for (const line of lines) {
+    if (/^points\s*:/i.test(line) || /^bullets\s*:/i.test(line) || /^titles\s*:/i.test(line)) continue;
+
+    const bullet = line.match(/^(?:[-*•]\s+)(.+)$/);
+    const numbered = line.match(/^\d+\s*[\.)-]?\s*(.+)$/);
+    const raw = bullet?.[1] || numbered?.[1] || null;
+    if (!raw) continue;
+    const t = String(raw).trim();
+    if (!t) continue;
+    const clipped = t.length <= 60 ? t : t.slice(0, 60).trim();
+    points.push(clipped);
+    if (points.length >= maxPoints) break;
+  }
+
+  if (!points.length) {
+    // Fallback: treat first non-empty line as one point
+    const first = lines[0] ? String(lines[0]).trim() : '';
+    if (first) points.push(first.length <= 60 ? first : first.slice(0, 60).trim());
+  }
+
+  return { points: points.slice(0, maxPoints) };
+}
+
+function tryParseJsonObject(text: string): any | null {
+  const cleaned = stripCodeFences(text);
+  try {
+    const direct = JSON.parse(cleaned);
+    if (direct && typeof direct === 'object') return direct;
+  } catch {
+    // ignore
+  }
+
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    const sliced = cleaned.slice(start, end + 1);
+    try {
+      const obj = JSON.parse(sliced);
+      if (obj && typeof obj === 'object') return obj;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+function clamp60(s: any): string {
+  const t = String(s ?? '').trim();
+  if (!t) return '';
+  return t.length <= 60 ? t : t.slice(0, 60).trim();
+}
+
+function normalizeStringArray(v: any): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map(x => String(x ?? '').trim()).filter(Boolean);
+}
+
 /**
  * @swagger
  * /ai/headlines:
  *   post:
- *     summary: Generate short Telugu newspaper-style headline options
- *     description: Uses Prompt table key TELUGU_HEADLINE_EDITOR (fallback to default) and returns parsed title options (<=60 chars). Optionally returns a subtitle.
+ *     summary: Rewrite Telugu bullet titles into short headline rewrites (<=60 chars)
+ *     description: Uses Prompt table key TELUGU_HEADLINE_EDITOR (fallback to default) and returns strict JSON ({main_title, bullets[]}) with per-bullet rewrites.
  *     tags: [AI]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
@@ -135,40 +197,40 @@ function parseHeadlineOutput(text: string, maxTitles: number): { titles: string[
  *           schema:
  *             type: object
  *             properties:
- *               title: { type: string, description: 'Long title (optional if content provided)' }
- *               content: { type: string, description: 'Article content (optional if title provided)' }
- *               maxTitles: { type: number, minimum: 1, maximum: 5, default: 3 }
- *               includeSubtitle: { type: boolean, default: false }
+ *               mainTitle: { type: string, description: 'Main news title' }
+ *               bullets: { type: array, items: { type: string }, description: 'Bullet titles related to the same news' }
+ *               maxRewrites: { type: number, minimum: 1, maximum: 5, default: 5 }
  *           examples:
  *             sample:
  *               value:
- *                 title: "తెలంగాణలో భారీ వర్షాలు: నదులు పొంగి ప్రవహిస్తున్నాయి"
- *                 content: "హైదరాబాద్, వరంగల్ జిల్లాల్లో..."
- *                 maxTitles: 3
- *                 includeSubtitle: true
+ *                 mainTitle: "కరీంనగర్ మున్సిపల్ కార్పొరేషన్ కోసం కాంగ్రెస్, బీఆర్‌ఎస్, ఎంఐఎం రాజకీయ సిండికేట్"
+ *                 bullets:
+ *                   - "కాంగ్రెస్, బీఆర్‌ఎస్, ఎంఐఎం కలిసి కార్పొరేషన్‌పై పట్టు"
+ *                   - "మున్సిపల్ పాలనలో రాజకీయ ఒప్పందాలు"
+ *                 maxRewrites: 5
  *     responses:
  *       200:
- *         description: Generated headlines
+ *         description: Rewrites JSON
  *       400:
  *         description: Bad input
  */
 router.post('/headlines', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const title = req.body?.title ? String(req.body.title) : '';
-    const content = req.body?.content ? String(req.body.content) : '';
-    if (!title && !content) return res.status(400).json({ success: false, error: 'title or content is required' });
+    const mainTitle = req.body?.mainTitle ? String(req.body.mainTitle) : (req.body?.title ? String(req.body.title) : '');
+    const bullets = normalizeStringArray(req.body?.bullets ?? req.body?.bulletTitles);
+    if (!mainTitle) return res.status(400).json({ success: false, error: 'mainTitle is required' });
+    if (!bullets.length) return res.status(400).json({ success: false, error: 'bullets is required (array of strings)' });
 
-    const maxTitles = clampInt(req.body?.maxTitles, 1, 5, 3);
-    const includeSubtitle = Boolean(req.body?.includeSubtitle);
+    const maxRewrites = clampInt(req.body?.maxRewrites ?? req.body?.maxPoints ?? req.body?.maxTitles, 1, 5, 5);
 
     const tpl = await getPrompt('TELUGU_HEADLINE_EDITOR');
-    let prompt = renderPrompt(tpl, { title, content });
+    const bulletTitles = bullets.map(b => `- ${b}`).join('\n');
+    let prompt = renderPrompt(tpl, { mainTitle, bulletTitles });
 
     // Tighten runtime knobs without changing the stored prompt.
-    prompt += `\n\nRuntime limits:\n- Generate MAXIMUM ${maxTitles} title options.`;
-    if (includeSubtitle) {
-      prompt += `\n\nAlso output after Titles list:\nSubtitle:\n<short Telugu subtitle (<= 80 chars)>\nDo not add extra labels/text beyond Titles list and Subtitle.`;
-    }
+    prompt += `\n\nRuntime limits:\n- For EACH bullet point, output MAXIMUM ${maxRewrites} rewrites.`;
+    prompt += `\n- Ensure every rewrite is <= 60 characters.`;
+    prompt += `\n- Return ONLY valid JSON (no extra text).`;
 
     const result = await aiGenerateText({ prompt, purpose: 'newspaper' as any });
     const text = result.text || '';
@@ -189,15 +251,35 @@ router.post('/headlines', passport.authenticate('jwt', { session: false }), asyn
       });
     }
 
-    const parsed = parseHeadlineOutput(text, maxTitles);
+    const obj = tryParseJsonObject(text);
+    if (!obj) {
+      return res.status(500).json({ success: false, error: 'AI returned invalid JSON', text });
+    }
+
+    const main_title = clamp60((obj as any).main_title ?? (obj as any).mainTitle ?? mainTitle);
+    const outBullets: Array<{ original: string; rewrites: string[] }> = [];
+
+    const aiBullets = Array.isArray((obj as any).bullets) ? (obj as any).bullets : [];
+    for (let i = 0; i < bullets.length; i++) {
+      const inputOriginal = String(bullets[i] ?? '').trim();
+      const aiItem = aiBullets[i] && typeof aiBullets[i] === 'object' ? aiBullets[i] : null;
+      const original = clamp60((aiItem as any)?.original ?? inputOriginal);
+
+      const rewritesRaw = normalizeStringArray((aiItem as any)?.rewrites);
+      const rewrites = rewritesRaw
+        .map(r => clamp60(r))
+        .filter(Boolean)
+        .slice(0, maxRewrites);
+
+      // Ensure at least one rewrite
+      const finalRewrites = rewrites.length ? rewrites : [clamp60(inputOriginal)].filter(Boolean);
+      outBullets.push({ original: original || clamp60(inputOriginal), rewrites: finalRewrites.slice(0, maxRewrites) });
+    }
+
+    // Return the simple, automation-safe JSON shape
     return res.json({
-      success: true,
-      provider: AI_PROVIDER,
-      promptKey: 'TELUGU_HEADLINE_EDITOR',
-      titles: parsed.titles,
-      subtitle: includeSubtitle ? (parsed.subtitle || null) : undefined,
-      text,
-      usage: result.usage
+      main_title: main_title || clamp60(mainTitle),
+      bullets: outBullets
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: 'Headline generation failed' });
