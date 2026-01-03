@@ -49,6 +49,9 @@ model ShortNews {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // IMPORTANT: Use a non-pooled connection for migrations (advisory locks can time out via Neon pooler/pgbouncer).
+  // Set this in production to your Neon *direct* connection string (no -pooler host, no pgbouncer=true).
+  directUrl = env("DATABASE_URL_DIRECT")
 }
 
 generator client {
