@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
+import axios from 'axios';
 
 const router = Router();
 
@@ -141,26 +142,41 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
 async function toDataUrl(url?: string | null): Promise<string | null> {
   if (!url) return null;
   try {
-    const res = await (global as any).fetch(url);
-    if (!res || !res.ok) return null;
-    const buf = await res.arrayBuffer();
-    const ct = res.headers.get('content-type') || 'image/png';
-    const base64 = Buffer.from(buf).toString('base64');
+    const res = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 15_000,
+      maxContentLength: 10 * 1024 * 1024,
+      maxBodyLength: 10 * 1024 * 1024,
+      validateStatus: (s) => s >= 200 && s < 300
+    });
+    const ct = (res.headers && (res.headers['content-type'] as string)) || 'image/png';
+    const base64 = Buffer.from(res.data).toString('base64');
     return `data:${ct};base64,${base64}`;
   } catch {
     return null;
   }
 }
 
+function normalizeHttpUrl(url?: string | null): string {
+  const s = String(url || '').trim();
+  if (!s) return '';
+  if (s.startsWith('data:')) return s;
+  if (s.startsWith('http://') || s.startsWith('https://')) return s;
+  if (s.startsWith('//')) return `https:${s}`;
+  // If it's a bare domain/path like "example.com/x", assume https.
+  if (/^[^\s/]+\.[^\s]+/.test(s)) return `https://${s}`;
+  return s;
+}
+
 async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline?: { logo?: string | null; photo?: string | null; stamp?: string | null; sign?: string | null; qrImg?: string | null } }> {
   const qrTarget = (data as any).qrTargetUrl || data.reporter.qrCodeUrl || '';
   const qrImgUrl = qrTarget ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrTarget)}` : '';
   const [logo, photo, stamp, sign, qrImg] = await Promise.all([
-    toDataUrl((data as any).frontLogoUrl || data.tenant.frontLogoUrl || ''),
-    toDataUrl(data.reporter.photoUrl || ''),
-    toDataUrl(data.tenant.roundStampUrl || ''),
-    toDataUrl(data.tenant.signUrl || ''),
-    toDataUrl(qrImgUrl || '')
+    toDataUrl(normalizeHttpUrl((data as any).frontLogoUrl || data.tenant.frontLogoUrl || '')),
+    toDataUrl(normalizeHttpUrl(data.reporter.photoUrl || '')),
+    toDataUrl(normalizeHttpUrl(data.tenant.roundStampUrl || '')),
+    toDataUrl(normalizeHttpUrl(data.tenant.signUrl || '')),
+    toDataUrl(normalizeHttpUrl(qrImgUrl || ''))
   ]);
   return Object.assign({}, data, { __inline: { logo, photo, stamp, sign, qrImg } });
 }
@@ -170,16 +186,19 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
   const fixedRed = '#d71f1f'; // fixed red
   const secondary = data.tenant.secondaryColor || fixedRed;
   const inline = (data as any).__inline || {};
-  const logo = inline.logo ?? ((data as any).frontLogoUrl || data.tenant.frontLogoUrl || '');
-  const sign = inline.sign ?? (data.tenant.signUrl || '');
-  const stamp = inline.stamp ?? (data.tenant.roundStampUrl || '');
-  const photo = inline.photo ?? (data.reporter.photoUrl || '');
+  const isPdfStrict = !!(opts && opts.print) && !!(data as any).__pdfNoExternalAssets;
+  const logo = isPdfStrict ? (inline.logo || '') : (inline.logo ?? normalizeHttpUrl(((data as any).frontLogoUrl || data.tenant.frontLogoUrl || '')));
+  const sign = isPdfStrict ? (inline.sign || '') : (inline.sign ?? normalizeHttpUrl((data.tenant.signUrl || '')));
+  const stamp = isPdfStrict ? (inline.stamp || '') : (inline.stamp ?? normalizeHttpUrl((data.tenant.roundStampUrl || '')));
+  const photo = isPdfStrict ? (inline.photo || '') : (inline.photo ?? normalizeHttpUrl((data.reporter.photoUrl || '')));
   const office = data.tenant.officeAddress || '';
   const help1 = data.tenant.helpLine1 || '';
   const help2 = data.tenant.helpLine2 || '';
   const prgi = data.tenant.prgiNumber || '';
   const qrTarget = (data as any).qrTargetUrl || data.reporter.qrCodeUrl || '';
-  const qrImg = inline.qrImg ?? (qrTarget ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrTarget)}` : '');
+  const qrImg = isPdfStrict
+    ? (inline.qrImg || '')
+    : (inline.qrImg ?? (qrTarget ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrTarget)}` : ''));
   const validDate = (() => {
     const d = data.reporter.expiresAt ? new Date(data.reporter.expiresAt) : null;
     if (!d || isNaN(d.getTime())) return '-';
@@ -553,9 +572,16 @@ router.get('/pdf', async (req, res) => {
     // Inline external images as data URIs to ensure Puppeteer loads them
     try {
       data = await inlineAssetsForPdf(data);
-    } catch {}
-    // Always use print-ready mode for PDF (two pages at card size)
-    const printMode = true;
+    } catch (e) {
+      console.error('id-cards/pdf asset inlining failed', {
+        reporterId: reporter.id,
+        err: (e as any)?.stack || (e as any)?.message || e
+      });
+    }
+
+    // For PDF rendering, avoid external network fetches inside Chromium.
+    (data as any).__pdfNoExternalAssets = true;
+
     const html = buildIdCardHtml(data, { print: true });
     let puppeteer: any;
     try {
@@ -563,11 +589,40 @@ router.get('/pdf', async (req, res) => {
     } catch (_e) {
       return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer)' });
     }
-    const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+
+    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || undefined;
+
+    let browser: any;
+    try {
+      browser = await puppeteer.launch({
+        headless: 'new',
+        args: launchArgs,
+        executablePath
+      });
+    } catch (e) {
+      console.error('id-cards/pdf puppeteer.launch failed', {
+        reporterId: reporter.id,
+        nodeEnv: process.env.NODE_ENV,
+        hasExecutablePath: !!executablePath,
+        err: (e as any)?.stack || (e as any)?.message || e
+      });
+      return res.status(500).json({ error: 'Failed to start PDF renderer' });
+    }
     const page = await browser.newPage();
+    try { await page.setDefaultNavigationTimeout(30_000); } catch {}
     try { await page.setBypassCSP(true); } catch {}
     try { await page.emulateMediaType('screen'); } catch {}
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    try {
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    } catch (e) {
+      console.error('id-cards/pdf page.setContent failed', {
+        reporterId: reporter.id,
+        err: (e as any)?.stack || (e as any)?.message || e
+      });
+      await browser.close();
+      return res.status(500).json({ error: 'Failed to prepare PDF content' });
+    }
     let pdfBuffer: Buffer;
     try {
       pdfBuffer = await page.pdf({ width: '54mm', height: '85.6mm', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
@@ -585,7 +640,12 @@ router.get('/pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.status(200).end(pdfBuffer);
   } catch (e) {
-    console.error('id-cards/pdf error', e);
+    console.error('id-cards/pdf error', {
+      reporterId: req.query.reporterId,
+      mobile: req.query.mobile,
+      fullName: req.query.fullName,
+      err: (e as any)?.stack || (e as any)?.message || e
+    });
     res.status(500).json({ error: 'Failed to generate ID card PDF' });
   }
 });
