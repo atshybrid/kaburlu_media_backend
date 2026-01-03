@@ -124,7 +124,13 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
     const [states, districts, mandals, villages] = await Promise.all([
         wantState
             ? prisma.state.findMany({
-                where: { isDeleted: false, name: { contains: q, mode: 'insensitive' } },
+                where: {
+                    isDeleted: false,
+                    OR: [
+                        { name: { contains: q, mode: 'insensitive' } },
+                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
+                    ],
+                },
                 select: { id: true, name: true },
                 take: limit,
                 orderBy: { name: 'asc' },
@@ -132,7 +138,13 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             : Promise.resolve([] as any[]),
         wantDistrict
             ? prisma.district.findMany({
-                where: { isDeleted: false, name: { contains: q, mode: 'insensitive' } },
+                where: {
+                    isDeleted: false,
+                    OR: [
+                        { name: { contains: q, mode: 'insensitive' } },
+                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
+                    ],
+                },
                 select: { id: true, name: true, state: { select: { id: true, name: true } } },
                 take: limit,
                 orderBy: { name: 'asc' },
@@ -140,7 +152,13 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             : Promise.resolve([] as any[]),
         wantMandal
             ? prisma.mandal.findMany({
-                where: { isDeleted: false, name: { contains: q, mode: 'insensitive' } },
+                where: {
+                    isDeleted: false,
+                    OR: [
+                        { name: { contains: q, mode: 'insensitive' } },
+                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
+                    ],
+                },
                 select: {
                     id: true,
                     name: true,
@@ -154,7 +172,10 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             ? (prisma as any).village.findMany({
                 where: {
                     isDeleted: false,
-                    name: { contains: q, mode: 'insensitive' },
+                    OR: [
+                        { name: { contains: q, mode: 'insensitive' } },
+                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
+                    ],
                     ...(tenantId ? { tenantId } : {}),
                 },
                 select: {
