@@ -9,6 +9,22 @@ Server should run automatically when starting a workspace. To run manually, run:
 npm run dev
 ```
 
+## Render deployment (PDF / Puppeteer)
+
+The `/api/v1/id-cards/pdf` endpoint uses Puppeteer (headless Chromium) to render PDFs. Many hosting providers (including Render) run in minimal Linux images without Chromium + required shared libraries, so PDF generation can work locally but fail in production.
+
+This repo includes a Docker-based Render setup that installs Chromium:
+
+- Dockerfile: [Dockerfile](Dockerfile)
+- Render Blueprint: [render.yaml](render.yaml)
+
+Key env vars:
+
+- `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`
+- `PUPPETEER_SKIP_DOWNLOAD=true`
+
+If you deploy without Docker, you must install Chromium (and its dependencies) on the host and set `PUPPETEER_EXECUTABLE_PATH` to the installed browser binary.
+
 ## Local Postgres fallback (no data loss)
 
 If your remote database (Neon) isn’t reachable from this machine (Prisma P1001), you can run a local Postgres temporarily without touching the remote data:

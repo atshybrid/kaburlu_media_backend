@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
 import axios from 'axios';
+import fs from 'fs';
 
 const router = Router();
 
@@ -166,6 +167,27 @@ function normalizeHttpUrl(url?: string | null): string {
   // If it's a bare domain/path like "example.com/x", assume https.
   if (/^[^\s/]+\.[^\s]+/.test(s)) return `https://${s}`;
   return s;
+}
+
+function resolveChromeExecutablePath(): string | undefined {
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN;
+  const candidates = [
+    envPath,
+    // Common Linux paths
+    process.platform === 'linux' ? '/usr/bin/chromium' : undefined,
+    process.platform === 'linux' ? '/usr/bin/chromium-browser' : undefined,
+    process.platform === 'linux' ? '/usr/bin/google-chrome-stable' : undefined,
+    process.platform === 'linux' ? '/usr/bin/google-chrome' : undefined
+  ].filter(Boolean) as string[];
+
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+  return envPath || undefined;
 }
 
 async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline?: { logo?: string | null; photo?: string | null; stamp?: string | null; sign?: string | null; qrImg?: string | null } }> {
@@ -591,7 +613,7 @@ router.get('/pdf', async (req, res) => {
     }
 
     const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || undefined;
+    const executablePath = resolveChromeExecutablePath();
 
     let browser: any;
     try {
