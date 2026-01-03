@@ -190,7 +190,63 @@ function resolveChromeExecutablePath(): string | undefined {
       // ignore
     }
   }
+
+  // Important: Puppeteer also reads executablePath from environment variables.
+  // If a service accidentally sets PUPPETEER_EXECUTABLE_PATH/CHROME_BIN to a
+  // non-existent path (common on Render native), Puppeteer will keep failing
+  // even if we don't pass executablePath. So we defensively unset them.
+  if (envPath) {
+    try {
+      const exists = fs.existsSync(envPath);
+      if (!exists) {
+        delete process.env.PUPPETEER_EXECUTABLE_PATH;
+        delete process.env.CHROME_BIN;
+      }
+    } catch {
+      // ignore
+    }
+  }
   return undefined;
+}
+
+async function resolvePuppeteerLaunchOptions(puppeteer: any): Promise<{ args: string[]; headless: any; defaultViewport?: any; executablePath?: string }> {
+  // Prefer an explicit, existing system chrome path if provided.
+  const systemExecutablePath = resolveChromeExecutablePath();
+
+  // If no system path exists, try @sparticuz/chromium (good for Render-like hosts).
+  let chromium: any;
+  try {
+    chromium = require('@sparticuz/chromium');
+  } catch {
+    chromium = undefined;
+  }
+
+  const baseArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+
+  if (systemExecutablePath) {
+    return {
+      args: baseArgs,
+      headless: 'new',
+      executablePath: systemExecutablePath
+    };
+  }
+
+  if (chromium) {
+    const chromiumExecPath = await chromium.executablePath();
+    const args = Array.from(new Set([...(chromium.args || []), ...baseArgs]));
+    return {
+      args,
+      headless: chromium.headless,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: chromiumExecPath
+    };
+  }
+
+  // Last resort: rely on Puppeteer defaults.
+  return {
+    args: baseArgs,
+    headless: 'new'
+  };
 }
 
 async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline?: { logo?: string | null; photo?: string | null; stamp?: string | null; sign?: string | null; qrImg?: string | null } }> {
@@ -610,27 +666,42 @@ router.get('/pdf', async (req, res) => {
     const html = buildIdCardHtml(data, { print: true });
     let puppeteer: any;
     try {
-      puppeteer = require('puppeteer');
+      puppeteer = require('puppeteer-core');
     } catch (_e) {
-      return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer)' });
+      try {
+        puppeteer = require('puppeteer');
+      } catch {
+        return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer-core)' });
+      }
     }
 
-    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
-    const executablePath = resolveChromeExecutablePath();
+    const launchOpts = await resolvePuppeteerLaunchOptions(puppeteer);
+    const puppeteerDefaultExecutablePath = (() => {
+      try {
+        return typeof puppeteer?.executablePath === 'function' ? String(puppeteer.executablePath()) : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
 
     let browser: any;
     try {
       browser = await puppeteer.launch({
-        headless: 'new',
-        args: launchArgs,
-        executablePath
+        headless: launchOpts.headless,
+        args: launchOpts.args,
+        ...(launchOpts.defaultViewport ? { defaultViewport: launchOpts.defaultViewport } : {}),
+        ...(launchOpts.executablePath ? { executablePath: launchOpts.executablePath } : {})
       });
     } catch (e) {
       console.error('id-cards/pdf puppeteer.launch failed', {
         reporterId: reporter.id,
         nodeEnv: process.env.NODE_ENV,
-        executablePath,
-        executablePathExists: executablePath ? (() => { try { return fs.existsSync(executablePath); } catch { return false; } })() : false,
+        envPuppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        envChromeBin: process.env.CHROME_BIN,
+        executablePath: launchOpts.executablePath,
+        executablePathExists: launchOpts.executablePath ? (() => { try { return fs.existsSync(launchOpts.executablePath); } catch { return false; } })() : false,
+        puppeteerDefaultExecutablePath,
+        puppeteerDefaultExecutablePathExists: puppeteerDefaultExecutablePath ? (() => { try { return fs.existsSync(puppeteerDefaultExecutablePath); } catch { return false; } })() : false,
         err: (e as any)?.stack || (e as any)?.message || e
       });
       return res.status(500).json({ error: 'Failed to start PDF renderer' });
