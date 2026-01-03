@@ -34,6 +34,29 @@ type CardData = {
   };
 };
 
+function formatIdCardNumber(cardNumber: string, issuedAt: Date): string {
+  const raw = String(cardNumber || '').trim();
+  if (!raw) return raw;
+
+  // Split into leading non-digits + the rest starting with the first digit.
+  const m = raw.match(/^([^0-9]*)([0-9].*)$/);
+  if (!m) return raw;
+  const prefix = m[1] || '';
+  const rest = m[2] || '';
+
+  const y = issuedAt.getUTCFullYear();
+  const mo = String(issuedAt.getUTCMonth() + 1).padStart(2, '0');
+  const yyyymm = `${y}${mo}`;
+
+  // If already has YYYYMM right after prefix, do not re-insert.
+  if (rest.startsWith(yyyymm)) return `${prefix}${rest}`;
+
+  // Also avoid inserting if it already looks like it has a YYYYMM (any month) prefix.
+  if (/^20\d{2}(0[1-9]|1[0-2])/.test(rest)) return `${prefix}${rest}`;
+
+  return `${prefix}${yyyymm}${rest}`;
+}
+
 async function resolveReporterByQuery(q: { reporterId?: string; mobile?: string; fullName?: string }) {
   if (q.reporterId) {
     const r = await (prisma as any).reporter.findUnique({ where: { id: q.reporterId } });
@@ -100,6 +123,7 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
 
   const issuedAtIso: string = new Date(reporter.idCard.issuedAt).toISOString();
   const expiresAtIso: string = new Date(reporter.idCard.expiresAt).toISOString();
+  const issuedAtDate = new Date(reporter.idCard.issuedAt);
   const expires = new Date(reporter.idCard.expiresAt);
   const validityLabel = `Valid up to ${String(expires.getUTCDate()).padStart(2, '0')}-${String(expires.getUTCMonth() + 1).padStart(2, '0')}-${expires.getUTCFullYear()}`;
 
@@ -130,7 +154,7 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
       placeOfWork,
       mobile: reporter.user?.mobileNumber || null,
       photoUrl,
-      cardNumber: reporter.idCard.cardNumber,
+      cardNumber: formatIdCardNumber(reporter.idCard.cardNumber, issuedAtDate),
       issuedAt: issuedAtIso,
       expiresAt: expiresAtIso,
       validityLabel,

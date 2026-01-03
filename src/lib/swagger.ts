@@ -31,6 +31,7 @@ const swaggerDefinition = {
     { name: 'Auth' },
     { name: 'Users' },
     { name: 'Articles' },
+    { name: 'AI', description: 'AI utility endpoints (test, headline generation, etc.)' },
     { name: 'AI Rewrite', description: 'AI rewrite controls, usage metering, and billing limits' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },

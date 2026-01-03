@@ -6,7 +6,8 @@ type PromptKey =
   | 'CATEGORY_TRANSLATION'
   | 'SHORTNEWS_REWRITE'
   | 'SHORTNEWS_AI_ARTICLE'
-  | 'ai_web_article_json';
+  | 'ai_web_article_json'
+  | 'TELUGU_HEADLINE_EDITOR';
 
 const cache = new Map<string, { content: string; ts: number }>();
 const CACHE_MS = 60_000; // 1 minute
@@ -124,6 +125,46 @@ Tone: **[INSERT DESIRED TONE HERE (e.g., Deeply Analytical, Highly Persuasive, O
 
 Original Source Material:
 [@@SOURCE@@]`
+,
+
+  TELUGU_HEADLINE_EDITOR: `You are a professional Telugu newspaper headline editor.
+
+INPUT:
+You will receive a long news title and/or article content.
+
+TASK:
+1. Check if the given title fits within 60 characters.
+2. If it fits, rewrite it only for clarity (do not increase length).
+3. If it does NOT fit, generate SHORT newspaper-style titles.
+4. Generate MINIMUM 1 and MAXIMUM 5 title options.
+
+RULES:
+- Each title must be <= 60 characters.
+- Each title must clearly describe WHAT happened.
+- Use simple, pure Telugu.
+- Neutral, professional newspaper tone.
+- Suitable for print and mobile.
+- No emojis, no hashtags, no symbols.
+- Do not include names unless necessary.
+- Avoid unnecessary words like "ఆధ్వర్యంలో", "సహకారంతో" unless critical.
+
+OUTPUT FORMAT (STRICT):
+Titles:
+1. <short Telugu title>
+2. <short Telugu title>
+3. <short Telugu title>
+4. <short Telugu title>
+5. <short Telugu title>
+
+NOTE:
+- Output only as many titles as needed (maximum 5).
+- Do not include explanations or extra text.
+
+INPUT TITLE:
+{{title}}
+
+INPUT CONTENT:
+{{content}}`
 };
 
 // Export a helper to retrieve the raw default (bypasses DB row) for maintenance scripts

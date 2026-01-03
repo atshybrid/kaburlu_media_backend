@@ -13,6 +13,7 @@ import {
   DEFAULT_OPENAI_MODEL_SEO,
   DEFAULT_OPENAI_MODEL_TRANSLATION,
   DEFAULT_OPENAI_MODEL_MODERATION,
+  DEFAULT_OPENAI_MODEL_NEWSPAPER,
 } from './aiConfig';
 
 type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article' | 'newspaper';
@@ -67,20 +68,53 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       const axios = require('axios');
       const model = purpose === 'translation'
         ? DEFAULT_OPENAI_MODEL_TRANSLATION
-        : (purpose === 'moderation' ? DEFAULT_OPENAI_MODEL_MODERATION : DEFAULT_OPENAI_MODEL_SEO);
+        : (purpose === 'moderation'
+          ? DEFAULT_OPENAI_MODEL_MODERATION
+          : (purpose === 'newspaper' ? DEFAULT_OPENAI_MODEL_NEWSPAPER : DEFAULT_OPENAI_MODEL_SEO));
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-      const response = await axios.post('https://api.openai.com/v1/responses', {
-        model,
-        input: prompt
-      }, {
-        headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
-        signal: ctrl.signal,
-      }).finally(() => clearTimeout(t));
-      const data = response?.data;
-      const content = Array.isArray(data?.output?.[0]?.content)
-        ? data.output[0].content.map((c: any) => c.text || '').join('\n')
-        : (data?.output_text || data?.output || '');
+      const callOpenAI = async (m: string) => {
+        const response = await axios.post('https://api.openai.com/v1/responses', {
+          model: m,
+          input: prompt
+        }, {
+          headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+          signal: ctrl.signal,
+        });
+        const data = response?.data;
+        const content = Array.isArray(data?.output?.[0]?.content)
+          ? data.output[0].content.map((c: any) => c.text || '').join('\n')
+          : (data?.output_text || data?.output || '');
+        return { data, content };
+      };
+
+      let data: any;
+      let content = '';
+      try {
+        const r1 = await callOpenAI(model);
+        data = r1.data;
+        content = r1.content;
+      } catch (e: any) {
+        const status = e?.response?.status;
+        const errMsg = e?.response?.data?.error?.message || e?.message || '';
+        // Common fix: env points to a model not available on the account.
+        // Retry once with a safe fallback.
+        const looksLikeModelIssue = status === 400 && /model/i.test(String(errMsg));
+        if (looksLikeModelIssue) {
+          try {
+            const fallbackModel = 'gpt-4o-mini';
+            const r2 = await callOpenAI(fallbackModel);
+            data = r2.data;
+            content = r2.content;
+          } catch (e2: any) {
+            throw e2;
+          }
+        } else {
+          throw e;
+        }
+      } finally {
+        clearTimeout(t);
+      }
       const usage = {
         provider: 'openai',
         purpose,
@@ -93,11 +127,9 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       };
       if (content) return { text: content, usage };
     } catch (e: any) {
-      if (purpose === 'translation') {
-        const status = e?.response?.status;
-        const data = e?.response?.data;
-        console.warn('[AI][openai] translation call failed:', status || '', data?.error?.message || e?.message || e);
-      }
+      const status = e?.response?.status;
+      const data = e?.response?.data;
+      console.warn(`[AI][openai] ${purpose} call failed:`, status || '', data?.error?.message || e?.message || e);
     }
   }
   return { text: '' };

@@ -37,6 +37,8 @@ export const DEFAULT_GEMINI_MODEL_REWRITE = process.env.GEMINI_MODEL_REWRITE || 
 export const DEFAULT_OPENAI_MODEL_SEO = process.env.OPENAI_MODEL_SEO || 'gpt-4o-mini';
 export const DEFAULT_OPENAI_MODEL_MODERATION = process.env.OPENAI_MODEL_MODERATION || 'gpt-4o-mini';
 export const DEFAULT_OPENAI_MODEL_TRANSLATION = process.env.OPENAI_MODEL_TRANSLATION || 'gpt-4o-mini';
+// Used for newspaper/headline style generation (e.g., /ai/headlines)
+export const DEFAULT_OPENAI_MODEL_NEWSPAPER = process.env.OPENAI_MODEL_NEWSPAPER || DEFAULT_OPENAI_MODEL_SEO;
 
 export const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 12000);
 

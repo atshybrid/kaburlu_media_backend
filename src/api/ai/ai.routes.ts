@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { aiGenerateText } from '../../lib/aiProvider';
-import { AI_PROVIDER, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_OPENAI_MODEL_SEO } from '../../lib/aiConfig';
+import { AI_PROVIDER, GEMINI_KEY, OPENAI_KEY, DEFAULT_GEMINI_MODEL_SEO, DEFAULT_OPENAI_MODEL_SEO, DEFAULT_OPENAI_MODEL_NEWSPAPER } from '../../lib/aiConfig';
+import { getPrompt, renderPrompt } from '../../lib/prompts';
 
 const router = Router();
 
@@ -71,7 +72,137 @@ router.get('/test', passport.authenticate('jwt', { session: false }), async (_re
   }
 });
 
-export default router;
+function clampInt(v: any, min: number, max: number, fallback: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.trunc(n);
+  return Math.min(max, Math.max(min, i));
+}
+
+function stripCodeFences(text: string): string {
+  const t = String(text || '');
+  return t
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+}
+
+function parseHeadlineOutput(text: string, maxTitles: number): { titles: string[]; subtitle?: string | null } {
+  const cleaned = stripCodeFences(text);
+  const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  let subtitle: string | null = null;
+  const titles: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^subtitle\s*:/i.test(line)) {
+      const rest = line.replace(/^subtitle\s*:\s*/i, '').trim();
+      subtitle = rest || (lines[i + 1] ? String(lines[i + 1]).trim() : null);
+      continue;
+    }
+    const m = line.match(/^\d+\.?\s*(?:\)|\.)?\s*(.+)$/);
+    if (m && m[1]) {
+      const t = String(m[1]).replace(/^[-–—]\s*/, '').trim();
+      if (!t) continue;
+      if (t.length <= 60) titles.push(t);
+      if (titles.length >= maxTitles) break;
+    }
+  }
+
+  // Fallback: try to treat first non-empty line as a title
+  if (!titles.length && lines.length) {
+    const first = lines.find(l => !/^titles\s*:/i.test(l)) || '';
+    const t = first.trim();
+    if (t) titles.push(t.length <= 60 ? t : t.slice(0, 60).trim());
+  }
+
+  return { titles: titles.slice(0, maxTitles), subtitle };
+}
+
+/**
+ * @swagger
+ * /ai/headlines:
+ *   post:
+ *     summary: Generate short Telugu newspaper-style headline options
+ *     description: Uses Prompt table key TELUGU_HEADLINE_EDITOR (fallback to default) and returns parsed title options (<=60 chars). Optionally returns a subtitle.
+ *     tags: [AI]
+ *     security: [ { bearerAuth: [] } ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string, description: 'Long title (optional if content provided)' }
+ *               content: { type: string, description: 'Article content (optional if title provided)' }
+ *               maxTitles: { type: number, minimum: 1, maximum: 5, default: 3 }
+ *               includeSubtitle: { type: boolean, default: false }
+ *           examples:
+ *             sample:
+ *               value:
+ *                 title: "తెలంగాణలో భారీ వర్షాలు: నదులు పొంగి ప్రవహిస్తున్నాయి"
+ *                 content: "హైదరాబాద్, వరంగల్ జిల్లాల్లో..."
+ *                 maxTitles: 3
+ *                 includeSubtitle: true
+ *     responses:
+ *       200:
+ *         description: Generated headlines
+ *       400:
+ *         description: Bad input
+ */
+router.post('/headlines', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const title = req.body?.title ? String(req.body.title) : '';
+    const content = req.body?.content ? String(req.body.content) : '';
+    if (!title && !content) return res.status(400).json({ success: false, error: 'title or content is required' });
+
+    const maxTitles = clampInt(req.body?.maxTitles, 1, 5, 3);
+    const includeSubtitle = Boolean(req.body?.includeSubtitle);
+
+    const tpl = await getPrompt('TELUGU_HEADLINE_EDITOR');
+    let prompt = renderPrompt(tpl, { title, content });
+
+    // Tighten runtime knobs without changing the stored prompt.
+    prompt += `\n\nRuntime limits:\n- Generate MAXIMUM ${maxTitles} title options.`;
+    if (includeSubtitle) {
+      prompt += `\n\nAlso output after Titles list:\nSubtitle:\n<short Telugu subtitle (<= 80 chars)>\nDo not add extra labels/text beyond Titles list and Subtitle.`;
+    }
+
+    const result = await aiGenerateText({ prompt, purpose: 'newspaper' as any });
+    const text = result.text || '';
+    if (!text) {
+      const info = {
+        provider: AI_PROVIDER,
+        geminiKeyPresent: !!GEMINI_KEY,
+        openaiKeyPresent: !!OPENAI_KEY,
+        geminiModel: DEFAULT_GEMINI_MODEL_SEO,
+        openaiModel: DEFAULT_OPENAI_MODEL_SEO,
+        openaiNewspaperModel: DEFAULT_OPENAI_MODEL_NEWSPAPER
+      };
+      return res.status(500).json({
+        success: false,
+        error: 'No response from AI provider',
+        info,
+        hint: 'Check OPENAI_API_KEY / GEMINI_API_KEY and model names (try OPENAI_MODEL_SEO=gpt-4o-mini).'
+      });
+    }
+
+    const parsed = parseHeadlineOutput(text, maxTitles);
+    return res.json({
+      success: true,
+      provider: AI_PROVIDER,
+      promptKey: 'TELUGU_HEADLINE_EDITOR',
+      titles: parsed.titles,
+      subtitle: includeSubtitle ? (parsed.subtitle || null) : undefined,
+      text,
+      usage: result.usage
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: 'Headline generation failed' });
+  }
+});
 /**
  * @swagger
  * /ai/run:
@@ -196,3 +327,5 @@ router.post('/run', passport.authenticate('jwt', { session: false }), async (req
     return res.status(500).json({ error: 'AI run failed' });
   }
 });
+
+export default router;
