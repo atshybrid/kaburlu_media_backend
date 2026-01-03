@@ -168,6 +168,7 @@ async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline
 function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
   const primary = data.tenant.primaryColor || '#153e82'; // dynamic blue
   const fixedRed = '#d71f1f'; // fixed red
+  const secondary = data.tenant.secondaryColor || fixedRed;
   const inline = (data as any).__inline || {};
   const logo = inline.logo ?? ((data as any).frontLogoUrl || data.tenant.frontLogoUrl || '');
   const sign = inline.sign ?? (data.tenant.signUrl || '');
@@ -206,7 +207,7 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     /* FRONT */
     .front .top-logo{width:100%;padding-top:2mm;display:flex;justify-content:center;align-items:center}
     .front .top-logo img{max-width:40mm;max-height:8mm}
-    .front .press-bar{margin-top:3mm;width:100%;background:${fixedRed};height:8mm;display:flex;justify-content:center;align-items:center}
+    .front .press-bar{margin-top:3mm;width:100%;background:${secondary};height:8mm;display:flex;justify-content:center;align-items:center}
     .front .press-bar h1{margin:0;color:#fff;font-size:5mm;font-weight:700;font-family:'Archivo Black', sans-serif}
     .front .main{padding:3mm 3mm}
     .front .photo-qr{display:flex;gap:3mm}
@@ -232,11 +233,11 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     .back .body{padding:4mm 4mm 0 4mm;box-sizing:border-box;text-align:center;display:flex;flex-direction:column;align-items:center}
     .back .qr-box{width:20mm;height:20mm;margin:1.5mm auto 2mm;background:#f3f3f3;padding:1px;display:flex;align-items:center;justify-content:center;border-radius:2px}
     .back .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
-    .back .address{color:${primary};font-size:3.2mm;line-height:1.15;margin-top:2mm;text-align:center}
+    .back .address{color:#000;font-size:3.2mm;line-height:1.15;margin-top:2mm;text-align:center}
     .back .address .heading{font-weight:700;font-size:3mm;margin-bottom:1.5px}
     .back .address .lines{white-space:pre-line;font-size:2mm;line-height:1.05}
     .back .contact{margin-top:1.5px;font-size:2mm}
-    .back .prgi{position:absolute;left:0;right:0;bottom:22mm;color:${primary};font-weight:700;font-size:3.4mm;text-align:center}
+    .back .prgi{position:absolute;left:0;right:0;bottom:22mm;color:#000;font-weight:700;font-size:3.4mm;text-align:center}
     .back .footer{position:absolute;left:0;right:0;bottom:0;height:22mm;background:${primary};color:#fff;padding:4px 3mm;box-sizing:border-box;font-size:1mm}
     .back .footer strong{display:block;text-align:center;margin-bottom:3px;font-size:2.6mm}
     .back .footer ol{margin:0;padding-left:0;padding-right:0;text-align:justify;line-height:1.05}
@@ -307,7 +308,7 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     /* FRONT */
     .front .top-logo{width:100%;padding-top:2mm;display:flex;justify-content:center;align-items:center}
     .front .top-logo img{max-width:40mm;max-height:8mm}
-    .front .press-bar{margin-top:3mm;width:100%;background:${fixedRed};height:8mm;display:flex;justify-content:center;align-items:center}
+    .front .press-bar{margin-top:3mm;width:100%;background:${secondary};height:8mm;display:flex;justify-content:center;align-items:center}
     .front .press-bar h1{margin:0;color:#fff;font-size:5mm;font-weight:700;font-family:'Archivo Black', sans-serif}
     .front .main{padding:3mm 3mm}
     .front .photo-qr{display:flex;gap:3mm}
@@ -334,11 +335,11 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     .back .body{padding:4mm 4mm 0 4mm;box-sizing:border-box;text-align:center;display:flex;flex-direction:column;align-items:center}
     .back .qr-box{width:20mm;height:20mm;margin:1.5mm auto 2mm;background:#f3f3f3;padding:1px;display:flex;align-items:center;justify-content:center;border-radius:2px}
     .back .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
-    .back .address{color:${primary};font-size:3.2mm;line-height:1.15;margin-top:2mm;text-align:center}
+    .back .address{color:#000;font-size:3.2mm;line-height:1.15;margin-top:2mm;text-align:center}
     .back .address .heading{font-weight:700;font-size:3mm;margin-bottom:1.5px}
     .back .address .lines{white-space:pre-line;font-size:2mm;line-height:1.05}
     .back .contact{margin-top:1.5px;font-size:2mm}
-    .back .prgi{position:absolute;left:0;right:0;bottom:22mm;color:${primary};font-weight:700;font-size:3.4mm;text-align:center}
+    .back .prgi{position:absolute;left:0;right:0;bottom:22mm;color:#000;font-weight:700;font-size:3.4mm;text-align:center}
     .back .footer{position:absolute;left:0;right:0;bottom:0;height:22mm;background:${primary};color:#fff;padding:4px 3mm;box-sizing:border-box;font-size:1mm}
     .back .footer strong{display:block;text-align:center;margin-bottom:3px;font-size:2.6mm}
     .back .footer ol{margin:0;padding-left:0;padding-right:0;text-align:justify;line-height:1.05}
