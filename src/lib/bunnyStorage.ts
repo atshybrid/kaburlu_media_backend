@@ -7,6 +7,14 @@ function joinUrl(base: string, path: string): string {
   return `${b}/${p}`;
 }
 
+function ensureHttpsBaseUrl(base: string): string {
+  const trimmed = String(base || '').trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Allow callers to pass host/path without scheme.
+  return `https://${trimmed.replace(/^\/\/+/, '')}`;
+}
+
 function encodeKey(key: string): string {
   // Bunny accepts path-style keys; encode each segment safely.
   return key.split('/').map(encodeURIComponent).join('/');
@@ -45,6 +53,6 @@ export async function bunnyStoragePutObject(params: {
     maxBodyLength: Infinity,
   });
 
-  const publicUrl = joinUrl(publicBaseUrl, encodedKey);
+  const publicUrl = joinUrl(ensureHttpsBaseUrl(publicBaseUrl), encodedKey);
   return { key: params.key, publicUrl };
 }

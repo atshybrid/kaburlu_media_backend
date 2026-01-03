@@ -1144,7 +1144,122 @@ router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
  *       200: { description: Updated }
  */
 router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, id } = req.params;
+    const body = req.body || {};
+
+    const reporter = await (prisma as any).reporter
+      .findFirst({
+        where: { id, tenantId },
+        select: {
+          id: true,
+          tenantId: true,
+          level: true,
+          designationId: true,
+          stateId: true,
+          districtId: true,
+          mandalId: true,
+          assemblyConstituencyId: true,
+          subscriptionActive: true,
+          monthlySubscriptionAmount: true,
+          idCardCharge: true,
+          profilePhotoUrl: true,
+          active: true,
+        },
+      })
+      .catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const nextLevel: ReporterLevelInput = (body.level ? String(body.level) : String(reporter.level)) as ReporterLevelInput;
+    if (!['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(nextLevel)) {
+      return res.status(400).json({ error: 'Invalid level' });
+    }
+
+    const stateId = body.stateId ?? reporter.stateId;
+    const districtId = body.districtId ?? reporter.districtId;
+    const mandalId = body.mandalId ?? reporter.mandalId;
+    const assemblyConstituencyId = body.assemblyConstituencyId ?? reporter.assemblyConstituencyId;
+    const locationKey = getLocationKeyFromLevel(nextLevel, { stateId, districtId, mandalId, assemblyConstituencyId });
+    if (!locationKey.id) {
+      if (nextLevel === 'STATE') return res.status(400).json({ error: 'stateId required for STATE level' });
+      if (nextLevel === 'DISTRICT') return res.status(400).json({ error: 'districtId required for DISTRICT level' });
+      if (nextLevel === 'MANDAL') return res.status(400).json({ error: 'mandalId required for MANDAL level' });
+      return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
+    }
+
+    const updateData: any = {
+      level: nextLevel,
+      stateId: nextLevel === 'STATE' ? locationKey.id : null,
+      districtId: nextLevel === 'DISTRICT' ? locationKey.id : null,
+      mandalId: nextLevel === 'MANDAL' ? locationKey.id : null,
+      assemblyConstituencyId: nextLevel === 'ASSEMBLY' ? locationKey.id : null,
+    };
+
+    if (typeof body.subscriptionActive === 'boolean') {
+      updateData.subscriptionActive = body.subscriptionActive;
+      if (!body.subscriptionActive) {
+        updateData.monthlySubscriptionAmount = 0;
+      }
+    }
+
+    if (typeof body.monthlySubscriptionAmount === 'number') {
+      updateData.monthlySubscriptionAmount = body.monthlySubscriptionAmount;
+    }
+
+    if (typeof body.idCardCharge === 'number') {
+      updateData.idCardCharge = body.idCardCharge;
+    }
+
+    if (typeof body.profilePhotoUrl === 'string') {
+      updateData.profilePhotoUrl = body.profilePhotoUrl.trim() || null;
+    }
+
+    if (typeof body.active === 'boolean') {
+      updateData.active = body.active;
+    }
+
+    if (body.designationId) {
+      const designationId = String(body.designationId);
+      const designation = await (prisma as any).reporterDesignation
+        .findUnique({ where: { id: designationId }, select: { id: true, level: true, tenantId: true } })
+        .catch(() => null);
+      if (!designation) return res.status(400).json({ error: 'Invalid designationId' });
+      if (String(designation.level) !== nextLevel) return res.status(400).json({ error: 'designationId does not match requested level' });
+      if (designation.tenantId && String(designation.tenantId) !== String(tenantId)) {
+        return res.status(400).json({ error: 'designationId does not belong to this tenant' });
+      }
+      updateData.designationId = designationId;
+    }
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        tenantId: true,
+        designationId: true,
+        level: true,
+        stateId: true,
+        districtId: true,
+        mandalId: true,
+        assemblyConstituencyId: true,
+        subscriptionActive: true,
+        monthlySubscriptionAmount: true,
+        idCardCharge: true,
+        profilePhotoUrl: true,
+        active: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json(updated);
+  } catch (e: any) {
+    console.error('tenant reporter update error', e);
+    return res.status(500).json({ error: 'Failed to update reporter' });
+  }
 });
 
 /**
@@ -1266,7 +1381,39 @@ router.patch('/tenants/:tenantId/reporters/:id/login-access', passport.authentic
  *       200: { description: Updated }
  */
 router.patch('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, id } = req.params;
+    const body = req.body || {};
+    const profilePhotoUrl = typeof body.profilePhotoUrl === 'string' ? body.profilePhotoUrl.trim() : '';
+    if (!profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required' });
+
+    const reporter = await (prisma as any).reporter
+      .findFirst({ where: { id, tenantId }, select: { id: true, tenantId: true, userId: true } })
+      .catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id },
+      data: { profilePhotoUrl },
+      select: { id: true, tenantId: true, profilePhotoUrl: true },
+    });
+
+    if (reporter.userId) {
+      await (prisma as any).userProfile.upsert({
+        where: { userId: reporter.userId },
+        update: { profilePhotoUrl },
+        create: { userId: reporter.userId, profilePhotoUrl },
+      });
+    }
+
+    return res.json(updated);
+  } catch (e: any) {
+    console.error('tenant reporter profile-photo patch error', e);
+    return res.status(500).json({ error: 'Failed to update profile photo' });
+  }
 });
 
 /**
@@ -1289,7 +1436,37 @@ router.patch('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenti
  *       200: { description: Removed }
  */
 router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, id } = req.params;
+    const reporter = await (prisma as any).reporter
+      .findFirst({ where: { id, tenantId }, select: { id: true, tenantId: true, userId: true } })
+      .catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id },
+      data: { profilePhotoUrl: null },
+      select: { id: true, tenantId: true, profilePhotoUrl: true },
+    });
+
+    if (reporter.userId) {
+      await (prisma as any).userProfile
+        .upsert({
+          where: { userId: reporter.userId },
+          update: { profilePhotoUrl: null },
+          create: { userId: reporter.userId, profilePhotoUrl: null },
+        })
+        .catch(() => null);
+    }
+
+    return res.json(updated);
+  } catch (e: any) {
+    console.error('tenant reporter profile-photo delete error', e);
+    return res.status(500).json({ error: 'Failed to remove profile photo' });
+  }
 });
 
 /**
@@ -1312,7 +1489,109 @@ router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authent
  *       201: { description: Issued }
  */
 router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, id } = req.params;
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true },
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    if (reporter.idCard) {
+      return res.status(201).json(reporter.idCard);
+    }
+
+    // Generation pre-conditions
+    if (String(reporter.kycStatus || '') !== 'APPROVED') {
+      return res.status(403).json({ error: 'KYC must be APPROVED to generate ID card' });
+    }
+
+    // Require profile photo (either Reporter.profilePhotoUrl or UserProfile.profilePhotoUrl)
+    let hasPhoto = !!reporter.profilePhotoUrl;
+    if (!hasPhoto && reporter.userId) {
+      const profile = await (prisma as any).userProfile
+        .findUnique({ where: { userId: reporter.userId }, select: { profilePhotoUrl: true } })
+        .catch(() => null);
+      hasPhoto = !!profile?.profilePhotoUrl;
+    }
+    if (!hasPhoto) {
+      return res.status(403).json({ error: 'Profile photo is required to generate ID card' });
+    }
+
+    // Payment requirements
+    // - If idCardCharge > 0: onboarding payment must be PAID
+    // - If subscriptionActive=true and monthlySubscriptionAmount>0: current month subscription payment must be PAID
+    if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+      const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
+        where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
+        select: { id: true },
+      });
+      if (!onboardingPaid) {
+        return res.status(403).json({ error: 'Onboarding payment must be PAID to generate ID card' });
+      }
+    }
+
+    if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1; // 1-12
+      const monthlyPaid = await (prisma as any).reporterPayment.findFirst({
+        where: {
+          tenantId,
+          reporterId: reporter.id,
+          type: 'MONTHLY_SUBSCRIPTION',
+          year: currentYear,
+          month: currentMonth,
+          status: 'PAID',
+        },
+        select: { id: true },
+      });
+      if (!monthlyPaid) {
+        return res.status(403).json({ error: 'Monthly subscription payment must be PAID to generate ID card' });
+      }
+    }
+
+    const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId } });
+    if (!settings) return res.status(404).json({ error: 'Tenant ID card settings not configured' });
+
+    const prefix: string = settings.idPrefix || 'ID';
+    const digits: number = settings.idDigits || 6;
+
+    const existingCount = await (prisma as any).reporterIDCard.count({
+      where: { reporter: { tenantId } },
+    });
+    const nextNumber = existingCount + 1;
+    const padded = String(nextNumber).padStart(digits, '0');
+    const cardNumber = `${prefix}${padded}`;
+
+    const issuedAt = new Date();
+    let expiresAt: Date;
+    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+      expiresAt = new Date(settings.fixedValidUntil);
+    } else {
+      const days = settings.validityDays && settings.validityDays > 0 ? settings.validityDays : 365;
+      expiresAt = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000);
+    }
+
+    const idCard = await (prisma as any).reporterIDCard.create({
+      data: {
+        reporterId: reporter.id,
+        cardNumber,
+        issuedAt,
+        expiresAt,
+        pdfUrl: null,
+      },
+    });
+
+    return res.status(201).json(idCard);
+  } catch (e) {
+    console.error('tenant reporter id-card error', e);
+    return res.status(500).json({ error: 'Failed to generate reporter ID card' });
+  }
 });
 
 /**
@@ -1334,7 +1613,14 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
  *       200: { description: Card | null }
  */
 router.get('/tenants/:tenantId/reporters/:id/id-card', async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const { tenantId, id } = req.params;
+    const card = await (prisma as any).reporterIDCard.findFirst({ where: { reporterId: id, reporter: { tenantId } } }).catch(() => null);
+    return res.status(200).json(card || null);
+  } catch (e) {
+    console.error('tenant reporter get id-card error', e);
+    return res.status(500).json({ error: 'Failed to fetch reporter ID card' });
+  }
 });
 
 /**
@@ -1368,7 +1654,66 @@ router.get('/tenants/:tenantId/reporters/:id/id-card', async (req, res) => {
  *       200: { description: KYC submitted }
  */
 router.post('/tenants/:tenantId/reporters/:id/kyc', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const { tenantId, id } = req.params;
+    const user: any = (req as any).user;
+    const roleName = String(user?.role?.name || '');
+    if (!roleName) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Allow reporter to submit their own KYC; allow tenant admins/super admins to submit on behalf.
+    const allowed = ['SUPER_ADMIN', 'TENANT_ADMIN', 'REPORTER'];
+    if (!allowed.includes(roleName)) return res.status(403).json({ error: 'Forbidden' });
+
+    if (roleName !== 'SUPER_ADMIN') {
+      const actorReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id }, select: { id: true, tenantId: true } })
+        .catch(() => null);
+      if (!actorReporter?.tenantId) return res.status(403).json({ error: 'Reporter profile not linked to tenant' });
+      if (String(actorReporter.tenantId) !== String(tenantId)) return res.status(403).json({ error: 'Tenant scope mismatch' });
+      if (roleName === 'REPORTER' && String(actorReporter.id) !== String(id)) {
+        return res.status(403).json({ error: 'Reporter can only submit their own KYC' });
+      }
+    }
+
+    const body = req.body || {};
+    const aadharNumberMasked = body.aadharNumberMasked;
+    const panNumberMasked = body.panNumberMasked;
+    const workProofUrl = body.workProofUrl;
+    if (!aadharNumberMasked || !panNumberMasked) {
+      return res.status(400).json({ error: 'aadharNumberMasked and panNumberMasked required' });
+    }
+
+    const reporter = await (prisma as any).reporter
+      .findFirst({ where: { id, tenantId }, select: { id: true, kycData: true, kycStatus: true } })
+      .catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const prevKycData = reporter.kycData && typeof reporter.kycData === 'object' ? reporter.kycData : {};
+    const nextKycData = {
+      ...(prevKycData as any),
+      documents: {
+        ...(((prevKycData as any)?.documents as any) || {}),
+        aadharNumberMasked: String(aadharNumberMasked),
+        panNumberMasked: String(panNumberMasked),
+        ...(workProofUrl ? { workProofUrl: String(workProofUrl) } : {}),
+      },
+      submittedAt: new Date().toISOString(),
+    };
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id },
+      data: {
+        kycStatus: 'SUBMITTED',
+        kycData: nextKycData,
+      },
+      select: { id: true, tenantId: true, kycStatus: true, kycData: true },
+    });
+
+    return res.status(200).json(updated);
+  } catch (e) {
+    console.error('tenant reporter kyc submit error', e);
+    return res.status(500).json({ error: 'Failed to submit KYC' });
+  }
 });
 
 /**
@@ -1404,5 +1749,64 @@ router.post('/tenants/:tenantId/reporters/:id/kyc', passport.authenticate('jwt',
  *       200: { description: KYC verified }
  */
 router.patch('/tenants/:tenantId/reporters/:id/kyc/verify', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  res.status(501).json({ error: 'Not implemented in this build' });
+  try {
+    const { tenantId, id } = req.params;
+    const user: any = (req as any).user;
+    const roleName = String(user?.role?.name || '');
+    if (!roleName) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Spec says SUPER_ADMIN or TENANT_ADMIN
+    if (!['SUPER_ADMIN', 'TENANT_ADMIN'].includes(roleName)) return res.status(403).json({ error: 'Forbidden' });
+
+    if (roleName !== 'SUPER_ADMIN') {
+      const actorReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id }, select: { tenantId: true } })
+        .catch(() => null);
+      if (!actorReporter?.tenantId) return res.status(403).json({ error: 'Reporter profile not linked to tenant' });
+      if (String(actorReporter.tenantId) !== String(tenantId)) return res.status(403).json({ error: 'Tenant scope mismatch' });
+    }
+
+    const body = req.body || {};
+    const statusRaw = String(body.status || '').trim();
+    if (!statusRaw) return res.status(400).json({ error: 'status required' });
+    if (!['APPROVED', 'REJECTED'].includes(statusRaw)) return res.status(400).json({ error: 'Invalid status' });
+    const notes = typeof body.notes === 'string' ? body.notes : undefined;
+    const verifiedAadhar = typeof body.verifiedAadhar === 'boolean' ? body.verifiedAadhar : undefined;
+    const verifiedPan = typeof body.verifiedPan === 'boolean' ? body.verifiedPan : undefined;
+    const verifiedWorkProof = typeof body.verifiedWorkProof === 'boolean' ? body.verifiedWorkProof : undefined;
+
+    const reporter = await (prisma as any).reporter
+      .findFirst({ where: { id, tenantId }, select: { id: true, kycData: true } })
+      .catch(() => null);
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const prevKycData = reporter.kycData && typeof reporter.kycData === 'object' ? reporter.kycData : {};
+    const nextKycData = {
+      ...(prevKycData as any),
+      verification: {
+        ...(((prevKycData as any)?.verification as any) || {}),
+        status: statusRaw,
+        ...(notes ? { notes } : {}),
+        ...(verifiedAadhar !== undefined ? { verifiedAadhar } : {}),
+        ...(verifiedPan !== undefined ? { verifiedPan } : {}),
+        ...(verifiedWorkProof !== undefined ? { verifiedWorkProof } : {}),
+        verifiedAt: new Date().toISOString(),
+        verifiedByUserId: user?.id ? String(user.id) : null,
+      },
+    };
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id },
+      data: {
+        kycStatus: statusRaw,
+        kycData: nextKycData,
+      },
+      select: { id: true, tenantId: true, kycStatus: true, kycData: true },
+    });
+
+    return res.status(200).json(updated);
+  } catch (e) {
+    console.error('tenant reporter kyc verify error', e);
+    return res.status(500).json({ error: 'Failed to verify KYC' });
+  }
 });
