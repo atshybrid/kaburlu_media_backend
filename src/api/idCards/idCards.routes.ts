@@ -171,7 +171,10 @@ function normalizeHttpUrl(url?: string | null): string {
 
 function resolveChromeExecutablePath(): string | undefined {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN;
+  // Only use envPath if it's actually present; otherwise allow Puppeteer
+  // to fall back to its bundled/browser-cache executable.
   const candidates = [
+    // Env override (only if it exists)
     envPath,
     // Common Linux paths
     process.platform === 'linux' ? '/usr/bin/chromium' : undefined,
@@ -187,7 +190,7 @@ function resolveChromeExecutablePath(): string | undefined {
       // ignore
     }
   }
-  return envPath || undefined;
+  return undefined;
 }
 
 async function inlineAssetsForPdf(data: CardData): Promise<CardData & { __inline?: { logo?: string | null; photo?: string | null; stamp?: string | null; sign?: string | null; qrImg?: string | null } }> {
@@ -626,7 +629,8 @@ router.get('/pdf', async (req, res) => {
       console.error('id-cards/pdf puppeteer.launch failed', {
         reporterId: reporter.id,
         nodeEnv: process.env.NODE_ENV,
-        hasExecutablePath: !!executablePath,
+        executablePath,
+        executablePathExists: executablePath ? (() => { try { return fs.existsSync(executablePath); } catch { return false; } })() : false,
         err: (e as any)?.stack || (e as any)?.message || e
       });
       return res.status(500).json({ error: 'Failed to start PDF renderer' });
