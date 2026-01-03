@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { tenantResolver } from '../../middleware/tenantResolver';
 import { buildEffectiveStyle1AdsResponse } from '../../lib/adsStyle1';
+import { buildEffectiveStyle2AdsResponse } from '../../lib/adsStyle2';
 import prisma from '../../lib/prisma';
 import { buildNewsArticleJsonLd as buildLegacyNewsArticleJsonLd, toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
@@ -435,6 +436,47 @@ router.get('/ads/style1', async (_req, res) => {
   const adsStyle1 = (data as any).adsStyle1 && typeof (data as any).adsStyle1 === 'object' ? (data as any).adsStyle1 : {};
 
   const effectiveAds = buildEffectiveStyle1AdsResponse(adsStyle1, { includeAllSlots: true });
+  const domainBase = domain?.domain ? `https://${String(domain.domain)}` : null;
+
+  res.json({
+    domain: domain.domain,
+    domainBase,
+    tenantId: tenant.id,
+    effective: { ads: effectiveAds }
+  });
+});
+
+/**
+ * @swagger
+ * /public/ads/style2:
+ *   get:
+ *     summary: Get style2 slot-based ads for the resolved domain
+ *     description: |
+ *       Returns slot-based ads stored under TenantSettings.data.adsStyle2.
+ *       This response is designed for the Style2 website UI: it always returns ALL known Style2 slot keys with enabled=false defaults when not configured.
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
+ *     responses:
+ *       200:
+ *         description: Slot-based ads
+ */
+router.get('/ads/style2', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
+
+  const row = await p.tenantSettings.findUnique({ where: { tenantId: tenant.id } }).catch(() => null);
+  const data = (row && typeof row.data === 'object' && row.data) ? row.data : {};
+  const adsStyle2 = (data as any).adsStyle2 && typeof (data as any).adsStyle2 === 'object' ? (data as any).adsStyle2 : {};
+
+  const effectiveAds = buildEffectiveStyle2AdsResponse(adsStyle2, { includeAllSlots: true });
   const domainBase = domain?.domain ? `https://${String(domain.domain)}` : null;
 
   res.json({

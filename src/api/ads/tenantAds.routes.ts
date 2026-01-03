@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import { buildEffectiveStyle1AdsResponse, normalizeStyle1AdsConfig } from '../../lib/adsStyle1';
+import { buildEffectiveStyle2AdsResponse, normalizeStyle2AdsConfig } from '../../lib/adsStyle2';
 
 // transient any-cast for newly added delegates
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,6 +79,21 @@ async function loadTenantAdsStyle1(tenantId: string): Promise<{ row: any | null;
 
 async function saveTenantAdsStyle1(tenantId: string, existingRow: any | null, nextAdsStyle1: any, baseData: any) {
   const nextData = { ...(baseData || {}), adsStyle1: nextAdsStyle1 };
+  if (existingRow) {
+    return p.tenantSettings.update({ where: { tenantId }, data: { data: nextData } });
+  }
+  return p.tenantSettings.create({ data: { tenantId, data: nextData } });
+}
+
+async function loadTenantAdsStyle2(tenantId: string): Promise<{ row: any | null; adsStyle2: any; data: any }> {
+  const row = await p.tenantSettings.findUnique({ where: { tenantId } }).catch(() => null);
+  const data = (row && typeof row.data === 'object' && row.data) ? row.data : {};
+  const adsStyle2 = (data as any).adsStyle2 && typeof (data as any).adsStyle2 === 'object' ? (data as any).adsStyle2 : {};
+  return { row, adsStyle2, data };
+}
+
+async function saveTenantAdsStyle2(tenantId: string, existingRow: any | null, nextAdsStyle2: any, baseData: any) {
+  const nextData = { ...(baseData || {}), adsStyle2: nextAdsStyle2 };
   if (existingRow) {
     return p.tenantSettings.update({ where: { tenantId }, data: { data: nextData } });
   }
@@ -288,6 +304,158 @@ router.patch(
     const normalized = normalizeStyle1AdsConfig(merged);
     await saveTenantAdsStyle1(tenantId, row, normalized, data);
     res.json({ ok: true, ads: buildEffectiveStyle1AdsResponse(normalized, { includeAllSlots: true }) });
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style2:
+ *   get:
+ *     summary: Get style2 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Returns the stored style2 ads config from TenantSettings.data.adsStyle2.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Style2 ads config
+ */
+router.get(
+  '/tenants/:tenantId/ads/style2',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const { adsStyle2 } = await loadTenantAdsStyle2(tenantId);
+    res.json({ ads: buildEffectiveStyle2AdsResponse(adsStyle2, { includeAllSlots: true }) });
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style2:
+ *   put:
+ *     summary: Replace style2 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Stores config under TenantSettings.data.adsStyle2.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ads:
+ *                 type: object
+ *                 description: Style2 ads config ({enabled, debug, googleAdsense, slots})
+ *           examples:
+ *             googleExample:
+ *               value:
+ *                 ads:
+ *                   enabled: true
+ *                   debug: true
+ *                   googleAdsense: { client: "ca-pub-1234567890123456" }
+ *                   slots:
+ *                     home_left_1:
+ *                       enabled: true
+ *                       provider: google
+ *                       google: { slot: "3100000001", format: "auto", responsive: true }
+ *                     style2_article_sidebar:
+ *                       enabled: true
+ *                       provider: google
+ *                       google: { slot: "3100000005", format: "auto", responsive: true }
+ *             localExample:
+ *               value:
+ *                 ads:
+ *                   enabled: true
+ *                   debug: true
+ *                   slots:
+ *                     home_left_1:
+ *                       enabled: true
+ *                       provider: local
+ *                       local:
+ *                         imageUrl: "https://cdn.example.com/ads/style2-left1-300x250.jpg"
+ *                         clickUrl: "https://sponsor.example.com/left1"
+ *                         alt: "Sponsor Left 1"
+ *     responses:
+ *       200:
+ *         description: Saved
+ */
+router.put(
+  '/tenants/:tenantId/ads/style2',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const incoming = (body && typeof body === 'object' && (body as any).ads) ? (body as any).ads : body;
+
+    const normalized = normalizeStyle2AdsConfig(incoming);
+    const { row, data } = await loadTenantAdsStyle2(tenantId);
+    await saveTenantAdsStyle2(tenantId, row, normalized, data);
+    res.json({ ok: true, ads: buildEffectiveStyle2AdsResponse(normalized, { includeAllSlots: true }) });
+  }
+);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/ads/style2:
+ *   patch:
+ *     summary: Update style2 slot-based ads config (TENANT_ADMIN scoped or SUPER_ADMIN)
+ *     description: Deep-merges slots; supports sending only a few slot keys.
+ *     tags: [Tenant Ads]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ads:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Updated
+ */
+router.patch(
+  '/tenants/:tenantId/ads/style2',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const incoming = (body && typeof body === 'object' && (body as any).ads) ? (body as any).ads : body;
+
+    const { row, adsStyle2, data } = await loadTenantAdsStyle2(tenantId);
+    const prev = normalizeStyle2AdsConfig(adsStyle2);
+    const nextPatch = normalizeStyle2AdsConfig(incoming);
+
+    const merged = {
+      ...prev,
+      ...nextPatch,
+      googleAdsense: (nextPatch as any).googleAdsense ?? (prev as any).googleAdsense,
+      slots: { ...(prev.slots || {}), ...(nextPatch.slots || {}) }
+    };
+
+    const normalized = normalizeStyle2AdsConfig(merged);
+    await saveTenantAdsStyle2(tenantId, row, normalized, data);
+    res.json({ ok: true, ads: buildEffectiveStyle2AdsResponse(normalized, { includeAllSlots: true }) });
   }
 );
 
