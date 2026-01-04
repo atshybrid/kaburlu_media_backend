@@ -2,6 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { getTenantDisplayName, getTenantNativeName, getTenantPrimaryLanguageInfo } from '../lib/tenantLocalization';
 
+function formatPrismaError(e: any): string {
+  const code = e?.code ? String(e.code) : '';
+  const meta = e?.meta ? JSON.stringify(e.meta) : '';
+  const message = e?.message ? String(e.message) : '';
+  const parts = [code ? `code=${code}` : '', meta ? `meta=${meta}` : '', message ? `message=${message}` : ''].filter(Boolean);
+  return parts.join(' ');
+}
+
 const prisma = new PrismaClient();
 // any-cast to reduce transient TS issues when schema just changed
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,7 +54,12 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
       cache.set(host, entry);
       return entry;
     } catch (e) {
-      console.error('fetchDomain error for host', host, e);
+      const prismaInfo = formatPrismaError(e as any);
+      if (prismaInfo) {
+        console.error('fetchDomain error for host', host, prismaInfo);
+      } else {
+        console.error('fetchDomain error for host', host, e);
+      }
       return null;
     } finally {
       pending.delete(host);
