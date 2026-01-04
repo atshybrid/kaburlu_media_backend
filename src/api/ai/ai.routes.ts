@@ -187,7 +187,7 @@ function normalizeStringArray(v: any): string[] {
  * /ai/headlines:
  *   post:
  *     summary: Rewrite Telugu bullet titles into short headline rewrites (<=60 chars)
- *     description: Uses Prompt table key TELUGU_HEADLINE_EDITOR (fallback to default) and returns strict JSON ({main_title, bullets[]}) with per-bullet rewrites.
+ *     description: Uses Prompt table key TELUGU_HEADLINE_EDITOR (fallback to default) and returns strict JSON with 3-5 alternate main titles plus per-bullet rewrites.
  *     tags: [AI]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
@@ -199,7 +199,8 @@ function normalizeStringArray(v: any): string[] {
  *             properties:
  *               mainTitle: { type: string, description: 'Main news title' }
  *               bullets: { type: array, items: { type: string }, description: 'Bullet titles related to the same news' }
- *               maxRewrites: { type: number, minimum: 1, maximum: 5, default: 5 }
+ *               maxTitles: { type: number, minimum: 3, maximum: 5, default: 5, description: 'How many alternate main titles to generate (3-5)' }
+ *               maxRewrites: { type: number, minimum: 1, maximum: 5, default: 5, description: 'Max rewrites per bullet (1-5)' }
  *           examples:
  *             sample:
  *               value:
@@ -207,10 +208,32 @@ function normalizeStringArray(v: any): string[] {
  *                 bullets:
  *                   - "కాంగ్రెస్, బీఆర్‌ఎస్, ఎంఐఎం కలిసి కార్పొరేషన్‌పై పట్టు"
  *                   - "మున్సిపల్ పాలనలో రాజకీయ ఒప్పందాలు"
+ *                 maxTitles: 5
  *                 maxRewrites: 5
  *     responses:
  *       200:
  *         description: Rewrites JSON
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 titles:
+ *                   type: array
+ *                   minItems: 3
+ *                   maxItems: 5
+ *                   items: { type: string }
+ *                   description: '3-5 alternate main title rewrites'
+ *                 main_title:
+ *                   type: string
+ *                   description: 'Backward-compatible single title (first best)'
+ *                 bullets:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       original: { type: string }
+ *                       rewrites: { type: array, items: { type: string }, maxItems: 5 }
  *       400:
  *         description: Bad input
  */
@@ -222,6 +245,8 @@ router.post('/headlines', passport.authenticate('jwt', { session: false }), asyn
     if (!bullets.length) return res.status(400).json({ success: false, error: 'bullets is required (array of strings)' });
 
     const maxRewrites = clampInt(req.body?.maxRewrites ?? req.body?.maxPoints ?? req.body?.maxTitles, 1, 5, 5);
+    // Titles should be 3 to 5 (default 5)
+    const maxTitles = clampInt(req.body?.maxTitles ?? req.body?.titleCount ?? req.body?.titlesCount, 3, 5, 5);
 
     const tpl = await getPrompt('TELUGU_HEADLINE_EDITOR');
     const bulletTitles = bullets.map(b => `- ${b}`).join('\n');
@@ -229,6 +254,7 @@ router.post('/headlines', passport.authenticate('jwt', { session: false }), asyn
 
     // Tighten runtime knobs without changing the stored prompt.
     prompt += `\n\nRuntime limits:\n- For EACH bullet point, output MAXIMUM ${maxRewrites} rewrites.`;
+    prompt += `\n- For the MAIN title, output EXACTLY ${maxTitles} DIFFERENT title rewrites.`;
     prompt += `\n- Ensure every rewrite is <= 60 characters.`;
     prompt += `\n- Return ONLY valid JSON (no extra text).`;
 
@@ -256,7 +282,13 @@ router.post('/headlines', passport.authenticate('jwt', { session: false }), asyn
       return res.status(500).json({ success: false, error: 'AI returned invalid JSON', text });
     }
 
-    const main_title = clamp60((obj as any).main_title ?? (obj as any).mainTitle ?? mainTitle);
+    const titlesRaw = normalizeStringArray((obj as any).titles ?? (obj as any).main_titles ?? (obj as any).headlines);
+    const titles = titlesRaw
+      .map(t => clamp60(t))
+      .filter(Boolean)
+      .slice(0, maxTitles);
+
+    const main_title = clamp60((obj as any).main_title ?? (obj as any).mainTitle ?? titles[0] ?? mainTitle);
     const outBullets: Array<{ original: string; rewrites: string[] }> = [];
 
     const aiBullets = Array.isArray((obj as any).bullets) ? (obj as any).bullets : [];
@@ -278,6 +310,8 @@ router.post('/headlines', passport.authenticate('jwt', { session: false }), asyn
 
     // Return the simple, automation-safe JSON shape
     return res.json({
+      // Keep backward-compat; but prefer `titles` on clients.
+      titles: (titles.length ? titles : [main_title || clamp60(mainTitle)]).slice(0, maxTitles),
       main_title: main_title || clamp60(mainTitle),
       bullets: outBullets
     });

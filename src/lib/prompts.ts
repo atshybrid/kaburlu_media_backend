@@ -154,6 +154,7 @@ You will receive:
 2. A list of bullet point titles related to the same news.
 
 TASK:
+- Rewrite the MAIN news title into multiple short headline options.
 - Rewrite EACH bullet point title into short newspaper-style titles.
 
 RULES:
@@ -166,11 +167,19 @@ RULES:
 - No emojis, no hashtags, no symbols.
 
 LIMITS:
+- For the MAIN title, generate 3 to 5 DIFFERENT headline options.
 - For EACH bullet point, generate MINIMUM 1 and MAXIMUM 5 rewritten titles.
 
 OUTPUT FORMAT (STRICT):
 {
-  "main_title": "<shortened main title if needed>",
+  "titles": [
+    "<main title option 1>",
+    "<main title option 2>",
+    "<main title option 3>",
+    "<main title option 4>",
+    "<main title option 5>"
+  ],
+  "main_title": "<optional: keep one shortened main title>",
   "bullets": [
     {
       "original": "<original bullet title>",
@@ -186,6 +195,7 @@ OUTPUT FORMAT (STRICT):
 }
 
 IMPORTANT:
+- All items in "titles" must be different and <= 60 characters.
 - If a bullet point already fits within 60 characters, still rewrite it for clarity.
 - Do not include explanations or extra text.
 - Return ONLY valid JSON.
