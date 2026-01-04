@@ -5,6 +5,8 @@ import { createCategory, getCategories, updateCategory, deleteCategory, translat
 import { getCategoriesController } from './categories.controller';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 import { validationMiddleware } from '../middlewares/validation.middleware';
+import prisma from '../../lib/prisma';
+import { requireReporterOrAdmin } from '../middlewares/authz';
 
 const router = Router();
 
@@ -166,6 +168,159 @@ router.post('/', passport.authenticate('jwt', { session: false }), requireSuperA
  *                 $ref: '#/components/schemas/Category'
  */
 router.get('/', getCategoriesController);
+
+/**
+ * @swagger
+ * /categories/tenant:
+ *   get:
+ *     summary: List domain-linked categories for the current tenant (for posting)
+ *     description: |
+ *       Returns ONLY categories allocated to the tenant's domains (DomainCategory mappings).
+ *       Names are returned in both the tenant's primary language (from TenantEntity.language) and English.
+ *       Works for SUPER_ADMIN (must provide tenantId or domainId) and tenant-scoped roles (REPORTER/TENANT_ADMIN/etc).
+ *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: domainId
+ *         schema: { type: string }
+ *         description: Optional domain filter (must belong to tenant). If omitted, uses union across all tenant domains.
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Required for SUPER_ADMIN when domainId is not provided.
+ *     responses:
+ *       200:
+ *         description: Category list with multilingual names.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 tenantId: { type: string }
+ *                 tenantLanguageCode: { type: string, nullable: true }
+ *                 domainId: { type: string, nullable: true }
+ *                 categories:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       slug: { type: string }
+ *                       parentId: { type: string, nullable: true }
+ *                       iconUrl: { type: string, nullable: true }
+ *                       name: { type: string }
+ *                       nameDefault: { type: string }
+ *                       names:
+ *                         type: object
+ *                         additionalProperties: { type: string, nullable: true }
+ *       400: { description: Bad input }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Tenant or domain not found }
+ */
+router.get('/tenant', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, async (req, res) => {
+  try {
+    const user: any = (req as any).user;
+    const roleName = String(user?.role?.name || '');
+
+    const domainFilterId = req.query.domainId ? String(req.query.domainId) : undefined;
+    const tenantIdFromQuery = req.query.tenantId ? String(req.query.tenantId) : undefined;
+
+    // Resolve tenant scope
+    let tenantId: string | null = null;
+    if (roleName === 'SUPER_ADMIN') {
+      if (domainFilterId) {
+        const dom = await (prisma as any).domain.findUnique({ where: { id: domainFilterId }, select: { tenantId: true } }).catch(() => null);
+        if (!dom) return res.status(404).json({ error: 'Domain not found' });
+        tenantId = String(dom.tenantId);
+      } else if (tenantIdFromQuery) {
+        tenantId = tenantIdFromQuery;
+      } else {
+        return res.status(400).json({ error: 'tenantId or domainId required for SUPER_ADMIN' });
+      }
+    } else {
+      // Tenant-scoped roles: derive tenantId from reporter profile
+      const reporter = await (prisma as any).reporter.findFirst({ where: { userId: user?.id }, select: { tenantId: true } }).catch(() => null);
+      if (!reporter?.tenantId) return res.status(403).json({ error: 'Tenant scope missing (reporter profile linkage not found)' });
+      tenantId = String(reporter.tenantId);
+    }
+
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { id: true } }).catch(() => null);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    // Resolve tenant primary language (for name selection)
+    const entity = await (prisma as any).tenantEntity.findUnique({ where: { tenantId }, include: { language: true } }).catch(() => null);
+    const tenantLanguageCode: string | null = entity?.language?.code ? String(entity.language.code) : null;
+    const englishCode = 'en';
+
+    // Tenant domains; optionally restrict to one domain
+    const domains = await (prisma as any).domain.findMany({ where: { tenantId }, select: { id: true } }).catch(() => []);
+    if (!domains.length) {
+      return res.json({ tenantId, tenantLanguageCode, domainId: domainFilterId || null, categories: [] });
+    }
+    let targetDomainIds: string[];
+    if (domainFilterId) {
+      const ok = domains.some((d: any) => d.id === domainFilterId);
+      if (!ok) return res.status(404).json({ error: 'Domain not found for tenant' });
+      targetDomainIds = [domainFilterId];
+    } else {
+      targetDomainIds = domains.map((d: any) => d.id);
+    }
+
+    // Fetch domain-linked categories
+    const domainCats = await (prisma as any).domainCategory.findMany({
+      where: { domainId: { in: targetDomainIds } },
+      include: { category: true }
+    });
+    const catMap = new Map<string, any>();
+    for (const dc of domainCats || []) {
+      if (dc?.category && !dc.category.isDeleted) catMap.set(dc.categoryId, dc.category);
+    }
+    const categories = Array.from(catMap.values());
+    if (!categories.length) {
+      return res.json({ tenantId, tenantLanguageCode, domainId: domainFilterId || null, categories: [] });
+    }
+
+    // Fetch translations for tenant language and English
+    const ids = categories.map((c: any) => c.id);
+    const langs = Array.from(new Set([tenantLanguageCode, englishCode].filter(Boolean))) as string[];
+    const translations = langs.length
+      ? await (prisma as any).categoryTranslation.findMany({ where: { categoryId: { in: ids }, language: { in: langs } } }).catch(() => [])
+      : [];
+    const tMap = new Map<string, string>();
+    for (const t of translations) {
+      const key = `${t.categoryId}::${t.language}`;
+      tMap.set(key, String(t.name));
+    }
+
+    const shaped = categories
+      .map((c: any) => {
+        const nameEn = tMap.get(`${c.id}::${englishCode}`) || c.name;
+        const nameTenant = tenantLanguageCode ? (tMap.get(`${c.id}::${tenantLanguageCode}`) || null) : null;
+        const preferredName = nameTenant || c.name;
+        return {
+          id: c.id,
+          slug: c.slug,
+          parentId: c.parentId || null,
+          iconUrl: c.iconUrl || null,
+          name: preferredName,
+          nameDefault: c.name,
+          names: {
+            ...(tenantLanguageCode ? { [tenantLanguageCode]: nameTenant } : {}),
+            [englishCode]: nameEn,
+          }
+        };
+      })
+      .sort((a: any, b: any) => String(a.slug).localeCompare(String(b.slug)));
+
+    return res.json({ tenantId, tenantLanguageCode, domainId: domainFilterId || null, categories: shaped });
+  } catch (e: any) {
+    console.error('categories/tenant error', e);
+    return res.status(500).json({ error: 'Failed to list tenant categories' });
+  }
+});
 
 /**
  * @swagger
