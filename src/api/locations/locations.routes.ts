@@ -3,9 +3,71 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as locationService from './locations.service';
 import { CreateLocationDto, UpdateLocationDto } from './locations.dto';
+import { PrismaClient } from '@prisma/client';
+import passport from 'passport';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
+const prisma = new PrismaClient();
+
+function normalizeLangCode(raw?: string | null): string {
+    const v = raw ? String(raw).trim().toLowerCase() : '';
+    if (v === 'te' || v === 'telugu') return 'te';
+    if (v === 'hi' || v === 'hindi') return 'hi';
+    if (v === 'en' || v === 'english') return 'en';
+    return '';
+}
+
+async function getUserLanguageCodeFromAuth(req: any): Promise<string> {
+    // Optional auth: if Authorization token exists, try passport JWT.
+    const hasAuth = !!req.headers?.authorization;
+    if (!hasAuth) return '';
+
+    const user = await new Promise<any>((resolve) => {
+        (passport as any).authenticate('jwt', { session: false }, (_err: any, u: any) => resolve(u || null))(req, null, () => resolve(null));
+    });
+    const languageId = user?.languageId ? String(user.languageId) : '';
+    if (!languageId) return '';
+    const langRow = await (prisma as any).language.findUnique({ where: { id: languageId }, select: { code: true } }).catch(() => null);
+    return normalizeLangCode(langRow?.code || '');
+}
+
+async function loadTranslationsByIds(params: {
+    lang: string;
+    stateIds: string[];
+    districtIds: string[];
+    mandalIds: string[];
+    villageIds: string[];
+}): Promise<{ states: Record<string, string>; districts: Record<string, string>; mandals: Record<string, string>; villages: Record<string, string> }> {
+    const lang = normalizeLangCode(params.lang);
+    if (!lang || lang === 'en') return { states: {}, districts: {}, mandals: {}, villages: {} };
+
+    const [st, ds, md, vg] = await Promise.all([
+        params.stateIds.length
+            ? (prisma as any).stateTranslation.findMany({ where: { language: lang, stateId: { in: params.stateIds } }, select: { stateId: true, name: true } })
+            : Promise.resolve([]),
+        params.districtIds.length
+            ? (prisma as any).districtTranslation.findMany({ where: { language: lang, districtId: { in: params.districtIds } }, select: { districtId: true, name: true } })
+            : Promise.resolve([]),
+        params.mandalIds.length
+            ? (prisma as any).mandalTranslation.findMany({ where: { language: lang, mandalId: { in: params.mandalIds } }, select: { mandalId: true, name: true } })
+            : Promise.resolve([]),
+        params.villageIds.length
+            ? (prisma as any).villageTranslation.findMany({ where: { language: lang, villageId: { in: params.villageIds } }, select: { villageId: true, name: true } })
+            : Promise.resolve([]),
+    ]);
+
+    const states: Record<string, string> = {};
+    const districts: Record<string, string> = {};
+    const mandals: Record<string, string> = {};
+    const villages: Record<string, string> = {};
+    for (const r of st || []) states[String(r.stateId)] = String(r.name);
+    for (const r of ds || []) districts[String(r.districtId)] = String(r.name);
+    for (const r of md || []) mandals[String(r.mandalId)] = String(r.name);
+    for (const r of vg || []) villages[String(r.villageId)] = String(r.name);
+
+    return { states, districts, mandals, villages };
+}
 
 /**
  * @swagger
@@ -132,6 +194,8 @@ router.get('/search', async (req, res) => {
  *       Searches by name across State, District, Mandal and Village.
  *
  *       Each result includes the full hierarchy (state → district → mandal → village) with both `id` and `name`.
+ *       If the caller is authenticated and their profile language is Telugu/Hindi, responses also include a `names` object
+ *       for each hierarchy node: `{ en: string, te?: string|null, hi?: string|null }`.
  *       This is intended for UI selection in public reporter join flows.
  *
  *       Notes:
@@ -161,14 +225,29 @@ router.get('/search', async (req, res) => {
  *               villageMatch:
  *                 value:
  *                   q: "Bodhan"
+ *                   lang: "en"
+ *                   tenant: null
  *                   count: 1
  *                   items:
  *                     - type: "VILLAGE"
  *                       match: { id: "vlg_1", name: "Bodhan" }
- *                       state: { id: "st_1", name: "Telangana" }
- *                       district: { id: "dst_1", name: "Nizamabad" }
- *                       mandal: { id: "mdl_1", name: "Bodhan" }
- *                       village: { id: "vlg_1", name: "Bodhan" }
+ *                       state: { id: "st_1", name: "Telangana", names: { en: "Telangana", te: null } }
+ *                       district: { id: "dst_1", name: "Nizamabad", names: { en: "Nizamabad", te: null } }
+ *                       mandal: { id: "mdl_1", name: "Bodhan", names: { en: "Bodhan", te: null } }
+ *                       village: { id: "vlg_1", name: "Bodhan", names: { en: "Bodhan", te: null } }
+ *               teluguAuth:
+ *                 value:
+ *                   q: "ఆదిల"
+ *                   lang: "te"
+ *                   tenant: { id: "t_1", name: "DAXIN TIMES", nativeName: "డాక్సిన్ టైమ్స్", languageCode: "te" }
+ *                   count: 1
+ *                   items:
+ *                     - type: "DISTRICT"
+ *                       match: { id: "dst_1", name: "Adilabad", names: { en: "Adilabad", te: "ఆదిలాబాద్" } }
+ *                       state: { id: "st_1", name: "Telangana", names: { en: "Telangana", te: "తెలంగాణ" } }
+ *                       district: { id: "dst_1", name: "Adilabad", names: { en: "Adilabad", te: "ఆదిలాబాద్" } }
+ *                       mandal: null
+ *                       village: null
  *       404:
  *         description: No matching area found
  *         content:
@@ -194,12 +273,87 @@ router.get('/search-combined', async (req, res) => {
             includeVillage: false,
         });
 
+        const userLang = await getUserLanguageCodeFromAuth(req);
+        const lang = userLang && (userLang === 'te' || userLang === 'hi') ? userLang : '';
+
+        // Collect ids for translation lookup (only when lang is te/hi)
+        const stateIds = new Set<string>();
+        const districtIds = new Set<string>();
+        const mandalIds = new Set<string>();
+        const villageIds = new Set<string>();
+        for (const it of rawItems) {
+            if (it.stateId) stateIds.add(String(it.stateId));
+            if (it.districtId) districtIds.add(String(it.districtId));
+            if (it.mandalId) mandalIds.add(String(it.mandalId));
+            if (it.villageId) villageIds.add(String(it.villageId));
+        }
+
+        const translations = await loadTranslationsByIds({
+            lang,
+            stateIds: Array.from(stateIds),
+            districtIds: Array.from(districtIds),
+            mandalIds: Array.from(mandalIds),
+            villageIds: Array.from(villageIds),
+        });
+
+        const tenantCtxId = tenantId || (res.locals as any)?.tenant?.id || '';
+        const tenantCtx = tenantCtxId
+            ? await (prisma as any).tenant.findUnique({
+                where: { id: tenantCtxId },
+                include: { entity: { include: { language: true } } },
+            }).catch(() => null)
+            : null;
+        const tenantOut = tenantCtx
+            ? {
+                id: tenantCtx.id,
+                name: tenantCtx.name,
+                nativeName: tenantCtx?.entity?.nativeName || null,
+                languageCode: tenantCtx?.entity?.language?.code || null,
+            }
+            : null;
+
         const items = rawItems.map((it: any) => {
             const type = String(it.type || '').toUpperCase();
-            const state = it.stateId ? { id: it.stateId, name: it.stateName } : null;
-            const district = it.districtId ? { id: it.districtId, name: it.districtName } : null;
-            const mandal = it.mandalId ? { id: it.mandalId, name: it.mandalName } : null;
-            const village = it.villageId ? { id: it.villageId, name: it.villageName } : null;
+            const state = it.stateId
+                ? {
+                    id: it.stateId,
+                    name: it.stateName,
+                    names: {
+                        en: it.stateName,
+                        ...(lang ? { [lang]: translations.states[String(it.stateId)] || null } : {}),
+                    },
+                }
+                : null;
+            const district = it.districtId
+                ? {
+                    id: it.districtId,
+                    name: it.districtName,
+                    names: {
+                        en: it.districtName,
+                        ...(lang ? { [lang]: translations.districts[String(it.districtId)] || null } : {}),
+                    },
+                }
+                : null;
+            const mandal = it.mandalId
+                ? {
+                    id: it.mandalId,
+                    name: it.mandalName,
+                    names: {
+                        en: it.mandalName,
+                        ...(lang ? { [lang]: translations.mandals[String(it.mandalId)] || null } : {}),
+                    },
+                }
+                : null;
+            const village = it.villageId
+                ? {
+                    id: it.villageId,
+                    name: it.villageName,
+                    names: {
+                        en: it.villageName,
+                        ...(lang ? { [lang]: translations.villages[String(it.villageId)] || null } : {}),
+                    },
+                }
+                : null;
 
             // "match" points to the entity that matched (state/district/mandal/village)
             let match: any = { id: it.id ?? null, name: it.name ?? null };
@@ -222,7 +376,7 @@ router.get('/search-combined', async (req, res) => {
             return res.status(404).json({ error: 'Area Not adding contact admin' });
         }
 
-        return res.json({ q, count: items.length, items });
+        return res.json({ q, count: items.length, lang: lang || 'en', tenant: tenantOut, items });
     } catch (e: any) {
         console.error('GET /locations/search-combined error', e);
         return res.status(500).json({ error: 'Failed to search locations' });

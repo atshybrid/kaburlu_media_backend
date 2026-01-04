@@ -780,6 +780,7 @@ model TenantEntity {
   // PRGI core fields
   prgiNumber            String      @unique
   registrationTitle     String?
+  nativeName            String?
   periodicity           Periodicity @default(DAILY)
   registrationDate      DateTime?
   // Language

@@ -195,6 +195,23 @@ router.get('/', getCategoriesController);
  *         description: Category list with multilingual names.
  *         content:
  *           application/json:
+ *             examples:
+ *               sample:
+ *                 summary: Telugu tenant (te) with English fallback
+ *                 value:
+ *                   tenantId: "cmtenant123"
+ *                   tenantLanguageCode: "te"
+ *                   domainId: null
+ *                   categories:
+ *                     - id: "cmcat001"
+ *                       slug: "politics"
+ *                       parentId: null
+ *                       iconUrl: "https://cdn.example.com/icons/politics.png"
+ *                       name: "రాజకీయాలు"
+ *                       nameDefault: "Politics"
+ *                       names:
+ *                         te: "రాజకీయాలు"
+ *                         en: "Politics"
  *             schema:
  *               type: object
  *               properties:

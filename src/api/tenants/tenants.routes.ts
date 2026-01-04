@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import * as bcrypt from 'bcrypt';
 import { backfillTenantNameTranslationForTenant, backfillTenantNameTranslationsAllTenants } from './tenantNameTranslations.service';
+import { aiGenerateText } from '../../lib/aiProvider';
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 /**
@@ -775,6 +776,40 @@ async function resolveByIdOrName(model: any, value?: string) {
   return byName?.id || null;
 }
 
+function looksNonLatin(text: string): boolean {
+  // If string contains any non-ASCII, treat as already native.
+  return /[^\u0000-\u007f]/.test(text);
+}
+
+async function autoGenerateTenantNativeName(params: {
+  tenantName: string;
+  languageCode?: string | null;
+}): Promise<string> {
+  const tenantName = String(params.tenantName || '').trim();
+  const languageCode = params.languageCode ? String(params.languageCode).trim().toLowerCase() : '';
+  if (!tenantName) return '';
+  if (!languageCode || languageCode === 'en') return '';
+  if (looksNonLatin(tenantName)) return tenantName;
+
+  // Best-effort transliteration using the configured AI provider.
+  // This is usually more accurate than translation for names.
+  const prompt = [
+    'You are a strict transliteration engine.',
+    'Task: transliterate the input name into the target language script without translating meaning.',
+    'Rules:',
+    '- Output ONLY the transliterated text, no quotes, no JSON, no explanation.',
+    '- Preserve spacing and punctuation as reasonable.',
+    `Target language code: ${languageCode}`,
+    `Input: ${tenantName}`,
+  ].join('\n');
+  const { text } = await aiGenerateText({ prompt, purpose: 'translation' });
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return '';
+  // If it still looks Latin, avoid setting it.
+  if (!looksNonLatin(cleaned)) return '';
+  return cleaned;
+}
+
 /**
  * @swagger
  * /tenants/{tenantId}/entity:
@@ -795,11 +830,21 @@ async function resolveByIdOrName(model: any, value?: string) {
  *       required: true
  *       content:
  *         application/json:
+ *           examples:
+ *             withNativeName:
+ *               value:
+ *                 prgiNumber: "PRGI-TS-2025-01987"
+ *                 registrationTitle: "Prashnaayudham"
+ *                 nativeName: "ప్రశ్నాయుధం"
+ *                 periodicity: "DAILY"
+ *                 registrationDate: "27/05/2025"
+ *                 languageId: "lang_te_id"
  *           schema:
  *             type: object
  *             properties:
  *               prgiNumber: { type: string, example: "PRGI-TS-2025-01987" }
  *               registrationTitle: { type: string, example: "Prashnaayudham" }
+ *               nativeName: { type: string, nullable: true, description: "Tenant name in native script (optional; auto-generated if omitted)", example: "ప్రశ్నాయుధం" }
  *               periodicity: { type: string, enum: [DAILY, WEEKLY, FORTNIGHTLY, MONTHLY], example: DAILY }
  *               registrationDate: { type: string, example: "27/05/2025" }
  *               languageId: { type: string, description: "Language row id" }
@@ -837,10 +882,20 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
     const printingMandalId = body.printingMandalId || null;
     const registrationDate = parseDateDDMMYYYY(body.registrationDate || body.registration_date);
 
+    // Optional: allow explicitly setting nativeName; otherwise auto-generate.
+    const nativeNameInput = typeof body.nativeName === 'string' ? body.nativeName.trim() : '';
+    const langRow = languageId
+      ? await (prisma as any).language.findUnique({ where: { id: String(languageId) } }).catch(() => null)
+      : null;
+    const autoNativeName = !nativeNameInput
+      ? await autoGenerateTenantNativeName({ tenantName: tenant.name, languageCode: langRow?.code || null })
+      : '';
+
     const data = {
       tenantId,
       prgiNumber: String(prgiNumber),
       registrationTitle: body.registrationTitle || body.title || null,
+      nativeName: (nativeNameInput || autoNativeName || null) as any,
       periodicity: (body.periodicity || 'DAILY').toUpperCase(),
       registrationDate: registrationDate || null,
       languageId,
@@ -902,6 +957,14 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
  *       required: true
  *       content:
  *         application/json:
+ *           examples:
+ *             simpleWithNativeName:
+ *               value:
+ *                 languageId: "lang_te_id"
+ *                 nativeName: "డాక్సిన్ టైమ్స్"
+ *                 periodicity: "DAILY"
+ *                 registrationDate: "04/09/2025"
+ *                 publisherName: "Some Publisher"
  *           schema:
  *             type: object
  *             properties:
@@ -910,6 +973,7 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
  *               adminMobile: { type: string, description: "Digits only (creates TENANT_ADMIN)" }
  *               publisherMobile: { type: string, description: "Alias for adminMobile (backwards compatible)" }
  *               publisherName: { type: string, description: "Stored as publisherName in entity; optional" }
+ *               nativeName: { type: string, nullable: true, description: "Tenant name in native script (optional; auto-generated if omitted)", example: "డాక్సిన్ టైమ్స్" }
  *               editorName: { type: string }
  *               printingPressName: { type: string }
  *               printingCityName: { type: string }
@@ -933,10 +997,16 @@ router.post('/:tenantId/entity/simple', auth, requireSuperOrTenantAdminScoped, a
     const lang = await (prisma as any).language.findUnique({ where: { id: String(languageId) } }).catch(() => null);
     if (!lang) return res.status(400).json({ error: `Invalid languageId: '${languageId}'` });
 
+    const nativeNameInput = typeof body.nativeName === 'string' ? body.nativeName.trim() : '';
+    const autoNativeName = !nativeNameInput
+      ? await autoGenerateTenantNativeName({ tenantName: tenant.name, languageCode: lang.code })
+      : '';
+
     const data = {
       tenantId,
       prgiNumber: tenant.prgiNumber,
       registrationTitle: tenant.name,
+      nativeName: (nativeNameInput || autoNativeName || null) as any,
       periodicity,
       registrationDate: registrationDate || null,
       languageId,
@@ -1092,10 +1162,16 @@ router.put('/:tenantId/entity/business', auth, requireSuperOrTenantAdminScoped, 
  *       required: true
  *       content:
  *         application/json:
+ *           examples:
+ *             updateNativeName:
+ *               value:
+ *                 nativeName: "ప్రశ్నాయుధం"
+ *                 editorName: "KATYADA BAPU RAO"
  *           schema:
  *             type: object
  *             properties:
  *               registrationTitle: { type: string, example: "Prashnaayudham" }
+ *               nativeName: { type: string, nullable: true, description: "Tenant name in native script (optional)" }
  *               periodicity: { type: string, enum: [DAILY, WEEKLY, FORTNIGHTLY, MONTHLY], example: DAILY }
  *               registrationDate: { type: string, example: "27/05/2025" }
  *               languageId: { type: string, description: "Language id" }
@@ -1138,8 +1214,20 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
     const printingMandalId = body.printingMandalId ?? existing.printingMandalId;
     const registrationDate = parseDateDDMMYYYY(body.registrationDate || body.registration_date);
 
+    const nativeNameInput = typeof body.nativeName === 'string' ? body.nativeName.trim() : '';
+    const langRow = languageId
+      ? await (prisma as any).language.findUnique({ where: { id: String(languageId) } }).catch(() => null)
+      : null;
+    const tenantRow = !nativeNameInput && !existing.nativeName
+      ? await (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { name: true } }).catch(() => null)
+      : null;
+    const autoNativeName = !nativeNameInput && !existing.nativeName
+      ? await autoGenerateTenantNativeName({ tenantName: tenantRow?.name || '', languageCode: langRow?.code || null })
+      : '';
+
     const updateData: any = {
       registrationTitle: body.registrationTitle ?? body.title ?? existing.registrationTitle,
+      nativeName: (nativeNameInput || existing.nativeName || autoNativeName || null) as any,
       periodicity: (body.periodicity || existing.periodicity || 'DAILY').toUpperCase(),
       registrationDate: registrationDate ?? existing.registrationDate,
       languageId: languageId ?? existing.languageId,
@@ -1178,6 +1266,68 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
     }
     console.error('entity update error', e);
     res.status(500).json({ error: 'Failed to update entity details' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/entity/native-name:
+ *   patch:
+ *     summary: Update tenant nativeName (manual correction)
+ *     description: |
+ *       Sets `TenantEntity.nativeName` for the tenant. Intended to correct auto-generated transliteration.
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nativeName]
+ *             properties:
+ *               nativeName:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Native-script tenant name; set null/empty to clear
+ *                 example: "ప్రశ్నాయుధం"
+ *     responses:
+ *       200: { description: Updated TenantEntity }
+ *       404: { description: Not found }
+ */
+router.patch('/:tenantId/entity/native-name', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const existing = await (prisma as any).tenantEntity.findUnique({ where: { tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Entity details not found for tenant' });
+
+    const raw = (req.body || {}).nativeName;
+    const val = raw === null ? null : typeof raw === 'string' ? raw.trim() : undefined;
+    if (val === undefined) return res.status(400).json({ error: 'nativeName is required (string or null)' });
+    if (typeof val === 'string' && val.length > 200) return res.status(400).json({ error: 'nativeName too long (max 200 chars)' });
+
+    const row = await (prisma as any).tenantEntity.update({
+      where: { tenantId },
+      data: { nativeName: val ? val : null },
+      include: {
+        language: true,
+        publicationCountry: true,
+        publicationState: true,
+        publicationDistrict: true,
+        publicationMandal: true,
+        printingDistrict: true,
+        printingMandal: true,
+      }
+    });
+    return res.json(row);
+  } catch (e: any) {
+    console.error('entity nativeName patch error', e);
+    return res.status(500).json({ error: 'Failed to update nativeName' });
   }
 });
 

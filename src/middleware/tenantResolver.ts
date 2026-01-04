@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { getTenantDisplayName, getTenantPrimaryLanguageInfo } from '../lib/tenantLocalization';
+import { getTenantDisplayName, getTenantNativeName, getTenantPrimaryLanguageInfo } from '../lib/tenantLocalization';
 
 const prisma = new PrismaClient();
 // any-cast to reduce transient TS issues when schema just changed
@@ -40,6 +40,7 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
       if (!result || result.status !== 'ACTIVE') return null;
       const tenant = result.tenant;
       (tenant as any).displayName = getTenantDisplayName(tenant);
+      (tenant as any).nativeName = getTenantNativeName(tenant);
       (tenant as any).primaryLanguage = getTenantPrimaryLanguageInfo(tenant);
       const entry: CachedDomain = { domain: result, tenant, expiresAt: Date.now() + CACHE_TTL_MS };
       cache.set(host, entry);
@@ -79,6 +80,7 @@ export async function tenantResolver(req: Request, res: Response, next: NextFunc
         : await p.tenant.findUnique({ where: { slug: overrideSlug }, include: tenantInclude }).catch(() => null);
       if (tenant) {
         (tenant as any).displayName = getTenantDisplayName(tenant);
+        (tenant as any).nativeName = getTenantNativeName(tenant);
         (tenant as any).primaryLanguage = getTenantPrimaryLanguageInfo(tenant);
         const dom = await p.domain.findFirst({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => null);
         if (dom) {
@@ -92,6 +94,7 @@ export async function tenantResolver(req: Request, res: Response, next: NextFunc
       const dom = await p.domain.findFirst({ where: { status: 'ACTIVE' }, include: { tenant: { include: tenantInclude } }, orderBy: { createdAt: 'desc' } }).catch(() => null);
       if (dom) {
         (dom.tenant as any).displayName = getTenantDisplayName(dom.tenant);
+        (dom.tenant as any).nativeName = getTenantNativeName(dom.tenant);
         (dom.tenant as any).primaryLanguage = getTenantPrimaryLanguageInfo(dom.tenant);
         data = { domain: dom, tenant: dom.tenant, expiresAt: Date.now() + CACHE_TTL_MS };
       }

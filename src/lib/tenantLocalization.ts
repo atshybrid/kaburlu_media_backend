@@ -12,3 +12,8 @@ export function getTenantDisplayName(tenant: any): string {
   const val = tr?.name ? String(tr.name).trim() : '';
   return val || fallback;
 }
+
+export function getTenantNativeName(tenant: any): string {
+  const val = tenant?.entity?.nativeName ? String(tenant.entity.nativeName).trim() : '';
+  return val;
+}

@@ -1173,6 +1173,7 @@ router.get('/entity', async (_req, res) => {
       name: tenant.name,
       slug: tenant.slug,
       displayName: tenantDisplayName,
+      nativeName: (tenant as any).nativeName || null,
       language: (tenant as any).primaryLanguage || null,
     },
     prgiNumber, registrationTitle, periodicity, registrationDate,
