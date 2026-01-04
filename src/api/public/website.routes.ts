@@ -17,7 +17,7 @@ router.use(tenantResolver);
 // Helper: build default navigation config if none set
 function buildDefaultNavigation(tenant: any) {
   return {
-    brand: { logoText: tenant?.name || 'News', tagline: 'Latest updates', locale: 'en-IN' },
+    brand: { logoText: (tenant as any)?.displayName || tenant?.name || 'News', tagline: 'Latest updates', locale: 'en-IN' },
     sticky: { enabled: true, offsetPx: 0 },
     utilityLinks: [],
     primaryLinks: [ { label: 'Home', href: '/' } ],
@@ -197,7 +197,7 @@ router.get('/domain/settings', async (req, res) => {
   if (!out.seo.robots) out.seo.robots = 'max-image-preview:large';
 
   out.branding = { ...(out.branding || {}) };
-  if (!out.branding.siteName) out.branding.siteName = tenant?.name || domain.domain;
+  if (!out.branding.siteName) out.branding.siteName = (tenant as any)?.displayName || tenant?.name || domain.domain;
   if (!out.branding.logoUrl) out.branding.logoUrl = (tenantTheme as any)?.logoUrl || null;
 
   out.contact = { ...(out.contact || {}) };
@@ -1320,7 +1320,13 @@ router.get('/homepage', async (_req, res) => {
 
     return res.json({
       version: '1.0',
-      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        displayName: (tenant as any).displayName || tenant.name,
+        language: (tenant as any).primaryLanguage || null,
+      },
       theme: { key: 'style1' },
       uiTokens,
       sections,
@@ -1599,7 +1605,13 @@ router.get('/homepage', async (_req, res) => {
 
     return res.json({
       version: '2.0',
-      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        displayName: (tenant as any).displayName || tenant.name,
+        language: (tenant as any).primaryLanguage || null,
+      },
       theme: { key: 'style2' },
       sections,
       data

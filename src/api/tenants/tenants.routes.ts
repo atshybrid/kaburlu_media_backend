@@ -4,6 +4,7 @@ import prisma from '../../lib/prisma';
 import crypto from 'crypto';
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import * as bcrypt from 'bcrypt';
+import { backfillTenantNameTranslationForTenant, backfillTenantNameTranslationsAllTenants } from './tenantNameTranslations.service';
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 /**
@@ -159,6 +160,64 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
     }
     console.error('tenant create error', e);
     return res.status(500).json({ error: 'Failed to create tenant' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/backfill-name-translation:
+ *   post:
+ *     summary: Backfill tenant localized name for its primary language (SUPER_ADMIN)
+ *     description: |
+ *       Uses Google Translate (via `GOOGLE_TRANSLATE_API_KEY`) to translate the tenant's base name
+ *       into the tenant's primary language (from TenantEntity.language).
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Backfill result }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Tenant not found }
+ */
+router.post('/:tenantId/backfill-name-translation', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const result = await backfillTenantNameTranslationForTenant(String(tenantId));
+    if (!result.ok && result.error === 'TENANT_NOT_FOUND') return res.status(404).json(result);
+    return res.json(result);
+  } catch (e) {
+    console.error('backfill tenant name translation error', e);
+    return res.status(500).json({ ok: false, error: 'FAILED_TO_BACKFILL_TENANT_NAME_TRANSLATION' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/backfill-name-translations:
+ *   post:
+ *     summary: Backfill tenant localized names for all tenants (SUPER_ADMIN)
+ *     description: |
+ *       Iterates tenants and backfills each tenant's localized name using Google Translate.
+ *       Runs sequentially to reduce the chance of rate-limits.
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Backfill results }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.post('/backfill-name-translations', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const out = await backfillTenantNameTranslationsAllTenants();
+    return res.json(out);
+  } catch (e) {
+    console.error('backfill all tenant name translations error', e);
+    return res.status(500).json({ ok: false, error: 'FAILED_TO_BACKFILL_ALL_TENANT_NAME_TRANSLATIONS' });
   }
 });
 

@@ -1057,7 +1057,8 @@ router.get('/articles/:slug', async (req, res) => {
   const canonicalUrl = `https://${domain.domain}/articles/${encodeURIComponent(detail.slug)}`;
   const imageUrls = [detail?.coverImage?.url].filter(Boolean) as string[];
   const authorNameRaw = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
-  const authorName = (authorNameRaw && String(authorNameRaw).trim()) ? String(authorNameRaw).trim() : `${tenant.name} Reporter`;
+  const tenantDisplayName = (tenant as any)?.displayName || tenant.name;
+  const authorName = (authorNameRaw && String(authorNameRaw).trim()) ? String(authorNameRaw).trim() : `${tenantDisplayName} Reporter`;
   const sectionName = (a as any)?.category?.name || (a as any)?.category?.slug || null;
   const resolvedLanguageCode = (a as any)?.language?.code || detail?.languageCode || undefined;
   const keywords = Array.isArray(detail?.tags) ? detail.tags.filter((t: any) => typeof t === 'string' && t.trim()).slice(0, 15) : undefined;
@@ -1078,7 +1079,7 @@ router.get('/articles/:slug', async (req, res) => {
     datePublished: detail.publishedAt || undefined,
     dateModified: (a as any)?.updatedAt ? new Date((a as any).updatedAt).toISOString() : (detail.publishedAt || undefined),
     authorName: authorName || undefined,
-    publisherName: tenant.name,
+    publisherName: tenantDisplayName,
     publisherLogoUrl: publisherLogoUrl || undefined,
     keywords,
     articleSection: sectionName || undefined,
@@ -1149,6 +1150,7 @@ router.get('/articles/:slug', async (req, res) => {
 router.get('/entity', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
   if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const tenantDisplayName = (tenant as any)?.displayName || tenant.name;
   const row = await p.tenantEntity.findUnique({
     where: { tenantId: tenant.id },
     include: {
@@ -1166,7 +1168,13 @@ router.get('/entity', async (_req, res) => {
   const { prgiNumber, registrationTitle, periodicity, registrationDate, language, ownerName, publisherName, editorName,
     publicationCountry, publicationState, publicationDistrict, publicationMandal, printingPressName, printingDistrict, printingMandal, printingCityName, address } = row;
   res.json({
-    tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+    tenant: {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      displayName: tenantDisplayName,
+      language: (tenant as any).primaryLanguage || null,
+    },
     prgiNumber, registrationTitle, periodicity, registrationDate,
     language,
     ownerName, publisherName, editorName,

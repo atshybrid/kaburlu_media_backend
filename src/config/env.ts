@@ -78,6 +78,7 @@ export const config = {
 
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
+    translateApiKey: process.env.GOOGLE_TRANSLATE_API_KEY,
   },
 
   r2: {
