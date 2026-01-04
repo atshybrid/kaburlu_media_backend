@@ -5,6 +5,7 @@ import * as locationService from './locations.service';
 import { CreateLocationDto, UpdateLocationDto } from './locations.dto';
 import { PrismaClient } from '@prisma/client';
 import passport from 'passport';
+import { requireSuperOrTenantAdmin } from '../middlewares/authz';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -474,6 +475,132 @@ router.get('/villages/:id', async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     return res.json(item);
 });
+
+/**
+ * @swagger
+ * /locations/translations:
+ *   patch:
+ *     summary: Update a location translation (manual correction)
+ *     description: |
+ *       SUPER_ADMIN or TENANT_ADMIN. Upserts a single translation entry for State/District/Mandal/Village.
+ *
+ *       Use this when AI/backfill generated the wrong spelling (e.g., "కమరెడ్డి" should be "కామారెడ్డి").
+ *     tags: [Locations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type, id, language, name]
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [STATE, DISTRICT, MANDAL, VILLAGE]
+ *                 example: DISTRICT
+ *               id:
+ *                 type: string
+ *                 description: The location entity id (stateId/districtId/mandalId/villageId)
+ *                 example: "cmit61g3f000wugtw5tjfzgzn"
+ *               language:
+ *                 type: string
+ *                 description: Language code stored in translation tables (e.g., te, hi)
+ *                 example: te
+ *               name:
+ *                 type: string
+ *                 description: Correct localized name
+ *                 example: "కామారెడ్డి"
+ *           examples:
+ *             fixDistrictTe:
+ *               summary: Fix a district Telugu name
+ *               value:
+ *                 type: DISTRICT
+ *                 id: "cmit61g3f000wugtw5tjfzgzn"
+ *                 language: te
+ *                 name: "కామారెడ్డి"
+ *     responses:
+ *       200:
+ *         description: Updated translation row
+ *         content:
+ *           application/json:
+ *             examples:
+ *               ok:
+ *                 value:
+ *                   ok: true
+ *                   type: DISTRICT
+ *                   id: "cmit61g3f000wugtw5tjfzgzn"
+ *                   language: "te"
+ *                   name: "కామారెడ్డి"
+ *                   translation:
+ *                     id: "cmtr_1"
+ *                     districtId: "cmit61g3f000wugtw5tjfzgzn"
+ *                     language: "te"
+ *                     name: "కామారెడ్డి"
+ *                     createdAt: "2026-01-04T10:00:00.000Z"
+ *                     updatedAt: "2026-01-04T10:05:00.000Z"
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.patch(
+    '/translations',
+    passport.authenticate('jwt', { session: false }),
+    requireSuperOrTenantAdmin,
+    async (req, res) => {
+        try {
+            const rawType = String((req.body as any)?.type || '').trim().toUpperCase();
+            const id = String((req.body as any)?.id || '').trim();
+            const language = String((req.body as any)?.language || '').trim().toLowerCase();
+            const name = String((req.body as any)?.name || '').trim();
+
+            if (!rawType || !['STATE', 'DISTRICT', 'MANDAL', 'VILLAGE'].includes(rawType)) {
+                return res.status(400).json({ error: 'type must be one of STATE, DISTRICT, MANDAL, VILLAGE' });
+            }
+            if (!id) return res.status(400).json({ error: 'id is required' });
+            if (!language) return res.status(400).json({ error: 'language is required (e.g., te, hi)' });
+            if (!name) return res.status(400).json({ error: 'name is required' });
+            if (name.length > 200) return res.status(400).json({ error: 'name too long (max 200 chars)' });
+
+            let translation: any = null;
+            if (rawType === 'STATE') {
+                translation = await (prisma as any).stateTranslation.upsert({
+                    where: { stateId_language: { stateId: id, language } },
+                    update: { name },
+                    create: { stateId: id, language, name },
+                });
+            } else if (rawType === 'DISTRICT') {
+                translation = await (prisma as any).districtTranslation.upsert({
+                    where: { districtId_language: { districtId: id, language } },
+                    update: { name },
+                    create: { districtId: id, language, name },
+                });
+            } else if (rawType === 'MANDAL') {
+                translation = await (prisma as any).mandalTranslation.upsert({
+                    where: { mandalId_language: { mandalId: id, language } },
+                    update: { name },
+                    create: { mandalId: id, language, name },
+                });
+            } else if (rawType === 'VILLAGE') {
+                translation = await (prisma as any).villageTranslation.upsert({
+                    where: { villageId_language: { villageId: id, language } },
+                    update: { name },
+                    create: { villageId: id, language, name },
+                });
+            }
+
+            return res.json({ ok: true, type: rawType, id, language, name, translation });
+        } catch (e: any) {
+            console.error('PATCH /locations/translations error', e);
+            return res.status(500).json({ error: 'Failed to update location translation' });
+        }
+    }
+);
+
 /**
  * @swagger
  * /locations/{id}:
@@ -609,4 +736,5 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+
 export default router;

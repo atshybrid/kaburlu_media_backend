@@ -20,7 +20,38 @@ type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_a
 
 export async function aiGenerateText({ prompt, purpose }: { prompt: string; purpose: AIPurpose }): Promise<{ text: string; usage?: any }> {
   const provider = AI_PROVIDER;
-  if (provider === 'gemini' && GEMINI_KEY) {
+
+  // Provider selection rules:
+  // - For `translation` purpose: prefer Gemini when enabled.
+  // - For other purposes: prefer OpenAI when enabled.
+  // - Fall back to the other provider if the preferred one is unavailable/fails.
+  const preferGeminiForTranslation = purpose === 'translation';
+  const preferGemini = preferGeminiForTranslation
+    ? ((typeof (process as any)?.env?.AI_USE_GEMINI !== 'undefined') ? true : true)
+    : false;
+
+  const geminiAllowed = !!GEMINI_KEY && (preferGeminiForTranslation ? true : true);
+  const openaiAllowed = !!OPENAI_KEY;
+
+  const useGeminiFirst = purpose === 'translation'
+    ? (geminiAllowed && (provider === 'gemini' || true))
+    : (provider === 'gemini' && geminiAllowed);
+
+  // NOTE: AI_USE_GEMINI/AI_USE_OPENAI flags live in aiConfig; we honor them here.
+  // We intentionally keep AI_PROVIDER as a baseline preference, but purpose-specific
+  // routing overrides it when the corresponding AI_USE_* flag is set.
+  const { AI_USE_GEMINI, AI_USE_OPENAI } = require('./aiConfig');
+
+  const shouldTryGeminiFirst = purpose === 'translation'
+    ? (AI_USE_GEMINI && geminiAllowed)
+    : ((provider === 'gemini' && geminiAllowed) || (!AI_USE_OPENAI && geminiAllowed));
+
+  const shouldTryOpenAIFirst = purpose === 'translation'
+    ? (!shouldTryGeminiFirst && AI_USE_OPENAI && openaiAllowed)
+    : (AI_USE_OPENAI && openaiAllowed) || (provider === 'openai' && openaiAllowed);
+
+  const tryGemini = async () => {
+    if (!geminiAllowed) return { text: '' as string, usage: undefined as any };
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -60,8 +91,11 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         console.warn('[AI][gemini] translation call failed:', e?.message || e);
       }
     }
-  }
-  if (OPENAI_KEY) {
+    return { text: '' };
+  };
+
+  const tryOpenAI = async () => {
+    if (!openaiAllowed) return { text: '' as string, usage: undefined as any };
     try {
       // Lazy import to avoid bundling
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -131,7 +165,39 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       const data = e?.response?.data;
       console.warn(`[AI][openai] ${purpose} call failed:`, status || '', data?.error?.message || e?.message || e);
     }
+    return { text: '' };
+  };
+
+  // Execute with preferred order
+  if (shouldTryGeminiFirst) {
+    const r1 = await tryGemini();
+    if (r1?.text) return r1;
+    const r2 = await tryOpenAI();
+    if (r2?.text) return r2;
+    return { text: '' };
   }
+
+  if (shouldTryOpenAIFirst) {
+    const r1 = await tryOpenAI();
+    if (r1?.text) return r1;
+    const r2 = await tryGemini();
+    if (r2?.text) return r2;
+    return { text: '' };
+  }
+
+  // Last resort: honor AI_PROVIDER baseline
+  if (provider === 'gemini') {
+    const r = await tryGemini();
+    if (r?.text) return r;
+    const r2 = await tryOpenAI();
+    if (r2?.text) return r2;
+    return { text: '' };
+  }
+
+  const r = await tryOpenAI();
+  if (r?.text) return r;
+  const r2 = await tryGemini();
+  if (r2?.text) return r2;
   return { text: '' };
 }
 
