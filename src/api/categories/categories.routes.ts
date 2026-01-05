@@ -184,54 +184,72 @@ router.get('/', getCategoriesController);
  *     parameters:
  *       - in: query
  *         name: domainId
- *         schema: { type: string }
+ *         schema:
+ *           type: string
  *         description: Optional domain filter (must belong to tenant). If omitted, uses union across all tenant domains.
  *       - in: query
  *         name: tenantId
- *         schema: { type: string }
+ *         schema:
+ *           type: string
  *         description: Required for SUPER_ADMIN when domainId is not provided.
  *     responses:
  *       200:
  *         description: Category list with multilingual names.
  *         content:
  *           application/json:
- *             examples:
- *               sample:
- *                 summary: Telugu tenant (te) with English fallback
- *                 value:
- *                   tenantId: "cmtenant123"
- *                   tenantLanguageCode: "te"
- *                   domainId: null
- *                   categories:
- *                     - id: "cmcat001"
- *                       slug: "politics"
- *                       parentId: null
- *                       iconUrl: "https://cdn.example.com/icons/politics.png"
- *                       name: "రాజకీయాలు"
- *                       nameDefault: "Politics"
- *                       names:
- *                         te: "రాజకీయాలు"
- *                         en: "Politics"
  *             schema:
  *               type: object
  *               properties:
- *                 tenantId: { type: string }
- *                 tenantLanguageCode: { type: string, nullable: true }
- *                 domainId: { type: string, nullable: true }
+ *                 tenantId:
+ *                   type: string
+ *                 tenantLanguageCode:
+ *                   type: string
+ *                   nullable: true
+ *                 domainId:
+ *                   type: string
+ *                   nullable: true
  *                 categories:
  *                   type: array
  *                   items:
  *                     type: object
  *                     properties:
- *                       id: { type: string }
- *                       slug: { type: string }
- *                       parentId: { type: string, nullable: true }
- *                       iconUrl: { type: string, nullable: true }
- *                       name: { type: string }
- *                       nameDefault: { type: string }
+ *                       id:
+ *                         type: string
+ *                       slug:
+ *                         type: string
+ *                       parentId:
+ *                         type: string
+ *                         nullable: true
+ *                       iconUrl:
+ *                         type: string
+ *                         nullable: true
+ *                       name:
+ *                         type: string
+ *                       nameDefault:
+ *                         type: string
  *                       names:
  *                         type: object
- *                         additionalProperties: { type: string, nullable: true }
+ *                         description: Language-code keyed names (e.g. te, en)
+ *                         additionalProperties:
+ *                           type: string
+ *                           nullable: true
+ *             examples:
+ *               sample:
+ *                 summary: Telugu tenant (te) with English fallback
+ *                 value:
+ *                   tenantId: cmtenant123
+ *                   tenantLanguageCode: te
+ *                   domainId: null
+ *                   categories:
+ *                     - id: cmcat001
+ *                       slug: politics
+ *                       parentId: null
+ *                       iconUrl: https://cdn.example.com/icons/politics.png
+ *                       name: రాజಕೀಯాలు
+ *                       nameDefault: Politics
+ *                       names:
+ *                         te: రాజకీయాలు
+ *                         en: Politics
  *       400: { description: Bad input }
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
@@ -416,8 +434,6 @@ router.delete('/:id', passport.authenticate('jwt', { session: false }), requireS
   }
 });
 
-export default router;
-
 /**
  * @swagger
  * /categories/{id}/retranslate:
@@ -449,3 +465,5 @@ router.post('/:id/retranslate', passport.authenticate('jwt', { session: false })
     res.status(500).json({ error: 'Failed to retranslate category' });
   }
 });
+
+export default router;
