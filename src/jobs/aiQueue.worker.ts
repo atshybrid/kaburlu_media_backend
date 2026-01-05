@@ -3,38 +3,7 @@ import { aiGenerateText } from '../lib/aiProvider';
 import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../lib/sanitize';
 import { buildNewsArticleJsonLd } from '../lib/seo';
 import { generateAiShortNewsFromPrompt } from '../api/shortnews/shortnews.ai';
-import axios from 'axios';
 import { CORE_NEWS_CATEGORIES, resolveOrCreateCategoryIdByName } from '../lib/categoryAuto';
-
-async function notifyCallback(article: any, status: 'DONE' | 'FAILED' | 'SKIPPED', contentJson: any) {
-  const url = String(contentJson?.callbackUrl || '').trim();
-  if (!url) return;
-  if (!/^https?:\/\//i.test(url)) return;
-  try {
-    const secret = String(process.env.AI_CALLBACK_SECRET || '').trim();
-    const headers: Record<string, string> = {};
-    if (secret) headers['X-AI-Callback-Secret'] = secret;
-    await axios.post(
-      url,
-      {
-        type: 'AI_REWRITE_STATUS',
-        status,
-        articleId: article?.id,
-        tenantId: article?.tenantId,
-        aiMode: contentJson?.aiMode,
-        webArticleId: contentJson?.webArticleId || null,
-        shortNewsId: contentJson?.shortNewsId || null,
-        newspaperArticleId: contentJson?.newspaperArticleId || null,
-        externalArticleId: contentJson?.externalArticleId || null,
-        error: contentJson?.aiError || null,
-        finishedAt: contentJson?.aiFinishedAt || null,
-      },
-      { timeout: Number(process.env.AI_CALLBACK_TIMEOUT_MS || 4000), headers }
-    );
-  } catch {
-    // best-effort; never fail job due to callback
-  }
-}
 
 async function updateRawArticleFromBaseArticle(article: any, contentJson: any) {
   const rawId = String(contentJson?.rawArticleId || contentJson?.raw?.rawArticleId || '').trim();
@@ -543,7 +512,6 @@ async function processOne(article: any) {
             const now = nowIsoIST();
             const updatedCJ = { ...contentJson, aiStatus: 'SKIPPED', aiSkipReason: 'TOKEN_LIMIT_EXCEEDED', aiFinishedAt: now, aiMode } as any;
             await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-            await notifyCallback(article, 'SKIPPED', updatedCJ);
             return;
           }
         }
@@ -611,7 +579,6 @@ async function processOne(article: any) {
         if (!out) {
           updatedCJ = { ...updatedCJ, aiStatus: 'FAILED', aiError: 'EMPTY_AI_OUTPUT', aiFinishedAt: nowIsoIST() };
           await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-          await notifyCallback(article, 'FAILED', updatedCJ);
           return;
         }
 
@@ -621,7 +588,6 @@ async function processOne(article: any) {
           if (!parsed) {
             updatedCJ = { ...updatedCJ, aiStatus: 'FAILED', aiError: 'PARSE_TRUE_FAILED', aiFinishedAt: nowIsoIST(), aiRawOutput: out };
             await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-            await notifyCallback(article, 'FAILED', updatedCJ);
             return;
           }
 
@@ -829,7 +795,6 @@ async function processOne(article: any) {
             aiQueue: { web: false, short: false, newspaper: false },
           };
           await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-          await notifyCallback(article, 'DONE', updatedCJ);
           return;
         }
 
@@ -838,7 +803,6 @@ async function processOne(article: any) {
         if (!parsed2) {
           updatedCJ = { ...updatedCJ, aiStatus: 'FAILED', aiError: 'PARSE_FALSE_FAILED', aiFinishedAt: nowIsoIST(), aiRawOutput: out };
           await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-          await notifyCallback(article, 'FAILED', updatedCJ);
           return;
         }
 
@@ -984,7 +948,6 @@ async function processOne(article: any) {
           aiQueue: { web: false, short: false, newspaper: false },
         };
         await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
-        await notifyCallback(article, 'DONE', updatedCJ);
         return;
       }
     } catch (e) {
@@ -1210,7 +1173,6 @@ ${JSON.stringify({ title: article.title, content: article.content, raw: base.raw
   updatedCJ = { ...updatedCJ, aiStatus: 'DONE', aiFinishedAt: now, aiQueue: { ...updatedCJ.aiQueue, web: false, short: false, newspaper: false } };
   await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
   await updateRawArticleFromBaseArticle(article, updatedCJ);
-  await notifyCallback(article, 'DONE', updatedCJ);
 }
 
 async function main(): Promise<number> {
@@ -1235,7 +1197,6 @@ async function main(): Promise<number> {
       const failedCJ = { ...cj, aiStatus: 'FAILED', aiError: String((e as any)?.message || e) };
       await prisma.article.update({ where: { id: art.id }, data: { contentJson: failedCJ } });
       await updateRawArticleFromBaseArticle(art, failedCJ);
-      await notifyCallback(art, 'FAILED', failedCJ);
     }
   }
   // eslint-disable-next-line no-console

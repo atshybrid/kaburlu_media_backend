@@ -37,13 +37,66 @@ const router = Router();
  *                 jwt: <token>
  *                 refreshToken: <refresh>
  *                 expiresIn: 86400
- *                 # Present for TENANT_ADMIN users
+ *                 user:
+ *                   userId: u_123
+ *                   role: REPORTER
+ *                   languageId: lang_1
+ *                 # Present for TENANT_ADMIN and REPORTER users
  *                 tenantId: <tenant_id>
+ *                 tenant:
+ *                   id: <tenant_id>
+ *                   name: <tenant_name>
+ *                   slug: <tenant_slug>
+ *                   prgiStatus: PENDING
+ *                 tenantEntity:
+ *                   id: <tenant_entity_id>
+ *                   prgiNumber: <prgi_number>
+ *                   registrationTitle: <registration_title>
  *                 domainId: <domain_id>
+ *                 domain:
+ *                   id: <domain_id>
+ *                   domain: example.com
+ *                   isPrimary: true
+ *                   status: APPROVED
+ *                   kind: NEWS
+ *                   verifiedAt: 2026-01-01T00:00:00.000Z
  *                 domainSettings:
  *                   id: <domain_settings_id>
  *                   data: {}
  *                   updatedAt: 2026-01-01T00:00:00.000Z
+ *                 # Reporter-only context
+ *                 reporter:
+ *                   id: <reporter_id>
+ *                   tenantId: <tenant_id>
+ *                   level: MANDAL
+ *                   subscriptionActive: true
+ *                   monthlySubscriptionAmount: 19900
+ *                   kycStatus: APPROVED
+ *                   kycData: { autoPublish: true }
+ *                   autoPublish: true
+ *                 reporterPaymentSummary:
+ *                   subscriptionActive: true
+ *                   monthlySubscriptionAmount: 19900
+ *                   currentMonth: { year: 2026, month: 1 }
+ *                   currentMonthlyPayment: { id: <payment_id>, status: PAID }
+ *                 autoPublish: true
+ *       402:
+ *         description: Reporter payment required before login
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               code: PAYMENT_REQUIRED
+ *               message: Reporter payments required before login
+ *               data:
+ *                 reporter: { id: <reporter_id>, tenantId: <tenant_id> }
+ *                 outstanding:
+ *                   - type: MONTHLY_SUBSCRIPTION
+ *                     amount: 19900
+ *                     currency: INR
+ *                     year: 2026
+ *                     month: 1
+ *                     status: MISSING
  *       401:
  *         description: Invalid credentials
  */

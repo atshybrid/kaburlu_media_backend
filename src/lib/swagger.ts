@@ -60,6 +60,7 @@ const swaggerDefinition = {
     { name: 'Domains', description: 'Domain verification & status management' },
     { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
     { name: 'Tenant Ads', description: 'Tenant-scoped website ads (CRUD) stored in TenantSettings.data.ads' },
+    { name: 'Tenant Static Pages', description: 'Tenant-scoped static website pages like /about-us and /privacy-policy' },
     { name: 'Reporters', description: 'Reporter hierarchy & roles' },
     { name: 'TenantReporters', description: 'Tenant-scoped reporter management (admin/editor controls)' },
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },

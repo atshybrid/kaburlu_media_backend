@@ -24,6 +24,43 @@ type TenantAdminLoginContext = {
   domainSettings?: { id: string; data: unknown; updatedAt: string };
 };
 
+type ReporterLoginContext = {
+  reporterId: string;
+  tenantId: string;
+  domainId?: string;
+  tenant?: { id: string; name: string; slug: string; prgiStatus?: string | null };
+  tenantEntity?: any;
+  domain?: { id: string; domain: string; isPrimary: boolean; status: string; kind?: string | null; verifiedAt?: string | null };
+  domainSettings?: { id: string; data: unknown; updatedAt: string };
+  reporter?: any;
+  payments?: any[];
+  paymentSummary?: any;
+  autoPublish: boolean;
+};
+
+function getAutoPublishFromKycData(kycData: any): boolean {
+  try {
+    if (!kycData || typeof kycData !== 'object') return false;
+    if ((kycData as any).autoPublish === true) return true;
+    if ((kycData as any)?.settings?.autoPublish === true) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeKycDataForClient(kycData: any): any {
+  // Best practice: KYC payloads may contain document URLs/IDs; do not return full blob to app clients.
+  // Keep only safe editorial settings needed by client, such as autoPublish.
+  try {
+    if (!kycData || typeof kycData !== 'object') return null;
+    const autoPublish = getAutoPublishFromKycData(kycData);
+    return { autoPublish };
+  } catch {
+    return null;
+  }
+}
+
 export const getTenantAdminLoginContext = async (userId: string): Promise<TenantAdminLoginContext | null> => {
   const reporter = await prisma.reporter.findUnique({
     where: { userId },
@@ -54,6 +91,225 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
     domainSettings: domainSettingsRow
       ? { id: domainSettingsRow.id, data: domainSettingsRow.data as unknown, updatedAt: domainSettingsRow.updatedAt.toISOString() }
       : undefined,
+  };
+};
+
+export const getReporterLoginContext = async (userId: string): Promise<ReporterLoginContext | null> => {
+  const reporter = await prisma.reporter.findUnique({
+    where: { userId },
+    select: {
+      id: true,
+      tenantId: true,
+      level: true,
+      designation: { select: { id: true, code: true, name: true, level: true } },
+      state: { select: { id: true, name: true } },
+      district: { select: { id: true, name: true } },
+      mandal: { select: { id: true, name: true } },
+      assemblyConstituency: { select: { id: true, name: true } },
+      subscriptionActive: true,
+      monthlySubscriptionAmount: true,
+      idCardCharge: true,
+      kycStatus: true,
+      kycData: true,
+      profilePhotoUrl: true,
+      manualLoginEnabled: true,
+      manualLoginDays: true,
+      manualLoginActivatedAt: true,
+      manualLoginExpiresAt: true,
+      active: true,
+      createdAt: true,
+      updatedAt: true,
+      idCard: { select: { id: true, cardNumber: true, issuedAt: true, expiresAt: true, pdfUrl: true } },
+      user: { select: { id: true, mobileNumber: true, profile: { select: { fullName: true } } } },
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          prgiStatus: true,
+          entity: {
+            select: {
+              id: true,
+              tenantId: true,
+              prgiNumber: true,
+              registrationTitle: true,
+              nativeName: true,
+              periodicity: true,
+              registrationDate: true,
+              ownerName: true,
+              publisherName: true,
+              editorName: true,
+              address: true,
+              publicationCountryId: true,
+              publicationStateId: true,
+              publicationDistrictId: true,
+              publicationMandalId: true,
+              printingPressName: true,
+              printingDistrictId: true,
+              printingMandalId: true,
+              printingCityName: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!reporter) return null;
+
+  const domain = await prisma.domain.findFirst({
+    where: { tenantId: reporter.tenantId },
+    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true, domain: true, isPrimary: true, status: true, kind: true, verifiedAt: true },
+  });
+
+  const domainSettingsRow = domain
+    ? await prisma.domainSettings
+        .findUnique({ where: { domainId: domain.id }, select: { id: true, data: true, updatedAt: true } })
+        .catch(() => null)
+    : null;
+
+  const autoPublish = getAutoPublishFromKycData(reporter.kycData);
+  const safeKycData = sanitizeKycDataForClient(reporter.kycData);
+
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+
+  const currentMonthly = await prisma.reporterPayment
+    .findUnique({
+      where: {
+        reporterId_type_year_month: {
+          reporterId: reporter.id,
+          type: 'MONTHLY_SUBSCRIPTION',
+          year: currentYear,
+          month: currentMonth,
+        },
+      },
+      select: {
+        id: true,
+        type: true,
+        year: true,
+        month: true,
+        amount: true,
+        currency: true,
+        status: true,
+        razorpayOrderId: true,
+        razorpayPaymentId: true,
+        expiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+    .catch(() => null);
+
+  const recentPayments = await prisma.reporterPayment
+    .findMany({
+      where: { reporterId: reporter.id },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 10,
+      select: {
+        id: true,
+        type: true,
+        year: true,
+        month: true,
+        amount: true,
+        currency: true,
+        status: true,
+        razorpayOrderId: true,
+        razorpayPaymentId: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    })
+    .catch(() => []);
+
+  const reporterProfile = {
+    id: reporter.id,
+    tenantId: reporter.tenantId,
+    level: reporter.level,
+    designation: reporter.designation,
+    state: reporter.state,
+    district: reporter.district,
+    mandal: reporter.mandal,
+    assemblyConstituency: reporter.assemblyConstituency,
+    subscriptionActive: reporter.subscriptionActive,
+    monthlySubscriptionAmount: reporter.monthlySubscriptionAmount,
+    idCardCharge: reporter.idCardCharge,
+    kycStatus: reporter.kycStatus,
+    kycData: safeKycData,
+    profilePhotoUrl: reporter.profilePhotoUrl,
+    manualLoginEnabled: reporter.manualLoginEnabled,
+    manualLoginDays: reporter.manualLoginDays,
+    manualLoginActivatedAt: reporter.manualLoginActivatedAt ? reporter.manualLoginActivatedAt.toISOString() : null,
+    manualLoginExpiresAt: reporter.manualLoginExpiresAt ? reporter.manualLoginExpiresAt.toISOString() : null,
+    active: reporter.active,
+    idCard: reporter.idCard
+      ? {
+          ...reporter.idCard,
+          issuedAt: reporter.idCard.issuedAt.toISOString(),
+          expiresAt: reporter.idCard.expiresAt.toISOString(),
+        }
+      : null,
+    contact: {
+      userId: reporter.user?.id || null,
+      mobileNumber: reporter.user?.mobileNumber || null,
+      fullName: reporter.user?.profile?.fullName || null,
+    },
+    autoPublish,
+    createdAt: reporter.createdAt.toISOString(),
+    updatedAt: reporter.updatedAt.toISOString(),
+  };
+
+  const paymentSummary = {
+    subscriptionActive: reporter.subscriptionActive,
+    monthlySubscriptionAmount: reporter.monthlySubscriptionAmount || 0,
+    currentMonth: { year: currentYear, month: currentMonth },
+    currentMonthlyPayment: currentMonthly
+      ? {
+          ...currentMonthly,
+          expiresAt: currentMonthly.expiresAt.toISOString(),
+          createdAt: currentMonthly.createdAt.toISOString(),
+          updatedAt: currentMonthly.updatedAt.toISOString(),
+        }
+      : null,
+  };
+
+  return {
+    reporterId: reporter.id,
+    tenantId: reporter.tenantId,
+    domainId: domain?.id,
+    tenant: reporter.tenant
+      ? {
+          id: reporter.tenant.id,
+          name: reporter.tenant.name,
+          slug: reporter.tenant.slug,
+          prgiStatus: (reporter.tenant as any).prgiStatus ?? undefined,
+        }
+      : undefined,
+    tenantEntity: reporter.tenant?.entity || undefined,
+    domain: domain
+      ? {
+          id: domain.id,
+          domain: domain.domain,
+          isPrimary: domain.isPrimary,
+          status: domain.status,
+          kind: (domain as any).kind ?? undefined,
+          verifiedAt: domain.verifiedAt ? domain.verifiedAt.toISOString() : null,
+        }
+      : undefined,
+    domainSettings: domainSettingsRow
+      ? { id: domainSettingsRow.id, data: domainSettingsRow.data as unknown, updatedAt: domainSettingsRow.updatedAt.toISOString() }
+      : undefined,
+    reporter: reporterProfile,
+    payments: (recentPayments || []).map((p) => ({
+      ...p,
+      expiresAt: p.expiresAt.toISOString(),
+      createdAt: p.createdAt.toISOString(),
+    })),
+    paymentSummary,
+    autoPublish,
   };
 };
 
@@ -245,6 +501,27 @@ export const login = async (loginDto: MpinLoginDto) => {
       }
     } catch (e) {
       console.warn('[Auth] Failed to attach tenant admin context for user', user.id, e);
+    }
+  }
+
+  // Reporter login response should include tenant + domain + full reporter profile context.
+  if (role?.name === 'REPORTER') {
+    try {
+      const ctx = await getReporterLoginContext(user.id);
+      if (ctx) {
+        (result as any).tenantId = ctx.tenantId;
+        (result as any).domainId = ctx.domainId;
+        (result as any).tenant = ctx.tenant;
+        (result as any).tenantEntity = ctx.tenantEntity;
+        (result as any).domain = ctx.domain;
+        (result as any).domainSettings = ctx.domainSettings;
+        (result as any).reporter = ctx.reporter;
+        (result as any).reporterPayments = ctx.payments;
+        (result as any).reporterPaymentSummary = ctx.paymentSummary;
+        (result as any).autoPublish = ctx.autoPublish;
+      }
+    } catch (e) {
+      console.warn('[Auth] Failed to attach reporter context for user', user.id, e);
     }
   }
   // Attach last known user location if available

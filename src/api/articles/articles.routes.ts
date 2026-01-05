@@ -1024,8 +1024,7 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               bulletPoints: ["Point one", "Point two"]
  *               location:
  *                 districtId: "cmdistrict"
- *               status: "draft"
- *               callbackUrl: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
+ *
  *             properties:
  *               language:
  *                 type: string
@@ -1133,18 +1132,11 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                   metaTitle: { type: string }
  *                   metaDescription: { type: string }
  *               tags: { type: array, items: { type: string } }
- *               status:
- *                 type: string
- *                 enum: ['draft','published','pending','DRAFT','PUBLISHED','PENDING']
- *                 description: |
- *                   Optional requested status.
- *                   - For role REPORTER: ignored; server derives status from Reporter.kycData.autoPublish.
- *                   - For Tenant Admin/Editor/Superadmin: respected.
  *
- *               callbackUrl:
- *                 type: string
- *                 description: Optional webhook URL (http/https) to receive AI completion notifications
- *                 example: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
+ *               # NOTE: `status` is server-controlled and not accepted in payload.
+ *               # - REPORTER: autoPublish=true => PUBLISHED, else => PENDING
+ *               # - All other roles: PUBLISHED
+ *
  *           examples:
  *             modern:
  *               summary: Recommended (structured media)
@@ -1171,8 +1163,6 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                   districtId: "cmdistrict"
  *                   districtName: "Hyderabad"
  *                   stateName: "Telangana"
- *                 status: "draft"
- *                 callbackUrl: "http://localhost:3001/api/v1/webhooks/ai-rewrite-status"
  *             locationVillage:
  *               summary: Location using villageId (most specific)
  *               value:
@@ -1224,7 +1214,6 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                   - type: "paragraph"
  *                     text: "Paragraph 1..."
  *                 bulletPoints: ["Point one", "Point two"]
- *                 status: "draft"
  *     responses:
  *       202:
  *         description: Accepted (stored and queued for background AI processing)
@@ -1240,7 +1229,6 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               tenantAiRewriteEnabled: true
  *               aiMode: "FULL"
  *               statusUrl: "/articles/cmarticle/ai-status"
- *               callbackUrlAccepted: true
  *       400:
  *         description: Validation error (e.g., title missing, title>50, subTitle>50, bulletPoints invalid)
  *       401:
@@ -1413,6 +1401,31 @@ router.post('/raw/:id/process', passport.authenticate('jwt', { session: false })
  *     responses:
  *       200:
  *         description: Status
+ *         content:
+ *           application/json:
+ *             example:
+ *               articleId: "cmarticle"
+ *               tenantId: "cmtenant"
+ *               status: "PUBLISHED"
+ *               ai:
+ *                 aiStatus: "DONE"
+ *                 aiMode: "FULL"
+ *                 aiStartedAt: "2026-01-06T10:12:00.000Z"
+ *                 aiFinishedAt: "2026-01-06T10:12:18.000Z"
+ *                 aiError: null
+ *                 aiSkipReason: null
+ *                 queue:
+ *                   web: false
+ *                   short: false
+ *                   newspaper: false
+ *                 outputs:
+ *                   webArticleId: "cmweb"
+ *                   shortNewsId: "cmsn"
+ *                   newspaperArticleId: "cmnp"
+ *               externalArticleId: "ART202601060001"
+ *               rawArticleId: "cmraw"
+ *               updatedAt: "2026-01-06T10:12:18.000Z"
+ *               createdAt: "2026-01-06T10:12:00.000Z"
  */
 router.get('/:id/ai-status', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, getArticleAiStatusController);
 

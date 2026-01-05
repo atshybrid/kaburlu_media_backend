@@ -480,6 +480,8 @@ model Tenant {
   newspaperArticles       NewspaperArticle[]
   aiUsageEvents           AiUsageEvent[]
 
+  staticPages             TenantStaticPage[]
+
   translations            TenantTranslation[]
 
   // Billing
@@ -487,6 +489,23 @@ model Tenant {
   billingUsageEvents      BillingUsageEvent[]
   billingInvoices         BillingInvoice[]
   billingCreditBalances   BillingCreditBalance[]
+}
+
+/// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)
+model TenantStaticPage {
+  id              String   @id @default(cuid())
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId        String
+  slug            String
+  title           String?
+  contentHtml     String
+  meta            Json?
+  published       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([slug])
 }
 
 model TenantTranslation {

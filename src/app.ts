@@ -44,6 +44,7 @@ import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
 import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
 import tenantThemeRoutes from './api/tenantTheme/tenantTheme.routes';
 import tenantAdsRoutes from './api/ads/tenantAds.routes';
+import tenantStaticPagesRoutes from './api/pages/tenantStaticPages.routes';
 import prgiRoutes from './api/prgi/prgi.routes';
 import districtsRoutes from './api/districts/districts.routes';
 import mandalsRoutes from './api/mandals/mandals.routes';
@@ -192,6 +193,8 @@ app.use('/shortnews-options', shortnewsOptionsRouter);
 app.use('/dashboard', dashboardRoutes);
 // Mount reporter payments routes at root so absolute paths inside work (e.g., /tenants/:tenantId/reporters/:id/payments/order)
 app.use('/', reporterPaymentsRoutes);
+// Tenant static pages (admin CRUD)
+app.use('/', tenantStaticPagesRoutes);
 // family & kin-relations removed
 app.use('/castes', castesRoutes);
 
@@ -245,6 +248,7 @@ apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);
 apiV1.use('/reporter-payments', reporterPaymentsRoutes);
 apiV1.use('/tenant-theme', tenantThemeRoutes);
 apiV1.use('/', tenantAdsRoutes);
+apiV1.use('/', tenantStaticPagesRoutes);
 apiV1.use('/prgi', prgiRoutes);
 apiV1.use('/admin', adminRoutes);
 apiV1.use('/webhooks', webhooksRoutes);

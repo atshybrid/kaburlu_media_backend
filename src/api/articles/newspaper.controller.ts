@@ -315,6 +315,18 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const tenantId = scope.tenantId;
 
         const body = req.body || {};
+        if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+            return res.status(400).json({
+                error: 'status is not allowed in payload',
+                details: 'Status is server-controlled: REPORTER autoPublish=true => PUBLISHED else PENDING; other roles => PUBLISHED.'
+            });
+        }
+        if (Object.prototype.hasOwnProperty.call(body, 'callbackUrl')) {
+            return res.status(400).json({
+                error: 'callbackUrl is not allowed in payload',
+                details: 'callbackUrl webhooks are not supported for this endpoint. Use the returned statusUrl to poll for AI completion.'
+            });
+        }
         const requestedDomainId = body.domainId != null ? String(body.domainId).trim() : null;
         const domainNameFromLocals = (res as any)?.locals?.domain?.domain ? String((res as any).locals.domain.domain) : null;
         const languageCode = String(body.language || body.languageCode || '').trim() || undefined;
@@ -322,16 +334,19 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const subTitle = body.subTitle != null ? String(body.subTitle).trim() : undefined;
         const heading = String(body.heading || title || '').trim();
         const publishedAt = body.publishedAt ? String(body.publishedAt) : undefined;
-        const requestedStatus = normalizeStatus(body.status);
+        const roleName = user?.role?.name;
         let reporterAutoPublish = false;
-        if (user?.role?.name === 'REPORTER') {
+        if (roleName === 'REPORTER') {
             const rep = await (prisma as any).reporter.findFirst({ where: { userId: authorId }, select: { kycData: true } }).catch(() => null);
             reporterAutoPublish = getReporterAutoPublishFromKycData(rep?.kycData);
         }
 
-        const effectiveStatus = (user?.role?.name === 'REPORTER')
-            ? (reporterAutoPublish ? 'PUBLISHED' : 'DRAFT')
-            : requestedStatus;
+        // Status is server-controlled (ignore any status passed from client):
+        // - REPORTER: autoPublish=true => PUBLISHED, else => PENDING
+        // - All other roles: PUBLISHED
+        const effectiveStatus = roleName === 'REPORTER'
+            ? (reporterAutoPublish ? 'PUBLISHED' : 'PENDING')
+            : 'PUBLISHED';
         const shouldPublish = effectiveStatus === 'PUBLISHED';
         const location = body.location;
         if (!location || typeof location !== 'object') {
@@ -368,10 +383,6 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             .filter(Boolean);
         const lead = body.lead != null ? String(body.lead).trim() : '';
         const contentText = [lead, ...paragraphTexts].filter(Boolean).join('\n\n').trim();
-
-        const callbackUrlRaw = body.callbackUrl != null ? String(body.callbackUrl).trim() : '';
-        const callbackUrl = callbackUrlRaw && /^https?:\/\//i.test(callbackUrlRaw) ? callbackUrlRaw : null;
-        const callbackUrlAccepted = Boolean(callbackUrl);
 
         const TITLE_MAX_CHARS = 100;
         const SUBTITLE_MAX_CHARS = 100;
@@ -497,7 +508,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 title,
                 content: contentText || title,
                 type: 'reporter',
-                status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                status: shouldPublish ? 'PUBLISHED' : 'PENDING',
                 authorId,
                 tenantId,
                 languageId,
@@ -527,7 +538,6 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                     rawNewspaper: normalizedBody,
                     location,
                     locationRef,
-                    callbackUrl,
                     aiDecision: {
                         mode: aiMode,
                         tenantAiRewriteEnabled,
@@ -559,7 +569,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         languageId,
                         title: String(webJson.title || title),
                         slug: String(webJson.slug || slugFromAnyLanguage(title, 120)),
-                        status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                        status: shouldPublish ? 'PUBLISHED' : 'PENDING',
                         categoryId: categoryIds?.[0] ? String(categoryIds[0]) : undefined,
                         contentJson: webJson,
                         seoTitle: webJson?.meta?.seoTitle,
@@ -603,7 +613,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 districtId: locationRef?.districtId || null,
                 mandalId: locationRef?.mandalId || null,
                 villageId: locationRef?.villageId || null,
-                status: effectiveStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
+                status: effectiveStatus === 'PUBLISHED' ? 'PUBLISHED' : 'PENDING'
             }
         });
 
@@ -621,10 +631,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             aiMode,
             queued: { web: true, short: shortQueued, newspaper: aiMode === 'FULL' },
             statusUrl: `/articles/${baseArticle.id}/ai-status`,
-            callbackUrlAccepted,
-            requestedStatus,
             effectiveStatus,
-            reporterAutoPublishApplied: user?.role?.name === 'REPORTER' ? reporterAutoPublish : undefined,
+            reporterAutoPublishApplied: roleName === 'REPORTER' ? reporterAutoPublish : undefined,
         });
     } catch (e) {
         console.error('createNewspaperArticle error', e);

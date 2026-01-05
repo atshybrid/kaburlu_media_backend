@@ -1335,7 +1335,6 @@ export const getArticleAiStatusController = async (req: Request, res: Response) 
       },
       externalArticleId: cj.externalArticleId || null,
       rawArticleId: cj.rawArticleId || cj?.raw?.rawArticleId || null,
-      callbackUrl: cj.callbackUrl || null,
       updatedAt: article.updatedAt,
       createdAt: article.createdAt,
     });

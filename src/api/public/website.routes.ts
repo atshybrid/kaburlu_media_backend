@@ -302,6 +302,44 @@ router.get('/domain/settings', async (req, res) => {
 
   out.navigation.menu = menu;
 
+  // Best practice: include footer/static page links here so homepage can avoid extra round-trips.
+  // (Additive contract: safe for existing clients.)
+  try {
+    const specs: Array<{ slug: string; label: string; endpoint: string }> = [
+      { slug: 'about-us', label: 'About Us', endpoint: '/public/about-us' },
+      { slug: 'contact-us', label: 'Contact Us', endpoint: '/public/contact-us' },
+      { slug: 'privacy-policy', label: 'Privacy Policy', endpoint: '/public/privacy-policy' },
+      { slug: 'terms', label: 'Terms', endpoint: '/public/terms' },
+      { slug: 'disclaimer', label: 'Disclaimer', endpoint: '/public/disclaimer' },
+      { slug: 'editorial-policy', label: 'Editorial Policy', endpoint: '/public/editorial-policy' },
+    ];
+
+    const slugs = specs.map((s) => s.slug);
+    const rows: any[] = (await p.tenantStaticPage
+      ?.findMany?.({
+        where: { tenantId: tenant.id, slug: { in: slugs }, published: true },
+        select: { slug: true, title: true, updatedAt: true },
+      })
+      .catch(() => [])) ?? [];
+
+    const bySlug = new Map<string, any>(rows.map((r: any) => [String(r.slug), r]));
+    const pages = specs.map((spec) => {
+      const row = bySlug.get(spec.slug);
+      return {
+        slug: spec.slug,
+        label: spec.label,
+        endpoint: spec.endpoint,
+        available: Boolean(row),
+        title: row?.title ?? null,
+        updatedAt: row?.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+      };
+    });
+
+    out.pages = { ...(out.pages || {}), static: pages };
+  } catch {
+    // Never fail the settings response due to optional static pages
+  }
+
   res.json({ domain: domain.domain, tenantId: tenant.id, effective: out });
 });
 
@@ -2293,6 +2331,156 @@ router.get('/robots.txt', async (_req, res) => {
   const base = `https://${domainRow.domain}`;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.send(`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
+});
+
+async function getStaticPageForTenant(tenantId: string, slug: string) {
+  return p.tenantStaticPage
+    ?.findFirst?.({ where: { tenantId, slug, published: true }, select: { slug: true, title: true, contentHtml: true, meta: true, updatedAt: true } })
+    .catch(() => null);
+}
+
+/**
+ * @swagger
+ * /public/about-us:
+ *   get:
+ *     summary: Get About Us page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/about-us', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'about-us');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/contact-us:
+ *   get:
+ *     summary: Get Contact Us page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/contact-us', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'contact-us');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/privacy-policy:
+ *   get:
+ *     summary: Get Privacy Policy page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/privacy-policy', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'privacy-policy');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/terms:
+ *   get:
+ *     summary: Get Terms page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/terms', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'terms');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/disclaimer:
+ *   get:
+ *     summary: Get Disclaimer page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/disclaimer', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'disclaimer');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/editorial-policy:
+ *   get:
+ *     summary: Get Editorial Policy page for this domain
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Page }
+ *       404: { description: Not found }
+ */
+router.get('/editorial-policy', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'editorial-policy');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
 });
 
 export default router;
