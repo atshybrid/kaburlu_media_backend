@@ -33,6 +33,7 @@ const swaggerDefinition = {
     { name: 'Articles' },
     { name: 'AI', description: 'AI utility endpoints (test, headline generation, etc.)' },
     { name: 'AI Rewrite', description: 'AI rewrite controls, usage metering, and billing limits' },
+    { name: 'Location AI', description: 'AI helper endpoints for location translations (DB is source-of-truth)' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },
     { name: 'Reactions' },

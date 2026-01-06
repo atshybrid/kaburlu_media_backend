@@ -57,6 +57,8 @@ import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
 import aiTestRoutes from './api/ai/ai.routes';
 import dashboardRoutes from './api/dashboard/dashboard.routes';
+import aiNewspaperRewriteRoutes from './api/ainewspaper/ainewspaper.routes';
+import locationAiRoutes from './api/locationAi/locationAi.routes';
 
 const app = express();
 
@@ -188,6 +190,8 @@ app.use('/devices', devicesRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/prompts', promptsRoutes);
 app.use('/ai', aiTestRoutes);
+app.use('/', aiNewspaperRewriteRoutes);
+app.use('/location', locationAiRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
 app.use('/dashboard', dashboardRoutes);
@@ -233,6 +237,8 @@ apiV1.use('/devices', devicesRoutes);
 apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/ai', aiTestRoutes);
+apiV1.use('/', aiNewspaperRewriteRoutes);
+apiV1.use('/location', locationAiRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
 apiV1.use('/dashboard', dashboardRoutes);

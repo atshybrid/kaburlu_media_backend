@@ -20,14 +20,74 @@ export async function ensureCoreSeeds() {
   }
 
   // 2. Languages: Check existence
-  const langCodes = ['en', 'te'];
-  const existingLangs = await prisma.language.findMany({ where: { code: { in: langCodes } } });
-  if (existingLangs.length < 2) {
-    const hasEn = existingLangs.some(l => l.code === 'en');
-    const hasTe = existingLangs.some(l => l.code === 'te');
-    if (!hasEn) await prisma.language.create({ data: { code: 'en', name: 'English' } });
-    if (!hasTe) await prisma.language.create({ data: { code: 'te', name: 'Telugu' } });
+  // Seed major Indian languages so a fresh DB has a usable built-in language set.
+  // Codes are ISO 639-1 where available.
+  const coreLanguages: Array<{ code: string; name: string; nativeName?: string; direction?: 'ltr' | 'rtl' }> = [
+    { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', direction: 'ltr' },
+    { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
+    { code: 'te', name: 'Telugu', nativeName: 'తెలుగు', direction: 'ltr' },
+    { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', direction: 'ltr' },
+    { code: 'mr', name: 'Marathi', nativeName: 'मराठी', direction: 'ltr' },
+    { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', direction: 'ltr' },
+    { code: 'ur', name: 'Urdu', nativeName: 'اردو', direction: 'rtl' },
+    { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', direction: 'ltr' },
+    { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ', direction: 'ltr' },
+    { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം', direction: 'ltr' },
+    { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', direction: 'ltr' },
+    { code: 'or', name: 'Odia', nativeName: 'ଓଡ଼ିଆ', direction: 'ltr' },
+    { code: 'as', name: 'Assamese', nativeName: 'অসমীয়া', direction: 'ltr' },
+  ];
+
+  const langCodes = coreLanguages.map(l => l.code);
+  const existingLangs = await prisma.language.findMany({
+    where: { code: { in: langCodes } },
+    select: { id: true, code: true, name: true, nativeName: true, direction: true, isDeleted: true }
+  });
+  const existingByCode = new Map(existingLangs.map(l => [l.code, l] as const));
+
+  const toCreate = coreLanguages
+    .filter(l => !existingByCode.has(l.code))
+    .map(l => ({
+      code: l.code,
+      name: l.name,
+      nativeName: l.nativeName,
+      direction: l.direction || 'ltr',
+      isDeleted: false,
+    }));
+
+  if (toCreate.length) {
+    await prisma.language.createMany({ data: toCreate, skipDuplicates: true });
   }
+
+  // If a language exists but was soft-deleted or missing metadata, normalize it.
+  const updates: any[] = [];
+  for (const l of coreLanguages) {
+    const row = existingByCode.get(l.code);
+    if (!row) continue;
+
+    const nextDirection = l.direction || 'ltr';
+    const nextNative = l.nativeName ?? null;
+    const needsUpdate =
+      row.isDeleted === true ||
+      row.name !== l.name ||
+      (nextNative && row.nativeName !== nextNative) ||
+      (row.direction || 'ltr') !== nextDirection;
+
+    if (needsUpdate) {
+      updates.push(
+        prisma.language.update({
+          where: { id: row.id },
+          data: {
+            name: l.name,
+            nativeName: nextNative,
+            direction: nextDirection,
+            isDeleted: false,
+          },
+        })
+      );
+    }
+  }
+  if (updates.length) await prisma.$transaction(updates);
 
   // 3. Country
   let country = await prisma.country.findUnique({ where: { code: 'IN' } });

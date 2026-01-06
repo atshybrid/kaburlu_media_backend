@@ -56,14 +56,27 @@ const reporterDesignationsDefaults: { level: string; code: string; name: string 
     { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter' },
     { level: 'MANDAL', code: 'MANDAL_STRINGER', name: 'Mandal Stringer' }
 ];
-// Extend with South India languages (Tamil, Kannada, Malayalam) and keep structure consistent
+// Core language set for India-focused news platform.
+// Codes are ISO 639-1 where available.
 const languages: { name: string; code: string; nativeName: string; direction: string; isDeleted: boolean }[] = [
-    { name: 'English', code: 'en', nativeName: 'English', direction: 'ltr', isDeleted: false },
+    // Tier-1
     { name: 'Hindi', code: 'hi', nativeName: 'हिन्दी', direction: 'ltr', isDeleted: false },
+    { name: 'English', code: 'en', nativeName: 'English', direction: 'ltr', isDeleted: false },
     { name: 'Telugu', code: 'te', nativeName: 'తెలుగు', direction: 'ltr', isDeleted: false },
+    { name: 'Bengali', code: 'bn', nativeName: 'বাংলা', direction: 'ltr', isDeleted: false },
+    { name: 'Marathi', code: 'mr', nativeName: 'मराठी', direction: 'ltr', isDeleted: false },
+
+    // Tier-2
     { name: 'Tamil', code: 'ta', nativeName: 'தமிழ்', direction: 'ltr', isDeleted: false },
+    { name: 'Urdu', code: 'ur', nativeName: 'اردو', direction: 'rtl', isDeleted: false },
+    { name: 'Gujarati', code: 'gu', nativeName: 'ગુજરાતી', direction: 'ltr', isDeleted: false },
     { name: 'Kannada', code: 'kn', nativeName: 'ಕನ್ನಡ', direction: 'ltr', isDeleted: false },
     { name: 'Malayalam', code: 'ml', nativeName: 'മലയാളം', direction: 'ltr', isDeleted: false },
+
+    // Tier-3
+    { name: 'Punjabi', code: 'pa', nativeName: 'ਪੰਜਾਬੀ', direction: 'ltr', isDeleted: false },
+    { name: 'Odia', code: 'or', nativeName: 'ଓଡ଼ିଆ', direction: 'ltr', isDeleted: false },
+    { name: 'Assamese', code: 'as', nativeName: 'অসমীয়া', direction: 'ltr', isDeleted: false },
 ];
 
 const categories = [
@@ -289,7 +302,12 @@ async function main() {
     for (const lang of languages) {
         const newLang = await prisma.language.upsert({
             where: { code: lang.code },
-            update: {},
+            update: {
+                name: lang.name,
+                nativeName: lang.nativeName,
+                direction: lang.direction,
+                isDeleted: false,
+            },
             create: lang,
         });
         createdLanguages.push({ id: newLang.id, code: newLang.code });
