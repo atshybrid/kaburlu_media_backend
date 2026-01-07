@@ -56,10 +56,15 @@ export function requireReporterOrAdmin(req: Request, res: Response, next: NextFu
     const roleName = user.role.name;
     if (
       roleName === 'SUPER_ADMIN' ||
+      roleName === 'SUPERADMIN' ||
       roleName === 'TENANT_ADMIN' ||
       roleName === 'TENANT_EDITOR' ||
+      roleName === 'CHIEF_EDITOR' ||
+      roleName === 'DESK_EDITOR' ||
       roleName === 'ADMIN_EDITOR' ||
       roleName === 'NEWS_MODERATOR' ||
+      roleName === 'NEWS_DESK' ||
+      roleName === 'NEWS_DESK_ADMIN' ||
       roleName === 'REPORTER'
     ) {
       return next();

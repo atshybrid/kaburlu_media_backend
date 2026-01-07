@@ -2,20 +2,52 @@ import prisma from './prisma';
 import { CORE_NEWS_CATEGORIES } from './categoryAuto';
 
 export async function ensureCoreSeeds() {
-  // 1. Roles: Check existence first to avoid 9 separate upserts if not needed
-  const coreRoles = [
-    'SUPER_ADMIN', 'LANGUAGE_ADMIN', 'TENANT_ADMIN', 'ADMIN_EDITOR',
-    'NEWS_MODERATOR', 'PARENT_REPORTER', 'REPORTER', 'CITIZEN_REPORTER', 'GUEST', 'GUEST_REPORTER'
-  ];
-  const existingRoles = await prisma.role.findMany({ where: { name: { in: coreRoles } }, select: { name: true } });
-  const existingRoleNames = new Set(existingRoles.map(r => r.name));
-  const missingRoles = coreRoles.filter(r => !existingRoleNames.has(r));
+  // 1. Roles
+  // We support two role families:
+  // - Kaburlu platform roles (Superadmin, moderator, admin editor, guest/citizen/public-figure)
+  // - Newspaper/tenant roles (Tenant Admin, Chief/Desk editors, reporter)
+  // Also seed legacy aliases used in older code paths (e.g., SUPERADMIN, NEWS_DESK_ADMIN).
+  const coreRoles: Array<{ name: string; permissions: Record<string, any> }> = [
+    // --- Kaburlu (platform) ---
+    { name: 'SUPER_ADMIN', permissions: { all: true } },
+    { name: 'NEWS_MODERATOR', permissions: { moderation: ['ai_review', 'manual_review'] } },
+    { name: 'ADMIN_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
+    { name: 'GUEST_REPORTER', permissions: { shortNews: ['create_limited'] } },
+    { name: 'CITIZEN_REPORTER', permissions: { shortNews: ['create', 'edit_own'] } },
+    { name: 'PUBLIC_FIGURE', permissions: { shortNews: ['create', 'edit_own'] } },
 
-  if (missingRoles.length > 0) {
-    // createMany is faster
+    // --- Newspaper / tenant editorial ---
+    { name: 'TENANT_ADMIN', permissions: { tenants: ['manage'], domains: ['manage'], reporters: ['manage'], articles: ['approve'], shortNews: ['approve'], webArticles: ['approve'] } },
+    // Existing code gates on TENANT_EDITOR for many approval flows; keep it as canonical editor role.
+    { name: 'TENANT_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
+    // Requested naming for newspaper product
+    { name: 'CHIEF_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
+    { name: 'DESK_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
+    { name: 'REPORTER', permissions: { articles: ['create', 'edit_own'], webArticles: ['create', 'edit_own'] } },
+
+    // --- Reporter hierarchy / onboarding roles (kept for compatibility) ---
+    { name: 'PARENT_REPORTER', permissions: { reporters: ['create_child', 'review'] } },
+
+    // --- Other roles referenced in code ---
+    { name: 'LANGUAGE_ADMIN', permissions: { languages: ['manage'], prompts: ['manage'] } },
+    { name: 'GUEST', permissions: { guest: true } },
+    { name: 'NEWS_DESK', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
+    { name: 'NEWS_DESK_ADMIN', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'], prompts: ['manage'] } },
+    // Legacy aliases used by some routes (older spelling)
+    { name: 'SUPERADMIN', permissions: { all: true } },
+  ];
+
+  // IMPORTANT: non-destructive seeding.
+  // - Create missing core roles.
+  // - Never overwrite permissions for roles that already exist (avoids resetting real data).
+  const coreRoleNames = coreRoles.map(r => r.name);
+  const existing = await prisma.role.findMany({ where: { name: { in: coreRoleNames } }, select: { name: true } });
+  const existingNames = new Set(existing.map(r => r.name));
+  const missing = coreRoles.filter(r => !existingNames.has(r.name));
+  if (missing.length) {
     await prisma.role.createMany({
-      data: missingRoles.map(name => ({ name, permissions: {} })),
-      skipDuplicates: true
+      data: missing.map(r => ({ name: r.name, permissions: r.permissions })),
+      skipDuplicates: true,
     });
   }
 
