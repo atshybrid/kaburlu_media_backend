@@ -13,6 +13,7 @@ import {
   DEFAULT_OPENAI_MODEL_SEO,
   DEFAULT_OPENAI_MODEL_TRANSLATION,
   DEFAULT_OPENAI_MODEL_MODERATION,
+  DEFAULT_OPENAI_MODEL_REWRITE,
   DEFAULT_OPENAI_MODEL_NEWSPAPER,
 } from './aiConfig';
 
@@ -104,7 +105,9 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         ? DEFAULT_OPENAI_MODEL_TRANSLATION
         : (purpose === 'moderation'
           ? DEFAULT_OPENAI_MODEL_MODERATION
-          : (purpose === 'newspaper' ? DEFAULT_OPENAI_MODEL_NEWSPAPER : DEFAULT_OPENAI_MODEL_SEO));
+          : (purpose === 'rewrite' || purpose === 'shortnews_ai_article'
+            ? DEFAULT_OPENAI_MODEL_REWRITE
+            : (purpose === 'newspaper' ? DEFAULT_OPENAI_MODEL_NEWSPAPER : DEFAULT_OPENAI_MODEL_SEO)));
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
       const callOpenAI = async (m: string) => {
@@ -201,7 +204,7 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
   return { text: '' };
 }
 
-export async function openaiRespond(input: string, model = 'gpt-5.1'): Promise<{ text: string; raw: any }> {
+export async function openaiRespond(input: string, model = 'gpt-4o'): Promise<{ text: string; raw: any }> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const axios = require('axios');
   if (!OPENAI_KEY) throw new Error('Missing OPENAI_KEY');

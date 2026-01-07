@@ -34,9 +34,11 @@ export const DEFAULT_GEMINI_MODEL_TRANSLATION = process.env.GEMINI_MODEL_TRANSLA
 // Prefer a faster model for rewrite-style tasks unless explicitly overridden
 export const DEFAULT_GEMINI_MODEL_REWRITE = process.env.GEMINI_MODEL_REWRITE || 'gemini-1.5-flash';
 
-export const DEFAULT_OPENAI_MODEL_SEO = process.env.OPENAI_MODEL_SEO || 'gpt-4o-mini';
+// SEO + rewrite are quality-sensitive; default to gpt-4o unless explicitly overridden.
+export const DEFAULT_OPENAI_MODEL_SEO = process.env.OPENAI_MODEL_SEO || 'gpt-4o';
 export const DEFAULT_OPENAI_MODEL_MODERATION = process.env.OPENAI_MODEL_MODERATION || 'gpt-4o-mini';
 export const DEFAULT_OPENAI_MODEL_TRANSLATION = process.env.OPENAI_MODEL_TRANSLATION || 'gpt-4o-mini';
+export const DEFAULT_OPENAI_MODEL_REWRITE = process.env.OPENAI_MODEL_REWRITE || 'gpt-4o';
 // Used for newspaper/headline style generation (e.g., /ai/headlines)
 export const DEFAULT_OPENAI_MODEL_NEWSPAPER = process.env.OPENAI_MODEL_NEWSPAPER || DEFAULT_OPENAI_MODEL_SEO;
 
