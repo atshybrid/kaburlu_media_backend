@@ -108,6 +108,24 @@ function applyPromptTemplate(promptTpl: string, rawText: string): string {
     .replace(/\{\{\s*RAW_TEXT\s*\}\}/gi, rawText);
 }
 
+function applyWebAndShortPromptTemplate(promptTpl: string, vars: Record<string, string>, shortNewsText: string): string {
+  let tpl = normalizeText(promptTpl);
+  // User-provided prompt commonly uses this placeholder
+  tpl = tpl.replace(/<<<\s*PASTE SHORT NEWS HERE\s*>>>/gi, shortNewsText);
+
+  // Some prompts use moustache-style placeholders
+  for (const k of Object.keys(vars)) {
+    const needle = new RegExp(`\\{\\{\\s*${k}\\s*\\}\\}`, 'g');
+    tpl = tpl.replace(needle, vars[k]);
+  }
+
+  // Generic fallbacks
+  tpl = tpl
+    .replace(/\{\{\s*SHORT_NEWS\s*\}\}/gi, shortNewsText)
+    .replace(/\{\{\s*NEWS\s*\}\}/gi, shortNewsText);
+  return tpl;
+}
+
 async function inferCategoryIdForArticle(article: any): Promise<string | null> {
   try {
     const cj: any = article?.contentJson || {};
@@ -250,6 +268,152 @@ type ParsedFalse = {
   short: { title: string; content: string };
 };
 
+function extractJsonObject(text: string): any | null {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      // continue
+    }
+  }
+
+  // best-effort: find first JSON object span
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    const maybe = cleaned.slice(start, end + 1);
+    try {
+      return JSON.parse(maybe);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function extractAiValidationMeta(out: string): {
+  aiApprovalStatus: string | null;
+  aiViolationCount: number;
+  aiValidationIssues: any | null;
+  isBreaking: boolean | null;
+} {
+  const obj = extractJsonObject(out);
+  if (!obj || typeof obj !== 'object') {
+    return { aiApprovalStatus: null, aiViolationCount: 0, aiValidationIssues: null, isBreaking: null };
+  }
+
+  const statusRaw = (obj as any).status ?? (obj as any).ai_status ?? (obj as any).approval_status ?? (obj as any).approvalStatus;
+  const status = statusRaw != null ? String(statusRaw).trim() : null;
+
+  const vcRaw = (obj as any).violation_count ?? (obj as any).violationCount ?? (obj as any).violations ?? 0;
+  const aiViolationCount = Number.isFinite(Number(vcRaw)) ? Number(vcRaw) : 0;
+
+  const aiValidationIssues =
+    (obj as any).validation_issues ??
+    (obj as any).validationIssues ??
+    (obj as any).issues ??
+    (obj as any).validation ??
+    null;
+
+  let isBreaking: boolean | null = null;
+  const newsType = (obj as any).news_type ?? (obj as any).newsType;
+  if (typeof (obj as any).breaking === 'boolean') isBreaking = (obj as any).breaking;
+  else if (typeof (obj as any).isBreaking === 'boolean') isBreaking = (obj as any).isBreaking;
+  else if (typeof newsType === 'string') isBreaking = newsType.toLowerCase().includes('break');
+  else if (newsType && typeof newsType === 'object') {
+    const n: any = newsType;
+    if (typeof n.breaking === 'boolean') isBreaking = n.breaking;
+    else if (typeof n.isBreaking === 'boolean') isBreaking = n.isBreaking;
+  }
+
+  return {
+    aiApprovalStatus: status,
+    aiViolationCount,
+    aiValidationIssues,
+    isBreaking,
+  };
+}
+
+function parseWebAndShortNewsAiOutput(out: string): {
+  aiApprovalStatus: string;
+  aiViolationCount: number;
+  aiValidationIssues: any;
+  isBreaking: boolean;
+  web: {
+    title: string;
+    subTitle: string;
+    summary: string;
+    content: string;
+    metaTitle: string;
+    metaDescription: string;
+    keywords: string[];
+    locationKeywords: string[];
+    jsonLd: any | null;
+    wordCount: number | null;
+  };
+  short: {
+    title: string;
+    subTitle: string;
+    content: string;
+    wordCount: number | null;
+  };
+} | null {
+  const obj = extractJsonObject(out);
+  if (!obj || typeof obj !== 'object') return null;
+
+  const status = String((obj as any).status || '').trim() || 'PENDING';
+  const vcRaw = (obj as any).violation_count ?? (obj as any).violationCount ?? 0;
+  const violationCount = Number.isFinite(Number(vcRaw)) ? Number(vcRaw) : 0;
+  const issues = (obj as any).validation_issues ?? (obj as any).validationIssues ?? [];
+
+  const newsType = (obj as any).news_type ?? (obj as any).newsType;
+  const isBreaking = (typeof newsType === 'string') ? newsType.toLowerCase() === 'breaking' : false;
+
+  const wn: any = (obj as any).web_news ?? (obj as any).webNews ?? {};
+  const sn: any = (obj as any).short_news ?? (obj as any).shortNews ?? {};
+
+  const webTitle = String(wn.title || '').trim();
+  if (!webTitle) return null;
+
+  const keywords = Array.isArray(wn.keywords) ? wn.keywords.map((x: any) => String(x || '').trim()).filter(Boolean) : [];
+  const locationKeywords = Array.isArray(wn.location_keywords)
+    ? wn.location_keywords.map((x: any) => String(x || '').trim()).filter(Boolean)
+    : (Array.isArray(wn.locationKeywords) ? wn.locationKeywords.map((x: any) => String(x || '').trim()).filter(Boolean) : []);
+
+  return {
+    aiApprovalStatus: status,
+    aiViolationCount: violationCount,
+    aiValidationIssues: issues,
+    isBreaking,
+    web: {
+      title: webTitle,
+      subTitle: String(wn.sub_title ?? wn.subTitle ?? '').trim(),
+      summary: String(wn.summary || '').trim(),
+      content: String(wn.content || '').trim(),
+      metaTitle: String(wn.meta_title ?? wn.metaTitle ?? wn.meta?.meta_title ?? wn.meta?.metaTitle ?? '').trim(),
+      metaDescription: String(wn.meta_description ?? wn.metaDescription ?? wn.meta?.meta_description ?? wn.meta?.metaDescription ?? '').trim(),
+      keywords,
+      locationKeywords,
+      jsonLd: (wn.json_ld ?? wn.jsonLd) ?? null,
+      wordCount: (wn.word_count != null && Number.isFinite(Number(wn.word_count))) ? Number(wn.word_count) : null,
+    },
+    short: {
+      title: String(sn.short_title ?? sn.title ?? '').trim(),
+      subTitle: String(sn.short_sub_title ?? sn.sub_title ?? sn.subTitle ?? '').trim(),
+      content: String(sn.content || '').trim(),
+      wordCount: (sn.word_count != null && Number.isFinite(Number(sn.word_count))) ? Number(sn.word_count) : null,
+    }
+  };
+}
+
 function parseTrueOutput(text: string): ParsedTrue | null {
   const t = normalizeText(text);
   const title = extractBetween(t, 'Title:', ['Subtitle:', 'Key Points:', 'Main Article:']);
@@ -387,6 +551,8 @@ async function processOne(article: any) {
   const queue = contentJson.aiQueue || {};
   const languageCode = raw.languageCode || '';
   const shouldPublish = String(article.status || '').toUpperCase() === 'PUBLISHED';
+  // Newspaper flow stores publish intent here; publish happens after AI_APPROVED.
+  const publishRequested = (typeof raw?.isPublished === 'boolean') ? Boolean(raw.isPublished) : shouldPublish;
 
   const domainResolved = await resolveDomainForTenant(article.tenantId, raw.domainId || contentJson.domainId || null);
   const domainId = domainResolved.domainId;
@@ -491,9 +657,316 @@ async function processOne(article: any) {
   const wantWork = !!(queue.web || queue.short || queue.newspaper);
   if (wantWork) {
     try {
+      const isNewspaperPost = String(contentJson?.source || '') === 'newspaper.post' || !!contentJson?.rawNewspaper;
+
+      const decision = (contentJson as any)?.aiDecision || {};
+      const decidedEnabled = typeof decision?.tenantAiRewriteEnabled === 'boolean' ? decision.tenantAiRewriteEnabled : null;
+
       const flags = await (prisma as any).tenantFeatureFlags?.findUnique?.({ where: { tenantId: article.tenantId } }).catch(() => null);
-      const tenantAiRewriteEnabled = flags?.aiArticleRewriteEnabled !== false;
+      const storedEnabled = flags?.aiArticleRewriteEnabled !== false;
+
+      // Prefer submit-time decision (includes SUPER_ADMIN override via forceAiRewriteEnabled)
+      const tenantAiRewriteEnabled = decidedEnabled !== null ? decidedEnabled : storedEnabled;
       const aiMode = tenantAiRewriteEnabled ? 'FULL' : 'LIMITED';
+
+      // Newspaper submission flow: ALWAYS use single prompt `web_and_shortnews_ai_article`
+      // and generate full web + short news JSON (no separate TRUE/FALSE prompts).
+      if (isNewspaperPost && (queue.web || queue.short)) {
+        const PROMPT_KEY = 'web_and_shortnews_ai_article';
+        const promptTpl = (await getPrompt(PROMPT_KEY).catch(() => null)) || '';
+        if (!promptTpl.trim()) {
+          const failedCJ = { ...contentJson, aiStatus: 'FAILED', aiError: `MISSING_PROMPT:${PROMPT_KEY}`, aiFinishedAt: nowIsoIST(), aiMode } as any;
+          await prisma.article.update({ where: { id: article.id }, data: { contentJson: failedCJ } });
+          await updateRawArticleFromBaseArticle(article, failedCJ);
+          return;
+        }
+
+        const rawText = buildRawText(article);
+
+        // Resolve category name (best-effort)
+        let categoryName = '';
+        const firstCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : '';
+        if (firstCategoryId) {
+          const c = await prisma.category.findUnique({ where: { id: firstCategoryId }, select: { name: true } }).catch(() => null);
+          if (c?.name) categoryName = String(c.name);
+        }
+
+        // Resolve publisher name (tenant entity preferred)
+        const tenantRow = await prisma.tenant.findUnique({
+          where: { id: article.tenantId },
+          select: { name: true, entity: { select: { publisherName: true, ownerName: true, editorName: true } } },
+        }).catch(() => null);
+        const publisherName = String(tenantRow?.entity?.publisherName || tenantRow?.name || '').trim();
+
+        const websiteUrl = domainName ? `https://${domainName}` : '';
+
+        const locationVars = {
+          state: String(raw?.locationRef?.stateName || raw?.locationRef?.state || ''),
+          district: String(raw?.locationRef?.districtName || raw?.locationRef?.district || ''),
+          mandal: String(raw?.locationRef?.mandalName || raw?.locationRef?.mandal || ''),
+          village: String(raw?.locationRef?.villageName || raw?.locationRef?.village || ''),
+          displayName: String(raw?.locationRef?.displayName || ''),
+        };
+
+        const vars: Record<string, string> = {
+          category_name: categoryName,
+          language: String(languageCode || ''),
+          publisher_name: publisherName,
+          website_url: websiteUrl,
+          location: JSON.stringify(locationVars),
+        };
+
+        const prompt = applyWebAndShortPromptTemplate(promptTpl, vars, rawText);
+
+        const now = nowIsoIST();
+        let updatedCJ = { ...contentJson, aiStatus: 'RUNNING', aiStartedAt: now, aiMode } as any;
+        await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
+
+        const aiRes = await aiGenerateText({ prompt, purpose: 'rewrite' as any });
+        const out = normalizeText(aiRes.text || '').trim();
+        if (!out) {
+          updatedCJ = { ...updatedCJ, aiStatus: 'FAILED', aiError: 'EMPTY_AI_OUTPUT', aiFinishedAt: nowIsoIST() };
+          await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
+          await updateRawArticleFromBaseArticle(article, updatedCJ);
+          return;
+        }
+
+        const parsed = parseWebAndShortNewsAiOutput(out);
+        if (!parsed) {
+          updatedCJ = { ...updatedCJ, aiStatus: 'FAILED', aiError: 'PARSE_WEB_SHORT_JSON_FAILED', aiFinishedAt: nowIsoIST(), aiRawOutput: out };
+          await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });
+          await updateRawArticleFromBaseArticle(article, updatedCJ);
+          return;
+        }
+
+        const isBreakingFromRaw = typeof raw?.isBreaking === 'boolean' ? raw.isBreaking : false;
+        const isBreaking = parsed.isBreaking || isBreakingFromRaw;
+        const aiApprovalStatus = parsed.aiApprovalStatus;
+        const aiViolationCount = parsed.aiViolationCount;
+        const aiValidationIssues = parsed.aiValidationIssues;
+
+        const shouldPublishNow = publishRequested && aiApprovalStatus === 'AI_APPROVED';
+
+        // Build TenantWebArticle JSON
+        const webTitle = parsed.web.title;
+        const webSlug = slugFromAnyLanguage(webTitle, 120);
+        const plainText = parsed.web.content || rawText;
+        const contentHtml = buildSimpleHtmlFromPlainText(plainText);
+        const tags = (parsed.web.keywords || []).slice(0, 10);
+
+        const canonicalUrl = domainName ? `https://${domainName}/articles/${webSlug}` : `/articles/${webSlug}`;
+        const jsonLd = parsed.web.jsonLd || buildNewsArticleJsonLd({
+          headline: webTitle,
+          description: parsed.web.metaDescription || trimWords(plainText, 24).slice(0, 160),
+          canonicalUrl,
+          imageUrls: Array.isArray(raw.images) ? raw.images.slice(0, 3) : [],
+          languageCode: languageCode || undefined,
+          datePublished: shouldPublishNow ? (raw.publishedAt || nowIsoIST()) : undefined,
+          dateModified: nowIsoIST(),
+          keywords: tags,
+          articleSection: Array.isArray(raw.categoryIds) && raw.categoryIds[0] ? String(raw.categoryIds[0]) : undefined,
+          wordCount: words(plainText),
+        });
+
+        const webJson: any = {
+          title: webTitle,
+          subtitle: parsed.web.subTitle || '',
+          slug: webSlug,
+          summary: parsed.web.summary || '',
+          contentHtml,
+          plainText,
+          tags,
+          categories: Array.isArray(raw.categoryIds) ? raw.categoryIds : [],
+          meta: {
+            seoTitle: parsed.web.metaTitle || webTitle,
+            metaDescription: parsed.web.metaDescription || trimWords(plainText, 24).slice(0, 160),
+            locationKeywords: parsed.web.locationKeywords || [],
+          },
+          jsonLd,
+          publisher: { name: publisherName, websiteUrl },
+          locationRef: raw?.locationRef || undefined,
+          media: { images: raw?.images || [], videos: raw?.videos || [], coverImageUrl: raw?.coverImageUrl || null },
+          aiValidation: {
+            approvalStatus: aiApprovalStatus,
+            violationCount: aiViolationCount,
+            issues: aiValidationIssues,
+            isBreaking,
+          },
+          audit: { createdAt: nowIsoIST(), updatedAt: nowIsoIST() },
+        };
+
+        // Upsert TenantWebArticle (prefer existing id from base article)
+        try {
+          let languageId: string | undefined;
+          if (languageCode) {
+            const lang = await prisma.language.findUnique({ where: { code: String(languageCode) } }).catch(() => null);
+            if (lang?.id) languageId = lang.id;
+          }
+
+          const primaryCategoryId = Array.isArray(raw.categoryIds) && raw.categoryIds[0]
+            ? String(raw.categoryIds[0])
+            : (await fallbackCategoryId() || undefined);
+
+          const existingId = contentJson.webArticleId ? String(contentJson.webArticleId) : '';
+          if (existingId) {
+            await prisma.tenantWebArticle.update({
+              where: { id: existingId },
+              data: {
+                title: webTitle,
+                slug: webSlug,
+                domainId: domainId || undefined,
+                categoryId: primaryCategoryId,
+                contentJson: webJson,
+                seoTitle: webJson.meta.seoTitle,
+                metaDescription: webJson.meta.metaDescription,
+                jsonLd: webJson.jsonLd || undefined,
+                tags,
+                status: shouldPublishNow ? 'PUBLISHED' : 'DRAFT',
+                publishedAt: shouldPublishNow ? new Date() : null,
+                coverImageUrl: raw?.coverImageUrl || (raw?.images?.[0] || null),
+                isBreaking,
+                aiApprovalStatus,
+                aiViolationCount,
+                aiValidationIssues,
+              } as any
+            });
+            updatedCJ.webArticleId = existingId;
+          } else {
+            const createdWeb = await prisma.tenantWebArticle.create({
+              data: {
+                tenantId: article.tenantId,
+                domainId: domainId || undefined,
+                authorId: article.authorId,
+                languageId,
+                title: webTitle,
+                slug: webSlug,
+                status: shouldPublishNow ? 'PUBLISHED' : 'DRAFT',
+                publishedAt: shouldPublishNow ? new Date() : null,
+                coverImageUrl: raw?.coverImageUrl || (raw?.images?.[0] || null),
+                categoryId: primaryCategoryId,
+                contentJson: webJson,
+                seoTitle: webJson.meta.seoTitle,
+                metaDescription: webJson.meta.metaDescription,
+                jsonLd: webJson.jsonLd || undefined,
+                tags,
+                isBreaking,
+                aiApprovalStatus,
+                aiViolationCount,
+                aiValidationIssues,
+              } as any
+            });
+            updatedCJ.webArticleId = createdWeb.id;
+          }
+          updatedCJ.web = webJson;
+        } catch (e) {
+          updatedCJ.webError = String((e as any)?.message || e);
+        }
+
+        // Upsert ShortNews
+        try {
+          let firstCategoryId2 = (raw.categoryIds && raw.categoryIds[0]) || null;
+          if (!firstCategoryId2) firstCategoryId2 = await fallbackCategoryId();
+          if (!firstCategoryId2) throw new Error('MISSING_CATEGORY_ID');
+
+          const mediaUrls = Array.from(new Set([
+            ...(Array.isArray(raw.images) ? raw.images : []),
+            ...(Array.isArray(raw.videos) ? raw.videos : []),
+          ].map(x => String(x || '').trim()).filter(Boolean)));
+
+          const shortTitle = String(parsed.short.title || parsed.web.title || article.title || '').trim().slice(0, 50);
+          const shortSummary = String(parsed.short.subTitle || '').trim() || null;
+          const shortBody = trimWords(String(parsed.short.content || parsed.web.summary || '').trim(), 60);
+
+          const shortStatus = shouldPublishNow ? 'AI_APPROVED' : 'DESK_PENDING';
+
+          const existingShortId = contentJson.shortNewsId ? String(contentJson.shortNewsId) : '';
+          if (existingShortId) {
+            await prisma.shortNews.update({
+              where: { id: existingShortId },
+              data: {
+                title: shortTitle,
+                summary: shortSummary,
+                content: shortBody,
+                slug: slugFromAnyLanguage(shortTitle, 80),
+                categoryId: String(firstCategoryId2),
+                tags: (parsed.web.keywords || []).slice(0, 7),
+                featuredImage: (raw.coverImageUrl || (raw.images && raw.images[0]) || null),
+                status: shortStatus,
+                isBreaking,
+                aiApprovalStatus,
+                aiViolationCount,
+                aiValidationIssues,
+                mediaUrls,
+                placeId: raw?.locationRef?.placeId || null,
+                placeName: raw?.locationRef?.displayName || null,
+                address: raw?.locationRef?.address || null,
+                seo: {
+                  metaTitle: parsed.web.metaTitle || shortTitle,
+                  metaDescription: parsed.web.metaDescription || '',
+                  tags: (parsed.web.keywords || []).slice(0, 10),
+                  altTexts: {},
+                } as any,
+              } as any
+            });
+            updatedCJ.shortNewsId = existingShortId;
+          } else {
+            const sn = await prisma.shortNews.create({
+              data: {
+                title: shortTitle,
+                slug: slugFromAnyLanguage(shortTitle, 80),
+                summary: shortSummary,
+                content: shortBody,
+                language: languageCode || 'te',
+                authorId: article.authorId,
+                categoryId: String(firstCategoryId2),
+                tags: (parsed.web.keywords || []).slice(0, 7),
+                featuredImage: (raw.coverImageUrl || (raw.images && raw.images[0]) || null),
+                status: shortStatus,
+                isBreaking,
+                aiApprovalStatus,
+                aiViolationCount,
+                aiValidationIssues,
+                seo: {
+                  metaTitle: parsed.web.metaTitle || shortTitle,
+                  metaDescription: parsed.web.metaDescription || '',
+                  tags: (parsed.web.keywords || []).slice(0, 10),
+                  altTexts: {},
+                } as any,
+                mediaUrls,
+                placeId: raw?.locationRef?.placeId || null,
+                placeName: raw?.locationRef?.displayName || null,
+                address: raw?.locationRef?.address || null,
+              } as any
+            });
+            updatedCJ.shortDone = true;
+            updatedCJ.shortNewsId = sn.id;
+          }
+        } catch (e) {
+          updatedCJ.shortError = String((e as any)?.message || e);
+        }
+
+        updatedCJ = {
+          ...updatedCJ,
+          aiStatus: 'DONE',
+          aiFinishedAt: nowIsoIST(),
+          aiRawOutput: out,
+          aiDecisionUsed: { tenantAiRewriteEnabled, aiMode, decidedEnabled, storedEnabled, promptKey: 'web_and_shortnews_ai_article' },
+          aiQueue: { web: false, short: false, newspaper: false },
+        };
+
+        await prisma.article.update({
+          where: { id: article.id },
+          data: {
+            contentJson: updatedCJ,
+            ...(shouldPublishNow ? { status: 'PUBLISHED' } : {}),
+          } as any
+        });
+        if (shouldPublishNow) {
+          await (prisma as any).newspaperArticle.updateMany({ where: { baseArticleId: article.id }, data: { status: 'PUBLISHED' } }).catch(() => null);
+        }
+        await updateRawArticleFromBaseArticle(article, updatedCJ);
+        return;
+      }
 
       // Optional billing enforcement: skip AI if tenant exceeded monthly token limit.
       // Best-effort guard (tokens are known only after calls). This prevents runaway usage.
@@ -553,6 +1026,15 @@ async function processOne(article: any) {
 
         const aiRes = await aiGenerateText({ prompt, purpose: 'rewrite' as any });
         const out = normalizeText(aiRes.text || '').trim();
+
+        const meta = extractAiValidationMeta(out);
+        const rawIsBreaking = typeof raw?.isBreaking === 'boolean' ? raw.isBreaking : null;
+        const isBreaking = (meta.isBreaking !== null ? meta.isBreaking : rawIsBreaking) ?? false;
+        const aiViolationCount = Number.isFinite(Number(meta.aiViolationCount)) ? Number(meta.aiViolationCount) : 0;
+        const aiApprovalStatus = meta.aiApprovalStatus
+          ? String(meta.aiApprovalStatus).trim()
+          : (aiViolationCount > 0 ? 'DESK_PENDING' : 'AI_APPROVED');
+        const aiValidationIssues = meta.aiValidationIssues ?? null;
 
         // Persist token usage for billing/auditing (best-effort; never fail the job due to metering).
         try {
@@ -698,6 +1180,15 @@ async function processOne(article: any) {
                 metaDescription: parsed.web.metaDescription || trimWords(plainText, 24).slice(0, 160),
               },
               jsonLd,
+              publisher: (raw && (raw as any).publisher) ? (raw as any).publisher : undefined,
+              locationRef: raw?.locationRef || undefined,
+              media: { images: raw?.images || [], videos: raw?.videos || [], coverImageUrl: raw?.coverImageUrl || null },
+              aiValidation: {
+                approvalStatus: aiApprovalStatus,
+                violationCount: aiViolationCount,
+                issues: aiValidationIssues,
+                isBreaking,
+              },
               blocks: [],
               audit: { createdAt: nowIsoIST(), updatedAt: nowIsoIST() },
             };
@@ -718,6 +1209,10 @@ async function processOne(article: any) {
                   metaDescription: webJson.meta.metaDescription,
                   jsonLd: webJson.jsonLd || undefined,
                   tags,
+                  isBreaking,
+                  aiApprovalStatus,
+                  aiViolationCount,
+                  aiValidationIssues,
                 } as any
               });
               updatedCJ.webArticleId = existingWeb.id;
@@ -737,6 +1232,10 @@ async function processOne(article: any) {
                   metaDescription: webJson.meta.metaDescription,
                   jsonLd: webJson.jsonLd || undefined,
                   tags,
+                  isBreaking,
+                  aiApprovalStatus,
+                  aiViolationCount,
+                  aiValidationIssues,
                 } as any
               });
               updatedCJ.webArticleId = createdWeb.id;
@@ -755,6 +1254,16 @@ async function processOne(article: any) {
               const locRef = (raw && (raw as any).locationRef) ? (raw as any).locationRef : null;
               const shortTitle = String(parsed.short.title || article.title || '').trim().slice(0, 50);
               const shortBody = trimWords(String(parsed.short.content || '').trim(), 60);
+
+              const mediaUrls = Array.from(new Set([
+                ...(Array.isArray(raw.images) ? raw.images : []),
+                ...(Array.isArray(raw.videos) ? raw.videos : []),
+              ].map(x => String(x || '').trim()).filter(Boolean)));
+
+              const shortStatus = aiViolationCount > 0
+                ? 'DESK_PENDING'
+                : (shouldPublish ? 'AI_APPROVED' : 'DESK_PENDING');
+
               const sn = await prisma.shortNews.create({
                 data: {
                   title: shortTitle,
@@ -765,14 +1274,18 @@ async function processOne(article: any) {
                   categoryId: firstCategoryId,
                   tags: (parsed.web.keywords || []).slice(0, 7),
                   featuredImage: (raw.images && raw.images[0]) ? raw.images[0] : null,
-                  status: shouldPublish ? 'AI_APPROVED' : 'DESK_PENDING',
+                  status: shortStatus,
+                  isBreaking,
+                  aiApprovalStatus,
+                  aiViolationCount,
+                  aiValidationIssues,
                   seo: {
                     metaTitle: parsed.web.seoTitle || shortTitle,
                     metaDescription: parsed.web.metaDescription || '',
                     tags: (parsed.web.keywords || []).slice(0, 10),
                     altTexts: {},
                   } as any,
-                  mediaUrls: raw.images || [],
+                  mediaUrls,
                   placeId: locRef?.placeId || null,
                   placeName: locRef?.displayName || null,
                   address: locRef?.address || null,
@@ -792,6 +1305,7 @@ async function processOne(article: any) {
             aiStatus: 'DONE',
             aiFinishedAt: nowIsoIST(),
             aiRawOutput: out,
+            aiDecisionUsed: { tenantAiRewriteEnabled, aiMode, decidedEnabled, storedEnabled },
             aiQueue: { web: false, short: false, newspaper: false },
           };
           await prisma.article.update({ where: { id: article.id }, data: { contentJson: updatedCJ } });

@@ -1,6 +1,7 @@
 import prisma from './prisma';
 import { CORE_NEWS_CATEGORIES } from './categoryAuto';
 import { DEFAULT_CATEGORY_TREE, defaultCategorySlugify } from './defaultCategories';
+import { DEFAULT_PROMPTS } from './defaultPrompts';
 
 export async function ensureCoreSeeds() {
   // 1. Roles
@@ -420,5 +421,23 @@ export async function ensureCoreSeeds() {
     if (ops.length) await (prisma as any).$transaction(ops);
   } catch {
     // best-effort; designations can be seeded later via tenant seed endpoint
+  }
+
+  // 8. Default AI Prompts (create missing only)
+  // Ensures critical prompt keys exist after DB reset/new DB.
+  // Non-destructive: never overwrite existing prompt content.
+  try {
+    const keys = DEFAULT_PROMPTS.map(p => p.key);
+    const existing = await (prisma as any).prompt?.findMany?.({ where: { key: { in: keys } }, select: { key: true } }).catch(() => [] as any);
+    const existingKeys = new Set((existing as any[]).map(r => String(r?.key)));
+    const missing = DEFAULT_PROMPTS.filter(p => !existingKeys.has(p.key));
+    if (missing.length) {
+      await (prisma as any).prompt?.createMany?.({
+        data: missing.map(p => ({ key: p.key, content: p.content, description: p.description || null })),
+        skipDuplicates: true,
+      });
+    }
+  } catch {
+    // best-effort
   }
 }

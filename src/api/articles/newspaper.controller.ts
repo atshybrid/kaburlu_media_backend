@@ -388,6 +388,11 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const lead = body.lead != null ? String(body.lead).trim() : '';
         const contentText = [lead, ...paragraphTexts].filter(Boolean).join('\n\n').trim();
 
+        // Breaking/news_type flag (stored into web + short news outputs)
+        const isBreaking =
+            body?.breaking === true ||
+            String(body?.newsType || body?.news_type || '').trim().toLowerCase() === 'breaking';
+
         const TITLE_MAX_CHARS = 100;
         const SUBTITLE_MAX_CHARS = 100;
         const BULLET_POINT_MAX_CHARS = 100;
@@ -512,7 +517,9 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 title,
                 content: contentText || title,
                 type: 'reporter',
-                status: shouldPublish ? 'PUBLISHED' : 'PENDING',
+                // If user requested publish, keep base Article pending until AI rewrite finishes.
+                // Worker will flip to PUBLISHED (and publish web+short) on AI_APPROVED.
+                status: shouldPublish ? 'PENDING' : 'PENDING',
                 authorId,
                 tenantId,
                 languageId,
@@ -532,6 +539,9 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         domainId,
                         images,
                         videos,
+                        // Publish intent: worker uses this to publish after rewrite.
+                        isPublished: shouldPublish,
+                        isBreaking,
                         media: { images, videos },
                         coverImageUrl: normalizedMedia.coverImageUrl,
                         locationRef,
@@ -573,7 +583,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         languageId,
                         title: String(webJson.title || title),
                         slug: String(webJson.slug || slugFromAnyLanguage(title, 120)),
-                        status: shouldPublish ? 'PUBLISHED' : 'PENDING',
+                        // Always start as DRAFT; worker will publish after AI_APPROVED if requested.
+                        status: 'DRAFT',
                         categoryId: categoryIds?.[0] ? String(categoryIds[0]) : undefined,
                         contentJson: webJson,
                         seoTitle: webJson?.meta?.seoTitle,
@@ -581,7 +592,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                         jsonLd: webJson?.jsonLd || undefined,
                         tags: Array.isArray(webJson?.tags) ? webJson.tags : [],
                         coverImageUrl: (normalizedMedia.coverImageUrl || undefined),
-                        publishedAt: shouldPublish ? (publishedAt ? new Date(publishedAt) as any : new Date()) : null,
+                        isBreaking,
+                        publishedAt: null,
                     } as any
                 });
                 await prisma.article.update({
@@ -618,7 +630,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 districtId: locationRef?.districtId || null,
                 mandalId: locationRef?.mandalId || null,
                 villageId: locationRef?.villageId || null,
-                status: effectiveStatus === 'PUBLISHED' ? 'PUBLISHED' : 'PENDING'
+                // Keep pending until AI rewrite finishes; worker will publish on AI_APPROVED if requested.
+                status: 'PENDING'
             }
         });
 
@@ -636,7 +649,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
             aiMode,
             queued: { web: true, short: shortQueued, newspaper: aiMode === 'FULL' },
             statusUrl: `/articles/${baseArticle.id}/ai-status`,
-            effectiveStatus,
+            // Status is pending while AI runs.
+            effectiveStatus: 'PENDING',
             reporterAutoPublishApplied: roleName === 'REPORTER' ? reporterAutoPublish : undefined,
         });
     } catch (e) {

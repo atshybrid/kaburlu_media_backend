@@ -13,6 +13,7 @@ model ShortNews {
   summary        String?
   content        String // ≤60 words
   language       String?
+  isBreaking     Boolean           @default(false)
   author         User              @relation(fields: [authorId], references: [id])
   authorId       String
   categoryId     String
@@ -20,6 +21,9 @@ model ShortNews {
   featuredImage  String?
   publishDate    DateTime?
   status         String            @default("PENDING") // PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED
+  aiApprovalStatus String?
+  aiViolationCount Int             @default(0)
+  aiValidationIssues Json?
   seo            Json?
   // Optional extra headings styling payload, e.g. { h2: { text, color?, size? }, h3: { text, color?, size? } }
   headings       Json?
@@ -329,6 +333,12 @@ model TenantWebArticle {
   slug          String
   status        String  @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   coverImageUrl String?
+  isBreaking   Boolean @default(false)
+
+  // AI validation/approval metadata (separate from editorial publish status)
+  aiApprovalStatus   String?
+  aiViolationCount   Int     @default(0)
+  aiValidationIssues Json?
 
   // Primary category for the web article (optional; legacy contentJson.categories may still contain an array)
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
