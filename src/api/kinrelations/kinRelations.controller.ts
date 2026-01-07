@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import { validate } from 'class-validator';
-import { CreateKinRelationDto, UpdateKinRelationDto, BulkUpsertKinRelation } from './kinRelations.dto';
-import { listKinRelations, getKinRelationByCode, createKinRelation, updateKinRelation, deleteKinRelation, bulkUpsertKinRelations } from './kinRelations.service';
+import { CreateKinRelationDto, UpdateKinRelationDto, BulkUpsertKinRelation, UpsertKinRelationNameDto, BulkUpsertKinRelationName } from './kinRelations.dto';
+import { listKinRelations, getKinRelationByCode, createKinRelation, updateKinRelation, deleteKinRelation, bulkUpsertKinRelations, listKinRelationNamesByCode, bulkUpsertKinRelationNames } from './kinRelations.service';
 
 export async function listKinRelationsController(req: Request, res: Response) {
   try {
-    const { category, side, gender, search } = req.query as any;
-    const items = await listKinRelations({ category, side, gender, search });
+    const { category, side, gender, search, languageCode } = req.query as any;
+    const items = await listKinRelations({ category, side, gender, search, languageCode });
     res.json(items);
   } catch (e) {
     console.error('Failed to list kin relations:', e);
@@ -93,5 +93,43 @@ export async function bulkUpsertKinRelationsController(req: Request, res: Respon
   } catch (e) {
     console.error('Failed bulk upsert kin relations:', e);
     res.status(500).json({ error: 'Failed to bulk upsert kin relations' });
+  }
+}
+
+export async function listKinRelationNamesController(req: Request, res: Response) {
+  try {
+    const { code } = req.params;
+    const result = await listKinRelationNamesByCode(String(code));
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    return res.json(result);
+  } catch (e) {
+    console.error('Failed to list kin relation names:', e);
+    return res.status(500).json({ error: 'Failed to list kin relation names' });
+  }
+}
+
+export async function bulkUpsertKinRelationNamesController(req: Request, res: Response) {
+  const body = req.body;
+  if (!Array.isArray(body)) {
+    return res.status(400).json({ error: 'Expected an array of relation name items' });
+  }
+
+  const items: BulkUpsertKinRelationName[] = [];
+  for (const raw of body) {
+    const dto = new UpsertKinRelationNameDto();
+    Object.assign(dto, raw);
+    const errors = await validate(dto);
+    if (errors.length) {
+      return res.status(400).json({ error: 'Validation failed for one or more items', details: errors });
+    }
+    items.push(dto);
+  }
+
+  try {
+    const result = await bulkUpsertKinRelationNames(items);
+    return res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('Failed bulk upsert kin relation names:', e);
+    return res.status(500).json({ error: 'Failed to bulk upsert kin relation names' });
   }
 }

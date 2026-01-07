@@ -352,6 +352,367 @@ router.get('/admin/overview', auth, async (req, res) => {
 
 /**
  * @swagger
+ * /dashboard/admin/full:
+ *   get:
+ *     summary: Comprehensive Tenant Admin dashboard (all sections)
+ *     description: |
+ *       Returns a complete dashboard payload suitable for advanced admin UIs.
+ *       Includes: profile, branding, domains, reporters breakdown, articles stats,
+ *       payments, ID cards, billing/subscription, AI usage, quick actions, and recent activity.
+ *     tags: [Dashboard]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Full admin dashboard payload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 kind: { type: string, example: tenant_admin_full }
+ *                 profile: { type: object }
+ *                 tenant: { type: object }
+ *                 branding: { type: object }
+ *                 domains: { type: object }
+ *                 reporters: { type: object }
+ *                 articles: { type: object }
+ *                 payments: { type: object }
+ *                 idCards: { type: object }
+ *                 billing: { type: object }
+ *                 aiUsage: { type: object }
+ *                 featureFlags: { type: object }
+ *                 quickActions: { type: array }
+ *                 recentActivity: { type: array }
+ *                 generatedAt: { type: string }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/admin/full', auth, async (req, res) => {
+  const scope = await requireTenantAdminSelfScope(req);
+  if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+  const { tenantId, userId, reporter } = scope.value;
+  const now = new Date();
+  const days7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const days30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const days30Ahead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const p: any = prisma;
+
+  // ─── Parallel data fetch ───
+  const [
+    // Tenant core
+    tenantRow,
+    tenantEntity,
+    tenantTheme,
+    tenantSettings,
+    tenantFeatureFlags,
+    tenantIdCardSettings,
+    // Domains
+    domainsAll,
+    // Reporters
+    reportersTotal,
+    reportersActive,
+    reportersInactive,
+    kycPending,
+    kycSubmitted,
+    kycApproved,
+    kycRejected,
+    reportersByLevel,
+    recentReporters,
+    // ID Cards
+    reportersWithIdCard,
+    idCardsIssuedThisMonth,
+    idCardsExpiring30d,
+    // Payments
+    paymentsPending,
+    paymentsPaid30d,
+    paymentsTotal30d,
+    // Articles
+    webByStatus,
+    webPublished7d,
+    webPublished30d,
+    webViewsTotal,
+    webTopViewed,
+    newspaperByStatus,
+    newspaperCreated30d,
+    // Raw articles (reporter submissions)
+    rawArticlesNew,
+    rawArticlesPending,
+    // Billing
+    activeSub,
+    // AI Usage (this month)
+    aiEventsThisMonth,
+    aiTokensThisMonth,
+    // Recent activity
+    recentWebArticles,
+    recentPayments,
+  ] = await Promise.all([
+    // Tenant core
+    p.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true, slug: true, prgiNumber: true, prgiStatus: true, stateId: true, createdAt: true } }).catch(() => null),
+    p.tenantEntity.findUnique({ where: { tenantId }, select: { prgiNumber: true, registrationTitle: true, nativeName: true, periodicity: true, registrationDate: true, ownerName: true, publisherName: true, editorName: true, address: true } }).catch(() => null),
+    p.tenantTheme.findUnique({ where: { tenantId }, select: { logoUrl: true, faviconUrl: true, primaryColor: true, headerHtml: true, homepageConfig: true } }).catch(() => null),
+    p.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null),
+    p.tenantFeatureFlags.findUnique({ where: { tenantId }, select: { enableMobileAppView: true, aiArticleRewriteEnabled: true, aiBillingEnabled: true, aiMonthlyTokenLimit: true, section2Rows: true, section2ListCount: true } }).catch(() => null),
+    p.tenantIdCardSettings.findUnique({ where: { tenantId }, select: { templateId: true, frontLogoUrl: true, roundStampUrl: true, signUrl: true, primaryColor: true, secondaryColor: true, validityType: true, validityDays: true, fixedValidUntil: true, idPrefix: true, idDigits: true, officeAddress: true, helpLine1: true, helpLine2: true } }).catch(() => null),
+    // Domains
+    p.domain.findMany({ where: { tenantId }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }], select: { id: true, domain: true, isPrimary: true, kind: true, status: true, verifiedAt: true, createdAt: true } }).catch(() => []),
+    // Reporters
+    p.reporter.count({ where: { tenantId } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, active: true } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, active: false } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, kycStatus: 'PENDING' } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, kycStatus: 'SUBMITTED' } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, kycStatus: 'APPROVED' } }).catch(() => 0),
+    p.reporter.count({ where: { tenantId, kycStatus: 'REJECTED' } }).catch(() => 0),
+    p.reporter.groupBy({ by: ['level'], where: { tenantId }, _count: { _all: true } }).catch(() => []),
+    p.reporter.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 5, select: { id: true, level: true, kycStatus: true, active: true, createdAt: true, user: { select: { id: true, mobileNumber: true } }, designation: { select: { code: true, name: true } } } }).catch(() => []),
+    // ID Cards
+    p.reporter.count({ where: { tenantId, idCard: { isNot: null } } }).catch(() => 0),
+    p.reporterIDCard.count({ where: { issuedAt: { gte: monthStart }, reporter: { tenantId } } }).catch(() => 0),
+    p.reporterIDCard.count({ where: { expiresAt: { gte: now, lte: days30Ahead }, reporter: { tenantId } } }).catch(() => 0),
+    // Payments
+    p.reporterPayment.count({ where: { tenantId, status: 'PENDING' } }).catch(() => 0),
+    p.reporterPayment.count({ where: { tenantId, status: 'PAID', paidAt: { gte: days30 } } }).catch(() => 0),
+    p.reporterPayment.aggregate({ where: { tenantId, status: 'PAID', paidAt: { gte: days30 } }, _sum: { amountMinor: true } }).catch(() => ({ _sum: { amountMinor: 0 } })),
+    // Articles
+    p.tenantWebArticle.groupBy({ by: ['status'], where: { tenantId }, _count: { _all: true } }).catch(() => []),
+    p.tenantWebArticle.count({ where: { tenantId, status: 'PUBLISHED', publishedAt: { gte: days7 } } }).catch(() => 0),
+    p.tenantWebArticle.count({ where: { tenantId, status: 'PUBLISHED', publishedAt: { gte: days30 } } }).catch(() => 0),
+    p.tenantWebArticle.aggregate({ where: { tenantId }, _sum: { viewCount: true } }).catch(() => ({ _sum: { viewCount: 0 } })),
+    p.tenantWebArticle.findMany({ where: { tenantId, status: 'PUBLISHED' }, orderBy: { viewCount: 'desc' }, take: 5, select: { id: true, title: true, slug: true, viewCount: true, publishedAt: true } }).catch(() => []),
+    p.newspaperArticle.groupBy({ by: ['status'], where: { tenantId }, _count: { _all: true } }).catch(() => []),
+    p.newspaperArticle.count({ where: { tenantId, createdAt: { gte: days30 } } }).catch(() => 0),
+    // Raw articles
+    p.rawArticle.count({ where: { tenantId, status: 'NEW' } }).catch(() => 0),
+    p.rawArticle.count({ where: { tenantId, status: 'PENDING_REVIEW' } }).catch(() => 0),
+    // Billing
+    p.tenantSubscription.findFirst({ where: { tenantId, status: { in: ['ACTIVE', 'TRIALING'] } }, orderBy: { createdAt: 'desc' }, select: { id: true, status: true, currentPeriodStart: true, currentPeriodEnd: true, cancelAtPeriodEnd: true, plan: { select: { id: true, name: true, cycle: true, baseAmountMinor: true } } } }).catch(() => null),
+    // AI Usage
+    p.aiUsageEvent.count({ where: { tenantId, createdAt: { gte: monthStart } } }).catch(() => 0),
+    p.aiUsageEvent.aggregate({ where: { tenantId, createdAt: { gte: monthStart } }, _sum: { totalTokens: true } }).catch(() => ({ _sum: { totalTokens: 0 } })),
+    // Recent activity
+    p.tenantWebArticle.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 5, select: { id: true, title: true, status: true, createdAt: true, author: { select: { id: true, mobileNumber: true } } } }).catch(() => []),
+    p.reporterPayment.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 5, select: { id: true, status: true, amountMinor: true, createdAt: true, reporter: { select: { id: true, user: { select: { mobileNumber: true } } } } } }).catch(() => []),
+  ]);
+
+  // ─── Transform groupBy results ───
+  const webStatusMap: Record<string, number> = {};
+  for (const row of webByStatus || []) {
+    webStatusMap[String(row.status)] = Number(row?._count?._all ?? 0);
+  }
+  const newspaperStatusMap: Record<string, number> = {};
+  for (const row of newspaperByStatus || []) {
+    newspaperStatusMap[String(row.status)] = Number(row?._count?._all ?? 0);
+  }
+  const levelBreakdown: Record<string, number> = {};
+  for (const row of reportersByLevel || []) {
+    levelBreakdown[String(row.level || 'UNKNOWN')] = Number(row?._count?._all ?? 0);
+  }
+
+  // ─── Ads from settings ───
+  const adsRaw = (tenantSettings as any)?.data?.ads;
+  const adsCount = Array.isArray(adsRaw) ? adsRaw.length : 0;
+
+  // ─── Build domain summary ───
+  const domainSummary = {
+    total: (domainsAll || []).length,
+    active: (domainsAll || []).filter((d: any) => d.status === 'ACTIVE').length,
+    pending: (domainsAll || []).filter((d: any) => d.status === 'PENDING' || d.status === 'VERIFYING').length,
+    primary: (domainsAll || []).find((d: any) => d.isPrimary) || null,
+    list: domainsAll,
+  };
+
+  // ─── Quick actions ───
+  const quickActions = [];
+  if (kycSubmitted > 0) {
+    quickActions.push({ key: 'review_kyc', label: `Review KYC (${kycSubmitted} pending)`, href: `/api/v1/dashboard/tenants/${tenantId}/reporters?kycStatus=SUBMITTED`, priority: 'high' });
+  }
+  if (rawArticlesPending > 0) {
+    quickActions.push({ key: 'review_articles', label: `Review Articles (${rawArticlesPending} pending)`, href: `/api/v1/raw-articles?tenantId=${tenantId}&status=PENDING_REVIEW`, priority: 'high' });
+  }
+  if (idCardsExpiring30d > 0) {
+    quickActions.push({ key: 'renew_id_cards', label: `Renew ID Cards (${idCardsExpiring30d} expiring)`, href: `/api/v1/dashboard/tenants/${tenantId}/id-cards?expiringInDays=30`, priority: 'medium' });
+  }
+  if (paymentsPending > 0) {
+    quickActions.push({ key: 'collect_payments', label: `Collect Payments (${paymentsPending} pending)`, href: `/api/v1/reporter-payments?tenantId=${tenantId}&status=PENDING`, priority: 'medium' });
+  }
+  quickActions.push({ key: 'add_reporter', label: 'Add New Reporter', href: `/api/v1/reporters`, priority: 'low' });
+  quickActions.push({ key: 'create_article', label: 'Create Web Article', href: `/api/v1/web-articles`, priority: 'low' });
+
+  // ─── Build response ───
+  return res.json({
+    kind: 'tenant_admin_full',
+
+    // Admin profile
+    profile: {
+      userId,
+      reporterId: reporter?.id,
+      designation: reporter?.designation,
+      level: reporter?.level,
+      active: reporter?.active,
+      kycStatus: reporter?.kycStatus,
+    },
+
+    // Tenant info
+    tenant: {
+      id: tenantRow?.id || tenantId,
+      name: tenantRow?.name,
+      slug: tenantRow?.slug,
+      prgiNumber: tenantRow?.prgiNumber,
+      prgiStatus: tenantRow?.prgiStatus,
+      stateId: tenantRow?.stateId,
+      createdAt: tenantRow?.createdAt,
+      entity: tenantEntity ? {
+        registrationTitle: tenantEntity.registrationTitle,
+        nativeName: tenantEntity.nativeName,
+        periodicity: tenantEntity.periodicity,
+        ownerName: tenantEntity.ownerName,
+        publisherName: tenantEntity.publisherName,
+        editorName: tenantEntity.editorName,
+        address: tenantEntity.address,
+      } : null,
+    },
+
+    // Branding
+    branding: {
+      logoUrl: tenantTheme?.logoUrl || tenantIdCardSettings?.frontLogoUrl || null,
+      faviconUrl: tenantTheme?.faviconUrl || null,
+      primaryColor: tenantTheme?.primaryColor || tenantIdCardSettings?.primaryColor || null,
+      secondaryColor: tenantIdCardSettings?.secondaryColor || null,
+      headerHtml: tenantTheme?.headerHtml || null,
+    },
+
+    // Domains
+    domains: domainSummary,
+
+    // Reporters section
+    reporters: {
+      total: reportersTotal,
+      active: reportersActive,
+      inactive: reportersInactive,
+      kyc: {
+        pending: kycPending,
+        submitted: kycSubmitted,
+        approved: kycApproved,
+        rejected: kycRejected,
+      },
+      byLevel: levelBreakdown,
+      recentlyAdded: recentReporters,
+    },
+
+    // Articles section
+    articles: {
+      web: {
+        byStatus: webStatusMap,
+        published7d: webPublished7d,
+        published30d: webPublished30d,
+        totalViews: webViewsTotal?._sum?.viewCount || 0,
+        topViewed: webTopViewed,
+      },
+      newspaper: {
+        byStatus: newspaperStatusMap,
+        created30d: newspaperCreated30d,
+      },
+      raw: {
+        newSubmissions: rawArticlesNew,
+        pendingReview: rawArticlesPending,
+      },
+    },
+
+    // Payments section
+    payments: {
+      pending: paymentsPending,
+      paid30d: paymentsPaid30d,
+      revenue30d: paymentsTotal30d?._sum?.amountMinor || 0,
+      recentPayments: recentPayments.map((p: any) => ({
+        id: p.id,
+        status: p.status,
+        amountMinor: p.amountMinor,
+        mobile: p.reporter?.user?.mobileNumber,
+        createdAt: p.createdAt,
+      })),
+    },
+
+    // ID Cards section
+    idCards: {
+      issued: reportersWithIdCard,
+      issuedThisMonth: idCardsIssuedThisMonth,
+      expiring30d: idCardsExpiring30d,
+      settings: tenantIdCardSettings ? {
+        templateId: tenantIdCardSettings.templateId,
+        validityType: tenantIdCardSettings.validityType,
+        validityDays: tenantIdCardSettings.validityDays,
+        fixedValidUntil: tenantIdCardSettings.fixedValidUntil,
+        idPrefix: tenantIdCardSettings.idPrefix,
+        idDigits: tenantIdCardSettings.idDigits,
+      } : null,
+    },
+
+    // Billing section
+    billing: {
+      subscription: activeSub ? {
+        id: activeSub.id,
+        status: activeSub.status,
+        plan: activeSub.plan,
+        currentPeriodStart: activeSub.currentPeriodStart,
+        currentPeriodEnd: activeSub.currentPeriodEnd,
+        cancelAtPeriodEnd: activeSub.cancelAtPeriodEnd,
+      } : null,
+      hasActiveSubscription: !!activeSub,
+    },
+
+    // AI Usage section
+    aiUsage: {
+      eventsThisMonth: aiEventsThisMonth,
+      tokensThisMonth: aiTokensThisMonth?._sum?.totalTokens || 0,
+      limitThisMonth: tenantFeatureFlags?.aiMonthlyTokenLimit || null,
+      limitReached: tenantFeatureFlags?.aiMonthlyTokenLimit
+        ? (aiTokensThisMonth?._sum?.totalTokens || 0) >= tenantFeatureFlags.aiMonthlyTokenLimit
+        : false,
+    },
+
+    // Feature flags
+    featureFlags: tenantFeatureFlags || {
+      enableMobileAppView: false,
+      aiArticleRewriteEnabled: true,
+      aiBillingEnabled: false,
+      aiMonthlyTokenLimit: null,
+    },
+
+    // Ads
+    ads: { configured: adsCount, list: adsRaw || [] },
+
+    // Quick actions (sorted by priority)
+    quickActions,
+
+    // Recent activity feed
+    recentActivity: [
+      ...recentWebArticles.map((a: any) => ({
+        type: 'article',
+        id: a.id,
+        title: a.title,
+        status: a.status,
+        authorMobile: a.author?.mobileNumber,
+        at: a.createdAt,
+      })),
+      ...recentPayments.map((p: any) => ({
+        type: 'payment',
+        id: p.id,
+        status: p.status,
+        amountMinor: p.amountMinor,
+        reporterMobile: p.reporter?.user?.mobileNumber,
+        at: p.createdAt,
+      })),
+    ].sort((a: any, b: any) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 10),
+
+    generatedAt: now.toISOString(),
+  });
+});
+
+/**
+ * @swagger
  * /dashboard/reporter/overview:
  *   get:
  *     summary: Reporter dashboard overview (single API, card-wise)

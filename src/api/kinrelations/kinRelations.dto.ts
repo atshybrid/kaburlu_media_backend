@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateKinRelationDto {
   @IsString()
@@ -77,3 +77,24 @@ export class UpdateKinRelationDto {
 }
 
 export type BulkUpsertKinRelation = CreateKinRelationDto;
+
+export class UpsertKinRelationNameDto {
+  @IsString()
+  @IsNotEmpty()
+  code!: string; // KinRelation.code
+
+  @IsString()
+  @IsNotEmpty()
+  languageCode!: string; // en, te, hi, ta, kn, ml, ...
+
+  @IsString()
+  @IsNotEmpty()
+  displayName!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  altNames?: string[];
+}
+
+export type BulkUpsertKinRelationName = UpsertKinRelationNameDto;

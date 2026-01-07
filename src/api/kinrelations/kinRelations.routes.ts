@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { listKinRelationsController, getKinRelationController, createKinRelationController, updateKinRelationController, deleteKinRelationController, bulkUpsertKinRelationsController } from './kinRelations.controller';
+import { listKinRelationsController, getKinRelationController, createKinRelationController, updateKinRelationController, deleteKinRelationController, bulkUpsertKinRelationsController, listKinRelationNamesController, bulkUpsertKinRelationNamesController } from './kinRelations.controller';
+import { requireSuperAdmin } from '../middlewares/authz';
 
 const router = Router();
 
@@ -51,6 +52,23 @@ router.get('/', listKinRelationsController);
  *       404: { description: Not found }
  */
 router.get('/:code', getKinRelationController);
+
+/**
+ * @swagger
+ * /kin-relations/{code}/names:
+ *   get:
+ *     summary: List language-specific names for a kin relation code
+ *     tags: [KinRelations]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Not found }
+ */
+router.get('/:code/names', listKinRelationNamesController);
 
 /**
  * @swagger
@@ -130,5 +148,31 @@ router.delete('/:code', passport.authenticate('jwt', { session: false }), delete
  *       200: { description: Upserted }
  */
 router.post('/bulk-upsert', passport.authenticate('jwt', { session: false }), bulkUpsertKinRelationsController);
+
+/**
+ * @swagger
+ * /kin-relations/names/bulk-upsert:
+ *   post:
+ *     summary: Bulk upsert language-specific kin relation names
+ *     tags: [KinRelations]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               type: object
+ *               required: [code, languageCode, displayName]
+ *               properties:
+ *                 code: { type: string }
+ *                 languageCode: { type: string, example: "hi" }
+ *                 displayName: { type: string }
+ *                 altNames: { type: array, items: { type: string } }
+ *     responses:
+ *       200: { description: Upserted }
+ */
+router.post('/names/bulk-upsert', passport.authenticate('jwt', { session: false }), requireSuperAdmin, bulkUpsertKinRelationNamesController);
 
 export default router;

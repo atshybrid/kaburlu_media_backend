@@ -97,6 +97,10 @@ model User {
   familyRelations        FamilyRelation[]   @relation("FamilyRelation_user")
   relatedFamilyRelations FamilyRelation[]   @relation("FamilyRelation_relatedUser")
   familyMemberships      FamilyMember[]
+  // New simplified family tree (placeholders + per-side trees)
+  createdFamilyTrees      FamilyTree[]
+  familyTreeMemberships   FamilyTreeMember[]
+  createdSurnames         Surname[]
   // Reporter profile (if user is a reporter/admin editor etc.)
   reporterProfile        Reporter?
   // Family graph back-relations
@@ -160,6 +164,7 @@ model State {
   isDeleted      Boolean        @default(false)
   translations   StateTranslation[]
   districts      District[]
+  surnames       Surname[]
   userProfiles   UserProfile[]  @relation("UserProfile_state")
   contentReads   ContentRead[]  @relation("ContentRead_state")
   tenants        Tenant[]
@@ -1365,6 +1370,81 @@ model FamilyMember {
   @@index([userId])
 }
 
+/// Family Tree side (one tree per side).
+enum FamilyTreeSide {
+  FATHER
+  MOTHER
+  SPOUSE
+}
+
+/// Auto-suggestable surname dictionary.
+/// - Never delete.
+/// - Create if missing.
+model Surname {
+  id              String   @id @default(cuid())
+  surnameEn       String
+  surnameNative   String?
+  state           State?   @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  stateId         String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByUserId String?
+  isVerified      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  familyTrees     FamilyTree[]
+
+  @@unique([stateId, surnameEn])
+  @@index([surnameEn])
+  @@index([stateId])
+}
+
+/// New simplified Family Tree (placeholder-friendly) to avoid disturbing legacy Family/FamilyMember.
+model FamilyTree {
+  id              String          @id @default(cuid())
+  side            FamilyTreeSide
+  groupName       String?
+  rootMemberId    String?
+  createdByUser   User            @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  surname         Surname?        @relation(fields: [surnameId], references: [id], onDelete: SetNull)
+  surnameId       String?
+  // Optional location hint; Village is tenant-scoped, so keep as a string without FK.
+  villageId       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  members         FamilyTreeMember[]
+
+  @@unique([createdByUserId, side])
+  @@index([createdByUserId])
+  @@index([side])
+  @@index([surnameId])
+  @@index([villageId])
+}
+
+model FamilyTreeMember {
+  id             String        @id @default(cuid())
+  familyTree     FamilyTree    @relation(fields: [familyTreeId], references: [id], onDelete: Cascade)
+  familyTreeId   String
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId         String?
+  fullName       String
+  kinRelation    KinRelation?  @relation(fields: [kinRelationId], references: [id], onDelete: SetNull)
+  kinRelationId  String?
+  parentMemberId String?
+  parentMember   FamilyTreeMember? @relation("FamilyTreeMember_Parent", fields: [parentMemberId], references: [id], onDelete: SetNull)
+  children       FamilyTreeMember[] @relation("FamilyTreeMember_Parent")
+  isPlaceholder  Boolean       @default(false)
+  isVerified     Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([familyTreeId, userId])
+  @@index([familyTreeId])
+  @@index([userId])
+  @@index([parentMemberId])
+  @@index([kinRelationId])
+}
+
 /// Dictionary of kinship relation labels in multiple languages
 model KinRelation {
   id             String   @id @default(cuid())
@@ -1376,10 +1456,28 @@ model KinRelation {
   generationDown Int      @default(0)
   en             String // English label
   te             String // Telugu label
+  names          KinRelationName[]
+  familyTreeMembers FamilyTreeMember[]
   isCommon       Boolean  @default(true)
   notes          Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+/// Language-specific display names for KinRelation codes.
+/// Keeps language strings separate from the logical KinRelation row.
+model KinRelationName {
+  id            String      @id @default(cuid())
+  kinRelation   KinRelation @relation(fields: [kinRelationId], references: [id], onDelete: Cascade)
+  kinRelationId String
+  languageCode  String // e.g., en, te, hi, ta, kn, ml, bn, mr, ur, gu, pa, or, as
+  displayName   String
+  altNames      String[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([kinRelationId, languageCode])
+  @@index([languageCode])
 }
 
 model Comment {

@@ -14,6 +14,63 @@ type Kin = {
   isCommon?: boolean;
 };
 
+type LangCode = 'en' | 'te' | 'hi' | 'ta' | 'kn' | 'ml';
+
+const EXTRA_NAMES: Partial<Record<LangCode, Partial<Record<string, { displayName: string; altNames?: string[] }>>>> = {
+  // Hindi
+  hi: {
+    SELF: { displayName: 'मैं' },
+    FATHER: { displayName: 'पिता' },
+    MOTHER: { displayName: 'माता' },
+    HUSBAND: { displayName: 'पति' },
+    WIFE: { displayName: 'पत्नी' },
+    SON: { displayName: 'पुत्र' },
+    DAUGHTER: { displayName: 'पुत्री' },
+    BROTHER: { displayName: 'भाई' },
+    SISTER: { displayName: 'बहन' },
+    PATERNAL_UNCLE: { displayName: 'चाचा' },
+    MATERNAL_UNCLE: { displayName: 'मामा' },
+    PATERNAL_AUNT: { displayName: 'बुआ' },
+    MATERNAL_AUNT: { displayName: 'मौसी' },
+    PATERNAL_GRANDFATHER: { displayName: 'दादा' },
+    PATERNAL_GRANDMOTHER: { displayName: 'दादी' },
+    MATERNAL_GRANDFATHER: { displayName: 'नाना' },
+    MATERNAL_GRANDMOTHER: { displayName: 'नानी' },
+    GRANDSON: { displayName: 'पोता' },
+    GRANDDAUGHTER: { displayName: 'पोती' },
+  },
+  // Tamil
+  ta: {
+    SELF: { displayName: 'நான்' },
+    FATHER: { displayName: 'அப்பா' },
+    MOTHER: { displayName: 'அம்மா' },
+    HUSBAND: { displayName: 'கணவர்' },
+    WIFE: { displayName: 'மனைவி' },
+    SON: { displayName: 'மகன்' },
+    DAUGHTER: { displayName: 'மகள்' },
+    BROTHER: { displayName: 'அண்ணன்' },
+    SISTER: { displayName: 'அக்கா' },
+  },
+  // Kannada
+  kn: {
+    SELF: { displayName: 'ನಾನು' },
+    FATHER: { displayName: 'ತಂದೆ' },
+    MOTHER: { displayName: 'ತಾಯಿ' },
+    SON: { displayName: 'ಮಗ' },
+    DAUGHTER: { displayName: 'ಮಗಳು' },
+    BROTHER: { displayName: 'ಅಣ್ಣ' },
+    SISTER: { displayName: 'ಅಕ್ಕ' },
+  },
+  // Malayalam
+  ml: {
+    SELF: { displayName: 'ഞാൻ' },
+    FATHER: { displayName: 'അച്ഛൻ' },
+    MOTHER: { displayName: 'അമ്മ' },
+    SON: { displayName: 'മകൻ' },
+    DAUGHTER: { displayName: 'മകൾ' },
+  },
+};
+
 const KIN: Kin[] = [
   // Self
   { code: 'SELF', category: 'SELF', gender: 'NEUTRAL', en: 'Self', te: 'నేను' },
@@ -63,11 +120,37 @@ const KIN: Kin[] = [
 async function main() {
   console.log('Seeding KinRelation dictionary...');
   for (const k of KIN) {
-    await (prisma as any)['kinRelation'].upsert({
+    const rel = await (prisma as any)['kinRelation'].upsert({
       where: { code: k.code },
       update: { ...k },
       create: { code: k.code, category: k.category, gender: k.gender || null as any, side: k.side || null as any, generationUp: k.generationUp || 0, generationDown: k.generationDown || 0, en: k.en, te: k.te, isCommon: k.isCommon ?? true }
     } as any);
+
+    // Best-practice: also store language-specific labels in KinRelationName.
+    // Non-destructive: upsert by (kinRelationId, languageCode).
+    await (prisma as any)['kinRelationName']?.upsert?.({
+      where: { kinRelationId_languageCode: { kinRelationId: rel.id, languageCode: 'en' } },
+      update: { displayName: k.en, altNames: [] },
+      create: { kinRelationId: rel.id, languageCode: 'en', displayName: k.en, altNames: [] },
+    } as any).catch(() => null);
+
+    await (prisma as any)['kinRelationName']?.upsert?.({
+      where: { kinRelationId_languageCode: { kinRelationId: rel.id, languageCode: 'te' } },
+      update: { displayName: k.te, altNames: [] },
+      create: { kinRelationId: rel.id, languageCode: 'te', displayName: k.te, altNames: [] },
+    } as any).catch(() => null);
+
+    // Additional languages (when mappings are available)
+    for (const lang of Object.keys(EXTRA_NAMES) as LangCode[]) {
+      const entry = EXTRA_NAMES?.[lang]?.[k.code];
+      if (!entry?.displayName) continue;
+      const altNames = Array.isArray(entry.altNames) ? entry.altNames : [];
+      await (prisma as any)['kinRelationName']?.upsert?.({
+        where: { kinRelationId_languageCode: { kinRelationId: rel.id, languageCode: lang } },
+        update: { displayName: entry.displayName, altNames },
+        create: { kinRelationId: rel.id, languageCode: lang, displayName: entry.displayName, altNames },
+      } as any).catch(() => null);
+    }
   }
   console.log('Done.');
 }

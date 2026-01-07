@@ -59,6 +59,8 @@ import aiTestRoutes from './api/ai/ai.routes';
 import dashboardRoutes from './api/dashboard/dashboard.routes';
 import aiNewspaperRewriteRoutes from './api/ainewspaper/ainewspaper.routes';
 import locationAiRoutes from './api/locationAi/locationAi.routes';
+import metaRoutes from './api/meta/meta.routes';
+import familyRoutes from './api/family/family.routes';
 
 const app = express();
 
@@ -201,6 +203,8 @@ app.use('/', reporterPaymentsRoutes);
 app.use('/', tenantStaticPagesRoutes);
 // family & kin-relations removed
 app.use('/castes', castesRoutes);
+app.use('/meta', metaRoutes);
+app.use('/family', familyRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -246,6 +250,8 @@ apiV1.use('/dashboard', dashboardRoutes);
 apiV1.use('/', reporterPaymentsRoutes);
 // family & kin-relations removed
 apiV1.use('/castes', castesRoutes);
+apiV1.use('/meta', metaRoutes);
+apiV1.use('/family', familyRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);
