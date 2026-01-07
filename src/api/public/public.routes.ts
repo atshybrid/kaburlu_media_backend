@@ -1054,7 +1054,8 @@ router.get('/articles/:slug', async (req, res) => {
 
   const detail: any = toWebArticleDetailDto(a);
 
-  const canonicalUrl = `https://${domain.domain}/articles/${encodeURIComponent(detail.slug)}`;
+  const lang = String((a as any)?.language?.code || detail?.languageCode || 'en').trim().toLowerCase() || 'en';
+  const canonicalUrl = `https://${domain.domain}/${encodeURIComponent(lang)}/articles/${encodeURIComponent(detail.slug)}`;
   const imageUrls = [detail?.coverImage?.url].filter(Boolean) as string[];
   const authorNameRaw = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
   const tenantDisplayName = (tenant as any)?.displayName || tenant.name;

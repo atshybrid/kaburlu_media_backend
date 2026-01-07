@@ -946,20 +946,90 @@ router.patch('/web/:id/status', passport.authenticate('jwt', { session: false })
  *         description: List
  *         content:
  *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total: { type: integer }
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       tenantId: { type: string }
+ *                       authorId: { type: string }
+ *                       baseArticleId: { type: string, nullable: true }
+ *                       categoryId: { type: string, nullable: true }
+ *                       languageId: { type: string, nullable: true }
+ *                       title: { type: string }
+ *                       subTitle: { type: string, nullable: true }
+ *                       lead: { type: string, nullable: true }
+ *                       heading: { type: string }
+ *                       points: { type: array, items: { type: string } }
+ *                       dateline: { type: string }
+ *                       placeName: { type: string, nullable: true }
+ *                       content: { type: string }
+ *                       status: { type: string }
+ *                       createdAt: { type: string }
+ *                       updatedAt: { type: string }
+ *                       viewCount:
+ *                         type: integer
+ *                         nullable: true
+ *                         description: Base Article view count (Article.viewCount)
+ *                       sportLink: { type: string, nullable: true }
+ *                       sportLinkDomain: { type: string, nullable: true }
+ *                       sportLinkSlug: { type: string, nullable: true }
+ *                       webArticleId: { type: string, nullable: true }
+ *                       webArticleStatus: { type: string, nullable: true }
+ *                       webArticleUrl: { type: string, nullable: true }
+ *                       webArticleViewCount: { type: integer, nullable: true }
+ *                       webArticle:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id: { type: string }
+ *                           slug: { type: string, nullable: true }
+ *                           status: { type: string, nullable: true }
+ *                           url: { type: string, nullable: true }
+ *                           languageCode: { type: string, nullable: true }
+ *                           title: { type: string, nullable: true }
+ *                           viewCount: { type: integer, nullable: true }
+ *                           publishedAt: { type: string, nullable: true }
  *             example:
  *               total: 1
  *               items:
  *                 - id: "cmxxxx"
  *                   tenantId: "cmtenant"
+ *                   authorId: "cmuser"
  *                   baseArticleId: "cmarticle"
+ *                   categoryId: "cmcat"
  *                   title: "Budget Highlights"
  *                   subTitle: "Key takeaways"
+ *                   lead: "Today the finance minister announced..."
  *                   heading: "Budget Highlights"
  *                   points: ["Point one", "Point two"]
  *                   dateline: "Hyderabad, Dec 21, 2025"
  *                   placeName: "Hyderabad"
- *                   status: "DRAFT"
+ *                   status: "PUBLISHED"
  *                   createdAt: "2025-12-21T10:00:00.000Z"
+ *                   updatedAt: "2025-12-21T10:00:00.000Z"
+ *                   viewCount: 145
+ *                   webArticle:
+ *                     id: "cmweb"
+ *                     slug: "budget-highlights"
+ *                     status: "PUBLISHED"
+ *                     url: "https://example.com/te/articles/budget-highlights"
+ *                     languageCode: "te"
+ *                     title: "Budget Highlights"
+ *                     viewCount: 987
+ *                     publishedAt: "2025-12-21T10:05:00.000Z"
+ *                   webArticleId: "cmweb"
+ *                   webArticleStatus: "PUBLISHED"
+ *                   webArticleUrl: "https://example.com/te/articles/budget-highlights"
+ *                   webArticleViewCount: 987
+ *                   sportLink: "https://example.com/te/articles/budget-highlights"
+ *                   sportLinkDomain: "example.com"
+ *                   sportLinkSlug: "budget-highlights"
  */
 router.get('/newspaper', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, listNewspaperArticles);
 
@@ -1246,7 +1316,39 @@ router.post('/newspaper', passport.authenticate('jwt', { session: false }), requ
  *     tags: [Articles]
  *     security: [ { bearerAuth: [] } ]
  *     responses:
- *       200: { description: Details }
+ *       200:
+ *         description: Details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 tenantId: { type: string }
+ *                 authorId: { type: string }
+ *                 baseArticleId: { type: string, nullable: true }
+ *                 categoryId: { type: string, nullable: true }
+ *                 languageId: { type: string, nullable: true }
+ *                 title: { type: string }
+ *                 subTitle: { type: string, nullable: true }
+ *                 lead: { type: string, nullable: true }
+ *                 heading: { type: string }
+ *                 points: { type: array, items: { type: string } }
+ *                 dateline: { type: string }
+ *                 placeName: { type: string, nullable: true }
+ *                 content: { type: string }
+ *                 status: { type: string }
+ *                 createdAt: { type: string }
+ *                 updatedAt: { type: string }
+ *                 viewCount: { type: integer, nullable: true }
+ *                 sportLink: { type: string, nullable: true }
+ *                 sportLinkDomain: { type: string, nullable: true }
+ *                 sportLinkSlug: { type: string, nullable: true }
+ *                 webArticle: { type: object, nullable: true }
+ *                 webArticleId: { type: string, nullable: true }
+ *                 webArticleStatus: { type: string, nullable: true }
+ *                 webArticleUrl: { type: string, nullable: true }
+ *                 webArticleViewCount: { type: integer, nullable: true }
  */
 router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, getNewspaperArticle);
 
@@ -1265,6 +1367,8 @@ router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), r
  *             properties:
  *               title: { type: string }
  *               heading: { type: string }
+ *               subTitle: { type: string, nullable: true }
+ *               lead: { type: string, nullable: true }
  *               points: { type: array, items: { type: string } }
  *               status: { type: string }
  *               content: { type: string }

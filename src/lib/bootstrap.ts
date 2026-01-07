@@ -1,5 +1,6 @@
 import prisma from './prisma';
 import { CORE_NEWS_CATEGORIES } from './categoryAuto';
+import { DEFAULT_CATEGORY_TREE, defaultCategorySlugify } from './defaultCategories';
 
 export async function ensureCoreSeeds() {
   // 1. Roles
@@ -185,8 +186,161 @@ export async function ensureCoreSeeds() {
         skipDuplicates: true,
       });
     }
+
+    // Ensure translation rows exist for core categories (all active languages).
+    // Trigger background translation only if placeholders were missing.
+    const languageCodes = (await prisma.language.findMany({ where: { isDeleted: false }, select: { code: true } }))
+      .map(l => String(l.code || '').trim())
+      .filter(Boolean);
+    if (languageCodes.length) {
+      const coreCats = await prisma.category.findMany({
+        where: { slug: { in: CORE_NEWS_CATEGORIES.map(c => c.slug) }, isDeleted: false },
+        select: { id: true, name: true },
+      });
+
+      // Current translation counts per category (for deciding whether to kick translation).
+      const existingTr = await prisma.categoryTranslation.findMany({
+        where: { categoryId: { in: coreCats.map(c => c.id) }, language: { in: languageCodes as any } },
+        select: { categoryId: true },
+      }).catch(() => [] as any);
+      const countByCategory = new Map<string, number>();
+      for (const t of existingTr as any[]) {
+        const k = String(t.categoryId);
+        countByCategory.set(k, (countByCategory.get(k) || 0) + 1);
+      }
+
+      await prisma.categoryTranslation.createMany({
+        data: coreCats.flatMap(c =>
+          languageCodes.map(code => ({ categoryId: c.id, language: code as any, name: c.name }))
+        ),
+        skipDuplicates: true,
+      });
+
+      // Fire-and-forget translations for categories that were missing placeholders.
+      try {
+        const mod = await import('../api/categories/categories.service');
+        if (typeof mod.translateAndSaveCategoryInBackground === 'function') {
+          for (const c of coreCats) {
+            const existingCount = countByCategory.get(c.id) || 0;
+            if (existingCount < languageCodes.length) {
+              void mod.translateAndSaveCategoryInBackground(c.id, c.name);
+            }
+          }
+        }
+      } catch {
+        // best-effort
+      }
+    }
   } catch {
     // best-effort; categories can be seeded later via scripts
+  }
+
+  // 6b. Default Categories + Subcategories (product defaults)
+  // - Non-destructive: create missing only.
+  // - Translations: create placeholders for all active languages and translate in background for newly created categories.
+  try {
+    const languages = await prisma.language.findMany({
+      where: { isDeleted: false },
+      select: { code: true },
+    });
+
+    const languageCodes = languages.map(l => String(l.code || '').trim()).filter(Boolean);
+    const ensureCategoryTranslations = async (categoryId: string, placeholderName: string) => {
+      if (!languageCodes.length) return false;
+      const existingCount = await prisma.categoryTranslation.count({
+        where: { categoryId, language: { in: languageCodes as any } },
+      }).catch(() => 0);
+      const hadAll = existingCount >= languageCodes.length;
+      const codes = languages.map(l => String(l.code || '').trim()).filter(Boolean);
+      if (!codes.length) return;
+      await prisma.categoryTranslation.createMany({
+        data: codes.map(code => ({
+          categoryId,
+          language: code as any,
+          name: placeholderName,
+        })),
+        skipDuplicates: true,
+      });
+      return !hadAll;
+    };
+
+    const translateInBackground = async (categoryId: string, categoryName: string) => {
+      try {
+        const mod = await import('../api/categories/categories.service');
+        if (typeof mod.translateAndSaveCategoryInBackground === 'function') {
+          void mod.translateAndSaveCategoryInBackground(categoryId, categoryName);
+        }
+      } catch {
+        // best-effort
+      }
+    };
+
+    for (const parent of DEFAULT_CATEGORY_TREE) {
+      let parentRow = await prisma.category.findUnique({ where: { slug: parent.slug } });
+      if (!parentRow) {
+        parentRow = await prisma.category.create({
+          data: { name: parent.name, slug: parent.slug },
+        });
+        const missingTr = await ensureCategoryTranslations(parentRow.id, parentRow.name);
+        if (missingTr) await translateInBackground(parentRow.id, parentRow.name);
+      } else {
+        const missingTr = await ensureCategoryTranslations(parentRow.id, parentRow.name);
+        if (missingTr) await translateInBackground(parentRow.id, parentRow.name);
+      }
+
+      for (const child of parent.children ?? []) {
+        const existingChild = await prisma.category.findUnique({ where: { slug: child.slug } });
+        if (!existingChild) {
+          const createdChild = await prisma.category.create({
+            data: { name: child.name, slug: child.slug, parentId: parentRow.id },
+          });
+          const missingTr = await ensureCategoryTranslations(createdChild.id, createdChild.name);
+          if (missingTr) await translateInBackground(createdChild.id, createdChild.name);
+        } else {
+          // Do not override existing rows (including parentId) to avoid resetting real data.
+          const missingTr = await ensureCategoryTranslations(existingChild.id, existingChild.name);
+          if (missingTr) await translateInBackground(existingChild.id, existingChild.name);
+        }
+      }
+    }
+
+    // 6c. State Categories under state-news (dynamic from State table)
+    // This is also non-destructive and translation-safe.
+    const stateNewsSlug = 'state-news';
+    let stateNews = await prisma.category.findUnique({ where: { slug: stateNewsSlug } });
+    if (!stateNews) {
+      stateNews = await prisma.category.create({ data: { name: 'State News', slug: stateNewsSlug } });
+      const missingTr = await ensureCategoryTranslations(stateNews.id, stateNews.name);
+      if (missingTr) await translateInBackground(stateNews.id, stateNews.name);
+    } else {
+      const missingTr = await ensureCategoryTranslations(stateNews.id, stateNews.name);
+      if (missingTr) await translateInBackground(stateNews.id, stateNews.name);
+    }
+
+    const allStates = await prisma.state.findMany({
+      where: { country: { code: 'IN' } },
+      select: { name: true },
+      take: 100,
+    }).catch(() => [] as any);
+
+    for (const st of allStates as any[]) {
+      const stateName = String(st?.name || '').trim();
+      if (!stateName) continue;
+      const slug = `state-news-${defaultCategorySlugify(stateName)}`.slice(0, 60);
+      const existingStateCat = await prisma.category.findUnique({ where: { slug } });
+      if (!existingStateCat) {
+        const created = await prisma.category.create({
+          data: { name: stateName, slug, parentId: stateNews.id },
+        });
+        const missingTr = await ensureCategoryTranslations(created.id, created.name);
+        if (missingTr) await translateInBackground(created.id, created.name);
+      } else {
+        const missingTr = await ensureCategoryTranslations(existingStateCat.id, existingStateCat.name);
+        if (missingTr) await translateInBackground(existingStateCat.id, existingStateCat.name);
+      }
+    }
+  } catch {
+    // best-effort
   }
 
   // 7. Global Reporter Designations

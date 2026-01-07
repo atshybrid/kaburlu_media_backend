@@ -156,6 +156,7 @@ export async function resolveOrCreateCategoryIdByName(opts: {
 // Seed list to reduce auto-created categories.
 export const CORE_NEWS_CATEGORIES: Array<{ name: string; slug: string }> = [
   { name: 'Politics', slug: 'politics' },
+  { name: 'State News', slug: 'state-news' },
   { name: 'Crime', slug: 'crime' },
   { name: 'Accident', slug: 'accident' },
   { name: 'Weather', slug: 'weather' },
@@ -166,6 +167,8 @@ export const CORE_NEWS_CATEGORIES: Array<{ name: string; slug: string }> = [
   { name: 'Environment', slug: 'environment' },
   { name: 'Technology', slug: 'technology' },
   { name: 'Entertainment', slug: 'entertainment' },
+  { name: 'Devotional', slug: 'devotional' },
+  { name: 'Lifestyle', slug: 'lifestyle' },
   { name: 'Community', slug: 'community' },
   { name: 'Traffic', slug: 'traffic' },
   { name: 'Agriculture', slug: 'agriculture' },

@@ -1220,6 +1220,7 @@ model NewspaperArticle {
 
   title     String // Short title
   subTitle  String? // Optional sub-title
+  lead      String? // Optional lead paragraph
   heading   String // 1-line heading
   points    String[] // 3-5 bullet points
   dateline  String // e.g. "Adilabad, Dec 6"

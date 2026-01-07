@@ -3,6 +3,8 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { translateAndSaveCategoryInBackground } from '../categories/categories.service';
 import { requireSuperAdmin } from '../middlewares/authz';
+import { defaultCategorySlugify, listDefaultCategorySlugs } from '../../lib/defaultCategories';
+import { CORE_NEWS_CATEGORIES } from '../../lib/categoryAuto';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -83,6 +85,48 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
     // For now, allow manual verify or force to ACTIVE; DNS check can be implemented with real lookup later
     const status = force || method === 'MANUAL' ? 'ACTIVE' : 'VERIFYING';
     const updated = await (prisma as any).domain.update({ where: { id }, data: { status, verifiedAt: new Date() } });
+
+    // When a domain becomes ACTIVE, auto-link default categories (create missing only).
+    if (status === 'ACTIVE') {
+      try {
+        const slugSet = new Set<string>([
+          ...listDefaultCategorySlugs({ includeChildren: true }),
+          ...CORE_NEWS_CATEGORIES.map(c => c.slug),
+        ]);
+
+        // Add dynamic state categories under state-news.
+        try {
+          const states = await (prisma as any).state.findMany({
+            where: { country: { code: 'IN' } },
+            select: { name: true },
+            take: 100,
+          });
+          for (const st of states || []) {
+            const name = String(st?.name || '').trim();
+            if (!name) continue;
+            const slug = `state-news-${defaultCategorySlugify(name)}`.slice(0, 60);
+            slugSet.add(slug);
+          }
+        } catch {
+          // ignore
+        }
+
+        const slugs = Array.from(slugSet);
+        const categories = await (prisma as any).category.findMany({
+          where: { slug: { in: slugs }, isDeleted: false },
+          select: { id: true },
+        });
+        if (categories.length) {
+          await (prisma as any).domainCategory.createMany({
+            data: categories.map((c: any) => ({ domainId: id, categoryId: c.id })),
+            skipDuplicates: true,
+          });
+        }
+      } catch (e: any) {
+        console.warn('auto-link default categories failed', e?.message || e);
+      }
+    }
+
     res.json({ ok: true, domain: updated });
   } catch (e: any) {
     console.error('verify domain error', e);

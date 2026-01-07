@@ -217,7 +217,11 @@ function buildWebJsonFromNewspaperPayload(payload: any, opts?: { domain?: string
         .join('\n');
 
     const domainName = opts?.domain ? String(opts.domain).trim() : '';
-    const canonicalUrl = domainName ? `https://${domainName}/articles/${slugFromAnyLanguage(title, 120)}` : `/articles/${slugFromAnyLanguage(title, 120)}`;
+    const lang = String(opts?.languageCode || 'en').trim().toLowerCase() || 'en';
+    const slug = slugFromAnyLanguage(title, 120);
+    const canonicalUrl = domainName
+        ? `https://${domainName}/${encodeURIComponent(lang)}/articles/${encodeURIComponent(slug)}`
+        : `/${encodeURIComponent(lang)}/articles/${encodeURIComponent(slug)}`;
     const jsonLd = buildNewsArticleJsonLd({
         headline: title,
         description: metaDescription || trimWords(plainText, 24).slice(0, 160),
@@ -231,7 +235,7 @@ function buildWebJsonFromNewspaperPayload(payload: any, opts?: { domain?: string
 
     return {
         title,
-        slug: slugFromAnyLanguage(title, 120),
+        slug,
         contentHtml,
         plainText,
         languageCode: opts?.languageCode || '',
@@ -604,6 +608,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 categoryId: categoryIds?.[0] ? String(categoryIds[0]) : null,
                 title,
                 subTitle: subTitle || null,
+                lead: lead || null,
                 heading,
                 points: bulletPoints,
                 dateline,
@@ -645,11 +650,19 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
         const scope = await resolveTenantScope(req);
         if (scope.error) return res.status(scope.status!).json({ error: scope.error });
 
+        const user: any = (req as any).user;
+        const roleName = String(user?.role?.name || '').toUpperCase();
+
         const { date, status, limit = '50', offset = '0', stateId, districtId, mandalId, villageId } = req.query as any;
 
         const where: any = {};
         if (scope.tenantId) where.tenantId = scope.tenantId;
         if (status) where.status = String(status).toUpperCase();
+
+        // Reporter should only see their own newspaper articles.
+        if (roleName === 'REPORTER') {
+            where.authorId = String(user.id);
+        }
 
         // Optional location hierarchy filters (any combination)
         if (stateId) where.stateId = String(stateId);
@@ -674,11 +687,93 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
                 orderBy: { createdAt: 'desc' },
                 take: Number(limit),
                 skip: Number(offset),
-                include: { author: { select: { id: true, profile: { select: { fullName: true } } } } }
+                include: {
+                    author: { select: { id: true, profile: { select: { fullName: true } } } },
+                    baseArticle: { select: { contentJson: true, viewCount: true } },
+                }
             })
         ]);
 
-        res.json({ total, items });
+        // Build sportLink (= website link) from associated TenantWebArticle (stored on baseArticle.contentJson.webArticleId).
+        const rows = Array.isArray(items) ? items : [];
+        const webIds = rows
+            .map((it: any) => {
+                const id = (it as any)?.baseArticle?.contentJson?.webArticleId;
+                return id ? String(id) : null;
+            })
+            .filter(Boolean) as string[];
+
+        const webById = new Map<string, any>();
+        const domainById = new Map<string, string>();
+        let fallbackDomain: string | null = null;
+
+        if (webIds.length) {
+            const webRows = await prisma.tenantWebArticle.findMany({
+                where: { id: { in: Array.from(new Set(webIds)) } },
+                select: { id: true, slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, tenantId: true, language: { select: { code: true } } },
+            }).catch(() => [] as any);
+            for (const w of webRows as any[]) webById.set(String(w.id), w);
+
+            const domainIds = Array.from(
+                new Set((webRows as any[]).map(w => (w?.domainId ? String(w.domainId) : null)).filter(Boolean) as string[])
+            );
+            if (domainIds.length) {
+                const doms = await prisma.domain.findMany({ where: { id: { in: domainIds } }, select: { id: true, domain: true } }).catch(() => [] as any);
+                for (const d of doms as any[]) domainById.set(String(d.id), String(d.domain));
+            }
+        }
+
+        if (scope.tenantId) {
+            const primary = await prisma.domain.findFirst({
+                where: { tenantId: scope.tenantId, status: 'ACTIVE' as any },
+                orderBy: [{ isPrimary: 'desc' as any }, { createdAt: 'desc' as any }],
+                select: { domain: true },
+            }).catch(() => null);
+            fallbackDomain = primary?.domain ? String(primary.domain) : null;
+        }
+
+        const out = rows.map((it: any) => {
+            const webArticleId = it?.baseArticle?.contentJson?.webArticleId ? String(it.baseArticle.contentJson.webArticleId) : null;
+            const web = webArticleId ? webById.get(webArticleId) : null;
+            const sportLinkSlug = web?.slug ? String(web.slug) : null;
+            const dom = web?.domainId ? domainById.get(String(web.domainId)) : null;
+            const sportLinkDomain = dom || fallbackDomain;
+            const lang = String(web?.language?.code || 'en').trim().toLowerCase() || 'en';
+            const sportLink = sportLinkDomain && sportLinkSlug ? `https://${sportLinkDomain}/${encodeURIComponent(lang)}/articles/${encodeURIComponent(sportLinkSlug)}` : null;
+
+            const webArticleStatus = web?.status ? String(web.status) : null;
+            const webArticleUrl = sportLink;
+            const webArticleLanguageCode = lang;
+            const webArticleTitle = web?.title ? String(web.title) : null;
+            const webArticleViewCount = typeof web?.viewCount === 'number' ? Number(web.viewCount) : null;
+            const webArticlePublishedAt = web?.publishedAt ? new Date(web.publishedAt).toISOString() : null;
+            const baseArticleViewCount = typeof it?.baseArticle?.viewCount === 'number' ? Number(it.baseArticle.viewCount) : null;
+
+            // Keep existing payload, just add the link fields.
+            return {
+                ...it,
+                viewCount: baseArticleViewCount,
+                sportLink,
+                sportLinkDomain,
+                sportLinkSlug,
+                webArticle: webArticleId ? {
+                    id: webArticleId,
+                    slug: sportLinkSlug,
+                    status: webArticleStatus,
+                    url: webArticleUrl,
+                    languageCode: webArticleLanguageCode,
+                    title: webArticleTitle,
+                    viewCount: webArticleViewCount,
+                    publishedAt: webArticlePublishedAt,
+                } : null,
+                webArticleId,
+                webArticleStatus,
+                webArticleUrl,
+                webArticleViewCount,
+            };
+        });
+
+        res.json({ total, items: out });
     } catch (e) {
         console.error('listNewspaperArticles error', e);
         res.status(500).json({ error: 'Failed' });
@@ -691,15 +786,90 @@ export const getNewspaperArticle = async (req: Request, res: Response) => {
         const scope = await resolveTenantScope(req);
         if (scope.error) return res.status(scope.status!).json({ error: scope.error });
 
+        const user: any = (req as any).user;
+        const roleName = String(user?.role?.name || '').toUpperCase();
+
         const item = await (prisma as any).newspaperArticle.findUnique({
             where: { id },
-            include: { baseArticle: { select: { contentJson: true } } }
+            include: { baseArticle: { select: { contentJson: true, viewCount: true } } }
         });
 
         if (!item) return res.status(404).json({ error: 'Not found' });
         if (scope.tenantId && item.tenantId !== scope.tenantId) return res.status(403).json({ error: 'Access denied' });
 
-        res.json(item);
+        if (roleName === 'REPORTER' && String(item.authorId) !== String(user?.id)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Add sportLink fields (same logic as list, single item).
+        let sportLink: string | null = null;
+        let sportLinkDomain: string | null = null;
+        let sportLinkSlug: string | null = null;
+        let sportLinkLang: string | null = null;
+        try {
+            const webArticleId = item?.baseArticle?.contentJson?.webArticleId ? String(item.baseArticle.contentJson.webArticleId) : null;
+            let webArticleStatus: string | null = null;
+            let webArticleTitle: string | null = null;
+            let webArticleViewCount: number | null = null;
+            let webArticlePublishedAt: string | null = null;
+            if (webArticleId) {
+                const web = await prisma.tenantWebArticle.findUnique({ where: { id: webArticleId }, select: { slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, language: { select: { code: true } } } }).catch(() => null);
+                sportLinkSlug = web?.slug ? String(web.slug) : null;
+                sportLinkLang = String(web?.language?.code || '').trim().toLowerCase() || null;
+                webArticleStatus = web?.status ? String(web.status) : null;
+                webArticleTitle = web?.title ? String(web.title) : null;
+                webArticleViewCount = typeof web?.viewCount === 'number' ? Number(web.viewCount) : null;
+                webArticlePublishedAt = web?.publishedAt ? new Date(web.publishedAt).toISOString() : null;
+                if (web?.domainId) {
+                    const dom = await prisma.domain.findUnique({ where: { id: String(web.domainId) }, select: { domain: true } }).catch(() => null);
+                    sportLinkDomain = dom?.domain ? String(dom.domain) : null;
+                }
+            }
+            if (!sportLinkDomain && scope.tenantId) {
+                const primary = await prisma.domain.findFirst({
+                    where: { tenantId: scope.tenantId, status: 'ACTIVE' as any },
+                    orderBy: [{ isPrimary: 'desc' as any }, { createdAt: 'desc' as any }],
+                    select: { domain: true },
+                }).catch(() => null);
+                sportLinkDomain = primary?.domain ? String(primary.domain) : null;
+            }
+            const finalLang = sportLinkLang || 'en';
+            sportLink = sportLinkDomain && sportLinkSlug ? `https://${sportLinkDomain}/${encodeURIComponent(finalLang)}/articles/${encodeURIComponent(sportLinkSlug)}` : null;
+
+            const webArticleUrl = sportLink;
+            const webArticleLanguageCode = finalLang;
+
+            // Attach best-practice webArticle object.
+            (item as any).webArticle = webArticleId ? {
+                id: webArticleId,
+                slug: sportLinkSlug,
+                status: webArticleStatus,
+                url: webArticleUrl,
+                languageCode: webArticleLanguageCode,
+                title: webArticleTitle,
+                viewCount: webArticleViewCount,
+                publishedAt: webArticlePublishedAt,
+            } : null;
+            (item as any).webArticleId = webArticleId;
+            (item as any).webArticleStatus = webArticleStatus;
+            (item as any).webArticleUrl = webArticleUrl;
+            (item as any).webArticleViewCount = webArticleViewCount;
+        } catch {
+            // ignore
+        }
+
+        res.json({
+            ...item,
+            viewCount: typeof (item as any)?.baseArticle?.viewCount === 'number' ? Number((item as any).baseArticle.viewCount) : null,
+            sportLink,
+            sportLinkDomain,
+            sportLinkSlug,
+            webArticle: (item as any).webArticle || null,
+            webArticleId: (item as any).webArticleId || null,
+            webArticleStatus: (item as any).webArticleStatus || null,
+            webArticleUrl: (item as any).webArticleUrl || null,
+            webArticleViewCount: (item as any).webArticleViewCount ?? null,
+        });
     } catch (e) {
         console.error('getNewspaperArticle error', e);
         res.status(500).json({ error: 'Failed' });
@@ -723,8 +893,11 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
         const existing = await (prisma as any).newspaperArticle.findUnique({ where: { id } });
         if (!existing) return res.status(404).json({ error: 'Not found' });
         if (scope.tenantId && existing.tenantId !== scope.tenantId) return res.status(403).json({ error: 'Access denied' });
+        if (String(roleName || '').toUpperCase() === 'REPORTER' && String(existing.authorId) !== String(user?.id)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
 
-        const { title, heading, subTitle, points, dateline, placeName, content, status } = req.body;
+        const { title, heading, subTitle, lead, points, dateline, placeName, content, status } = req.body;
 
         const TITLE_MAX_CHARS = 100;
         const SUBTITLE_MAX_CHARS = 100;
@@ -759,6 +932,7 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                 title: title !== undefined ? title : undefined,
                 heading: heading !== undefined ? heading : undefined,
                 subTitle: subTitle !== undefined ? subTitle : undefined,
+                lead: lead !== undefined ? lead : undefined,
                 points: Array.isArray(points) ? points : undefined,
                 dateline: dateline !== undefined ? dateline : undefined,
                 placeName: placeName !== undefined ? placeName : undefined,

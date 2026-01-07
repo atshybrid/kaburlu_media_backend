@@ -2198,7 +2198,8 @@ router.get('/seo/article/:slug', async (req, res) => {
   const imageUrls = [detail.coverImage?.url].filter(Boolean) as string[];
   const authorNameRaw = Array.isArray(detail.authors) && detail.authors.length ? (detail.authors[0]?.name || null) : null;
   const authorName = (authorNameRaw && String(authorNameRaw).trim()) ? String(authorNameRaw).trim() : `${tenant.name} Reporter`;
-  const canonicalUrl = `https://${domain}/articles/${encodeURIComponent(detail.slug)}`;
+  const lang = String(row.language?.code || detail.languageCode || 'en').trim().toLowerCase() || 'en';
+  const canonicalUrl = `https://${domain}/${encodeURIComponent(lang)}/articles/${encodeURIComponent(detail.slug)}`;
   const publisherLogoUrl = (await p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null) as any)?.logoUrl || null;
   const keywords = Array.isArray(detail.tags) ? detail.tags.filter((t: any) => typeof t === 'string' && t.trim()).slice(0, 15) : undefined;
   const sectionName = row.category?.name || row.category?.slug || null;
