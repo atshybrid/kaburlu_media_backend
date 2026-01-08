@@ -28,9 +28,9 @@ export const AI_ENABLE_TRANSLATION = parseBool(process.env.AI_ENABLE_TRANSLATION
 export const GEMINI_KEY = process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY || '';
 export const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 
-export const DEFAULT_GEMINI_MODEL_SEO = process.env.GEMINI_MODEL_SEO || 'gemini-1.5-flash';
-export const DEFAULT_GEMINI_MODEL_MODERATION = process.env.GEMINI_MODEL_MODERATION || 'gemini-1.5-flash';
-export const DEFAULT_GEMINI_MODEL_TRANSLATION = process.env.GEMINI_MODEL_TRANSLATION || 'gemini-1.5-pro';
+export const DEFAULT_GEMINI_MODEL_SEO = process.env.GEMINI_MODEL_SEO || 'gemini-2.0-flash';
+export const DEFAULT_GEMINI_MODEL_MODERATION = process.env.GEMINI_MODEL_MODERATION || 'gemini-2.0-flash';
+export const DEFAULT_GEMINI_MODEL_TRANSLATION = process.env.GEMINI_MODEL_TRANSLATION || 'gemini-2.0-flash';
 // Prefer a faster model for rewrite-style tasks unless explicitly overridden
 export const DEFAULT_GEMINI_MODEL_REWRITE = process.env.GEMINI_MODEL_REWRITE || 'gemini-1.5-flash';
 

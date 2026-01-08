@@ -54,9 +54,9 @@ export const config = {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY,
       models: {
-        seo: process.env.GEMINI_MODEL_SEO || 'gemini-1.5-flash',
-        moderation: process.env.GEMINI_MODEL_MODERATION || 'gemini-1.5-flash',
-        translation: process.env.GEMINI_MODEL_TRANSLATION || 'gemini-1.5-pro',
+        seo: process.env.GEMINI_MODEL_SEO || 'gemini-2.0-flash',
+        moderation: process.env.GEMINI_MODEL_MODERATION || 'gemini-2.0-flash',
+        translation: process.env.GEMINI_MODEL_TRANSLATION || 'gemini-2.0-flash',
       }
     },
     openai: {

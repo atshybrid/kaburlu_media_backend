@@ -26,7 +26,7 @@ export const translateTextController = async (req: Request, res: Response) => {
     }
 
     // Get the generative model
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     // Construct a clear prompt for the AI
     const prompt = `Translate the following word/phrase to ${targetLanguage}: "${text}"`;

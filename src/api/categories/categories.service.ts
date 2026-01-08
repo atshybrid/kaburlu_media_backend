@@ -12,7 +12,7 @@ if (!GENAI_API_KEY) {
   console.warn('GEMINI_API_KEY/GOOGLE_GENAI_API_KEY not set. Category translations will fall back to original text.');
 }
 const genAI = GENAI_API_KEY ? new GoogleGenerativeAI(GENAI_API_KEY) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-pro' }) : null;
+const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }) : null;
 
 /**
  * Translates a given text to a target language using the Gemini API.
