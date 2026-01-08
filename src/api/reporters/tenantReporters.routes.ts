@@ -1550,18 +1550,40 @@ router.patch('/tenants/:tenantId/reporters/:id/login-access', passport.authentic
  */
 router.patch('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const scope = await requireTenantEditorialScope(req, res);
-    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
-
     const { tenantId, id } = req.params;
-    const body = req.body || {};
-    const profilePhotoUrl = typeof body.profilePhotoUrl === 'string' ? body.profilePhotoUrl.trim() : '';
-    if (!profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required' });
+    const user: any = (req as any).user;
+    if (!user?.role?.name) return res.status(401).json({ error: 'Unauthorized' });
 
+    const roleName = String(user.role.name);
+    const isAdmin = ['SUPER_ADMIN', 'TENANT_ADMIN', 'TENANT_EDITOR', 'ADMIN_EDITOR', 'NEWS_MODERATOR'].includes(roleName);
+    const isReporter = roleName === 'REPORTER';
+
+    if (!isAdmin && !isReporter) return res.status(403).json({ error: 'Forbidden' });
+
+    // Find the reporter record
     const reporter = await (prisma as any).reporter
       .findFirst({ where: { id, tenantId }, select: { id: true, tenantId: true, userId: true } })
       .catch(() => null);
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Reporter can only update their own photo
+    if (isReporter) {
+      if (String(reporter.userId) !== String(user.id)) {
+        return res.status(403).json({ error: 'Access denied - can only update your own profile photo' });
+      }
+    } else if (!['SUPER_ADMIN'].includes(roleName)) {
+      // Tenant admin/editor: ensure they belong to the same tenant
+      const actorReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id }, select: { tenantId: true } })
+        .catch(() => null);
+      if (!actorReporter?.tenantId || String(actorReporter.tenantId) !== String(tenantId)) {
+        return res.status(403).json({ error: 'Tenant scope mismatch' });
+      }
+    }
+
+    const body = req.body || {};
+    const profilePhotoUrl = typeof body.profilePhotoUrl === 'string' ? body.profilePhotoUrl.trim() : '';
+    if (!profilePhotoUrl) return res.status(400).json({ error: 'profilePhotoUrl required' });
 
     const updated = await (prisma as any).reporter.update({
       where: { id },
@@ -1605,14 +1627,36 @@ router.patch('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenti
  */
 router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const scope = await requireTenantEditorialScope(req, res);
-    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
-
     const { tenantId, id } = req.params;
+    const user: any = (req as any).user;
+    if (!user?.role?.name) return res.status(401).json({ error: 'Unauthorized' });
+
+    const roleName = String(user.role.name);
+    const isAdmin = ['SUPER_ADMIN', 'TENANT_ADMIN', 'TENANT_EDITOR', 'ADMIN_EDITOR', 'NEWS_MODERATOR'].includes(roleName);
+    const isReporter = roleName === 'REPORTER';
+
+    if (!isAdmin && !isReporter) return res.status(403).json({ error: 'Forbidden' });
+
+    // Find the reporter record
     const reporter = await (prisma as any).reporter
       .findFirst({ where: { id, tenantId }, select: { id: true, tenantId: true, userId: true } })
       .catch(() => null);
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Reporter can only delete their own photo
+    if (isReporter) {
+      if (String(reporter.userId) !== String(user.id)) {
+        return res.status(403).json({ error: 'Access denied - can only delete your own profile photo' });
+      }
+    } else if (!['SUPER_ADMIN'].includes(roleName)) {
+      // Tenant admin/editor: ensure they belong to the same tenant
+      const actorReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id }, select: { tenantId: true } })
+        .catch(() => null);
+      if (!actorReporter?.tenantId || String(actorReporter.tenantId) !== String(tenantId)) {
+        return res.status(403).json({ error: 'Tenant scope mismatch' });
+      }
+    }
 
     const updated = await (prisma as any).reporter.update({
       where: { id },
