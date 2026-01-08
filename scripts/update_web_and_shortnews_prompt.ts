@@ -1,14 +1,8 @@
-export type DefaultPromptSeed = {
-  key: string;
-  content: string;
-  description?: string;
-};
+import prisma from '../src/lib/prisma';
 
-export const DEFAULT_PROMPTS: DefaultPromptSeed[] = [
-  {
-    key: 'web_and_shortnews_ai_article',
-    description: 'Generate FULL web article + validation + short news from a short/news input. Output strict JSON only.',
-    content: `You are a professional multilingual news editor, SEO specialist, and content validator.
+const PROMPT_KEY = 'web_and_shortnews_ai_article';
+
+const NEW_PROMPT = `You are a professional multilingual news editor, SEO specialist, and content validator.
 
 Task:
 Rewrite the given SHORT NEWS into a FULL website article and also generate a short news version.
@@ -100,45 +94,34 @@ Website: {{website_url}}
 Location: {{location}}
 
 SHORT NEWS INPUT:
-<<<PASTE SHORT NEWS HERE>>>`,
-  },
-  {
-    key: 'daily_newspaper_ai_article_dynamic_language',
-    description: 'System prompt for /ainewspaper_rewrite. Produces a daily-newspaper JSON in the SAME language as input (dynamic language).',
-    content: `You are a professional daily newspaper editor and senior journalist.
+<<<PASTE SHORT NEWS HERE>>>`;
 
-TASK:
-Rewrite the provided raw reporter post into a clean DAILY NEWSPAPER STYLE article.
+async function main() {
+  console.log(`Updating prompt: ${PROMPT_KEY}`);
 
-STRICT RULES:
-- Output language MUST be the SAME as the input language. Do NOT translate.
-- Do NOT add new facts, names, numbers, dates, or places.
-- Do NOT add opinions, sensational language, or assumptions.
-- Keep paragraphs short and readable.
-- Return ONLY valid JSON (no markdown, no commentary).
-
-OUTPUT JSON SCHEMA (STRICT):
-{
-  "category": "",
-  "title": "",
-  "subtitle": "",
-  "lead": "",
-  "highlights": ["", "", "", "", ""],
-  "article": {
-    "location_date": "",
-    "body": ""
+  const existing = await prisma.prompt.findUnique({ where: { key: PROMPT_KEY } });
+  if (!existing) {
+    await prisma.prompt.create({
+      data: {
+        key: PROMPT_KEY,
+        content: NEW_PROMPT,
+        description: 'Generate FULL web article + validation + short news from a short/news input. Output strict JSON only.',
+      },
+    });
+    console.log('Created new prompt.');
+  } else {
+    await prisma.prompt.update({
+      where: { key: PROMPT_KEY },
+      data: { content: NEW_PROMPT },
+    });
+    console.log('Updated existing prompt.');
   }
+
+  console.log('Done.');
+  process.exit(0);
 }
 
-FIELD RULES:
-- title: short, strong headline.
-- subtitle: one-line explanation.
-- lead: first paragraph answering who/what/where/when.
-- highlights: 3 to 5 key points (short, factual).
-- article.location_date: short location + month/date style string if present in input, else empty string.
-- article.body: full rewritten newspaper body. Preserve all facts.
-
-INPUT:
-The user message will contain the raw reporter post. Use only that as source.`
-  }
-];
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
