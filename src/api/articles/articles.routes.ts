@@ -1313,8 +1313,20 @@ router.post('/newspaper', passport.authenticate('jwt', { session: false }), requ
  * /articles/newspaper/{id}:
  *   get:
  *     summary: Get single newspaper article
+ *     description: |
+ *       Retrieve a single newspaper article by ID. Access control:
+ *       - SUPER_ADMIN: can view any article
+ *       - TENANT_ADMIN: can view articles within their tenant
+ *       - REPORTER: can only view their own articles
  *     tags: [Articles]
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The newspaper article ID
  *     responses:
  *       200:
  *         description: Details
@@ -1357,8 +1369,19 @@ router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), r
  * /articles/newspaper/{id}:
  *   patch:
  *     summary: Update newspaper article (Print Desk)
+ *     description: |
+ *       Update a newspaper article. Access control:
+ *       - SUPER_ADMIN/TENANT_ADMIN: can update and change status (approve/reject)
+ *       - REPORTER: can only update their own articles (status limited)
  *     tags: [Articles]
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The newspaper article ID
  *     requestBody:
  *       content:
  *         application/json:
