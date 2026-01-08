@@ -23,11 +23,16 @@ async function start() {
           await prisma.$connect();
           connected = true;
           console.log('Prisma connected');
-          // Run core seeds only after successful DB connect
+          // Run core seeds only after successful DB connect (with timeout to prevent blocking startup)
           try {
-            await ensureCoreSeeds();
-          } catch (e) {
-            console.error('[Bootstrap] Core seed failed', e);
+            const seedTimeout = Number(process.env.SEED_TIMEOUT_MS || 30000);
+            await Promise.race([
+              ensureCoreSeeds(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Seed timeout')), seedTimeout))
+            ]);
+            console.log('[Bootstrap] Core seeds complete');
+          } catch (e: any) {
+            console.warn('[Bootstrap] Core seed issue (non-blocking):', e?.message || e);
           }
         } catch (e) {
           console.warn(`Prisma connect failed (attempt ${attempt}/${maxAttempts}):`, (e as any)?.message || e);

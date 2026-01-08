@@ -4,6 +4,7 @@ import { DEFAULT_CATEGORY_TREE, defaultCategorySlugify } from './defaultCategori
 import { DEFAULT_PROMPTS } from './defaultPrompts';
 
 export async function ensureCoreSeeds() {
+  console.log('[Bootstrap] Starting core seeds...');
   // 1. Roles
   // We support two role families:
   // - Kaburlu platform roles (Superadmin, moderator, admin editor, guest/citizen/public-figure)
@@ -52,6 +53,7 @@ export async function ensureCoreSeeds() {
       skipDuplicates: true,
     });
   }
+  console.log('[Bootstrap] 1. Roles done');
 
   // 2. Languages: Check existence
   // Seed major Indian languages so a fresh DB has a usable built-in language set.
@@ -122,6 +124,7 @@ export async function ensureCoreSeeds() {
     }
   }
   if (updates.length) await prisma.$transaction(updates);
+  console.log('[Bootstrap] 2. Languages done');
 
   // 3. Country
   let country = await prisma.country.findUnique({ where: { code: 'IN' } });
@@ -175,6 +178,7 @@ export async function ensureCoreSeeds() {
       });
     }
   }
+  console.log('[Bootstrap] 3-5. Country/States/Districts done');
 
   // 6. Core Categories (news-industry defaults)
   try {
@@ -235,6 +239,7 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort; categories can be seeded later via scripts
   }
+  console.log('[Bootstrap] 6. Core categories done');
 
   // 6b. Default Categories + Subcategories (product defaults)
   // - Non-destructive: create missing only.
@@ -343,6 +348,7 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort
   }
+  console.log('[Bootstrap] 6b-6c. Default categories + state categories done');
 
   // 7. Global Reporter Designations
   // Public endpoint GET /reporter-designations returns tenantId=null rows when tenantId isn't provided.
@@ -422,6 +428,7 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort; designations can be seeded later via tenant seed endpoint
   }
+  console.log('[Bootstrap] 7. Reporter designations done');
 
   // 8. Default AI Prompts (create missing only)
   // Ensures critical prompt keys exist after DB reset/new DB.
@@ -440,4 +447,5 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort
   }
+  console.log('[Bootstrap] 8. AI Prompts done - all seeds complete');
 }
