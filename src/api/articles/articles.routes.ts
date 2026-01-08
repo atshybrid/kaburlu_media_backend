@@ -4,7 +4,7 @@ import passport from 'passport';
 import { createArticleController, createTenantArticleController, createWebStoryController, updateArticleController, deleteArticleController } from './articles.controller';
 import { composeAIArticleController, enqueueRawArticleController, composeWebOnlyController, composeBlocksController, composeSimpleArticleController, composeChatGptRewriteController, createRawArticleController, composeGeminiRewriteController, processRawArticleNowController, getArticleAiStatusController } from './articles.ai.controller';
 import { getWebArticleByIdPublic, getWebArticlesByDomainPublic, listTitlesAndHeroesPublic, listPublicArticles, updateWebArticleStatus, getWebArticleBySlugPublic } from './articles.public.controller';
-import { listNewspaperArticles, getNewspaperArticle, updateNewspaperArticle, createNewspaperArticle } from './newspaper.controller';
+import { listNewspaperArticles, getNewspaperArticle, updateNewspaperArticle, createNewspaperArticle, deleteNewspaperArticle } from './newspaper.controller';
 import prisma from '../../lib/prisma';
 import { requireReporterOrAdmin } from '../middlewares/authz';
 import { getRawArticleStatusController } from './articles.ai.controller';
@@ -1377,6 +1377,39 @@ router.get('/newspaper/:id', passport.authenticate('jwt', { session: false }), r
  *       200: { description: Updated }
  */
 router.patch('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, updateNewspaperArticle);
+
+/**
+ * @swagger
+ * /articles/newspaper/{id}:
+ *   delete:
+ *     summary: Delete newspaper article
+ *     description: |
+ *       Delete a newspaper article. Access control:
+ *       - SUPER_ADMIN: can delete any article
+ *       - TENANT_ADMIN: can delete articles within their tenant
+ *       - REPORTER: can only delete their own articles
+ *     tags: [Articles]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Article deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 id: { type: string }
+ *       403: { description: Access denied }
+ *       404: { description: Article not found }
+ */
+router.delete('/newspaper/:id', passport.authenticate('jwt', { session: false }), requireReporterOrAdmin, deleteNewspaperArticle);
 
 /**
  * @swagger

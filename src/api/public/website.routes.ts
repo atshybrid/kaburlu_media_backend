@@ -677,6 +677,7 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       - Style1 contract: pass `?v=1` (or `?shape=style1`) to get `{ version, tenant, theme, uiTokens, sections, data }`.
  *       - Style2 (legacy) composition: pass `?shape=style2` (or `?themeKey=style2`) to load sections from TenantTheme.homepageConfig.style2.
  *       - Style2 v2 contract: pass `?shape=style2&v=2` to get `{ version, tenant, theme, sections, data }`.
+ *       - Style2 v3 (DB sections): pass `?shape=style2&v=3` to use HomepageSectionConfig table with admin-managed sections + category linking.
  *
  *       Best practice (recommended flows):
  *
@@ -701,9 +702,18 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       2) Frontend load:
  *          - GET `/public/homepage?shape=style2&v=2`
  *
+ *       Style2 v3 (DB sections - RECOMMENDED):
+ *       1) Admin config (JWT):
+ *          - PUT `/homepage-sections/{tenantId}/bulk` with sections array (key, label in Telugu, categorySlug, position, style)
+ *          - POST `/homepage-sections/{tenantId}` to add individual sections
+ *          - PUT `/homepage-sections/{tenantId}/{key}` to update section labels or category links
+ *       2) Frontend load:
+ *          - GET `/public/homepage?shape=style2&v=3` (returns hero + sections with items)
+ *
  *       Notes:
  *       - `X-Tenant-Domain` header is the safest way to target a tenant/domain in local testing.
  *       - Style2 v2 TOI center is always latest; TOI rightMostRead uses `TenantWebArticle.viewCount`.
+ *       - Style2 v3 uses HomepageSectionConfig table for structured, admin-managed sections with category FK and localized labels.
  *
  *       Best practice (Style2 website):
  *       1) Admin config (JWT):
@@ -731,11 +741,11 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       - in: query
  *         name: v
  *         required: false
- *         description: Set to 1 for Style1 contract, or 2 for Style2 v2 contract (requires shape=style2).
+ *         description: Set to 1 for Style1 contract, 2 for Style2 v2 (JSON config), or 3 for Style2 v3 (DB sections).
  *         schema:
  *           type: string
- *           enum: ['1','2']
- *           example: '1'
+ *           enum: ['1','2','3']
+ *           example: '3'
  *       - in: query
  *         name: shape
  *         required: false
@@ -911,26 +921,35 @@ router.get('/homepage', async (_req, res) => {
   res.setHeader('X-Request-Id', requestId);
 
   const shape = String((req.query as any)?.shape || '').toLowerCase().trim();
-  const wantsV1 = String((req.query as any)?.v || '').trim() === '1' || shape === 'style1';
-  const wantsStyle2V2 = String((req.query as any)?.v || '').trim() === '2' && shape === 'style2';
+  const versionParam = String((req.query as any)?.v || '').trim();
+  const wantsV1 = versionParam === '1' || shape === 'style1';
+  const wantsStyle2V2 = versionParam === '2' && shape === 'style2';
+  // v=3: Style2 using DB-stored HomepageSectionConfig table (structured, admin-managed)
+  const wantsStyle2V3 = versionParam === '3' && shape === 'style2';
   // Convenience: allow `shape=style2` to behave like `themeKey=style2` for legacy homepage.
   const themeKey = String((req.query as any)?.themeKey || (shape && shape !== 'style1' ? shape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
   }
-  if (wantsStyle2V2 && themeKey !== 'style2') {
-    return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Use shape=style2&v=2 (or themeKey=style2) for Style2 v2' });
+  if ((wantsStyle2V2 || wantsStyle2V3) && themeKey !== 'style2') {
+    return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Use shape=style2&v=2 or v=3 for Style2' });
   }
 
 
-  const [domainCats, activeDomainCount, effective, languageId, tenantTheme, tenantEntity] = await Promise.all([
+  const [domainCats, activeDomainCount, effective, languageId, tenantTheme, tenantEntity, dbHomepageSections] = await Promise.all([
     domain?.id ? p.domainCategory.findMany({ where: { domainId: domain.id }, include: { category: true } }) : Promise.resolve([]),
     p.domain.count({ where: { tenantId: tenant.id, status: 'ACTIVE' } }).catch(() => 0),
     domain?.id ? getEffectiveSettings(tenant.id, domain.id) : Promise.resolve({}),
     resolveLanguageId(langCode),
     p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
-    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null)
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null),
+    // Fetch HomepageSectionConfig for this tenant/domain (used by Style2 v3)
+    (p.homepageSectionConfig?.findMany?.({
+      where: { tenantId: tenant.id, domainId: domain?.id || null, isActive: true },
+      orderBy: { position: 'asc' },
+      include: { category: { select: { id: true, slug: true, name: true, iconUrl: true } } }
+    }) ?? Promise.resolve([])).catch(() => [])
   ]);
 
   if (wantsV1 && langCode && !languageId) {
@@ -1655,6 +1674,237 @@ router.get('/homepage', async (_req, res) => {
       theme: { key: 'style2' },
       sections,
       data
+    });
+  }
+
+  // ============================================================
+  // Style2 v3: DB-stored HomepageSectionConfig table
+  // - Hero: center = latest 15, right = latest 15-30 + most read top 3
+  // - Sections stored in HomepageSectionConfig with category linking
+  // - Labels use category translation (in tenant language)
+  // ============================================================
+  if (wantsStyle2V3) {
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+
+    // Helper to clamp integer values
+    const clampInt = (value: any, min: number, max: number, fallback: number) => {
+      const n = parseInt(String(value), 10);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.min(Math.max(n, min), max);
+    };
+
+    // Fetch articles for a category
+    async function fetchCategoryCardsV3(categorySlug: string, limit: number) {
+      const slug = String(categorySlug || '').trim();
+      if (!slug) return [];
+      const resolvedCategory = categoryBySlug.get(slug) || null;
+      // Fall back to global Category if not in domain categories
+      const cat = resolvedCategory || await p.category.findUnique({ where: { slug } }).catch(() => null);
+      if (!cat || cat.isDeleted) return [];
+
+      const and: any[] = [];
+      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: cat.id };
+      if (and.length) where.AND = and;
+
+      const rows = await p.tenantWebArticle.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: Math.min(Math.max(limit, 1), 50),
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    // Fetch latest articles with offset
+    async function fetchLatestCardsV3(limit: number, offset = 0) {
+      const take = Math.min(Math.max(limit, 1), 50);
+      const skip = Math.max(parseInt(String(offset || 0), 10) || 0, 0);
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take,
+        skip,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    // Fetch most read articles (by readCount or viewCount)
+    async function fetchMostReadCardsV3(limit: number, excludeIds?: Set<string>) {
+      const want = Math.min(Math.max(limit, 1), 50);
+      const take = want + 30; // fetch extra to exclude already shown
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+        take,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      const out: any[] = [];
+      const seen = excludeIds ?? new Set<string>();
+      for (const r of rows) {
+        if (!r?.id) continue;
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        out.push(toCard(r));
+        if (out.length >= want) break;
+      }
+      return out;
+    }
+
+    // Use DB sections if available
+    const dbSections = (dbHomepageSections || []) as any[];
+
+    // If no sections configured in DB, return an informative response
+    if (!dbSections.length) {
+      return res.json({
+        version: '3.0',
+        tenant: {
+          id: tenant.id,
+          slug: tenant.slug,
+          name: tenant.name,
+          displayName: (tenant as any).displayName || tenant.name,
+          nativeName: (tenant as any).nativeName || null,
+          language: (tenant as any).primaryLanguage || null,
+        },
+        theme: { key: 'style2' },
+        message: 'No HomepageSectionConfig records found for this tenant/domain. Use admin API to configure sections.',
+        sections: [],
+        data: { hero: { center: [], right: { latest: [], mostRead: [] } }, sections: [] }
+      });
+    }
+
+    // ========================================
+    // HERO SECTION:
+    // - center: Latest 15 articles
+    // - right.latest: Latest articles 15-30
+    // - right.mostRead: Top 3 by read count (fallback to 31-33 if not visible)
+    // ========================================
+    const heroConfig = dbSections.find((s: any) => String(s.style || '').toLowerCase() === 'hero') || null;
+    const heroCenterLimit = clampInt(heroConfig?.articleLimit, 1, 30, 15);
+
+    // Hero center: latest 15 (or configured limit)
+    const heroCenter = await fetchLatestCardsV3(heroCenterLimit, 0);
+
+    // Hero right latest: next 15 articles (positions 15-30)
+    const heroRightLatest = await fetchLatestCardsV3(15, heroCenterLimit);
+
+    // Collect IDs already shown to exclude from most read
+    const shownIds = new Set<string>();
+    for (const c of heroCenter) if (c?.id) shownIds.add(String(c.id));
+    for (const c of heroRightLatest) if (c?.id) shownIds.add(String(c.id));
+
+    // Hero right most read: top 3 by read/view count
+    let heroRightMostRead = await fetchMostReadCardsV3(3, new Set(shownIds));
+
+    // If most read has fewer than 3 visible, fill with articles 31-33 as fallback
+    if (heroRightMostRead.length < 3) {
+      const needed = 3 - heroRightMostRead.length;
+      const fallbackOffset = heroCenterLimit + 15; // start from position 30
+      const fallbackItems = await fetchLatestCardsV3(needed + 5, fallbackOffset);
+      for (const item of fallbackItems) {
+        if (heroRightMostRead.length >= 3) break;
+        if (!item?.id) continue;
+        if (shownIds.has(String(item.id))) continue;
+        heroRightMostRead.push(item);
+        shownIds.add(String(item.id));
+      }
+    }
+
+    // ========================================
+    // CATEGORY SECTIONS (non-hero)
+    // - Each section linked to a category
+    // - Label = category translation (tenant language)
+    // ========================================
+    const regularSections = dbSections.filter((s: any) => String(s.style || '').toLowerCase() !== 'hero');
+    const sectionsData: any[] = [];
+
+    for (const sec of regularSections) {
+      const key = String(sec.key || '');
+      if (!key) continue;
+
+      const limit = clampInt(sec.articleLimit, 1, 50, 6);
+      const slug = sec.categorySlug ? String(sec.categorySlug) : null;
+
+      // Get translated category name (tenant language) - this becomes the section label
+      let categoryName: string | null = null;
+      let categoryHref: string | null = null;
+      if (sec.category) {
+        const catId = String(sec.category.id || '');
+        // Use category translation as label
+        categoryName = translatedNameByCategoryId.get(catId) || sec.category.name || slug;
+        categoryHref = slug ? `/category/${encodeURIComponent(slug)}` : null;
+      }
+
+      // Label priority: DB label > category translation > labelEn > key
+      const label = sec.label && sec.label.trim()
+        ? sec.label.trim()
+        : (categoryName || sec.labelEn || key);
+
+      let items: any[] = [];
+      if (slug) {
+        items = await fetchCategoryCardsV3(slug, limit);
+      } else {
+        // No category = show latest articles
+        items = await fetchLatestCardsV3(limit, 0);
+      }
+
+      sectionsData.push({
+        key,
+        title: label, // This is the category name in tenant language
+        titleEn: sec.labelEn || null,
+        style: sec.style || 'cards',
+        position: sec.position || 0,
+        category: slug ? { slug, name: categoryName, href: categoryHref, iconUrl: sec.category?.iconUrl || null } : null,
+        items
+      });
+    }
+
+    // Sort sections by position
+    sectionsData.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+    // Build section metadata for frontend
+    const sectionsMeta = dbSections.map((s: any) => {
+      // For category-linked sections, use category translation as label
+      let displayLabel = s.label || s.labelEn || s.key;
+      if (s.category?.id) {
+        const catTranslation = translatedNameByCategoryId.get(String(s.category.id));
+        if (catTranslation) displayLabel = catTranslation;
+      }
+      return {
+        key: s.key,
+        label: displayLabel,
+        labelEn: s.labelEn || null,
+        style: s.style || 'cards',
+        position: s.position || 0,
+        categorySlug: s.categorySlug || null,
+        articleLimit: s.articleLimit || 6
+      };
+    });
+
+    return res.json({
+      version: '3.0',
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        displayName: (tenant as any).displayName || tenant.name,
+        nativeName: (tenant as any).nativeName || null,
+        language: (tenant as any).primaryLanguage || null,
+      },
+      theme: { key: 'style2' },
+      sections: sectionsMeta,
+      data: {
+        hero: {
+          center: heroCenter,
+          right: {
+            latest: heroRightLatest,
+            mostRead: heroRightMostRead
+          }
+        },
+        sections: sectionsData
+      }
     });
   }
 

@@ -988,3 +988,59 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Failed' });
     }
 };
+
+export const deleteNewspaperArticle = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const scope = await resolveTenantScope(req);
+        if (scope.error) return res.status(scope.status!).json({ error: scope.error });
+
+        const user: any = (req as any).user;
+        const roleName = String(user?.role?.name || '').toUpperCase();
+
+        const existing = await (prisma as any).newspaperArticle.findUnique({
+            where: { id },
+            select: { id: true, tenantId: true, authorId: true, baseArticleId: true }
+        });
+        if (!existing) return res.status(404).json({ error: 'Not found' });
+
+        // Tenant scope check (for non-super admins)
+        if (scope.tenantId && existing.tenantId !== scope.tenantId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Reporter can only delete their own articles
+        if (roleName === 'REPORTER' && String(existing.authorId) !== String(user?.id)) {
+            return res.status(403).json({ error: 'Access denied - can only delete your own articles' });
+        }
+
+        // Delete the newspaper article
+        await (prisma as any).newspaperArticle.delete({ where: { id } });
+
+        // Best-effort cleanup: delete linked web article and base article
+        if (existing.baseArticleId) {
+            try {
+                const base = await prisma.article.findUnique({
+                    where: { id: String(existing.baseArticleId) },
+                    select: { contentJson: true }
+                });
+                const webId = (base as any)?.contentJson?.webArticleId ? String((base as any).contentJson.webArticleId) : null;
+                
+                // Delete linked web article first
+                if (webId) {
+                    await prisma.tenantWebArticle.delete({ where: { id: webId } }).catch(() => {});
+                }
+                
+                // Delete base article
+                await prisma.article.delete({ where: { id: String(existing.baseArticleId) } }).catch(() => {});
+            } catch {
+                // best-effort, continue even if cleanup fails
+            }
+        }
+
+        res.json({ success: true, message: 'Newspaper article deleted', id });
+    } catch (e) {
+        console.error('deleteNewspaperArticle error', e);
+        res.status(500).json({ error: 'Failed to delete article' });
+    }
+};

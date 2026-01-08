@@ -261,6 +261,7 @@ model Category {
   webArticles      TenantWebArticle[]
   newspaperArticles NewspaperArticle[]
   domainCategories DomainCategory[]
+  homepageSectionConfigs HomepageSectionConfig[]
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 }
@@ -482,6 +483,7 @@ model Tenant {
   navigation              TenantNavigation?
   featureFlags            TenantFeatureFlags?
   homepageSections        TenantHomepageSection[]
+  homepageSectionConfigs  HomepageSectionConfig[]
   newsletterSubscriptions NewsletterSubscription[]
   reporters               Reporter[]
   reporterDesignations    ReporterDesignation[]
@@ -556,6 +558,7 @@ model Domain {
   checkLogs          DomainCheckLog[]
   settings           DomainSettings?    @relation("Domain_DomainSettings")
   webArticles        TenantWebArticle[] @relation("Domain_WebArticles")
+  homepageSectionConfigs HomepageSectionConfig[]
 }
 
 /// ---------------- Tenant Billing / Subscription Models ----------------
@@ -914,6 +917,42 @@ model TenantHomepageSection {
 
   @@unique([tenantId, sectionName])
   @@index([tenantId, sectionName])
+}
+
+/// Style2 homepage section configuration - links sections to categories with customizable labels
+model HomepageSectionConfig {
+  id            String    @id @default(cuid())
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId      String
+  domain        Domain?   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domainId      String?
+  /// Unique section key (e.g., "hero", "politics", "sports", "section1", etc.)
+  key           String
+  /// Display label in tenant's language (e.g., "రాజకీయాలు" for Telugu Politics)
+  label         String
+  /// English fallback label
+  labelEn       String?
+  /// Position/order on homepage (lower = higher on page)
+  position      Int       @default(0)
+  /// Section display style: "hero", "grid", "list", "cards", "ticker"
+  style         String    @default("cards")
+  /// Linked category (optional - some sections like "hero" may not have a category)
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId    String?
+  /// Cached category slug for fast lookup
+  categorySlug  String?
+  /// Number of articles to show in this section
+  articleLimit  Int       @default(6)
+  /// Whether this section is visible on homepage
+  isActive      Boolean   @default(true)
+  /// Extra config JSON (for future extensions like colors, icons, etc.)
+  config        Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([tenantId, domainId, key])
+  @@index([tenantId, domainId, position])
+  @@index([categoryId])
 }
 
 model NewsletterSubscription {

@@ -31,6 +31,174 @@ function mapReporterContact(r: any) {
   return { ...rest, fullName, mobileNumber, autoPublish };
 }
 
+/**
+ * @swagger
+ * /reporters/me:
+ *   get:
+ *     summary: Get current reporter profile from JWT token
+ *     description: Returns the reporter profile for the authenticated user without requiring reporter ID
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Reporter profile with stats
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 tenantId: { type: string }
+ *                 userId: { type: string }
+ *                 level: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
+ *                 designationId: { type: string }
+ *                 stateId: { type: string }
+ *                 districtId: { type: string }
+ *                 mandalId: { type: string }
+ *                 assemblyConstituencyId: { type: string }
+ *                 subscriptionActive: { type: boolean }
+ *                 monthlySubscriptionAmount: { type: integer }
+ *                 idCardCharge: { type: integer }
+ *                 kycStatus: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+ *                 profilePhotoUrl: { type: string }
+ *                 active: { type: boolean }
+ *                 fullName: { type: string }
+ *                 mobileNumber: { type: string }
+ *                 autoPublish: { type: boolean }
+ *                 designation: { type: object }
+ *                 state: { type: object }
+ *                 district: { type: object }
+ *                 mandal: { type: object }
+ *                 assemblyConstituency: { type: object }
+ *                 stats: { type: object }
+ *       401: { description: Unauthorized }
+ *       404: { description: Reporter profile not found for this user }
+ */
+router.get('/reporters/me', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const user: any = (req as any).user;
+    if (!user?.id) return res.status(401).json({ error: 'Unauthorized' });
+
+    const r = await (prisma as any).reporter.findFirst({
+      where: { userId: user.id },
+      include: {
+        designation: true,
+        user: { select: { mobileNumber: true, profile: { select: { fullName: true, profilePhotoUrl: true } } } },
+        state: { select: { id: true, name: true } },
+        district: { select: { id: true, name: true } },
+        mandal: { select: { id: true, name: true } },
+        assemblyConstituency: { select: { id: true, name: true } },
+        idCard: { select: { id: true, cardNumber: true, issuedAt: true, expiresAt: true, pdfUrl: true } },
+      },
+    });
+    if (!r) return res.status(404).json({ error: 'Reporter profile not found for this user' });
+
+    const fullName = r?.user?.profile?.fullName || null;
+    const mobileNumber = r?.user?.mobileNumber || null;
+    const computedProfilePhotoUrl = r?.profilePhotoUrl || r?.user?.profile?.profilePhotoUrl || null;
+    const autoPublish = getAutoPublishFromKycData(r?.kycData);
+
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+
+    const tenantId = r.tenantId;
+    const authorId = r?.userId ? String(r.userId) : null;
+
+    const makeEmptyNewspaperCounts = () => ({ submitted: 0, published: 0, rejected: 0 });
+    let newspaperTotal = makeEmptyNewspaperCounts();
+    let newspaperCurrentMonth = makeEmptyNewspaperCounts();
+    let webViewsTotal = 0;
+    let webViewsCurrentMonth = 0;
+
+    const p: any = prisma;
+
+    if (authorId) {
+      const newspaperStatuses = ['PENDING', 'PUBLISHED', 'REJECTED'];
+      const [totalGrouped, monthGrouped, webTotalAgg, webMonthAgg] = await Promise.all([
+        p.newspaperArticle
+          .groupBy({
+            by: ['status'],
+            where: { tenantId, authorId, status: { in: newspaperStatuses } },
+            _count: { _all: true },
+          })
+          .catch(() => []),
+        p.newspaperArticle
+          .groupBy({
+            by: ['status'],
+            where: { tenantId, authorId, status: { in: newspaperStatuses }, createdAt: { gte: monthStart, lt: monthEnd } },
+            _count: { _all: true },
+          })
+          .catch(() => []),
+        p.tenantWebArticle
+          .aggregate({ where: { tenantId, authorId, status: 'PUBLISHED' }, _sum: { viewCount: true } })
+          .catch(() => ({ _sum: { viewCount: 0 } })),
+        p.tenantWebArticle
+          .aggregate({
+            where: { tenantId, authorId, status: 'PUBLISHED', publishedAt: { gte: monthStart, lt: monthEnd } },
+            _sum: { viewCount: true },
+          })
+          .catch(() => ({ _sum: { viewCount: 0 } })),
+      ]);
+
+      for (const row of totalGrouped as any[]) {
+        const status = String(row.status);
+        const count = Number(row._count?._all || 0);
+        if (status === 'PENDING') newspaperTotal.submitted += count;
+        if (status === 'PUBLISHED') newspaperTotal.published += count;
+        if (status === 'REJECTED') newspaperTotal.rejected += count;
+      }
+      for (const row of monthGrouped as any[]) {
+        const status = String(row.status);
+        const count = Number(row._count?._all || 0);
+        if (status === 'PENDING') newspaperCurrentMonth.submitted += count;
+        if (status === 'PUBLISHED') newspaperCurrentMonth.published += count;
+        if (status === 'REJECTED') newspaperCurrentMonth.rejected += count;
+      }
+
+      webViewsTotal = Number((webTotalAgg as any)?._sum?.viewCount || 0);
+      webViewsCurrentMonth = Number((webMonthAgg as any)?._sum?.viewCount || 0);
+    }
+
+    const pay = await p.reporterPayment
+      .findFirst({
+        where: { tenantId, reporterId: String(r.id), type: 'MONTHLY_SUBSCRIPTION', year, month },
+        select: { status: true, amount: true, currency: true, expiresAt: true },
+      })
+      .catch(() => null);
+
+    const { user: _user, ...rest } = r;
+    return res.json({
+      ...rest,
+      profilePhotoUrl: computedProfilePhotoUrl,
+      autoPublish,
+      fullName,
+      mobileNumber,
+      stats: {
+        newspaperArticles: {
+          total: newspaperTotal,
+          currentMonth: newspaperCurrentMonth,
+        },
+        webArticleViews: {
+          total: webViewsTotal,
+          currentMonth: webViewsCurrentMonth,
+        },
+        subscriptionPayment: {
+          currentMonth: pay
+            ? { year, month, status: pay.status, amount: pay.amount, currency: pay.currency, expiresAt: pay.expiresAt }
+            : { year, month, status: null },
+        },
+      },
+    });
+  } catch (e: any) {
+    if (String(e?.code) === 'P1001') return res.status(503).json({ error: 'Database temporarily unavailable', code: 'P1001' });
+    console.error('get reporter me error', e);
+    return res.status(500).json({ error: 'Failed to get reporter profile' });
+  }
+});
+
 type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'MANDAL' | 'ASSEMBLY';
 
 type RoleName = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'REPORTER' | string;
