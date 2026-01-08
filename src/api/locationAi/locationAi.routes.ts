@@ -68,7 +68,8 @@ async function openaiChatJson(messages: Array<{ role: 'system' | 'user'; content
   const axios = require('axios');
   if (!OPENAI_KEY) throw new Error('Missing OPENAI_KEY');
 
-  const timeoutMs = Number(process.env.AI_TIMEOUT_MS || 45_000);
+  // Increased timeout for translation requests (2 minutes)
+  const timeoutMs = Number(process.env.AI_TRANSLATE_TIMEOUT_MS || process.env.AI_TIMEOUT_MS || 120_000);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
 
@@ -321,7 +322,8 @@ router.post('/districts', passport.authenticate('jwt', { session: false }), requ
     });
 
     const items = districts.map((d) => ({ id: d.id, en: d.name }));
-    const translated = await translateInChunks({ entityLabel: 'districts', items, chunkSize: 80, model });
+    // Reduced chunk size from 80 to 30 for faster per-request processing
+    const translated = await translateInChunks({ entityLabel: 'districts', items, chunkSize: 30, model });
     const nextOffset = offset + districts.length;
     return res.json({
       stateId,
