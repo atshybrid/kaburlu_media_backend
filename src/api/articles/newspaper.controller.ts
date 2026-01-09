@@ -704,13 +704,23 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
                 include: {
                     author: { select: { id: true, profile: { select: { fullName: true } } } },
                     baseArticle: { select: { contentJson: true, viewCount: true } },
-                }
+                },
             })
         ]);
 
         // Build sportLink (= website link) from associated TenantWebArticle (stored on baseArticle.contentJson.webArticleId).
         const rows = Array.isArray(items) ? items : [];
-        const webIds = rows
+        // Extract featuredImageUrl/coverImageUrl from baseArticle.contentJson if not set on article itself
+        const rowsWithCover = rows.map((it: any) => {
+            // Prefer article's own featuredImageUrl, fallback to baseArticle.contentJson.raw.coverImageUrl
+            const articleCover = it.featuredImageUrl;
+            const baseCover = it?.baseArticle?.contentJson?.raw?.coverImageUrl || it?.baseArticle?.contentJson?.coverImageUrl;
+            return {
+                ...it,
+                coverImageUrl: articleCover || baseCover || null,
+            };
+        });
+        const webIds = rowsWithCover
             .map((it: any) => {
                 const id = (it as any)?.baseArticle?.contentJson?.webArticleId;
                 return id ? String(id) : null;
@@ -746,7 +756,7 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
             fallbackDomain = primary?.domain ? String(primary.domain) : null;
         }
 
-        const out = rows.map((it: any) => {
+        const out = rowsWithCover.map((it: any) => {
             const webArticleId = it?.baseArticle?.contentJson?.webArticleId ? String(it.baseArticle.contentJson.webArticleId) : null;
             const web = webArticleId ? webById.get(webArticleId) : null;
             const sportLinkSlug = web?.slug ? String(web.slug) : null;

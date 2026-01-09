@@ -1074,6 +1074,7 @@ router.get('/tenants/:tenantId/newspaper-articles', auth, async (req, res) => {
           heading: true,
           dateline: true,
           placeName: true,
+          featuredImageUrl: true,
           status: true,
           createdAt: true,
           updatedAt: true,
@@ -1082,7 +1083,13 @@ router.get('/tenants/:tenantId/newspaper-articles', auth, async (req, res) => {
       .catch(() => []),
   ]);
 
-  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
+  // Map featuredImageUrl to coverImageUrl for frontend compatibility
+  const data = (rows as any[]).map((row: any) => ({
+    ...row,
+    coverImageUrl: row.featuredImageUrl || null,
+  }));
+
+  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data });
 });
 
 /**
@@ -1316,6 +1323,7 @@ router.get('/my/newspaper-articles', auth, async (req, res) => {
           heading: true,
           dateline: true,
           placeName: true,
+          featuredImageUrl: true,
           status: true,
           createdAt: true,
           updatedAt: true,
@@ -1324,7 +1332,13 @@ router.get('/my/newspaper-articles', auth, async (req, res) => {
       .catch(() => []),
   ]);
 
-  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data: rows });
+  // Map featuredImageUrl to coverImageUrl for frontend compatibility
+  const data = (rows as any[]).map((row: any) => ({
+    ...row,
+    coverImageUrl: row.featuredImageUrl || null,
+  }));
+
+  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data });
 });
 
 /**

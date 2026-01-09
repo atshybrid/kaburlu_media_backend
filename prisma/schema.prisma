@@ -457,6 +457,47 @@ enum Periodicity {
   MONTHLY
 }
 
+/// ---------------- ePaper Block Template Enums ----------------
+
+/// Category of ePaper block template
+enum EpaperBlockCategory {
+  HEADER // Page headers (main/inner)
+  CONTENT // News content blocks
+  FOOTER // Page footers
+}
+
+/// Sub-category for more specific block types
+enum EpaperBlockSubCategory {
+  // Headers
+  MAIN_HEADER // Page 1 header (3in)
+  INNER_HEADER // Page 2+ header (1in)
+  // Content blocks by column width
+  COL_2 // 2-column block
+  COL_4 // 4-column block
+  COL_6 // 6-column block
+  COL_10 // 10-column block
+  COL_12 // 12-column full-width block
+  // Footers
+  STANDARD_FOOTER // Regular footer with dots
+  LAST_PAGE_FOOTER // Last page with printer info
+}
+
+/// Status of ePaper block template
+enum EpaperBlockStatus {
+  DRAFT // Being designed, not locked
+  ACTIVE // Locked and available for use
+  ARCHIVED // Soft deleted, not shown in picker
+}
+
+/// Status of ePaper edition generation
+enum EpaperEditionStatus {
+  DRAFT // Created but not generated
+  GENERATING // Layout algorithm running
+  GENERATED // Layout complete, ready for review
+  PUBLISHED // Final, PDF generated
+  FAILED // Generation failed
+}
+
 /// ---------------- Core Tenant & Domain Models ----------------
 
 model Tenant {
@@ -506,6 +547,11 @@ model Tenant {
   billingUsageEvents      BillingUsageEvent[]
   billingInvoices         BillingInvoice[]
   billingCreditBalances   BillingCreditBalance[]
+
+  // ePaper Module
+  epaperSettings       EpaperSettings?       @relation("Tenant_EpaperSettings")
+  epaperBlockTemplates EpaperBlockTemplate[] @relation("Tenant_EpaperBlockTemplates")
+  epaperEditions       EpaperEdition[]       @relation("Tenant_EpaperEditions")
 }
 
 /// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)
@@ -1279,6 +1325,11 @@ model NewspaperArticle {
   points    String[] // 3-5 bullet points
   dateline  String // e.g. "Adilabad, Dec 6"
   content   String // Main news body
+
+  // Image/media for this article
+  featuredImageUrl String? // Primary image URL
+  mediaUrls        String[] // Additional media URLs
+
   // Location hierarchy (derived from reporter selection)
   // Reporter can pick ANY ONE: village/mandal/district/state; server derives the rest.
   stateId    String?
@@ -1288,9 +1339,29 @@ model NewspaperArticle {
   // Localized most-specific label used for dateline (village/mandal/district/state)
   placeName String?
 
+  // ePaper block template assignment
+  // System suggests based on character count
+  suggestedBlockTemplate   EpaperBlockTemplate? @relation("Article_SuggestedBlock", fields: [suggestedBlockTemplateId], references: [id])
+  suggestedBlockTemplateId String?
+  // Reporter/editor can override with manual selection
+  assignedBlockTemplate   EpaperBlockTemplate? @relation("Article_AssignedBlock", fields: [assignedBlockTemplateId], references: [id])
+  assignedBlockTemplateId String?
+
+  // Priority for layout algorithm (higher = placed first/prominently)
+  priority Int @default(0)
+  // Is this a breaking/headline news? (forces larger block)
+  isBreaking Boolean @default(false)
+
+  // Character/word count cache (for block suggestion)
+  charCount Int?
+  wordCount Int?
+
   status    String   @default("DRAFT")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Page layouts where this article appears
+  pageLayouts EpaperPageLayout[]
 
   @@index([tenantId])
   @@index([categoryId])
@@ -1298,6 +1369,10 @@ model NewspaperArticle {
   @@index([districtId])
   @@index([mandalId])
   @@index([villageId])
+  @@index([suggestedBlockTemplateId])
+  @@index([assignedBlockTemplateId])
+  @@index([priority])
+  @@index([status])
 }
 
 /// Unified content read tracking (dual-write while ArticleRead / ShortNewsRead still exist).
@@ -1685,4 +1760,202 @@ model UserLocation {
   source         String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+/// ---------------- ePaper Newspaper Design Module ----------------
+
+/// Reusable block templates for ePaper newspaper design.
+/// Templates define layout rules (columns, height) and component styles (title, image, body).
+/// Can be global (platform-wide) or tenant-specific.
+model EpaperBlockTemplate {
+  id          String                 @id @default(cuid())
+  code        String                 @unique // e.g., "BT_2COL_COMPACT", "BT_MAIN_HEADER"
+  name        String // Human-readable name
+  description String? // Optional description of use case
+
+  // Classification
+  category    EpaperBlockCategory // HEADER, CONTENT, FOOTER
+  subCategory EpaperBlockSubCategory // COL_2, COL_4, MAIN_HEADER, etc.
+
+  // Layout dimensions (in inches)
+  columns        Int // Number of grid columns (2, 4, 6, 10, 12)
+  widthInches    Float // Actual width in inches
+  minHeightInches Float? // Minimum height
+  maxHeightInches Float // Maximum height allowed
+
+  // Component definitions and style rules (JSON)
+  // Shape: { title: {...}, image: {...}, highlight: {...}, dateline: {...}, body: {...}, borders: {...}, spacing: {...} }
+  components Json
+
+  // Preview thumbnail (generated when template is locked)
+  previewImageUrl String?
+
+  // Template state
+  isLocked Boolean            @default(false) // Once locked, cannot edit (only clone)
+  status   EpaperBlockStatus  @default(DRAFT)
+
+  // Ownership: null = global platform template, tenantId = tenant-specific
+  isGlobal Boolean @default(true)
+  tenant   Tenant? @relation("Tenant_EpaperBlockTemplates", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String?
+
+  // Used by EpaperSettings as header/footer references
+  settingsAsMainHeader  EpaperSettings[] @relation("EpaperSettings_MainHeader")
+  settingsAsInnerHeader EpaperSettings[] @relation("EpaperSettings_InnerHeader")
+  settingsAsFooter      EpaperSettings[] @relation("EpaperSettings_Footer")
+
+  // Articles using this template
+  suggestedForArticles NewspaperArticle[] @relation("Article_SuggestedBlock")
+  assignedToArticles   NewspaperArticle[] @relation("Article_AssignedBlock")
+
+  // Page layouts using this template
+  pageLayouts EpaperPageLayout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([subCategory])
+  @@index([tenantId])
+  @@index([status])
+}
+
+/// Per-tenant ePaper configuration: page size, padding, headers, footers, generation settings.
+model EpaperSettings {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation("Tenant_EpaperSettings", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String @unique
+
+  // Page dimensions (in inches, default 13x22 broadsheet)
+  pageWidthInches  Float @default(13)
+  pageHeightInches Float @default(22)
+
+  // Grid system
+  gridColumns Int @default(12) // 12-column grid
+
+  // Padding (in inches)
+  paddingTop    Float @default(0.5)
+  paddingRight  Float @default(0.5)
+  paddingBottom Float @default(0.5)
+  paddingLeft   Float @default(0.5)
+
+  // Default page count for editions
+  defaultPageCount Int @default(8)
+
+  // Header templates
+  mainHeaderTemplateId  String? // FK to EpaperBlockTemplate (3in main page header)
+  mainHeaderTemplate    EpaperBlockTemplate? @relation("EpaperSettings_MainHeader", fields: [mainHeaderTemplateId], references: [id])
+  mainHeaderHeightInches Float @default(3)
+
+  innerHeaderTemplateId  String? // FK to EpaperBlockTemplate (1in inner page header)
+  innerHeaderTemplate    EpaperBlockTemplate? @relation("EpaperSettings_InnerHeader", fields: [innerHeaderTemplateId], references: [id])
+  innerHeaderHeightInches Float @default(1)
+
+  // Footer template
+  footerTemplateId  String? // FK to EpaperBlockTemplate
+  footerTemplate    EpaperBlockTemplate? @relation("EpaperSettings_Footer", fields: [footerTemplateId], references: [id])
+  footerHeightInches Float @default(0.5)
+
+  // Footer style for all pages
+  footerStyle String @default("dots") // "dots", "line", "none"
+
+  // Last page footer: printer/press information (required for PRGI compliance)
+  showPrinterInfoOnLastPage Boolean @default(true)
+  printerName               String? // e.g., "Sri Lakshmi Offset Printers"
+  printerAddress            String? // e.g., "Industrial Area, Adilabad"
+  printerCity               String? // e.g., "Adilabad"
+  publisherName             String? // Publisher name for last page
+  editorName                String? // Editor name for last page
+  ownerName                 String? // Owner name for last page
+  rniNumber                 String? // RNI registration number
+  // Custom footer text template (supports placeholders: {printerName}, {printerAddress}, {rniNumber}, {date})
+  lastPageFooterTemplate    String? // e.g., "Printed and published by {publisherName} at {printerName}, {printerAddress}. RNI: {rniNumber}"
+
+  // Auto-generation settings (JSON: scheduleTime, timezone, autoPublish)
+  generationConfig Json? // { "autoGenerate": true, "scheduleTime": "04:00", "timezone": "Asia/Kolkata", "autoPublish": false }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+/// Daily ePaper edition for a tenant.
+model EpaperEdition {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation("Tenant_EpaperEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+
+  editionDate DateTime @db.Date // The newspaper date (e.g., 2026-01-09)
+  editionNumber Int? // Optional edition number for the day
+
+  totalPages Int @default(8)
+
+  status EpaperEditionStatus @default(DRAFT)
+
+  // Generated PDF storage
+  pdfUrl       String? // URL to generated PDF (stored in R2)
+  pdfGeneratedAt DateTime?
+
+  // Preview/thumbnail
+  thumbnailUrl String?
+
+  // Generation metadata
+  generatedAt   DateTime?
+  generatedBy   String? // User ID who triggered generation
+  generationLog Json? // Debug/error log from generation
+
+  // Page layouts for this edition
+  pageLayouts EpaperPageLayout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, editionDate])
+  @@index([tenantId])
+  @@index([editionDate])
+  @@index([status])
+}
+
+/// Computed layout positions for each block in an edition page.
+/// Stores x,y coordinates, dimensions, and rendered content after layout algorithm runs.
+model EpaperPageLayout {
+  id        String        @id @default(cuid())
+  edition   EpaperEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  editionId String
+
+  pageNumber Int // 1-based page number
+
+  // What content is placed here
+  article   NewspaperArticle? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  articleId String?
+
+  // Which template defines the style
+  blockTemplate   EpaperBlockTemplate @relation(fields: [blockTemplateId], references: [id])
+  blockTemplateId String
+
+  // Position within the page (in inches, from top-left after padding)
+  x      Float // Horizontal position
+  y      Float // Vertical position
+  width  Float // Actual width used
+  height Float // Actual height used
+
+  // Rendered/processed content (JSON)
+  // Shape: { title: { lines: [...] }, body: { text, columnCount }, image: { url, width, height }, highlights: [...] }
+  renderedContent Json?
+
+  // Sort order for z-index / layering
+  sortOrder Int @default(0)
+
+  // Is this a header/footer block?
+  isHeader Boolean @default(false)
+  isFooter Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([editionId])
+  @@index([pageNumber])
+  @@index([articleId])
+  @@index([blockTemplateId])
 }
