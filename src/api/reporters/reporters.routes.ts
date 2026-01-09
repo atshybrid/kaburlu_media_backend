@@ -199,11 +199,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
 
     // Generation pre-conditions
     // Note: KYC is NOT mandatory for ID card generation.
-    // Only require an active subscription + a profile photo, then enforce payment rules.
-
-    if (!reporter.subscriptionActive) {
-      return res.status(403).json({ error: 'Subscription must be ACTIVE to generate ID card' });
-    }
+    // Require a profile photo, then enforce payment rules.
 
     // Require profile photo (either Reporter.profilePhotoUrl or UserProfile.profilePhotoUrl)
     let hasPhoto = !!reporter.profilePhotoUrl;
