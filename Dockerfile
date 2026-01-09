@@ -13,6 +13,9 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 
+# Generate Prisma client
+RUN npx prisma generate
+
 RUN npm run build
 # Keep only production dependencies for runtime.
 RUN npm prune --omit=dev
@@ -53,7 +56,9 @@ RUN apt-get update \
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/prisma ./prisma
 COPY package.json package-lock.json ./
 
 EXPOSE 3001
-CMD ["node", "dist/index.js"]
+# Run migrations then start the server
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

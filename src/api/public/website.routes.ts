@@ -920,14 +920,27 @@ router.get('/homepage', async (_req, res) => {
   const requestId = getOrCreateRequestId(req);
   res.setHeader('X-Request-Id', requestId);
 
+  // Fetch domain settings to check themeStyle
+  const domainSettings = domain?.id
+    ? await p.domainSettings.findUnique({ where: { domainId: domain.id } }).catch(() => null)
+    : null;
+  const domainThemeStyle = (domainSettings?.data as any)?.themeStyle || null;
+
   const shape = String((req.query as any)?.shape || '').toLowerCase().trim();
   const versionParam = String((req.query as any)?.v || '').trim();
-  const wantsV1 = versionParam === '1' || shape === 'style1';
-  const wantsStyle2V2 = versionParam === '2' && shape === 'style2';
+  
+  // Auto-detect style from domain settings if not explicitly provided in query
+  // Priority: query params > domain settings > default (style1)
+  const autoShape = shape || (domainThemeStyle === 'style2' ? 'style2' : domainThemeStyle === 'style1' ? 'style1' : '');
+  
+  const wantsV1 = versionParam === '1' || autoShape === 'style1';
+  const wantsStyle2V2 = versionParam === '2' && autoShape === 'style2';
   // v=3: Style2 using DB-stored HomepageSectionConfig table (structured, admin-managed)
-  const wantsStyle2V3 = versionParam === '3' && shape === 'style2';
+  // Auto-select v3 when domain themeStyle=style2 and no explicit version
+  const wantsStyle2V3 = (versionParam === '3' && autoShape === 'style2') || 
+                         (domainThemeStyle === 'style2' && autoShape === 'style2' && !versionParam);
   // Convenience: allow `shape=style2` to behave like `themeKey=style2` for legacy homepage.
-  const themeKey = String((req.query as any)?.themeKey || (shape && shape !== 'style1' ? shape : 'style1'));
+  const themeKey = String((req.query as any)?.themeKey || (autoShape && autoShape !== 'style1' ? autoShape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
@@ -945,10 +958,15 @@ router.get('/homepage', async (_req, res) => {
     p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
     p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null),
     // Fetch HomepageSectionConfig for this tenant/domain (used by Style2 v3)
+    // Include all new fields: sectionType, queryKind, secondary/tertiary categories, categorySlugs
     (p.homepageSectionConfig?.findMany?.({
       where: { tenantId: tenant.id, domainId: domain?.id || null, isActive: true },
       orderBy: { position: 'asc' },
-      include: { category: { select: { id: true, slug: true, name: true, iconUrl: true } } }
+      include: {
+        category: { select: { id: true, slug: true, name: true, iconUrl: true } },
+        secondaryCategory: { select: { id: true, slug: true, name: true, iconUrl: true } },
+        tertiaryCategory: { select: { id: true, slug: true, name: true, iconUrl: true } }
+      }
     }) ?? Promise.resolve([])).catch(() => [])
   ]);
 
@@ -1777,17 +1795,21 @@ router.get('/homepage', async (_req, res) => {
 
     // ========================================
     // HERO SECTION:
-    // - center: Latest 15 articles
-    // - right.latest: Latest articles 15-30
-    // - right.mostRead: Top 3 by read count (fallback to 31-33 if not visible)
+    // - Supports both legacy 'hero' style and new 'hero_sidebar' sectionType
+    // - center: Latest articles (based on queryKind)
+    // - right.latest: Latest articles (offset)
+    // - right.mostRead: Top by viewCount
     // ========================================
-    const heroConfig = dbSections.find((s: any) => String(s.style || '').toLowerCase() === 'hero') || null;
+    const heroConfig = dbSections.find((s: any) => 
+      String(s.style || '').toLowerCase() === 'hero' || 
+      String(s.sectionType || '').toLowerCase() === 'hero_sidebar'
+    ) || null;
     const heroCenterLimit = clampInt(heroConfig?.articleLimit, 1, 30, 15);
 
-    // Hero center: latest 15 (or configured limit)
+    // Hero center: latest articles (or configured limit)
     const heroCenter = await fetchLatestCardsV3(heroCenterLimit, 0);
 
-    // Hero right latest: next 15 articles (positions 15-30)
+    // Hero right latest: next 15 articles
     const heroRightLatest = await fetchLatestCardsV3(15, heroCenterLimit);
 
     // Collect IDs already shown to exclude from most read
@@ -1795,13 +1817,13 @@ router.get('/homepage', async (_req, res) => {
     for (const c of heroCenter) if (c?.id) shownIds.add(String(c.id));
     for (const c of heroRightLatest) if (c?.id) shownIds.add(String(c.id));
 
-    // Hero right most read: top 3 by read/view count
+    // Hero right most read: top by viewCount
     let heroRightMostRead = await fetchMostReadCardsV3(3, new Set(shownIds));
 
-    // If most read has fewer than 3 visible, fill with articles 31-33 as fallback
+    // If most read has fewer than 3 visible, fill with fallback latest
     if (heroRightMostRead.length < 3) {
       const needed = 3 - heroRightMostRead.length;
-      const fallbackOffset = heroCenterLimit + 15; // start from position 30
+      const fallbackOffset = heroCenterLimit + 15;
       const fallbackItems = await fetchLatestCardsV3(needed + 5, fallbackOffset);
       for (const item of fallbackItems) {
         if (heroRightMostRead.length >= 3) break;
@@ -1813,11 +1835,44 @@ router.get('/homepage', async (_req, res) => {
     }
 
     // ========================================
+    // Fetch trending articles (for sections with queryKind='trending')
+    // ========================================
+    async function fetchTrendingCardsV3(limit: number) {
+      const take = Math.min(Math.max(limit, 1), 50);
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+        take,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    // ========================================
+    // Fetch articles for multi-category sections
+    // ========================================
+    async function fetchMultiCategoryCardsV3(categorySlugsArr: string[], limitPerCategory: number) {
+      const results: { slug: string; name: string | null; items: any[] }[] = [];
+      for (const slug of categorySlugsArr) {
+        if (!slug) continue;
+        const cat = categoryBySlug.get(slug) || await p.category.findUnique({ where: { slug } }).catch(() => null);
+        if (!cat || cat.isDeleted) continue;
+        const items = await fetchCategoryCardsV3(slug, limitPerCategory);
+        const translatedName = translatedNameByCategoryId.get(cat.id) || cat.name || slug;
+        results.push({ slug, name: translatedName, items });
+      }
+      return results;
+    }
+
+    // ========================================
     // CATEGORY SECTIONS (non-hero)
-    // - Each section linked to a category
+    // - Supports new sectionType and queryKind fields
     // - Label = category translation (tenant language)
     // ========================================
-    const regularSections = dbSections.filter((s: any) => String(s.style || '').toLowerCase() !== 'hero');
+    const regularSections = dbSections.filter((s: any) => 
+      String(s.style || '').toLowerCase() !== 'hero' && 
+      String(s.sectionType || '').toLowerCase() !== 'hero_sidebar'
+    );
     const sectionsData: any[] = [];
 
     for (const sec of regularSections) {
@@ -1825,6 +1880,8 @@ router.get('/homepage', async (_req, res) => {
       if (!key) continue;
 
       const limit = clampInt(sec.articleLimit, 1, 50, 6);
+      const sectionType = String(sec.sectionType || 'category_cards');
+      const queryKind = String(sec.queryKind || 'category');
       const slug = sec.categorySlug ? String(sec.categorySlug) : null;
 
       // Get translated category name (tenant language) - this becomes the section label
@@ -1832,7 +1889,6 @@ router.get('/homepage', async (_req, res) => {
       let categoryHref: string | null = null;
       if (sec.category) {
         const catId = String(sec.category.id || '');
-        // Use category translation as label
         categoryName = translatedNameByCategoryId.get(catId) || sec.category.name || slug;
         categoryHref = slug ? `/category/${encodeURIComponent(slug)}` : null;
       }
@@ -1843,22 +1899,69 @@ router.get('/homepage', async (_req, res) => {
         : (categoryName || sec.labelEn || key);
 
       let items: any[] = [];
-      if (slug) {
-        items = await fetchCategoryCardsV3(slug, limit);
-      } else {
-        // No category = show latest articles
+      let multiCategoryData: { slug: string; name: string | null; items: any[] }[] | null = null;
+
+      // Determine which fetch method to use based on queryKind
+      if (queryKind === 'latest') {
         items = await fetchLatestCardsV3(limit, 0);
+      } else if (queryKind === 'trending' || queryKind === 'most_viewed') {
+        items = await fetchTrendingCardsV3(limit);
+      } else if (queryKind === 'category') {
+        // Check for multi-category section types
+        const multiCatTypes = ['category_boxes_3col', 'small_cards_3col', 'newspaper_columns', 'compact_lists_2col'];
+        if (multiCatTypes.includes(sectionType) && Array.isArray(sec.categorySlugs) && sec.categorySlugs.length > 0) {
+          // Multi-category section: fetch from each category
+          multiCategoryData = await fetchMultiCategoryCardsV3(sec.categorySlugs as string[], Math.ceil(limit / sec.categorySlugs.length) || 6);
+          items = multiCategoryData.flatMap(c => c.items);
+        } else if (slug) {
+          items = await fetchCategoryCardsV3(slug, limit);
+        } else {
+          // No category = show latest articles as fallback
+          items = await fetchLatestCardsV3(limit, 0);
+        }
       }
 
-      sectionsData.push({
+      const sectionData: any = {
         key,
-        title: label, // This is the category name in tenant language
+        title: label,
         titleEn: sec.labelEn || null,
         style: sec.style || 'cards',
+        sectionType,
+        queryKind,
         position: sec.position || 0,
         category: slug ? { slug, name: categoryName, href: categoryHref, iconUrl: sec.category?.iconUrl || null } : null,
         items
-      });
+      };
+
+      // Add multi-category data if applicable
+      if (multiCategoryData) {
+        sectionData.categories = multiCategoryData.map(c => ({
+          slug: c.slug,
+          name: c.name,
+          href: `/category/${encodeURIComponent(c.slug)}`,
+          items: c.items
+        }));
+      }
+
+      // Add secondary/tertiary category info for hero_sidebar type (if used on non-hero sections)
+      if (sec.secondaryCategory) {
+        const secCatId = String(sec.secondaryCategory.id || '');
+        sectionData.secondaryCategory = {
+          slug: sec.secondaryCategorySlug,
+          name: translatedNameByCategoryId.get(secCatId) || sec.secondaryCategory.name,
+          iconUrl: sec.secondaryCategory.iconUrl || null
+        };
+      }
+      if (sec.tertiaryCategory) {
+        const terCatId = String(sec.tertiaryCategory.id || '');
+        sectionData.tertiaryCategory = {
+          slug: sec.tertiaryCategorySlug,
+          name: translatedNameByCategoryId.get(terCatId) || sec.tertiaryCategory.name,
+          iconUrl: sec.tertiaryCategory.iconUrl || null
+        };
+      }
+
+      sectionsData.push(sectionData);
     }
 
     // Sort sections by position
@@ -1877,8 +1980,13 @@ router.get('/homepage', async (_req, res) => {
         label: displayLabel,
         labelEn: s.labelEn || null,
         style: s.style || 'cards',
+        sectionType: s.sectionType || 'category_cards',
+        queryKind: s.queryKind || 'category',
         position: s.position || 0,
         categorySlug: s.categorySlug || null,
+        secondaryCategorySlug: s.secondaryCategorySlug || null,
+        tertiaryCategorySlug: s.tertiaryCategorySlug || null,
+        categorySlugs: Array.isArray(s.categorySlugs) ? s.categorySlugs : null,
         articleLimit: s.articleLimit || 6
       };
     });
@@ -1893,7 +2001,7 @@ router.get('/homepage', async (_req, res) => {
         nativeName: (tenant as any).nativeName || null,
         language: (tenant as any).primaryLanguage || null,
       },
-      theme: { key: 'style2' },
+      theme: { key: 'style2', style: domainThemeStyle || 'style2' },
       sections: sectionsMeta,
       data: {
         hero: {

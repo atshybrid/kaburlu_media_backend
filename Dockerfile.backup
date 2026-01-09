@@ -1,0 +1,40 @@
+# Database Backup Worker Dockerfile
+# Runs daily at midnight to backup PostgreSQL to Bunny Storage
+
+FROM node:20-slim
+
+# Install PostgreSQL client for pg_dump
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    gzip \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Copy source code
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+# Create backups directory
+RUN mkdir -p /app/backups
+
+# Run backup cron (midnight every day)
+ENV DB_BACKUP_CRON="0 0 * * *"
+ENV DB_BACKUP_CRON_MODE="true"
+ENV DB_BACKUP_RETENTION_DAYS="30"
+
+CMD ["node", "dist/jobs/dbBackup.cron.js", "--cron"]

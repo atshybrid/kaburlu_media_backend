@@ -28,3 +28,20 @@ services:
       - key: AI_QUEUE_CRON
         value: '*/1 * * * *'
 
+  # Database Backup Worker (runs daily at midnight)
+  - type: worker
+    name: kaburlu-db-backup
+    env: docker
+    dockerfilePath: ./Dockerfile.backup
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_BACKUP_CRON
+        value: '0 0 * * *'
+      - key: DB_BACKUP_CRON_MODE
+        value: 'true'
+      - key: DB_BACKUP_RETENTION_DAYS
+        value: '30'
+

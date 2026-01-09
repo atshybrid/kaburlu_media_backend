@@ -261,7 +261,9 @@ model Category {
   webArticles      TenantWebArticle[]
   newspaperArticles NewspaperArticle[]
   domainCategories DomainCategory[]
-  homepageSectionConfigs HomepageSectionConfig[]
+  homepageSectionConfigs          HomepageSectionConfig[] @relation("HomepageSectionConfig_category")
+  homepageSectionSecondaryConfigs HomepageSectionConfig[] @relation("HomepageSectionConfig_secondaryCategory")
+  homepageSectionTertiaryConfigs  HomepageSectionConfig[] @relation("HomepageSectionConfig_tertiaryCategory")
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 }
@@ -966,6 +968,24 @@ model TenantHomepageSection {
 }
 
 /// Style2 homepage section configuration - links sections to categories with customizable labels
+/// Section Types for Style2 Layout:
+///   - hero_sidebar: Main hero with sidebar (uses category + secondaryCategory + tertiaryCategory)
+///   - category_boxes_3col: 3-column category boxes (uses categorySlugs[])
+///   - small_cards_3col: 3-column small cards (uses categorySlugs[])
+///   - magazine_grid: Magazine-style grid layout (uses category)
+///   - horizontal_scroll: Horizontal scrolling cards (uses category)
+///   - spotlight: Featured spotlight section (uses category)
+///   - newspaper_columns: Traditional newspaper columns (uses categorySlugs[])
+///   - horizontal_cards: Horizontal card layout (uses category)
+///   - photo_gallery: Photo gallery section (uses category)
+///   - timeline: Timeline-style news feed (uses category)
+///   - featured_banner: Featured banner section (uses category)
+///   - compact_lists_2col: 2-column compact lists (uses categorySlugs[])
+/// Query Kinds:
+///   - category: Fetch articles from linked category
+///   - latest: Fetch latest articles across all categories
+///   - trending: Fetch trending/popular articles
+///   - most_viewed: Fetch most viewed articles
 model HomepageSectionConfig {
   id            String    @id @default(cuid())
   tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -980,13 +1000,27 @@ model HomepageSectionConfig {
   labelEn       String?
   /// Position/order on homepage (lower = higher on page)
   position      Int       @default(0)
-  /// Section display style: "hero", "grid", "list", "cards", "ticker"
+  /// Section display style: "hero", "grid", "list", "cards", "ticker" (legacy)
   style         String    @default("cards")
-  /// Linked category (optional - some sections like "hero" may not have a category)
-  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Section type for Style2 layout (hero_sidebar, category_boxes_3col, magazine_grid, etc.)
+  sectionType   String    @default("category_cards")
+  /// Query kind: "category", "latest", "trending", "most_viewed"
+  queryKind     String    @default("category")
+  /// Primary category (optional - some sections like "hero" may use queryKind instead)
+  category      Category? @relation("HomepageSectionConfig_category", fields: [categoryId], references: [id], onDelete: SetNull)
   categoryId    String?
   /// Cached category slug for fast lookup
   categorySlug  String?
+  /// Secondary category (for hero_sidebar sidebar section)
+  secondaryCategory   Category? @relation("HomepageSectionConfig_secondaryCategory", fields: [secondaryCategoryId], references: [id], onDelete: SetNull)
+  secondaryCategoryId String?
+  secondaryCategorySlug String?
+  /// Tertiary category (for hero_sidebar bottom section)
+  tertiaryCategory    Category? @relation("HomepageSectionConfig_tertiaryCategory", fields: [tertiaryCategoryId], references: [id], onDelete: SetNull)
+  tertiaryCategoryId  String?
+  tertiaryCategorySlug String?
+  /// Array of category slugs for multi-category sections (category_boxes_3col, small_cards_3col, etc.)
+  categorySlugs Json?
   /// Number of articles to show in this section
   articleLimit  Int       @default(6)
   /// Whether this section is visible on homepage
@@ -999,6 +1033,8 @@ model HomepageSectionConfig {
   @@unique([tenantId, domainId, key])
   @@index([tenantId, domainId, position])
   @@index([categoryId])
+  @@index([sectionType])
+  @@index([queryKind])
 }
 
 model NewsletterSubscription {

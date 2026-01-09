@@ -472,6 +472,7 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*             sample:
 	*               summary: Full website config (recommended sections)
 	*               value:
+	*                 themeStyle: "style2"
 	*                 branding:
 	*                   logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
 	*                   faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
@@ -557,6 +558,10 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*                   colors:
 	*                     primary: "#0D47A1"
 	*                     secondary: "#FFC107"
+	*             themeStyleUpdate:
+	*               summary: Set homepage theme style (style1 or style2)
+	*               value:
+	*                 themeStyle: "style2"
 	*             brandingUpdate:
 	*               summary: Update only logo and favicon
 	*               value:
