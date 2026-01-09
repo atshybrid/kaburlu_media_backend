@@ -1,9 +1,9 @@
 // dotenv is loaded inside config/env
 import 'reflect-metadata';
 import app from './app';
-import prisma from './lib/prisma';
 import http from 'http';
 import { config } from './config/env';
+import prisma from './lib/prisma';
 import { ensureCoreSeeds } from './lib/bootstrap';
 
 const port = config.port;

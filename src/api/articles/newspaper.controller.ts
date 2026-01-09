@@ -667,7 +667,39 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
         const user: any = (req as any).user;
         const roleName = String(user?.role?.name || '').toUpperCase();
 
-        const { date, status, limit = '50', offset = '0', stateId, districtId, mandalId, villageId } = req.query as any;
+        const {
+            date,
+            status,
+            limit = '50',
+            offset = '0',
+            cursor,
+            stateId,
+            districtId,
+            mandalId,
+            villageId,
+        } = req.query as any;
+
+        const decodeCursor = (raw: any): { id: string } | null => {
+            if (!raw) return null;
+            const s = String(raw).trim();
+            if (!s) return null;
+            try {
+                const parsed = JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+                if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) return { id: String(parsed.id) };
+            } catch {
+                // ignore
+            }
+            return { id: s };
+        };
+
+        const encodeCursor = (id: string): string => {
+            return Buffer.from(JSON.stringify({ id }), 'utf8').toString('base64url');
+        };
+
+        const limitRaw = Number(limit);
+        const take = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 50;
+        const cursorObj = decodeCursor(cursor);
+        const useCursorPagination = Boolean(cursorObj);
 
         const where: any = {};
         if (scope.tenantId) where.tenantId = scope.tenantId;
@@ -694,19 +726,23 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
             }
         }
 
-        const [total, items] = await Promise.all([
-            (prisma as any).newspaperArticle.count({ where }),
-            (prisma as any).newspaperArticle.findMany({
-                where,
-                orderBy: { createdAt: 'desc' },
-                take: Number(limit),
-                skip: Number(offset),
-                include: {
-                    author: { select: { id: true, profile: { select: { fullName: true } } } },
-                    baseArticle: { select: { contentJson: true, viewCount: true } },
-                },
-            })
-        ]);
+        const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+
+        const totalPromise = useCursorPagination ? Promise.resolve(undefined) : (prisma as any).newspaperArticle.count({ where });
+
+        const itemsPromise = (prisma as any).newspaperArticle.findMany({
+            where,
+            orderBy,
+            take,
+            skip: useCursorPagination ? 1 : Number(offset),
+            ...(useCursorPagination ? { cursor: { id: cursorObj!.id } } : {}),
+            include: {
+                author: { select: { id: true, profile: { select: { fullName: true } } } },
+                baseArticle: { select: { contentJson: true, viewCount: true } },
+            },
+        });
+
+        const [total, items] = await Promise.all([totalPromise, itemsPromise]);
 
         // Build sportLink (= website link) from associated TenantWebArticle (stored on baseArticle.contentJson.webArticleId).
         const rows = Array.isArray(items) ? items : [];
@@ -797,7 +833,9 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
             };
         });
 
-        res.json({ total, items: out });
+        const nextCursor = useCursorPagination && out.length === take ? encodeCursor(String((out[out.length - 1] as any).id)) : null;
+
+        res.json({ total: typeof total === 'number' ? total : null, items: out, nextCursor });
     } catch (e) {
         console.error('listNewspaperArticles error', e);
         res.status(500).json({ error: 'Failed' });

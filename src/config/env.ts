@@ -1,4 +1,101 @@
-import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
+
+function loadEnvFile() {
+  const explicit = process.env.ENV_FILE;
+  const candidates = explicit
+    ? [explicit]
+    : [
+        process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development',
+        '.env',
+      ];
+
+  for (const candidate of candidates) {
+    const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
+    if (fs.existsSync(resolved)) {
+      dotenv.config({ path: resolved });
+      if (candidate !== '.env') {
+        console.log(`[Config] Loaded env file: ${candidate}`);
+      }
+      return;
+    }
+  }
+}
+
+function removeQueryParam(url: string, key: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete(key);
+    return u.toString();
+  } catch {
+    // If URL parsing fails, do a best-effort string removal.
+    const re = new RegExp(`([?&])${key}=[^&]*(&?)`, 'i');
+    return url.replace(re, (m, sep, tail) => (sep === '?' && tail ? '?' : sep === '?' ? '' : tail ? '&' : ''));
+  }
+}
+
+function deriveNeonDirectUrl(poolerUrl: string): string {
+  // Neon pooler host contains "-pooler" in hostname. Direct URL must not use pooler,
+  // and Prisma migrations should avoid PgBouncer hints.
+  let direct = poolerUrl;
+  try {
+    const u = new URL(poolerUrl);
+    u.hostname = u.hostname.replace(/-pooler(?=\.)/i, '');
+    direct = u.toString();
+  } catch {
+    direct = poolerUrl.replace(/-pooler(?=\.)/i, '');
+  }
+  direct = removeQueryParam(direct, 'pgbouncer');
+  return direct;
+}
+
+function applyDbProfileSelection() {
+  const profileRaw = process.env.DB_PROFILE;
+  const profile = profileRaw?.trim().toLowerCase();
+  if (!profile) return;
+
+  const profileKey = profile.toUpperCase();
+  const urlKey = `DATABASE_URL_${profileKey}`;
+  const directKey = `DATABASE_URL_DIRECT_${profileKey}`;
+  const fallbackKey = `DATABASE_URL_FALLBACK_${profileKey}`;
+
+  const profileUrl = process.env[urlKey];
+  const profileDirectUrl = process.env[directKey];
+  const profileFallbackUrl = process.env[fallbackKey];
+
+  if (!profileUrl && !process.env.DATABASE_URL) {
+    console.warn(
+      `[Config] DB_PROFILE=${profile} is set but ${urlKey} is missing (and DATABASE_URL is not set).`
+    );
+  } else if (!profileUrl) {
+    console.warn(`[Config] DB_PROFILE=${profile} is set but ${urlKey} is missing. Using existing DATABASE_URL.`);
+  }
+
+  if (profileUrl) {
+    process.env.DATABASE_URL = profileUrl;
+  }
+  if (profileDirectUrl) {
+    process.env.DATABASE_URL_DIRECT = profileDirectUrl;
+  }
+  if (profileFallbackUrl) {
+    process.env.DATABASE_URL_FALLBACK = profileFallbackUrl;
+  }
+
+  // If a profile URL is pooler-based and DIRECT isn't provided, derive a direct URL.
+  if (process.env.DATABASE_URL && !process.env.DATABASE_URL_DIRECT) {
+    const url = process.env.DATABASE_URL;
+    if (/-pooler(?=\.)/i.test(url)) {
+      process.env.DATABASE_URL_DIRECT = deriveNeonDirectUrl(url);
+    }
+  }
+
+  console.log(`[Config] DB_PROFILE=${profile}`);
+}
+
+// Load env as early as possible, then apply DB profile selection.
+loadEnvFile();
+applyDbProfileSelection();
 
 // Centralized environment + validation
 // Minimal lightweight validation (no extra deps) to avoid runtime surprises.

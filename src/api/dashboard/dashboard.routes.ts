@@ -1047,21 +1047,44 @@ router.get('/tenants/:tenantId/newspaper-articles', auth, async (req, res) => {
 
   const status = String((req.query as any).status || '').trim();
   const languageId = String((req.query as any).languageId || '').trim();
+  const cursor = String((req.query as any).cursor || '').trim();
+  const limitRaw = Number((req.query as any).limit ?? (req.query as any).pageSize);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : null;
   const { page, pageSize } = parsePagination(req.query);
+
+  const decodeCursor = (raw: string): { id: string } | null => {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+      if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) return { id: String(parsed.id) };
+    } catch {
+      // ignore
+    }
+    return { id: raw };
+  };
+
+  const encodeCursor = (id: string): string => Buffer.from(JSON.stringify({ id }), 'utf8').toString('base64url');
+  const cursorObj = decodeCursor(cursor);
+  const useCursorPagination = Boolean(cursorObj);
 
   const where: any = { tenantId };
   if (status) where.status = status;
   if (languageId) where.languageId = languageId;
 
   const p: any = prisma;
+  const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+  const take = useCursorPagination ? (limit ?? 50) : pageSize;
+  const skip = useCursorPagination ? 1 : (page - 1) * pageSize;
+
   const [total, rows] = await Promise.all([
-    p.newspaperArticle.count({ where }).catch(() => 0),
+    useCursorPagination ? Promise.resolve(null) : p.newspaperArticle.count({ where }).catch(() => 0),
     p.newspaperArticle
       .findMany({
         where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        orderBy,
+        take,
+        skip,
+        ...(useCursorPagination ? { cursor: { id: cursorObj!.id } } : {}),
         select: {
           id: true,
           tenantId: true,
@@ -1089,7 +1112,15 @@ router.get('/tenants/:tenantId/newspaper-articles', auth, async (req, res) => {
     coverImageUrl: row.featuredImageUrl || null,
   }));
 
-  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data });
+  const nextCursor = useCursorPagination && (rows as any[]).length === take ? encodeCursor(String((rows as any[])[(rows as any[]).length - 1].id)) : null;
+
+  return res.json({
+    meta: useCursorPagination
+      ? { page: null, pageSize: take, total: null, totalPages: null }
+      : { page, pageSize, total, totalPages: Math.ceil((total as number) / pageSize) },
+    data,
+    nextCursor,
+  });
 });
 
 /**
@@ -1297,20 +1328,43 @@ router.get('/my/newspaper-articles', auth, async (req, res) => {
   const userId = me.value.userId;
   const tenantId = String(me.value.reporter.tenantId);
   const status = String((req.query as any).status || '').trim();
+  const cursor = String((req.query as any).cursor || '').trim();
+  const limitRaw = Number((req.query as any).limit ?? (req.query as any).pageSize);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : null;
   const { page, pageSize } = parsePagination(req.query);
+
+  const decodeCursor = (raw: string): { id: string } | null => {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+      if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) return { id: String(parsed.id) };
+    } catch {
+      // ignore
+    }
+    return { id: raw };
+  };
+
+  const encodeCursor = (id: string): string => Buffer.from(JSON.stringify({ id }), 'utf8').toString('base64url');
+  const cursorObj = decodeCursor(cursor);
+  const useCursorPagination = Boolean(cursorObj);
 
   const where: any = { tenantId, authorId: userId };
   if (status) where.status = status;
 
   const p: any = prisma;
+  const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+  const take = useCursorPagination ? (limit ?? 50) : pageSize;
+  const skip = useCursorPagination ? 1 : (page - 1) * pageSize;
+
   const [total, rows] = await Promise.all([
-    p.newspaperArticle.count({ where }).catch(() => 0),
+    useCursorPagination ? Promise.resolve(null) : p.newspaperArticle.count({ where }).catch(() => 0),
     p.newspaperArticle
       .findMany({
         where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        orderBy,
+        take,
+        skip,
+        ...(useCursorPagination ? { cursor: { id: cursorObj!.id } } : {}),
         select: {
           id: true,
           tenantId: true,
@@ -1338,7 +1392,15 @@ router.get('/my/newspaper-articles', auth, async (req, res) => {
     coverImageUrl: row.featuredImageUrl || null,
   }));
 
-  return res.json({ meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }, data });
+  const nextCursor = useCursorPagination && (rows as any[]).length === take ? encodeCursor(String((rows as any[])[(rows as any[]).length - 1].id)) : null;
+
+  return res.json({
+    meta: useCursorPagination
+      ? { page: null, pageSize: take, total: null, totalPages: null }
+      : { page, pageSize, total, totalPages: Math.ceil((total as number) / pageSize) },
+    data,
+    nextCursor,
+  });
 });
 
 /**

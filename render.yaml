@@ -1,10 +1,11 @@
 services:
+  # Main API Server (handles HTTP requests)
   - type: web
-    name: kaburlu-media-backend
+    name: kaburlu-api
     env: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
@@ -13,3 +14,17 @@ services:
         value: /usr/bin/chromium
       - key: PUPPETEER_SKIP_DOWNLOAD
         value: 'true'
+
+  # Background AI Cron Worker (processes AI rewrites every 1 minute)
+  - type: worker
+    name: kaburlu-ai-cron
+    env: docker
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_QUEUE_CRON
+        value: '*/1 * * * *'
+

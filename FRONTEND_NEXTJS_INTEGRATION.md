@@ -178,3 +178,293 @@ export function toCard(a: Article): ArticleCard {
 - Public endpoints require no auth. Admin endpoints live under `/api/v1` and use `Authorization: Bearer <token>`.
 - Article detail currently matches by title or id. If you want a real `slug` field, request it and we’ll add a migration + wire-up.
 - Prefer Option A for websites: simpler, more secure defaults, and CDN-friendly.
+
+---
+
+# Next.js Admin Panel — Tenant Setup Wizard (End-to-end)
+
+This section maps a practical “Create Tenant → Complete Website Setup” wizard into exact backend calls.
+
+Two common deployment models:
+- **Model 1: SUPER_ADMIN Console** (you/ops team creates & verifies tenants/domains/settings)
+- **Model 2: TENANT_ADMIN Self-serve** (publisher sets most tenant config; SUPER_ADMIN only verifies domain + sets kind/categories/settings if restricted)
+
+You said your admin app is **SUPER_ADMIN**. That means your UI can implement the entire flow end-to-end (including domain verification/kind/categories and settings).
+
+Important routing note:
+- Use **versioned admin base**: `https://app.kaburlumedia.com/api/v1`
+- Most admin routers are also mounted on legacy paths, but the admin UI should stick to `/api/v1`.
+
+## Wizard state you should store client-side
+- `tenantId`
+- `primaryDomainId`, `primaryDomain` (string)
+- optional: `epaperDomainId`, `epaperDomain`
+- `languageId` (for TenantEntity)
+
+Recommended extra state for SUPER_ADMIN console:
+- `verifyInstruction` from domain creation (TXT record details)
+- optional: `selectedStyle` (`style1` or `style2`)
+
+---
+
+## Permissions matrix (SUPER_ADMIN console)
+In this repo:
+- **SUPER_ADMIN only**
+  - Create tenant: `POST /api/v1/tenants`
+  - Domain verify/kind/categories: `POST /api/v1/domains/:id/verify`, `PATCH /api/v1/domains/:id/kind`, `PUT /api/v1/domains/:id/categories`
+  - Settings layer: `GET/PUT/PATCH /api/v1/entity/settings`, `.../tenants/:tenantId/settings`, `.../tenants/:tenantId/domains/:domainId/settings`
+- **SUPER_ADMIN or TENANT_ADMIN scoped** (still fine for SUPER_ADMIN app)
+  - TenantEntity upsert: `POST /api/v1/tenants/:tenantId/entity` and `/entity/simple`
+  - Add domain: `POST /api/v1/tenants/:tenantId/domains`
+  - Theme/homepage config: `/api/v1/tenant-theme/...`
+  - Ads config: `/api/v1/tenants/:tenantId/ads/style1|style2`
+
+---
+
+## Suggested Next.js admin page flow (wizard screens)
+This is a practical screen-to-API mapping you can implement:
+
+1) **Tenant**
+  - Form: name, slug, prgiNumber, stateId
+  - Call: `POST /api/v1/tenants`
+  - Store: `tenantId`
+2) **Entity (PRGI details)**
+  - Form (minimal): languageId, periodicity, registrationDate, publisherName, nativeName
+  - Call: `POST /api/v1/tenants/:tenantId/entity/simple`
+3) **Domains**
+  - Form: primary domain, optional epaper domain
+  - Call: `POST /api/v1/tenants/:tenantId/domains` (for each)
+  - Show: `verifyInstruction` (TXT record name/value)
+4) **Verify & Kind**
+  - Action buttons: Verify primary domain; Verify epaper domain
+  - Call: `POST /api/v1/domains/:domainId/verify`
+  - Call: `PATCH /api/v1/domains/:domainId/kind` (NEWS for primary, EPAPER for epaper)
+5) **Categories**
+  - UI: pick slugs (recommended) or ids
+  - Call: `PUT /api/v1/domains/:domainId/categories`
+6) **Homepage**
+  - Choose style: style1 or style2
+  - Call apply default: `POST /api/v1/tenant-theme/:tenantId/homepage/:style/apply-default`
+  - Optional: `PATCH .../sections` to set categorySlug/categorySlugs + labels
+7) **Ads**
+  - Configure style1/style2 slots
+  - Call: `PUT /api/v1/tenants/:tenantId/ads/style1` and/or `.../style2`
+8) **Preview**
+  - Use public endpoints with `X-Tenant-Domain` and show results
+
+---
+
+## Minimal Next.js admin calling pattern (SUPER_ADMIN)
+If you don’t want to expose the SUPER_ADMIN JWT to the browser, proxy calls through your Next.js server.
+
+Option 1 (recommended): Next.js Route Handler proxies → backend
+```ts
+// app/api/admin/[...path]/route.ts
+import { NextRequest } from 'next/server';
+
+const BACKEND = process.env.BACKEND_BASE_URL!; // e.g. https://app.kaburlumedia.com/api/v1
+
+export async function GET(req: NextRequest, ctx: { params: { path: string[] } }) {
+  const url = new URL(req.url);
+  const upstream = `${BACKEND}/${ctx.params.path.join('/')}${url.search}`;
+  const token = req.headers.get('authorization') || ''; // or read from cookies/session
+  const res = await fetch(upstream, { headers: { Authorization: token } });
+  return new Response(await res.text(), { status: res.status, headers: { 'Content-Type': res.headers.get('content-type') || 'application/json' } });
+}
+```
+
+Then call from your UI:
+```ts
+await fetch('/api/admin/tenants', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+  body: JSON.stringify({ name, slug, prgiNumber, stateId })
+});
+```
+
+Option 2: Admin UI calls backend directly
+- Only do this if you’re OK storing SUPER_ADMIN auth in browser storage.
+- Use `baseURL = https://app.kaburlumedia.com/api/v1`.
+
+## Step 0 — Auth
+- All admin calls require `Authorization: Bearer <JWT>`.
+- Tenant-resolved public preview calls can use `X-Tenant-Domain: <domain>`.
+
+---
+
+## Step 1 — Create tenant (SUPER_ADMIN only)
+Endpoint:
+- `POST /api/v1/tenants`
+
+Request:
+```bash
+curl -X POST "$BASE/api/v1/tenants" \
+  -H "Authorization: Bearer $JWT_SUPERADMIN" -H "Content-Type: application/json" \
+  -d '{"name":"Prashna News","slug":"prashna","prgiNumber":"PRGI-2025-010","stateId":"cmstate123"}'
+```
+
+Response (store `id` as `tenantId`):
+```json
+{ "id": "...", "name": "Prashna News", "slug": "prashna", "prgiNumber": "PRGI-2025-010", "stateId": "cmstate123" }
+```
+
+If you are doing **TENANT_ADMIN self-serve**, this step is typically done by SUPER_ADMIN beforehand.
+
+---
+
+## Step 2 — Create TenantEntity (publisher/PRGI) (TENANT_ADMIN scoped or SUPER_ADMIN)
+Recommended onboarding endpoint (simple + optional admin user creation):
+- `POST /api/v1/tenants/:tenantId/entity/simple`
+
+Request:
+```bash
+curl -X POST "$BASE/api/v1/tenants/$TENANT_ID/entity/simple" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" -H "Content-Type: application/json" \
+  -d '{
+    "languageId":"lang_te_id",
+    "nativeName":"ప్రశ్నాయుధం",
+    "periodicity":"DAILY",
+    "registrationDate":"04/09/2025",
+    "publisherName":"Some Publisher",
+    "adminMobile":"9876543210"
+  }'
+```
+
+Notes:
+- `languageId` is mandatory.
+- If `nativeName` is omitted, backend may auto-generate a native script name.
+
+---
+
+## Step 3 — Add domains (TENANT_ADMIN scoped or SUPER_ADMIN)
+Endpoint:
+- `POST /api/v1/tenants/:tenantId/domains`
+
+Rules enforced server-side:
+- At most **2** domains per tenant
+- Only **one** primary domain (`isPrimary=true`)
+- Only **one** epaper subdomain, and it must start with `epaper.`
+
+Create primary domain:
+```bash
+curl -X POST "$BASE/api/v1/tenants/$TENANT_ID/domains" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" -H "Content-Type: application/json" \
+  -d '{"domain":"news.example.com","isPrimary":true}'
+```
+
+Response includes DNS TXT verification instructions:
+```json
+{
+  "domain": { "id": "...", "domain": "news.example.com", "status": "PENDING", "isPrimary": true },
+  "verifyInstruction": { "type": "DNS_TXT", "name": "_kaburlu-verify.news.example.com", "value": "<token>" }
+}
+```
+
+Optional epaper domain:
+```bash
+curl -X POST "$BASE/api/v1/tenants/$TENANT_ID/domains" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" -H "Content-Type: application/json" \
+  -d '{"domain":"epaper.news.example.com","isPrimary":false}'
+```
+
+Store `domain.id` as `primaryDomainId` / `epaperDomainId`.
+
+---
+
+## Step 4 — Verify domain + set kind (SUPER_ADMIN)
+These are ops/superadmin steps in most setups.
+
+Verify:
+- `POST /api/v1/domains/:domainId/verify`
+
+```bash
+curl -X POST "$BASE/api/v1/domains/$DOMAIN_ID/verify" \
+  -H "Authorization: Bearer $JWT_SUPERADMIN" -H "Content-Type: application/json" \
+  -d '{"method":"MANUAL"}'
+```
+
+Set kind:
+- `PATCH /api/v1/domains/:domainId/kind` with `{ "kind": "NEWS" | "EPAPER" }`
+
+```bash
+curl -X PATCH "$BASE/api/v1/domains/$DOMAIN_ID/kind" \
+  -H "Authorization: Bearer $JWT_SUPERADMIN" -H "Content-Type: application/json" \
+  -d '{"kind":"NEWS"}'
+```
+
+---
+
+## Step 5 — Set domain categories (SUPER_ADMIN)
+Endpoint:
+- `PUT /api/v1/domains/:domainId/categories`
+
+Request (recommended using slugs):
+```bash
+curl -X PUT "$BASE/api/v1/domains/$DOMAIN_ID/categories" \
+  -H "Authorization: Bearer $JWT_SUPERADMIN" -H "Content-Type: application/json" \
+  -d '{"categorySlugs":["national","international","politics"],"createIfMissingTranslations":true}'
+```
+
+---
+
+## Step 6 — Configure website homepage (Style1 / Style2) (TENANT_ADMIN scoped or SUPER_ADMIN)
+Endpoints:
+- `POST /api/v1/tenant-theme/:tenantId/homepage/:style/apply-default`
+- `PATCH /api/v1/tenant-theme/:tenantId/homepage/:style/sections`
+
+Style1 example:
+```bash
+curl -X POST "$BASE/api/v1/tenant-theme/$TENANT_ID/homepage/style1/apply-default" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER"
+
+curl -X PATCH "$BASE/api/v1/tenant-theme/$TENANT_ID/homepage/style1/sections" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" -H "Content-Type: application/json" \
+  -d '{"sections":[
+    {"key":"lastNews","categorySlug":"politics","limit":10},
+    {"key":"trendingCategory","categorySlug":"sports"}
+  ]}'
+```
+
+Style2 v2 (if you use `/public/homepage?shape=style2&v=2`):
+```bash
+curl -X POST "$BASE/api/v1/tenant-theme/$TENANT_ID/homepage/style2/v2/apply-default" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER"
+```
+
+---
+
+## Step 7 — Configure ads (Style1 / Style2) (TENANT_ADMIN scoped or SUPER_ADMIN)
+Endpoints:
+- `GET/PUT/PATCH /api/v1/tenants/:tenantId/ads/style1`
+- `GET/PUT/PATCH /api/v1/tenants/:tenantId/ads/style2`
+
+Style1 Google Adsense example:
+```bash
+curl -X PUT "$BASE/api/v1/tenants/$TENANT_ID/ads/style1" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" -H "Content-Type: application/json" \
+  -d '{"ads":{"enabled":true,"googleAdsense":{"client":"ca-pub-123"},"slots":{"home_top_banner":{"enabled":true,"provider":"google","google":{"slot":"1000000001","format":"auto","responsive":true}}}}}'
+```
+
+---
+
+## Step 8 — Optional: feature flags + Razorpay (TENANT_ADMIN scoped or SUPER_ADMIN)
+Feature flags:
+- `GET /api/v1/tenants/:tenantId/feature-flags`
+- `PATCH /api/v1/tenants/:tenantId/feature-flags`
+
+Razorpay keys:
+- `GET/POST/PUT /api/v1/tenants/:tenantId/razorpay-config`
+
+---
+
+## Step 9 — Public preview (works before frontend is complete)
+Use these from the wizard “Preview” step (send `X-Tenant-Domain`).
+
+```bash
+curl "$BASE/public/homepage?shape=style1" -H "X-Tenant-Domain: news.example.com"
+curl "$BASE/public/homepage?shape=style2&v=2" -H "X-Tenant-Domain: news.example.com"
+curl "$BASE/public/ads/style1" -H "X-Tenant-Domain: news.example.com"
+curl "$BASE/public/navigation" -H "X-Tenant-Domain: news.example.com"
+```
+
+If any public preview returns `Domain context missing`, the domain isn’t resolved (verify domain status/host/header), or the tenant resolver can’t map it.

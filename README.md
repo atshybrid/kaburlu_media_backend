@@ -44,6 +44,32 @@ If your remote database (Neon) isn’t reachable from this machine (Prisma P1001
 
 When Neon connectivity is fixed, restore your Neon `DATABASE_URL` and run Prisma migrations there. No remote data is modified while you use the local DB.
 
+## Easy dev/prod DB switching
+
+This project supports switching databases without repeatedly editing `.env`.
+
+**Runtime (API server)**
+
+- Use `DB_PROFILE=local|dev|prod` together with profile URLs like `DATABASE_URL_LOCAL`, `DATABASE_URL_DEV`, `DATABASE_URL_PROD`.
+- Optional: set `DATABASE_URL_DIRECT_*` for Neon so migrations use a non-pooler connection.
+- Optional: set `ENV_FILE=.env.production` (or `.env.development`) to load a specific env file.
+
+**Prisma (migrations/seed) with env files**
+
+The easiest/safest pattern is to keep separate env files (not committed):
+
+- `.env.development`
+- `.env.production`
+
+Then run:
+
+- `npm run prisma:migrate:dev:env`
+- `npm run prisma:migrate:deploy:prod:env`
+
+Notes:
+
+- For Neon: `DATABASE_URL` can be the pooler URL (with `pgbouncer=true`) but `DATABASE_URL_DIRECT` must be the direct URL (non `-pooler`) for migrations.
+
 ## Neon connectivity tips
 
 - Use the exact Prisma connection string from Neon (includes `?sslmode=require`)

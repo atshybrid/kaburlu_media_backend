@@ -1,4 +1,5 @@
-
+// Ensure env is loaded/resolved (dotenv + DB_PROFILE) before selecting URLs.
+import '../config/env';
 import { PrismaClient } from '@prisma/client';
 
 // Prefer fallback DB if explicitly requested. This allows running locally without
