@@ -1718,8 +1718,11 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     }
 
     // Generation pre-conditions
-    if (String(reporter.kycStatus || '') !== 'APPROVED') {
-      return res.status(403).json({ error: 'KYC must be APPROVED to generate ID card' });
+    // Note: KYC is NOT mandatory for ID card generation.
+    // Only require an active subscription + a profile photo, then enforce payment rules.
+
+    if (!reporter.subscriptionActive) {
+      return res.status(403).json({ error: 'Subscription must be ACTIVE to generate ID card' });
     }
 
     // Require profile photo (either Reporter.profilePhotoUrl or UserProfile.profilePhotoUrl)
@@ -1736,7 +1739,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
 
     // Payment requirements
     // - If idCardCharge > 0: onboarding payment must be PAID
-    // - If subscriptionActive=true and monthlySubscriptionAmount>0: current month subscription payment must be PAID
+    // - If subscriptionActive=true: current month subscription payment must be PAID
     if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
       const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
         where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
@@ -1747,23 +1750,33 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }
     }
 
-    if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+    if (reporter.subscriptionActive) {
+      // Use Asia/Kolkata month/year to avoid UTC month boundary issues
+      const fmt = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric' });
+      const parts = fmt.formatToParts(new Date());
+      const istYear = Number(parts.find(p => p.type === 'year')?.value);
+      const istMonth = Number(parts.find(p => p.type === 'month')?.value);
+
+      // Fallback to UTC if parsing fails
       const now = new Date();
-      const currentYear = now.getUTCFullYear();
-      const currentMonth = now.getUTCMonth() + 1; // 1-12
+      const utcYear = now.getUTCFullYear();
+      const utcMonth = now.getUTCMonth() + 1; // 1-12
+
       const monthlyPaid = await (prisma as any).reporterPayment.findFirst({
         where: {
           tenantId,
           reporterId: reporter.id,
           type: 'MONTHLY_SUBSCRIPTION',
-          year: currentYear,
-          month: currentMonth,
           status: 'PAID',
+          OR: [
+            { year: istYear || utcYear, month: istMonth || utcMonth },
+            { year: utcYear, month: utcMonth },
+          ],
         },
         select: { id: true },
       });
       if (!monthlyPaid) {
-        return res.status(403).json({ error: 'Monthly subscription payment must be PAID to generate ID card' });
+        return res.status(403).json({ error: 'Subscription payment must be PAID for current month to generate ID card' });
       }
     }
 
