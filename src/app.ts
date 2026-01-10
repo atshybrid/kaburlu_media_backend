@@ -63,6 +63,7 @@ import locationAiRoutes from './api/locationAi/locationAi.routes';
 import metaRoutes from './api/meta/meta.routes';
 import familyRoutes from './api/family/family.routes';
 import epaperRoutes from './api/epaper/epaper.routes';
+import proofsRoutes from './api/proofs/proofs.routes';
 
 const app = express();
 
@@ -256,6 +257,7 @@ apiV1.use('/castes', castesRoutes);
 apiV1.use('/meta', metaRoutes);
 apiV1.use('/family', familyRoutes);
 apiV1.use('/epaper', epaperRoutes);
+apiV1.use('/proofs', proofsRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);

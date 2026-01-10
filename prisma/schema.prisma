@@ -108,6 +108,12 @@ model User {
   // E2EE public key bundle (1:1). Added inverse relation for UserEncryptionKey.user
   userEncryptionKey      UserEncryptionKey?
   newspaperArticles      NewspaperArticle[]
+  
+  // Proof/Evidence System relations
+  proofRequestsCreated   ArticleProofRequest[] @relation("ProofRequest_RequestedBy")
+  proofRequestsAssigned  ArticleProofRequest[] @relation("ProofRequest_AssignedTo")
+  proofRequestsReviewed  ArticleProofRequest[] @relation("ProofRequest_ReviewedBy")
+  proofEvidenceUploaded  ArticleProofEvidence[] @relation("ProofEvidence_UploadedBy")
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
@@ -554,6 +560,9 @@ model Tenant {
   epaperSettings       EpaperSettings?       @relation("Tenant_EpaperSettings")
   epaperBlockTemplates EpaperBlockTemplate[] @relation("Tenant_EpaperBlockTemplates")
   epaperEditions       EpaperEdition[]       @relation("Tenant_EpaperEditions")
+
+  // Proof/Evidence System
+  proofRequests        ArticleProofRequest[] @relation("Tenant_ProofRequests")
 }
 
 /// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)
@@ -2021,4 +2030,102 @@ model EpaperPageLayout {
   @@index([pageNumber])
   @@index([articleId])
   @@index([blockTemplateId])
+}
+
+/// ---------------- Article Proof/Evidence System ----------------
+
+enum ProofRequestStatus {
+  PENDING    // Waiting for reporter to upload evidence
+  SUBMITTED  // Reporter has uploaded evidence
+  APPROVED   // Admin approved the evidence
+  REJECTED   // Admin rejected the evidence
+}
+
+enum ProofMediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+/// Proof request created by admin/editor for an article
+model ArticleProofRequest {
+  id            String             @id @default(cuid())
+  
+  // Which article needs proof
+  articleType   String             // "web" | "short" | "article"
+  webArticleId  String?
+  shortNewsId   String?
+  articleId     String?
+  
+  // Tenant scoping
+  tenant        Tenant             @relation("Tenant_ProofRequests", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId      String
+  
+  // Who requested proof (admin/editor)
+  requestedBy   User               @relation("ProofRequest_RequestedBy", fields: [requestedById], references: [id])
+  requestedById String
+  
+  // Who should provide proof (reporter)
+  assignedTo    User               @relation("ProofRequest_AssignedTo", fields: [assignedToId], references: [id])
+  assignedToId  String
+  
+  // Why proof is needed
+  reason        String
+  priority      String             @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  
+  // Status tracking
+  status        ProofRequestStatus @default(PENDING)
+  
+  // Previous article status (to restore if rejected)
+  previousStatus String?
+  
+  // Admin review
+  reviewedBy    User?              @relation("ProofRequest_ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedById  String?
+  reviewNote    String?
+  
+  // Timestamps
+  dueDate       DateTime?
+  submittedAt   DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  
+  // Evidence uploads (one-to-many)
+  evidence      ArticleProofEvidence[]
+  
+  @@index([tenantId, status])
+  @@index([assignedToId, status])
+  @@index([webArticleId])
+  @@index([shortNewsId])
+  @@index([articleId])
+}
+
+/// Evidence uploaded by reporter for a proof request
+model ArticleProofEvidence {
+  id             String              @id @default(cuid())
+  
+  // Parent proof request
+  proofRequest   ArticleProofRequest @relation(fields: [proofRequestId], references: [id], onDelete: Cascade)
+  proofRequestId String
+  
+  // Media details
+  mediaType      ProofMediaType
+  mediaUrl       String
+  thumbnailUrl   String?
+  fileName       String?
+  fileSize       Int?                // bytes
+  mimeType       String?
+  
+  // Description/caption
+  description    String?
+  
+  // Who uploaded
+  uploadedBy     User                @relation("ProofEvidence_UploadedBy", fields: [uploadedById], references: [id])
+  uploadedById   String
+  
+  // Timestamps
+  createdAt      DateTime            @default(now())
+  
+  @@index([proofRequestId])
 }
