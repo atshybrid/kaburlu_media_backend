@@ -843,18 +843,26 @@ model DomainSettings {
 }
 
 model TenantTheme {
-  id           String   @id @default(cuid())
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId     String   @unique
-  logoUrl      String?
-  faviconUrl   String?
-  primaryColor String?
-  headerHtml   String?
+  id             String   @id @default(cuid())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId       String   @unique
+  logoUrl        String?
+  faviconUrl     String?
+  primaryColor   String?
+  secondaryColor String?
+  headerBgColor  String?
+  footerBgColor  String?
+  headerHtml     String?
+  footerHtml     String?
+  fontFamily     String?
   /// Optional per-style homepage settings JSON.
   /// Recommended shape: { "style1": { ... }, "style2": { ... } }
   homepageConfig Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// SEO configuration JSON
+  /// Shape: { metaTitle, metaDescription, metaKeywords, ogTitle, ogDescription, ogImage, twitterCard, twitterHandle, googleAnalyticsId, facebookPixelId, robotsTxt, sitemapEnabled }
+  seoConfig      Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 /// One-to-one PRGI registration and entity details for a Tenant
@@ -922,6 +930,25 @@ model TenantFeatureFlags {
   section2Rows              Int      @default(2)
   section2ListCount         Int      @default(4)
   section2ForceCategoryName String?
+  // Website feature flags
+  enableEpaper              Boolean  @default(false)
+  enableAds                 Boolean  @default(true)
+  enableComments            Boolean  @default(false)
+  enableSocialShare         Boolean  @default(true)
+  enablePushNotifications   Boolean  @default(false)
+  enableNewsletter          Boolean  @default(true)
+  enableSearch              Boolean  @default(true)
+  enableRelatedArticles     Boolean  @default(true)
+  enableTrending            Boolean  @default(true)
+  enableBreakingNews        Boolean  @default(false)
+  enableVideo               Boolean  @default(true)
+  enableGallery             Boolean  @default(true)
+  enablePolls               Boolean  @default(false)
+  enableLiveTv              Boolean  @default(false)
+  enableDarkMode            Boolean  @default(true)
+  enableMultiLang           Boolean  @default(false)
+  enableReporterBylines     Boolean  @default(true)
+  enableLocationFilter      Boolean  @default(false)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

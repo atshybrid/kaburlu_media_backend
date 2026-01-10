@@ -374,12 +374,41 @@ router.get('/:id', async (req, res) => {
   res.json(t);
 });
 
+// Default feature flags for response normalization
+const DEFAULT_FEATURE_FLAGS = {
+  enableMobileAppView: false,
+  aiArticleRewriteEnabled: true,
+  aiBillingEnabled: false,
+  aiMonthlyTokenLimit: null,
+  section2Rows: 2,
+  section2ListCount: 4,
+  section2ForceCategoryName: null,
+  enableEpaper: false,
+  enableAds: true,
+  enableComments: false,
+  enableSocialShare: true,
+  enablePushNotifications: false,
+  enableNewsletter: true,
+  enableSearch: true,
+  enableRelatedArticles: true,
+  enableTrending: true,
+  enableBreakingNews: false,
+  enableVideo: true,
+  enableGallery: true,
+  enablePolls: false,
+  enableLiveTv: false,
+  enableDarkMode: true,
+  enableMultiLang: false,
+  enableReporterBylines: true,
+  enableLocationFilter: false,
+};
+
 /**
  * @swagger
  * /tenants/{tenantId}/feature-flags:
  *   get:
  *     summary: Get tenant feature flags
- *     tags: [Tenants, AI Rewrite]
+ *     tags: [Tenants, Feature Flags]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -394,7 +423,9 @@ router.get('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, as
   try {
     const { tenantId } = req.params;
     const flags = await (prisma as any).tenantFeatureFlags.findUnique({ where: { tenantId } }).catch(() => null);
-    return res.json({ tenantId, flags: flags || { tenantId, aiArticleRewriteEnabled: true } });
+    // Merge with defaults to ensure all fields are present
+    const merged = { ...DEFAULT_FEATURE_FLAGS, ...(flags || {}), tenantId };
+    return res.json(merged);
   } catch (e: any) {
     console.error('get tenant feature-flags error', e);
     return res.status(500).json({ error: 'Failed to get feature flags' });
@@ -406,8 +437,8 @@ router.get('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, as
  * /tenants/{tenantId}/feature-flags:
  *   patch:
  *     summary: Update tenant feature flags
- *     description: Update tenant feature flags. Currently supports aiArticleRewriteEnabled.
- *     tags: [Tenants, AI Rewrite]
+ *     description: Update any tenant feature flags. Partial update - only provided fields are updated.
+ *     tags: [Tenants, Feature Flags]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -421,6 +452,24 @@ router.get('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, as
  *           schema:
  *             type: object
  *             properties:
+ *               enableEpaper: { type: boolean }
+ *               enableAds: { type: boolean }
+ *               enableComments: { type: boolean }
+ *               enableSocialShare: { type: boolean }
+ *               enablePushNotifications: { type: boolean }
+ *               enableNewsletter: { type: boolean }
+ *               enableSearch: { type: boolean }
+ *               enableRelatedArticles: { type: boolean }
+ *               enableTrending: { type: boolean }
+ *               enableBreakingNews: { type: boolean }
+ *               enableVideo: { type: boolean }
+ *               enableGallery: { type: boolean }
+ *               enablePolls: { type: boolean }
+ *               enableLiveTv: { type: boolean }
+ *               enableDarkMode: { type: boolean }
+ *               enableMultiLang: { type: boolean }
+ *               enableReporterBylines: { type: boolean }
+ *               enableLocationFilter: { type: boolean }
  *               aiArticleRewriteEnabled: { type: boolean }
  *     responses:
  *       200:
@@ -429,15 +478,46 @@ router.get('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, as
 router.patch('/:tenantId/feature-flags', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
   try {
     const { tenantId } = req.params;
-    const aiArticleRewriteEnabled = typeof req.body?.aiArticleRewriteEnabled === 'boolean' ? req.body.aiArticleRewriteEnabled : undefined;
-    if (typeof aiArticleRewriteEnabled === 'undefined') return res.status(400).json({ error: 'aiArticleRewriteEnabled boolean required' });
+    const body = req.body || {};
+
+    // Build update data from provided boolean fields
+    const updateData: any = {};
+    const booleanFields = [
+      'enableMobileAppView', 'aiArticleRewriteEnabled', 'aiBillingEnabled',
+      'enableEpaper', 'enableAds', 'enableComments', 'enableSocialShare',
+      'enablePushNotifications', 'enableNewsletter', 'enableSearch',
+      'enableRelatedArticles', 'enableTrending', 'enableBreakingNews',
+      'enableVideo', 'enableGallery', 'enablePolls', 'enableLiveTv',
+      'enableDarkMode', 'enableMultiLang', 'enableReporterBylines', 'enableLocationFilter'
+    ];
+    for (const field of booleanFields) {
+      if (typeof body[field] === 'boolean') {
+        updateData[field] = body[field];
+      }
+    }
+    // Handle integer fields
+    if (typeof body.section2Rows === 'number') updateData.section2Rows = body.section2Rows;
+    if (typeof body.section2ListCount === 'number') updateData.section2ListCount = body.section2ListCount;
+    if (typeof body.aiMonthlyTokenLimit === 'number' || body.aiMonthlyTokenLimit === null) {
+      updateData.aiMonthlyTokenLimit = body.aiMonthlyTokenLimit;
+    }
+    // Handle string fields
+    if (typeof body.section2ForceCategoryName === 'string' || body.section2ForceCategoryName === null) {
+      updateData.section2ForceCategoryName = body.section2ForceCategoryName;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided to update' });
+    }
 
     const upserted = await (prisma as any).tenantFeatureFlags.upsert({
       where: { tenantId },
-      update: { aiArticleRewriteEnabled },
-      create: { tenantId, aiArticleRewriteEnabled },
+      update: updateData,
+      create: { tenantId, ...updateData },
     });
-    return res.json({ tenantId, flags: upserted });
+    // Merge with defaults for response
+    const merged = { ...DEFAULT_FEATURE_FLAGS, ...upserted };
+    return res.json(merged);
   } catch (e: any) {
     console.error('patch tenant feature-flags error', e);
     return res.status(500).json({ error: 'Failed to update feature flags' });
@@ -1466,6 +1546,128 @@ router.get('/:tenantId/categories', auth, requireSuperOrTenantAdminScoped, async
   } catch (e: any) {
     console.error('tenant allocated categories error', e);
     res.status(500).json({ error: 'Failed to list tenant categories' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/categories:
+ *   put:
+ *     summary: Update categories for all tenant domains (convenience wrapper)
+ *     description: |
+ *       Replaces category allocations for ALL domains belonging to the tenant.
+ *       Provide either `categoryIds` or `categorySlugs` (at least one).
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               categoryIds:
+ *                 type: array
+ *                 items: { type: string }
+ *               categorySlugs:
+ *                 type: array
+ *                 items: { type: string }
+ *           examples:
+ *             bySlugs:
+ *               value:
+ *                 categorySlugs: ["politics", "sports", "entertainment"]
+ *             byIds:
+ *               value:
+ *                 categoryIds: ["cuid123", "cuid456"]
+ *     responses:
+ *       200:
+ *         description: Updated categories
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Tenant not found
+ */
+router.put('/:tenantId/categories', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const { categoryIds, categorySlugs } = req.body || {};
+
+    if (!Array.isArray(categoryIds) && !Array.isArray(categorySlugs)) {
+      return res.status(400).json({ error: 'Provide categoryIds or categorySlugs array' });
+    }
+
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    // Get all domains for this tenant
+    const domains = await (prisma as any).domain.findMany({ where: { tenantId } });
+    if (!domains.length) {
+      return res.status(400).json({ error: 'Tenant has no domains. Create a domain first.' });
+    }
+
+    // Resolve categories
+    const cleanedIds = Array.isArray(categoryIds) ? categoryIds.filter((c: string) => typeof c === 'string' && c.trim()) : [];
+    const cleanedSlugs = Array.isArray(categorySlugs) ? categorySlugs.filter((c: string) => typeof c === 'string' && c.trim()) : [];
+
+    let slugResolvedIds: string[] = [];
+    if (cleanedSlugs.length) {
+      const bySlug = await (prisma as any).category.findMany({ where: { slug: { in: cleanedSlugs } }, select: { id: true, slug: true } });
+      const foundSlugMap: Record<string, string> = {};
+      bySlug.forEach((c: any) => foundSlugMap[c.slug] = c.id);
+      const missingSlugs = cleanedSlugs.filter(s => !foundSlugMap[s]);
+      if (missingSlugs.length) {
+        return res.status(400).json({ error: 'Some categorySlugs not found', missingSlugs });
+      }
+      slugResolvedIds = Object.values(foundSlugMap);
+    }
+
+    const combined = Array.from(new Set([...cleanedIds, ...slugResolvedIds]));
+
+    // Validate category IDs exist
+    if (combined.length) {
+      const categories = await (prisma as any).category.findMany({ where: { id: { in: combined } }, select: { id: true } });
+      const existingIds = new Set(categories.map((c: any) => c.id));
+      const missingIds = combined.filter(cid => !existingIds.has(cid));
+      if (missingIds.length) {
+        return res.status(400).json({ error: 'Some categoryIds not found', missing: missingIds });
+      }
+    }
+
+    // Update all domains with these categories (transaction)
+    const domainIds = domains.map((d: any) => d.id);
+    const ops: any[] = [
+      (prisma as any).domainCategory.deleteMany({ where: { domainId: { in: domainIds } } }),
+    ];
+    for (const domainId of domainIds) {
+      for (const categoryId of combined) {
+        ops.push((prisma as any).domainCategory.create({ data: { domainId, categoryId } }));
+      }
+    }
+    await (prisma as any).$transaction(ops);
+
+    // Return updated categories
+    const updatedDomainCats = await (prisma as any).domainCategory.findMany({
+      where: { domainId: { in: domainIds } },
+      include: { category: true }
+    });
+    const catMap = new Map<string, any>();
+    updatedDomainCats.forEach((dc: any) => { if (!dc.category.isDeleted) catMap.set(dc.categoryId, dc.category); });
+    const shaped = Array.from(catMap.values()).map((c: any) => ({
+      id: c.id,
+      slug: c.slug,
+      name: c.name,
+      parentId: c.parentId || null
+    }));
+
+    res.json({ count: shaped.length, categories: shaped, domainsUpdated: domainIds.length });
+  } catch (e: any) {
+    console.error('tenant put categories error', e);
+    res.status(500).json({ error: 'Failed to update tenant categories' });
   }
 });
 

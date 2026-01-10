@@ -731,7 +731,12 @@ router.patch(
     if (Object.prototype.hasOwnProperty.call(payload, 'logoUrl')) data.logoUrl = payload.logoUrl;
     if (Object.prototype.hasOwnProperty.call(payload, 'faviconUrl')) data.faviconUrl = payload.faviconUrl;
     if (Object.prototype.hasOwnProperty.call(payload, 'primaryColor')) data.primaryColor = payload.primaryColor;
+    if (Object.prototype.hasOwnProperty.call(payload, 'secondaryColor')) data.secondaryColor = payload.secondaryColor;
+    if (Object.prototype.hasOwnProperty.call(payload, 'headerBgColor')) data.headerBgColor = payload.headerBgColor;
+    if (Object.prototype.hasOwnProperty.call(payload, 'footerBgColor')) data.footerBgColor = payload.footerBgColor;
     if (Object.prototype.hasOwnProperty.call(payload, 'headerHtml')) data.headerHtml = payload.headerHtml;
+    if (Object.prototype.hasOwnProperty.call(payload, 'footerHtml')) data.footerHtml = payload.footerHtml;
+    if (Object.prototype.hasOwnProperty.call(payload, 'fontFamily')) data.fontFamily = payload.fontFamily;
     if (Object.prototype.hasOwnProperty.call(payload, 'homepageConfig')) data.homepageConfig = payload.homepageConfig;
 
     const existing = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
@@ -739,6 +744,140 @@ router.patch(
       ? await (prisma as any).tenantTheme.update({ where: { tenantId }, data })
       : await (prisma as any).tenantTheme.create({ data: { tenantId, ...data } });
     return res.json(saved);
+  }
+);
+
+// ==================== SEO ENDPOINTS ====================
+
+const DEFAULT_SEO_CONFIG = {
+  metaTitle: '',
+  metaDescription: '',
+  metaKeywords: '',
+  ogTitle: '',
+  ogDescription: '',
+  ogImage: '',
+  twitterCard: 'summary_large_image',
+  twitterHandle: '',
+  googleAnalyticsId: '',
+  facebookPixelId: '',
+  robotsTxt: 'User-agent: *\nAllow: /',
+  sitemapEnabled: true,
+};
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/seo:
+ *   get:
+ *     summary: Get tenant SEO configuration
+ *     tags: [Tenant Theme, SEO]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: SEO configuration
+ */
+router.get(
+  '/:tenantId/seo',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const seoConfig = isPlainObject((theme as any)?.seoConfig) ? (theme as any).seoConfig : {};
+      // Merge with defaults
+      const merged = { ...DEFAULT_SEO_CONFIG, ...seoConfig };
+      return res.json(merged);
+    } catch (e: any) {
+      console.error('get tenant seo error', e);
+      return res.status(500).json({ error: 'Failed to get SEO config' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/seo:
+ *   patch:
+ *     summary: Update tenant SEO configuration
+ *     tags: [Tenant Theme, SEO]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               metaTitle: { type: string }
+ *               metaDescription: { type: string }
+ *               metaKeywords: { type: string }
+ *               ogTitle: { type: string }
+ *               ogDescription: { type: string }
+ *               ogImage: { type: string }
+ *               twitterCard: { type: string }
+ *               twitterHandle: { type: string }
+ *               googleAnalyticsId: { type: string }
+ *               facebookPixelId: { type: string }
+ *               robotsTxt: { type: string }
+ *               sitemapEnabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Updated SEO configuration
+ */
+router.patch(
+  '/:tenantId/seo',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const body = req.body || {};
+
+      // Get existing theme and seoConfig
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const existingSeoConfig = isPlainObject((theme as any)?.seoConfig) ? { ...(theme as any).seoConfig } : {};
+
+      // Build updated seoConfig (merge incoming with existing)
+      const stringFields = [
+        'metaTitle', 'metaDescription', 'metaKeywords',
+        'ogTitle', 'ogDescription', 'ogImage',
+        'twitterCard', 'twitterHandle',
+        'googleAnalyticsId', 'facebookPixelId', 'robotsTxt'
+      ];
+      for (const field of stringFields) {
+        if (typeof body[field] === 'string') {
+          existingSeoConfig[field] = body[field];
+        }
+      }
+      if (typeof body.sitemapEnabled === 'boolean') {
+        existingSeoConfig.sitemapEnabled = body.sitemapEnabled;
+      }
+
+      const saved = theme
+        ? await (prisma as any).tenantTheme.update({
+            where: { tenantId },
+            data: { seoConfig: existingSeoConfig }
+          })
+        : await (prisma as any).tenantTheme.create({
+            data: { tenantId, seoConfig: existingSeoConfig }
+          });
+
+      const merged = { ...DEFAULT_SEO_CONFIG, ...(saved.seoConfig || {}) };
+      return res.json(merged);
+    } catch (e: any) {
+      console.error('patch tenant seo error', e);
+      return res.status(500).json({ error: 'Failed to update SEO config' });
+    }
   }
 );
 
