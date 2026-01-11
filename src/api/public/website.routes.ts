@@ -675,9 +675,7 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *
  *       - Default response (no query params): legacy shape `{ hero, topStories, sections, ... }`.
  *       - Style1 contract: pass `?v=1` (or `?shape=style1`) to get `{ version, tenant, theme, uiTokens, sections, data }`.
- *       - Style2 (legacy) composition: pass `?shape=style2` (or `?themeKey=style2`) to load sections from TenantTheme.homepageConfig.style2.
- *       - Style2 v2 contract: pass `?shape=style2&v=2` to get `{ version, tenant, theme, sections, data }`.
- *       - Style2 v3 (DB sections): pass `?shape=style2&v=3` to use HomepageSectionConfig table with admin-managed sections + category linking.
+ *       - Style2: pass `?shape=style2` to use Style2 theme configuration with section types, categories, and theme colors.
  *
  *       Best practice (recommended flows):
  *
@@ -688,27 +686,20 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       2) Frontend load:
  *          - GET `/public/homepage?v=1` (or `/public/homepage?shape=style1`) with optional `lang=te`
  *
- *       Style2 legacy (shape=style2):
+ *       Style2:
  *       1) Admin config (JWT):
- *          - POST `/tenant-theme/{tenantId}/homepage/style2/apply-default`
- *          - PATCH `/tenant-theme/{tenantId}/homepage/style2/sections` with `{ sections: [{ key, title, position, categorySlug, limit }] }`
+ *          - POST `/tenant-theme/{tenantId}/style2-config/apply-default` to set up default sections
+ *          - PUT `/tenant-theme/{tenantId}/style2-config` to customize sections
  *       2) Frontend load:
- *          - GET `/public/homepage?shape=style2`
+ *          - GET `/public/homepage?shape=style2` to get homepage data with configured sections
  *
- *       Style2 v2 (shape=style2&v=2):
+ *       Style2 v4 (Theme Config - NEW):
  *       1) Admin config (JWT):
- *          - POST `/tenant-theme/{tenantId}/homepage/style2/v2/apply-default`
- *          - PATCH `/tenant-theme/{tenantId}/homepage/style2/v2/sections` (update labels, leftCategorySlug, right labels, section3 categorySlugs, section4 rows/cols)
+ *          - POST `/tenant-theme/{tenantId}/style2-config/apply-default` to apply default configuration
+ *          - PUT `/tenant-theme/{tenantId}/style2-config` with sections array (section_type, categories, theme_color, position)
+ *          - GET `/tenant-theme/{tenantId}/style2-config/section-types` to get available section types and theme colors
  *       2) Frontend load:
- *          - GET `/public/homepage?shape=style2&v=2`
- *
- *       Style2 v3 (DB sections - RECOMMENDED):
- *       1) Admin config (JWT):
- *          - PUT `/homepage-sections/{tenantId}/bulk` with sections array (key, label in Telugu, categorySlug, position, style)
- *          - POST `/homepage-sections/{tenantId}` to add individual sections
- *          - PUT `/homepage-sections/{tenantId}/{key}` to update section labels or category links
- *       2) Frontend load:
- *          - GET `/public/homepage?shape=style2&v=3` (returns hero + sections with items)
+ *          - GET `/public/homepage?shape=style2&v=4` (returns sections with structured data based on theme configuration)
  *
  *       Notes:
  *       - `X-Tenant-Domain` header is the safest way to target a tenant/domain in local testing.
@@ -741,11 +732,11 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
  *       - in: query
  *         name: v
  *         required: false
- *         description: Set to 1 for Style1 contract, 2 for Style2 v2 (JSON config), or 3 for Style2 v3 (DB sections).
+ *         description: Set to 1 for Style1 contract, or 2 for Style2 theme configuration.
  *         schema:
  *           type: string
- *           enum: ['1','2','3']
- *           example: '3'
+ *           enum: ['1','2']
+ *           example: '2'
  *       - in: query
  *         name: shape
  *         required: false
@@ -934,19 +925,15 @@ router.get('/homepage', async (_req, res) => {
   const autoShape = shape || (domainThemeStyle === 'style2' ? 'style2' : domainThemeStyle === 'style1' ? 'style1' : '');
   
   const wantsV1 = versionParam === '1' || autoShape === 'style1';
-  const wantsStyle2V2 = versionParam === '2' && autoShape === 'style2';
-  // v=3: Style2 using DB-stored HomepageSectionConfig table (structured, admin-managed)
-  // Auto-select v3 when domain themeStyle=style2 and no explicit version
-  const wantsStyle2V3 = (versionParam === '3' && autoShape === 'style2') || 
-                         (domainThemeStyle === 'style2' && autoShape === 'style2' && !versionParam);
-  // Convenience: allow `shape=style2` to behave like `themeKey=style2` for legacy homepage.
+  const wantsStyle2 = autoShape === 'style2' || versionParam === '2';
+  // Convenience: allow `shape=style2` to behave like `themeKey=style2` for Style2 homepage.
   const themeKey = String((req.query as any)?.themeKey || (autoShape && autoShape !== 'style1' ? autoShape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
   }
-  if ((wantsStyle2V2 || wantsStyle2V3) && themeKey !== 'style2') {
-    return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Use shape=style2&v=2 or v=3 for Style2' });
+  if (wantsStyle2 && themeKey !== 'style2') {
+    return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Use shape=style2 for Style2' });
   }
 
 
@@ -996,6 +983,13 @@ router.get('/homepage', async (_req, res) => {
     : [];
   const translatedNameByCategoryId = new Map<string, string>((categoryTranslations || []).map((t: any) => [t.categoryId, t.name]));
 
+  // Helper to create default extra sections
+  const createDefaultExtraSections = () => [
+    { key: 'trending-news', title: 'Trending News', position: 1000, style: 'cards', limit: 20, queryType: 'trending' },
+    { key: 'must-read', title: 'Must Read', position: 1001, style: 'list', limit: 10, queryType: 'most-viewed' },
+    { key: 'most-read', title: 'Most Read', position: 1002, style: 'compact', limit: 15, queryType: 'most-viewed' }
+  ];
+
   const defaultSections: HomepageSectionConfig[] = [
     { key: 'politics', title: 'Politics', position: 10, style: 'grid', limit: 6, categorySlug: 'politics' },
     { key: 'technology', title: 'Technology', position: 20, style: 'grid', limit: 6, categorySlug: 'technology' },
@@ -1029,6 +1023,30 @@ router.get('/homepage', async (_req, res) => {
     }
     return outSections;
   };
+
+  // Helper to fetch extra sections (trending, most read, etc.)
+  async function fetchExtraSection(section: any) {
+    const out: any = {
+      key: section.key,
+      title: section.title,
+      position: section.position,
+      style: section.style,
+      limit: section.limit,
+      items: []
+    };
+
+    if (section.queryType === 'trending' || section.queryType === 'most-viewed') {
+      const rows = await p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+        take: Math.min(section.limit, 50),
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      out.items = rows.map(toCard);
+    }
+
+    return out;
+  }
 
   // Prefer homepage config stored in TenantTheme (per style) to avoid touching global settings JSON.
   const themeHome: any = (tenantTheme as any)?.homepageConfig || null;
@@ -1391,7 +1409,22 @@ router.get('/homepage', async (_req, res) => {
       // eslint-disable-next-line no-await-in-loop
       await buildSection(s);
     }
-    console.log('[homepage:v1]', { requestId, tenant: tenant.slug, domain: domain?.domain, langCode, timingsMs: timers });
+
+    // Add default extra sections if not already configured
+    const extraSections = createDefaultExtraSections();
+    const configuredKeys = new Set(sections.map(s => s.key));
+    const additionalSections = [];
+
+    for (const extraSection of extraSections) {
+      if (!configuredKeys.has(extraSection.key)) {
+        const sectionData = await fetchExtraSection(extraSection);
+        sections.push(sectionData);
+        data[extraSection.key] = sectionData.items;
+        additionalSections.push(sectionData);
+      }
+    }
+
+    console.log('[homepage:v1]', { requestId, tenant: tenant.slug, domain: domain?.domain, langCode, timingsMs: timers, extraSectionsAdded: additionalSections.length });
 
     return res.json({
       version: '1.0',
@@ -1696,10 +1729,226 @@ router.get('/homepage', async (_req, res) => {
   }
 
   // ============================================================
-  // Style2 v3: DB-stored HomepageSectionConfig table
-  // - Hero: center = latest 15, right = latest 15-30 + most read top 3
-  // - Sections stored in HomepageSectionConfig with category linking
-  // - Labels use category translation (in tenant language)
+  // Style2: Unified Theme Configuration
+  // - Uses Style2 theme configuration stored in TenantTheme
+  // - Sections defined with section_type, categories, and theme_colors
+  // - Advanced section types with structured configuration
+  // ============================================================
+  if (wantsStyle2) {
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+
+    // Get Style2 theme configuration from TenantTheme
+    const homepageConfig = (tenantTheme as any)?.homepageConfig || {};
+    const style2Config = homepageConfig.style2 || {};
+    const themeConfig = style2Config.themeConfig || { sections: [] };
+
+    if (!Array.isArray(themeConfig.sections) || themeConfig.sections.length === 0) {
+      return res.json({
+        success: false,
+        message: 'No Style2 theme configuration found. Use /api/v1/tenant-theme/{tenantId}/style2-config/apply-default to set up.',
+        data: { sections: [] }
+      });
+    }
+
+    // Helper to fetch articles based on section configuration
+    async function fetchSectionData(section: any) {
+      const sectionData: any = {
+        id: section.id,
+        position: section.position,
+        section_type: section.section_type,
+        ...(section.theme_color && { theme_color: section.theme_color }),
+      };
+
+      // Handle different section types and their data requirements
+      switch (section.section_type) {
+        case 'hero_sidebar': {
+          // Fetch hero, sidebar, and bottom content
+          const heroCategory = section.hero_category || 'latest';
+          const sidebarCategory = section.sidebar_category || 'trending';
+          const bottomCategory = section.bottom_category || 'latest';
+
+          const [heroItems, sidebarItems, bottomItems] = await Promise.all([
+            fetchCategoryItems(heroCategory, 3),
+            fetchCategoryItems(sidebarCategory, 5),
+            fetchCategoryItems(bottomCategory, 8)
+          ]);
+
+          sectionData.hero_category = heroCategory;
+          sectionData.sidebar_category = sidebarCategory;
+          sectionData.bottom_category = bottomCategory;
+          sectionData.data = {
+            hero: heroItems,
+            sidebar: sidebarItems,
+            bottom: bottomItems
+          };
+          break;
+        }
+
+        case 'category_boxes_3col':
+        case 'small_cards_3col':
+        case 'newspaper_columns':
+        case 'compact_lists_2col': {
+          // Multi-category sections
+          if (Array.isArray(section.categories) && section.categories.length > 0) {
+            const categoryData = await Promise.all(
+              section.categories.map(async (catSlug: string) => {
+                const items = await fetchCategoryItems(catSlug, 6);
+                const category = categoryBySlug.get(catSlug) || { slug: catSlug, name: catSlug };
+                return {
+                  category: {
+                    slug: category.slug,
+                    name: category.name,
+                    href: `/category/${category.slug}`
+                  },
+                  items
+                };
+              })
+            );
+            sectionData.categories = section.categories;
+            sectionData.data = categoryData;
+          } else {
+            sectionData.categories = [];
+            sectionData.data = [];
+          }
+          break;
+        }
+
+        case 'magazine_grid':
+        case 'horizontal_scroll':
+        case 'spotlight':
+        case 'horizontal_cards':
+        case 'photo_gallery':
+        case 'timeline':
+        case 'featured_banner': {
+          // Single-category sections
+          if (section.category) {
+            const items = await fetchCategoryItems(section.category, 12);
+            const category = categoryBySlug.get(section.category) || { slug: section.category, name: section.category };
+            sectionData.category = section.category;
+            sectionData.data = {
+              category: {
+                slug: category.slug,
+                name: category.name,
+                href: `/category/${category.slug}`
+              },
+              items
+            };
+          } else {
+            sectionData.category = null;
+            sectionData.data = { category: null, items: [] };
+          }
+          break;
+        }
+
+        default:
+          sectionData.data = [];
+          break;
+      }
+
+      return sectionData;
+    }
+
+    // Helper to fetch category items or special feeds
+    async function fetchCategoryItems(categoryOrType: string, limit: number) {
+      const take = Math.min(Math.max(limit, 1), 50);
+      
+      if (categoryOrType === 'latest') {
+        const rows = await p.tenantWebArticle.findMany({
+          where: baseWhere,
+          orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+          take,
+          include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+        });
+        return rows.map(toCard);
+      }
+
+      if (categoryOrType === 'trending' || categoryOrType === 'popular') {
+        const rows = await p.tenantWebArticle.findMany({
+          where: baseWhere,
+          orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+          take,
+          include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+        });
+        return rows.map(toCard);
+      }
+
+      if (categoryOrType === 'breaking') {
+        const rows = await p.tenantWebArticle.findMany({
+          where: { ...baseWhere, isBreaking: true },
+          orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+          take,
+          include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+        });
+        return rows.map(toCard);
+      }
+
+      // Regular category
+      const category = categoryBySlug.get(categoryOrType) || null;
+      if (!category) return [];
+
+      const and: any[] = [];
+      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: category.id };
+      if (and.length) where.AND = and;
+
+      const rows = await p.tenantWebArticle.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take,
+        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+      });
+      return rows.map(toCard);
+    }
+
+    // Fetch data for all sections
+    const sectionsWithData = await Promise.all(
+      themeConfig.sections.map(fetchSectionData)
+    );
+
+    // Add default extra sections if not already configured
+    const extraSections = createDefaultExtraSections();
+    const configuredKeys = new Set(themeConfig.sections.map((s: any) => s.section_type));
+    const additionalSections = [];
+
+    for (const extraSection of extraSections) {
+      // Check if this type of section is already configured
+      const sectionKey = extraSection.key.replace('-', '_');
+      if (!configuredKeys.has(sectionKey) && !sectionsWithData.some((s: any) => s.section_type === sectionKey)) {
+        const sectionData: any = {
+          id: sectionsWithData.length + additionalSections.length + 1,
+          position: extraSection.position,
+          section_type: sectionKey,
+          theme_color: 'slate'
+        };
+
+        // Fetch data based on section type
+        if (extraSection.queryType === 'trending' || extraSection.queryType === 'most-viewed') {
+          const items = await fetchCategoryItems('trending', extraSection.limit);
+          sectionData.data = {
+            category: { slug: 'trending', name: extraSection.title, href: '/trending' },
+            items
+          };
+        }
+
+        sectionsWithData.push(sectionData);
+        additionalSections.push(sectionData);
+      }
+    }
+
+    // Sort sections by position
+    sectionsWithData.sort((a: any, b: any) => (a.position || 999) - (b.position || 999));
+
+    return res.json({
+      success: true,
+      data: {
+        sections: sectionsWithData
+      }
+    });
+  }
+
+  // ============================================================
+  // Legacy Shape (Default): Fallback for backward compatibility
   // ============================================================
   if (wantsStyle2V3) {
     res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
@@ -2171,6 +2420,28 @@ router.get('/homepage', async (_req, res) => {
       items
     });
   }
+
+  // Add default extra sections if not already configured
+  const extraSections = createDefaultExtraSections();
+  const configuredKeys = new Set(sectionRows.map((s: any) => s.key));
+
+  for (const extraSection of extraSections) {
+    if (!configuredKeys.has(extraSection.key)) {
+      const sectionData = await fetchExtraSection(extraSection);
+      sectionRows.push({
+        key: sectionData.key,
+        title: sectionData.title,
+        position: sectionData.position,
+        style: sectionData.style,
+        limit: sectionData.limit,
+        categorySlug: null,
+        items: sectionData.items
+      });
+    }
+  }
+
+  // Sort sections by position
+  sectionRows.sort((a: any, b: any) => (a.position || 999) - (b.position || 999));
 
   // Backward-compat: expose section items also at top-level by key
   const sectionsByKey: any = {};

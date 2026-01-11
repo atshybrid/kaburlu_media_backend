@@ -2,8 +2,27 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
+import { style2ConfigRoutes } from './style2Config.routes';
 
 const router = Router();
+
+/**
+ * TENANT THEME API STRUCTURE
+ * ==========================
+ * 
+ * CURRENT ACTIVE ENDPOINTS:
+ * - Style1: Use generic style endpoints (/{tenantId}/homepage/style1/...)
+ * - Style2: Use dedicated Style2 config API (/{tenantId}/style2-config/...)
+ * 
+ * DEPRECATED ENDPOINTS REMOVED:
+ * - /homepage/style2/v2/* (replaced by unified Style2 config API)
+ * 
+ * For new Style2 implementations, use the dedicated Style2 config API which provides:
+ * - GET /{tenantId}/style2-config (get configuration)
+ * - PUT /{tenantId}/style2-config (update configuration)  
+ * - POST /{tenantId}/style2-config/apply-default (apply default configuration)
+ * - GET /section-types (get available section types)
+ */
 
 /**
  * @swagger
@@ -151,299 +170,7 @@ router.get(
   }
 );
 
-/**
- * @swagger
- * /tenant-theme/{tenantId}/homepage/style2/v2:
- *   get:
- *     summary: Get Style2 v2 homepage config for a tenant
- *     description: |
- *       Returns the effective Style2 v2 config stored under `TenantTheme.homepageConfig.style2.v2`.
- *
- *       Best practice:
- *       1) POST `/tenant-theme/{tenantId}/homepage/style2/v2/apply-default`
- *       2) PATCH `/tenant-theme/{tenantId}/homepage/style2/v2/sections`
- *       3) Verify via GET `/public/homepage?shape=style2&v=2`
- *     tags: [Tenant Theme]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: tenantId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Style2 v2 config
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- */
-router.get(
-  '/:tenantId/homepage/style2/v2',
-  passport.authenticate('jwt', { session: false }),
-  requireSuperOrTenantAdminScoped,
-  async (req, res) => {
-    const tenantId = req.params.tenantId;
-
-    const tenantTheme = await prisma.tenantTheme.findFirst({ where: { tenantId } });
-    const homepageConfig = (tenantTheme?.homepageConfig as any) ?? {};
-    const style2 = homepageConfig.style2 ?? {};
-    const v2 = style2.v2 ?? buildDefaultHomepageConfigForStyle('style2')?.v2;
-
-    return res.json({ tenantId, style: 'style2', v: 2, config: v2 });
-  }
-);
-
-/**
- * @swagger
- * /tenant-theme/{tenantId}/homepage/style2/v2/apply-default:
- *   post:
- *     summary: Apply default Style2 v2 homepage config to a tenant
- *     description: |
- *       Creates/updates `TenantTheme.homepageConfig.style2.v2` with server defaults.
- *
- *       Use this first, then PATCH sections to customize category slugs and labels.
- *     tags: [Tenant Theme]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: tenantId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Updated tenant theme
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- */
-router.post(
-  '/:tenantId/homepage/style2/v2/apply-default',
-  passport.authenticate('jwt', { session: false }),
-  requireSuperOrTenantAdminScoped,
-  async (req, res) => {
-    const tenantId = req.params.tenantId;
-    const defaultStyle2 = buildDefaultHomepageConfigForStyle('style2');
-
-    // Merge update safely (Prisma JSON merge isn't automatic for nested objects)
-    const current = await prisma.tenantTheme.findFirst({ where: { tenantId } });
-    const existing = (current?.homepageConfig as any) ?? {};
-    const merged = {
-      ...existing,
-      style2: {
-        ...(existing.style2 ?? {}),
-        v2: defaultStyle2.v2
-      }
-    };
-
-    const updated = await prisma.tenantTheme.upsert({
-      where: { tenantId },
-      create: { tenantId, homepageConfig: merged as any },
-      update: { homepageConfig: merged as any }
-    });
-
-    return res.json(updated);
-  }
-);
-
-/**
- * @swagger
- * /tenant-theme/{tenantId}/homepage/style2/v2/sections:
- *   patch:
- *     summary: Patch Style2 v2 homepage sections for a tenant (labels + category slugs)
- *     description: |
- *       Partial merge by `key` against `homepageConfig.style2.v2.sections[]`.
- *
- *       Notes:
- *       - `toiGrid3.centerLimit` stays "latest" in the public homepage response.
- *       - `toiGrid3.rightMostReadLabel` only changes UI label; the data comes from `TenantWebArticle.viewCount`.
- *     tags: [Tenant Theme]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: tenantId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               sections:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     key:
- *                       type: string
- *                       example: toiGrid3
- *                     label:
- *                       type: string
- *                       example: Top Stories
- *                     limit:
- *                       type: number
- *                       example: 10
- *                     leftCategorySlug:
- *                       type: string
- *                       nullable: true
- *                       example: politics
- *                     centerLimit:
- *                       type: number
- *                       example: 6
- *                     rightLatestLimit:
- *                       type: number
- *                       example: 8
- *                     rightMostReadLimit:
- *                       type: number
- *                       example: 8
- *                     rightLatestLabel:
- *                       type: string
- *                       example: Latest News
- *                     rightMostReadLabel:
- *                       type: string
- *                       example: Most Read
- *                     categorySlugs:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: [technology, education, also-in-news]
- *                     perCategoryLimit:
- *                       type: number
- *                       example: 5
- *                     rows:
- *                       type: number
- *                       example: 4
- *                     cols:
- *                       type: number
- *                       example: 3
- *           examples:
- *             updateStyle2V2:
- *               value:
- *                 sections:
- *                   - key: flashTicker
- *                     label: Breaking
- *                     limit: 10
- *                   - key: toiGrid3
- *                     label: Top Stories
- *                     leftCategorySlug: politics
- *                     centerLimit: 6
- *                     rightLatestLimit: 8
- *                     rightMostReadLimit: 8
- *                     rightLatestLabel: Latest News
- *                     rightMostReadLabel: Most Read
- *                   - key: topStoriesGrid
- *                     label: Top Stories
- *                     limit: 9
- *                   - key: section3
- *                     label: Highlights
- *                     categorySlugs: [technology, education, sports]
- *                     perCategoryLimit: 5
- *                   - key: section4
- *                     label: Categories
- *                     rows: 4
- *                     cols: 3
- *                     perCategoryLimit: 5
- *     responses:
- *       200:
- *         description: Updated tenant theme
- *       400:
- *         description: Validation error
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- */
-router.patch(
-  '/:tenantId/homepage/style2/v2/sections',
-  passport.authenticate('jwt', { session: false }),
-  requireSuperOrTenantAdminScoped,
-  async (req, res) => {
-    const tenantId = req.params.tenantId;
-    const incomingSections = Array.isArray(req.body?.sections) ? req.body.sections : [];
-
-    const tenantTheme = await prisma.tenantTheme.findFirst({ where: { tenantId } });
-    const existing = (tenantTheme?.homepageConfig as any) ?? {};
-
-    const defaults = buildDefaultHomepageConfigForStyle('style2');
-    const existingV2 = existing?.style2?.v2 ?? defaults.v2;
-    const existingSections = Array.isArray(existingV2?.sections) ? existingV2.sections : [];
-
-    const byKey = new Map<string, any>();
-    for (const sec of existingSections) {
-      if (sec && typeof sec.key === 'string') byKey.set(sec.key, sec);
-    }
-
-    for (const patch of incomingSections) {
-      if (!patch || typeof patch.key !== 'string') continue;
-      const current = byKey.get(patch.key) ?? { key: patch.key };
-
-      const next = {
-        ...current,
-        ...(typeof patch.label === 'string' ? { label: patch.label } : {}),
-        ...(typeof patch.limit === 'number' ? { limit: patch.limit } : {}),
-        ...(typeof patch.leftCategorySlug === 'string' || patch.leftCategorySlug === null
-          ? { leftCategorySlug: patch.leftCategorySlug }
-          : {}),
-        ...(typeof patch.centerLimit === 'number' ? { centerLimit: patch.centerLimit } : {}),
-        ...(typeof patch.rightLatestLimit === 'number' ? { rightLatestLimit: patch.rightLatestLimit } : {}),
-        ...(typeof patch.rightMostReadLimit === 'number' ? { rightMostReadLimit: patch.rightMostReadLimit } : {}),
-        ...(typeof patch.rightLatestLabel === 'string' ? { rightLatestLabel: patch.rightLatestLabel } : {}),
-        ...(typeof patch.rightMostReadLabel === 'string' ? { rightMostReadLabel: patch.rightMostReadLabel } : {}),
-        ...(Array.isArray(patch.categorySlugs)
-          ? { categorySlugs: patch.categorySlugs.filter((s: any) => typeof s === 'string') }
-          : {}),
-        ...(typeof patch.perCategoryLimit === 'number' ? { perCategoryLimit: patch.perCategoryLimit } : {}),
-        ...(typeof patch.rows === 'number' ? { rows: patch.rows } : {}),
-        ...(typeof patch.cols === 'number' ? { cols: patch.cols } : {})
-      };
-
-      byKey.set(patch.key, next);
-    }
-
-    // Preserve original order; append any new keys at the end.
-    const orderedKeys = existingSections.map((s: any) => s?.key).filter((k: any) => typeof k === 'string');
-    const seen = new Set<string>();
-    const mergedSections: any[] = [];
-    for (const k of orderedKeys) {
-      const sec = byKey.get(k);
-      if (sec && !seen.has(k)) {
-        mergedSections.push(sec);
-        seen.add(k);
-      }
-    }
-    for (const [k, sec] of byKey.entries()) {
-      if (!seen.has(k)) mergedSections.push(sec);
-    }
-
-    const merged = {
-      ...existing,
-      style2: {
-        ...(existing.style2 ?? {}),
-        v2: {
-          ...(existing?.style2?.v2 ?? {}),
-          sections: mergedSections
-        }
-      }
-    };
-
-    const updated = await prisma.tenantTheme.upsert({
-      where: { tenantId },
-      create: { tenantId, homepageConfig: merged as any },
-      update: { homepageConfig: merged as any }
-    });
-
-    return res.json(updated);
-  }
-);
+/* REMOVED: Old Style2 v2 endpoints - replaced by new unified Style2 config API */
 /**
  * @swagger
  * /tenant-theme/{tenantId}/homepage/{style}/default:
@@ -485,10 +212,13 @@ router.get(
  *     summary: Apply default homepage config for a style to a tenant (TENANT_ADMIN scoped or SUPER_ADMIN)
  *     description: |
  *       Overwrites TenantTheme.homepageConfig[style] with the server default for that style.
+ *       
+ *       **DEPRECATED for Style2**: Use `/style2/config/{tenantId}/apply-default` instead for new Style2 configurations.
+ *       This endpoint remains available for backward compatibility and Style1 usage only.
  *
- *       Style2 note: Apply defaults for style2 first, then PATCH sections via
- *       /tenant-theme/{tenantId}/homepage/style2/sections.
+ *       Style2 note: For new Style2 configurations, use the dedicated Style2 config API endpoints.
  *     tags: [Tenant Theme]
+ *     deprecated: false
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -498,7 +228,8 @@ router.get(
  *       - in: path
  *         name: style
  *         required: true
- *         schema: { type: string, example: "style1" }
+ *         schema: { type: string, example: "style1", enum: ["style1"] }
+ *         description: "Currently only 'style1' is supported. For Style2, use the dedicated Style2 config API."
  *     responses:
  *       200: { description: Updated tenant theme }
  *       400: { description: Validation error }
@@ -532,8 +263,13 @@ router.post(
  * /tenant-theme/{tenantId}/homepage/{style}/sections:
  *   patch:
  *     summary: Update homepage section labels + category links (TENANT_ADMIN scoped or SUPER_ADMIN)
- *     description: Partial merge by section `key`. Updates only provided fields; creates missing section keys.
+ *     description: |
+ *       Partial merge by section `key`. Updates only provided fields; creates missing section keys.
+ *       
+ *       **DEPRECATED for Style2**: Use `/style2/config/{tenantId}/sections` instead for new Style2 configurations.
+ *       This endpoint remains available for backward compatibility and Style1 usage only.
  *     tags: [Tenant Theme]
+ *     deprecated: false
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -543,7 +279,8 @@ router.post(
  *       - in: path
  *         name: style
  *         required: true
- *         schema: { type: string, example: "style1" }
+ *         schema: { type: string, example: "style1", enum: ["style1"] }
+ *         description: "Currently only 'style1' is supported. For Style2, use the dedicated Style2 config API."
  *     requestBody:
  *       required: true
  *       content:
@@ -593,27 +330,6 @@ router.post(
  *                     label: "Highlights"
  *                     categorySlugs: ["national","international"]
  *                     limit: 5
- *             style2Homepage:
- *               summary: Style2 homepage sections (drives /public/homepage?shape=style2)
- *               value:
- *                 sections:
- *                   - key: hero
- *                     title: "Latest"
- *                     position: 1
- *                     style: "hero"
- *                     limit: 1
- *                   - key: politics
- *                     title: "Politics"
- *                     position: 10
- *                     style: "grid"
- *                     categorySlug: "politics"
- *                     limit: 6
- *                   - key: sports
- *                     title: "Sports"
- *                     position: 20
- *                     style: "grid"
- *                     categorySlug: "sports"
- *                     limit: 6
  *     responses:
  *       200: { description: Updated tenant theme }
  *       400: { description: Validation error }
@@ -880,5 +596,8 @@ router.patch(
     }
   }
 );
+
+// Mount Style2 configuration routes
+router.use('/', style2ConfigRoutes);
 
 export default router;

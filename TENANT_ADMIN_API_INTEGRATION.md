@@ -327,35 +327,61 @@ await api.patch(`/tenant-theme/${tenantId}/homepage/style1/sections`, {
 });
 ```
 
-### Get Style2 v2 Homepage Config
+### Get Style2 Theme Configuration
 ```typescript
-// GET /api/v1/tenant-theme/{tenantId}/homepage/style2/v2
-const config = await api.get(`/tenant-theme/${tenantId}/homepage/style2/v2`);
+// GET /api/v1/tenant-theme/{tenantId}/style2-config
+const config = await api.get(`/tenant-theme/${tenantId}/style2-config`);
 
 // Response:
 {
-  tenantId: "cmxyz123",
-  style: "style2",
-  v: 2,
-  config: {
+  success: true,
+  data: {
     sections: [
-      { key: "flashTicker", label: "Flash News", limit: 10 },
-      { key: "toiGrid3", label: "Top Stories", leftCategorySlug: "politics", centerLimit: 6, ... },
-      { key: "section3", categorySlugs: ["tech", "education"], perCategoryLimit: 5 }
+      { 
+        id: 1, 
+        position: 1, 
+        section_type: "hero_sidebar", 
+        hero_category: "latest", 
+        sidebar_category: "trending",
+        theme_color: "emerald" 
+      },
+      { 
+        id: 2, 
+        position: 2, 
+        section_type: "category_boxes_3col", 
+        categories: ["politics", "sports", "entertainment"] 
+      }
     ]
   }
 }
 ```
 
-### Update Style2 v2 Sections
+### Apply Default Style2 Config
 ```typescript
-// PATCH /api/v1/tenant-theme/{tenantId}/homepage/style2/v2/sections
-await api.patch(`/tenant-theme/${tenantId}/homepage/style2/v2/sections`, {
+// POST /api/v1/tenant-theme/{tenantId}/style2-config/apply-default
+await api.post(`/tenant-theme/${tenantId}/style2-config/apply-default`, {});
+```
+
+### Update Style2 Sections
+```typescript
+// PUT /api/v1/tenant-theme/{tenantId}/style2-config
+await api.put(`/tenant-theme/${tenantId}/style2-config`, {
   sections: [
-    { key: "flashTicker", label: "Breaking", limit: 10 },
-    { key: "toiGrid3", leftCategorySlug: "politics", centerLimit: 6, rightLatestLimit: 8, rightMostReadLimit: 8 },
-    { key: "section3", categorySlugs: ["technology", "education", "sports"], perCategoryLimit: 5 },
-    { key: "section4", rows: 4, cols: 3, perCategoryLimit: 5 }
+    { 
+      id: 1, 
+      position: 1, 
+      section_type: "hero_sidebar", 
+      hero_category: "latest",
+      sidebar_category: "trending",
+      theme_color: "emerald" 
+    },
+    { 
+      id: 2, 
+      position: 2, 
+      section_type: "magazine_grid", 
+      category: "politics",
+      theme_color: "blue" 
+    }
   ]
 });
 ```
@@ -847,9 +873,9 @@ New fields added:
 | Homepage | GET | `/tenant-theme/{id}/homepage/style1` | ✅ |
 | Homepage | POST | `/tenant-theme/{id}/homepage/style1/apply-default` | ✅ |
 | Homepage | PATCH | `/tenant-theme/{id}/homepage/style1/sections` | ✅ |
-| Homepage | GET | `/tenant-theme/{id}/homepage/style2/v2` | ✅ |
-| Homepage | POST | `/tenant-theme/{id}/homepage/style2/v2/apply-default` | ✅ |
-| Homepage | PATCH | `/tenant-theme/{id}/homepage/style2/v2/sections` | ✅ |
+| Homepage | GET | `/tenant-theme/{id}/style2-config` | ✅ |
+| Homepage | POST | `/tenant-theme/{id}/style2-config/apply-default` | ✅ |
+| Homepage | PUT | `/tenant-theme/{id}/style2-config` | ✅ |
 | Ads | GET | `/tenants/{id}/ads/style1` | ✅ |
 | Ads | PUT/PATCH | `/tenants/{id}/ads/style1` | ✅ |
 | Ads | GET | `/tenants/{id}/ads/style2` | ✅ |

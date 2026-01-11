@@ -425,9 +425,9 @@ curl -X PATCH "$BASE/api/v1/tenant-theme/$TENANT_ID/homepage/style1/sections" \
   ]}'
 ```
 
-Style2 v2 (if you use `/public/homepage?shape=style2&v=2`):
+Style2 (unified config API):
 ```bash
-curl -X POST "$BASE/api/v1/tenant-theme/$TENANT_ID/homepage/style2/v2/apply-default" \
+curl -X POST "$BASE/api/v1/tenant-theme/$TENANT_ID/style2-config/apply-default" \
   -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER"
 ```
 
