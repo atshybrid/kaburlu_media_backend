@@ -122,6 +122,12 @@ export const createPublicationEdition = async (req: Request, res: Response) => {
     if (!ctx.isAdmin) return res.status(403).json({ error: 'Only admins can manage ePaper editions' });
     if (!requireTenantOr400(res, ctx.tenantId)) return;
 
+    // SUPER_ADMIN can pass any tenantId; validate it exists to avoid opaque FK errors.
+    if (ctx.isSuperAdmin) {
+      const t = await prisma.tenant.findUnique({ where: { id: ctx.tenantId! }, select: { id: true } });
+      if (!t) return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
     const name = String(req.body?.name || '').trim();
     const stateIdRaw = req.body?.stateId;
     const stateId = stateIdRaw === undefined || stateIdRaw === null ? null : String(stateIdRaw).trim();
@@ -158,6 +164,17 @@ export const createPublicationEdition = async (req: Request, res: Response) => {
     if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('duplicate')) {
       return res.status(409).json({ error: 'Edition slug already exists for this tenant' });
     }
+
+    // Prisma unique constraint violation
+    if (String(error?.code || '') === 'P2002') {
+      return res.status(409).json({ error: 'Edition slug already exists for this tenant' });
+    }
+
+    // Prisma FK violation (e.g., tenantId/stateId points to a missing row)
+    if (String(error?.code || '') === 'P2003') {
+      return res.status(400).json({ error: 'Invalid reference (tenantId/stateId). Ensure IDs exist in the current database.' });
+    }
+
     console.error('createPublicationEdition error:', error);
     return res.status(500).json({ error: 'Failed to create ePaper publication edition' });
   }
