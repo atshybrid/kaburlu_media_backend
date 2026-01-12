@@ -84,14 +84,14 @@ const swaggerDefinition = {
         name: 'X-Tenant-Domain',
         in: 'header',
         required: false,
-        description: 'Optional override for tenant/domain detection when testing locally. In production, tenant/domain is inferred from Host / X-Forwarded-Host.',
+        description: 'Optional override for tenant/domain detection when testing locally. In production, tenant/domain is inferred from Host / X-Forwarded-Host. Avoid leading/trailing spaces (e.g., %20) in header values.',
         schema: { type: 'string', example: 'epaper.kaburlu.com' }
       },
       DomainQuery: {
         name: 'domain',
         in: 'query',
         required: false,
-        description: 'Optional override for domain detection when testing locally (alternative to X-Tenant-Domain).',
+        description: 'Optional override for domain detection when testing locally (alternative to X-Tenant-Domain). Avoid leading/trailing spaces (e.g., %20) in query values.',
         schema: { type: 'string', example: 'epaper.kaburlu.com' }
       }
     },

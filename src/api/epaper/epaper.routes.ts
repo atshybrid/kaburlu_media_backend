@@ -426,7 +426,12 @@ router.put('/public-config/multi-edition', auth, putEpaperPublicConfigMultiEditi
  * /epaper/publication-editions:
  *   get:
  *     summary: List ePaper publication editions (state-level)
- *     description: Admin-only. Returns tenant-scoped edition catalog (not daily generated editions).
+ *     description: |
+ *       Admin-only. Returns tenant-scoped edition catalog (not daily generated editions).
+ *
+ *       SUPER_ADMIN usage:
+ *       - Pass `tenantId` as a query param to manage any tenant.
+ *       - Avoid leading/trailing spaces in tenantId (e.g. `tenantId=%20abc` will fail).
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -440,9 +445,22 @@ router.put('/public-config/multi-edition', auth, putEpaperPublicConfigMultiEditi
  *         name: tenantId
  *         schema: { type: string }
  *         description: SUPER_ADMIN only (manage any tenant)
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     responses:
  *       200:
  *         description: List of editions
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   items:
+ *                     - id: "ed_1"
+ *                       tenantId: "cmk7e7tg401ezlp22wkz5rxky"
+ *                       name: "Main Edition"
+ *                       slug: "main-edition"
+ *                       stateId: null
+ *                       isActive: true
  */
 router.get('/publication-editions', auth, listPublicationEditions);
 
@@ -451,7 +469,12 @@ router.get('/publication-editions', auth, listPublicationEditions);
  * /epaper/publication-editions:
  *   post:
  *     summary: Create ePaper publication edition
- *     description: Admin-only. Creates a tenant-scoped edition (state-level).
+ *     description: |
+ *       Admin-only. Creates a tenant-scoped edition (state-level).
+ *
+ *       SUPER_ADMIN usage:
+ *       - Pass `tenantId` as query param to create for any tenant.
+ *       - Avoid leading/trailing spaces in tenantId (no `%20`).
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -459,6 +482,7 @@ router.get('/publication-editions', auth, listPublicationEditions);
  *         name: tenantId
  *         schema: { type: string }
  *         description: SUPER_ADMIN only (create for any tenant)
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     requestBody:
  *       required: true
  *       content:
@@ -469,7 +493,7 @@ router.get('/publication-editions', auth, listPublicationEditions);
  *             properties:
  *               name: { type: string, example: "Telangana Edition" }
  *               slug: { type: string, example: "telangana" }
- *               stateId: { type: string, description: "Optional. Link edition to an existing State." }
+ *               stateId: { type: string, nullable: true, description: "Optional. Link edition to an existing State." }
  *               coverImageUrl: { type: string }
  *               isActive: { type: boolean, default: true }
  *               seoTitle: { type: string }
@@ -478,6 +502,31 @@ router.get('/publication-editions', auth, listPublicationEditions);
  *     responses:
  *       201:
  *         description: Created edition
+ *         content:
+ *           application/json:
+ *             examples:
+ *               minimal:
+ *                 summary: Minimal payload (recommended)
+ *                 value:
+ *                   id: "ed_1"
+ *                   tenantId: "cmk7e7tg401ezlp22wkz5rxky"
+ *                   name: "Main Edition"
+ *                   slug: "main-edition"
+ *                   stateId: null
+ *                   coverImageUrl: null
+ *                   isActive: true
+ *               withSeo:
+ *                 summary: With SEO fields
+ *                 value:
+ *                   id: "ed_2"
+ *                   tenantId: "cmk7e7tg401ezlp22wkz5rxky"
+ *                   name: "Telangana"
+ *                   slug: "telangana"
+ *                   stateId: "cmk74ho02002rugy45x85vvi7"
+ *                   seoTitle: "Telangana Edition"
+ *                   seoDescription: "Latest Telangana news"
+ *       409:
+ *         description: Edition slug already exists for this tenant
  */
 router.post('/publication-editions', auth, createPublicationEdition);
 
@@ -510,6 +559,10 @@ router.get('/publication-editions/:id', auth, getPublicationEdition);
  * /epaper/publication-editions/{id}:
  *   put:
  *     summary: Update a publication edition
+ *     description: |
+ *       Admin-only.
+ *       - `stateId` is optional; to clear it send `stateId: null`.
+ *       - SUPER_ADMIN can pass `tenantId` as query param; avoid `%20`.
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -521,6 +574,7 @@ router.get('/publication-editions/:id', auth, getPublicationEdition);
  *         name: tenantId
  *         schema: { type: string }
  *         description: SUPER_ADMIN only
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     requestBody:
  *       required: true
  *       content:
@@ -530,7 +584,7 @@ router.get('/publication-editions/:id', auth, getPublicationEdition);
  *             properties:
  *               name: { type: string }
  *               slug: { type: string }
- *               stateId: { type: string }
+ *               stateId: { type: string, nullable: true }
  *               coverImageUrl: { type: string }
  *               isActive: { type: boolean }
  *               seoTitle: { type: string }
