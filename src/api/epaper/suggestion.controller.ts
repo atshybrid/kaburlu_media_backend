@@ -37,7 +37,7 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
   }
   
   if (isSuperAdmin && (req.query as any).tenantId) {
-    tenantId = String((req.query as any).tenantId);
+    tenantId = String((req.query as any).tenantId).trim();
   }
   
   return { tenantId, isSuperAdmin };
