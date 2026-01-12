@@ -35,6 +35,7 @@ import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.rout
 import castesRoutes from './api/castes/castes.routes';
 import publicRoutes from './api/public/public.routes';
 import websitePublicRoutes from './api/public/website.routes';
+import rootSeoRoutes from './api/public/rootSeo.routes';
 import publicReporterJoinRoutes from './api/public/publicReporterJoin.routes';
 import tenantsRoutes from './api/tenants/tenants.routes';
 import domainsRoutes from './api/domains/domains.routes';
@@ -121,6 +122,9 @@ const corsOptions: CorsOptions = {
 app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
+
+// Root-level SEO endpoints (robots.txt/sitemap.xml) for domain-based public sites.
+app.use('/', rootSeoRoutes);
 app.use(
   express.json({
     verify: (req: any, _res, buf) => {

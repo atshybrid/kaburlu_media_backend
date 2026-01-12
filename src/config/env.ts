@@ -204,6 +204,19 @@ export const config = {
     },
   },
 
+  epaper: {
+    // Optional: path to Poppler's pdftoppm binary for PDF->PNG conversion.
+    // On Windows, you can set this to something like: C:\\Program Files\\poppler\\Library\\bin\\pdftoppm.exe
+    pdftoppmPath: process.env.PDFTOPPM_PATH || process.env.POPPLER_PDFTOPPM_PATH,
+    // DPI used when converting PDF pages to PNG.
+    pdfDpi: parseIntSafe(process.env.EPAPER_PDF_DPI, 150),
+
+    // Upload/conversion guards
+    pdfMaxMb: parseIntSafe(process.env.EPAPER_PDF_MAX_MB, 30),
+    // If set, limits conversion to first N pages. 0/undefined means no limit.
+    pdfMaxPages: parseIntSafe(process.env.EPAPER_PDF_MAX_PAGES, 0),
+  },
+
   seo: {
     publisherName: process.env.SEO_PUBLISHER_NAME || 'Kaburlu',
     publisherLogo: process.env.SEO_PUBLISHER_LOGO,

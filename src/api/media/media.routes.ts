@@ -163,6 +163,9 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  *       - When MEDIA_PROVIDER=r2: converts images to WebP (except PNG stays PNG) and converts videos to WebM, then stores in Cloudflare R2.
  *       - When MEDIA_PROVIDER=bunny: converts images to WebP (except PNG stays PNG) and uploads to Bunny Storage; videos are uploaded as-is to Bunny Stream.
  *
+ *       Limits:
+ *       - Max upload size is controlled by `MEDIA_MAX_FILE_MB` (and may fall back to EPAPER_PDF_MAX_MB for PDFs in older deployments).
+ *
  *       Note: Some object-management endpoints (/media/object, /media/list, /media/rename, /media/object DELETE) are R2-only and return 501 when MEDIA_PROVIDER=bunny.
  *     tags: [Media]
  *     security:
@@ -188,13 +191,30 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  *                 description: Optional root folder (e.g., images, videos, shortnews/uploads). Defaults to images/videos/files based on MIME.
  *               kind:
  *                 type: string
- *                 enum: [image, video]
+ *                 enum: [image, video, pdf]
  *                 description: Optional file kind. If provided, server validates MIME accordingly.
  *     responses:
  *       200:
  *         description: File uploaded
  *         content:
  *           application/json:
+ *             examples:
+ *               image:
+ *                 summary: Image upload
+ *                 value:
+ *                   key: "images/2026/01/12/1736700000-ab12cd.webp"
+ *                   publicUrl: "https://cdn.example.com/images/2026/01/12/1736700000-ab12cd.webp"
+ *                   contentType: "image/webp"
+ *                   size: 582311
+ *                   kind: "image"
+ *               pdf:
+ *                 summary: PDF upload (kind=pdf)
+ *                 value:
+ *                   key: "pdfs/2026/01/12/1736700000-xy98zz.pdf"
+ *                   publicUrl: "https://cdn.example.com/pdfs/2026/01/12/1736700000-xy98zz.pdf"
+ *                   contentType: "application/pdf"
+ *                   size: 12488102
+ *                   kind: "pdf"
  *             schema:
  *               type: object
  *               properties:
@@ -208,21 +228,23 @@ async function transcodeToWebm(inputBuffer: Buffer): Promise<Buffer> {
  *                   type: number
  *                 kind:
  *                   type: string
- *                   enum: [image, video, other]
+ *                   enum: [image, video, pdf, other]
  */
 router.post('/upload', passport.authenticate('jwt', { session: false }), upload.single('file'), async (req, res) => {
   try {
     const provider = getMediaProvider();
     const file = req.file;
-    const { key, filename, kind, folder } = req.body as { key?: string; filename?: string; kind?: 'image' | 'video'; folder?: string };
+    const { key, filename, kind, folder } = req.body as { key?: string; filename?: string; kind?: 'image' | 'video' | 'pdf'; folder?: string };
     if (!file) return res.status(400).json({ error: 'file is required (multipart/form-data)' });
 
     // Validate kind if provided
     if (kind) {
       const isImage = IMAGE_MIMES.has(file.mimetype);
       const isVideo = VIDEO_MIMES.has(file.mimetype);
+      const isPdf = String(file.mimetype || '').toLowerCase() === 'application/pdf';
       if (kind === 'image' && !isImage) return res.status(400).json({ error: 'Expected an image file' });
       if (kind === 'video' && !isVideo) return res.status(400).json({ error: 'Expected a video file' });
+      if (kind === 'pdf' && !isPdf) return res.status(400).json({ error: 'Expected a PDF file' });
     }
 
     const original = file.originalname || 'upload.bin';
@@ -233,7 +255,8 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
     const random = Math.random().toString(36).slice(2, 8);
     // Choose root folder (sanitized), default to kind-based root
     const sanitizedFolder = (folder ? String(folder).trim() : '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    const rootByKind = file.mimetype.startsWith('image/') ? 'images' : (file.mimetype.startsWith('video/') ? 'videos' : 'files');
+    const isPdf = String(file.mimetype || '').toLowerCase() === 'application/pdf';
+    const rootByKind = file.mimetype.startsWith('image/') ? 'images' : (file.mimetype.startsWith('video/') ? 'videos' : (isPdf ? 'pdfs' : 'files'));
     const root = sanitizedFolder || rootByKind;
 
     // Decide target content type and extension based on conversion policy
@@ -274,9 +297,14 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
     // Enforce size limits and perform light compression for images
     const MAX_IMAGE_BYTES = Number(process.env.MEDIA_MAX_IMAGE_MB || 10) * 1024 * 1024; // default 10MB
     const MAX_VIDEO_BYTES = Number(process.env.MEDIA_MAX_VIDEO_MB || 100) * 1024 * 1024; // default 100MB
+    const MAX_FILE_BYTES = Number(process.env.MEDIA_MAX_FILE_MB || process.env.EPAPER_PDF_MAX_MB || 100) * 1024 * 1024; // default 100MB
 
     if (isVideo && file.size > MAX_VIDEO_BYTES) {
       return res.status(400).json({ error: `Video too large. Max ${Math.round(MAX_VIDEO_BYTES / (1024*1024))}MB` });
+    }
+
+    if (!isImage && !isVideo && file.size > MAX_FILE_BYTES) {
+      return res.status(400).json({ error: `File too large. Max ${Math.round(MAX_FILE_BYTES / (1024*1024))}MB` });
     }
 
     let uploadBuffer = file.buffer;

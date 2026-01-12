@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { tenantResolver } from '../../middleware/tenantResolver';
+import { config } from '../../config/env';
 import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
@@ -13,9 +14,747 @@ const router = Router();
 // Apply resolver only to this public router
 router.use(tenantResolver);
 
+function requireVerifiedEpaperDomain(req: any, res: any, next: any) {
+  // In non-multi-tenancy mode, tenantResolver is disabled; keep behavior flexible.
+  if (process.env.MULTI_TENANCY !== 'true') return next();
+
+  // Disallow bypassing domain verification for ePaper public APIs.
+  if (req.headers['x-tenant-id'] || req.headers['x-tenant-slug']) {
+    return res.status(400).json({
+      code: 'EPAPER_DOMAIN_REQUIRED',
+      message: 'ePaper public APIs require domain-based tenant resolution (use Host/X-Tenant-Domain).',
+    });
+  }
+
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) {
+    return res.status(404).json({
+      code: 'EPAPER_DOMAIN_NOT_VERIFIED',
+      message: 'ePaper domain not verified/active or not resolved.',
+    });
+  }
+
+  // Ensure the domain is explicitly marked as EPAPER (feature gating).
+  if (String(domain.kind || '').toUpperCase() !== 'EPAPER') {
+    return res.status(404).json({
+      code: 'EPAPER_DOMAIN_KIND_REQUIRED',
+      message: 'Domain is not configured as an EPAPER domain.',
+      domain: { domain: domain.domain, kind: domain.kind, status: domain.status },
+    });
+  }
+
+  // Ensure it has been verified already (explicit verification signal).
+  if (!domain.verifiedAt) {
+    return res.status(404).json({
+      code: 'EPAPER_DOMAIN_NOT_VERIFIED',
+      message: 'EPAPER domain is not verified yet (verifiedAt is missing).',
+      domain: { domain: domain.domain, kind: domain.kind, status: domain.status, verifiedAt: domain.verifiedAt || null },
+    });
+  }
+
+  return next();
+}
+
 // Placeholder endpoints; real implementations added in next step
 router.get('/_health', (_req, res) => {
   res.json({ ok: true, domain: (res.locals as any).domain?.domain, tenant: (res.locals as any).tenant?.slug });
+});
+
+/**
+ * @swagger
+ * /public/epaper/editions:
+ *   get:
+ *     summary: List ePaper publication editions for this tenant
+ *     description: |
+ *       Returns active (not deleted) editions and their sub-editions for the tenant resolved by domain.
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, these endpoints require a **verified EPAPER domain** (Domain.status=ACTIVE, kind=EPAPER, verifiedAt set).
+ *       - Tenant resolution is domain-based (Host / X-Forwarded-Host). For local testing, use `X-Tenant-Domain`.
+ *       - `X-Tenant-Id` / `X-Tenant-Slug` headers are rejected for EPAPER public APIs.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: includeSubEditions
+ *         schema: { type: boolean, default: true }
+ *     responses:
+ *       200:
+ *         description: Editions with sub-editions
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenant: { id: "t_abc", slug: "kaburlu" }
+ *                   editions:
+ *                     - id: "ed_1"
+ *                       name: "Telangana"
+ *                       slug: "telangana"
+ *                       stateId: null
+ *                       coverImageUrl: null
+ *                       seoTitle: null
+ *                       seoDescription: null
+ *                       seoKeywords: null
+ *                       subEditions:
+ *                         - id: "sub_1"
+ *                           name: "Adilabad"
+ *                           slug: "adilabad"
+ *                           districtId: null
+ *                           coverImageUrl: null
+ *                           seoTitle: null
+ *                           seoDescription: null
+ *                           seoKeywords: null
+ *       404:
+ *         $ref: '#/components/responses/EpaperDomainNotVerified'
+ */
+router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+
+  const includeSubEditions = String((req.query as any).includeSubEditions ?? 'true').toLowerCase() === 'true';
+
+  const editions = await p.epaperPublicationEdition.findMany({
+    where: { tenantId: tenant.id, isDeleted: false, isActive: true },
+    orderBy: [{ createdAt: 'desc' }],
+    include: includeSubEditions
+      ? {
+          subEditions: {
+            where: { isDeleted: false, isActive: true },
+            orderBy: [{ createdAt: 'desc' }],
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              districtId: true,
+              coverImageUrl: true,
+              seoTitle: true,
+              seoDescription: true,
+              seoKeywords: true,
+            },
+          },
+        }
+      : undefined,
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      stateId: true,
+      coverImageUrl: true,
+      seoTitle: true,
+      seoDescription: true,
+      seoKeywords: true,
+      subEditions: includeSubEditions ? true : false,
+    },
+  });
+
+  return res.json({ tenant: { id: tenant.id, slug: tenant.slug }, editions });
+});
+
+/**
+ * @swagger
+ * /public/epaper/verify-domain:
+ *   get:
+ *     summary: Verify ePaper domain/subdomain mapping
+ *     description: |
+ *       Confirms the request resolves to an active tenant/domain (via Host or X-Tenant-Domain).
+ *
+ *       Notes:
+ *       - This endpoint does **not** require EPAPER verification middleware, but it will return 404 if the domain is not EPAPER or not verified.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *     responses:
+ *       200:
+ *         description: Verified mapping
+ *         content:
+ *           application/json:
+ *             examples:
+ *               verified:
+ *                 value:
+ *                   verified: true
+ *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu" }
+ *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
+ *       404:
+ *         description: Not resolved
+ *         content:
+ *           application/json:
+ *             examples:
+ *               notResolved:
+ *                 value:
+ *                   verified: false
+ *                   error: "Domain/tenant not resolved (check Host/X-Tenant-Domain)"
+ */
+router.get('/epaper/verify-domain', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+
+  if (!tenant || !domain) {
+    return res.status(404).json({
+      verified: false,
+      error: 'Domain/tenant not resolved (check Host/X-Tenant-Domain)',
+      input: {
+        host: req.headers.host,
+        xTenantDomain: req.headers['x-tenant-domain'],
+      },
+    });
+  }
+
+  if (String(domain.kind || '').toUpperCase() !== 'EPAPER') {
+    return res.status(404).json({
+      verified: false,
+      code: 'EPAPER_DOMAIN_KIND_REQUIRED',
+      message: 'Domain is active but not configured as an EPAPER domain.',
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      domain: { id: domain.id, domain: domain.domain, kind: domain.kind, status: domain.status, verifiedAt: domain.verifiedAt || null },
+    });
+  }
+
+  if (!domain.verifiedAt) {
+    return res.status(404).json({
+      verified: false,
+      code: 'EPAPER_DOMAIN_NOT_VERIFIED',
+      message: 'Domain is active but not verified yet (verifiedAt is missing).',
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+      domain: { id: domain.id, domain: domain.domain, kind: domain.kind, status: domain.status, verifiedAt: domain.verifiedAt || null },
+    });
+  }
+
+  return res.json({
+    verified: true,
+    tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+    domain: { id: domain.id, domain: domain.domain, kind: domain.kind, status: domain.status, verifiedAt: domain.verifiedAt },
+  });
+});
+
+/**
+ * @swagger
+ * /public/epaper/settings:
+ *   get:
+ *     summary: Get public ePaper settings for this tenant
+ *     description: |
+ *       Public endpoint for ePaper app boot.
+ *       - Verifies domain/subdomain via tenantResolver.
+ *       - Returns public-safe ePaper settings and PDF conversion limits.
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *     responses:
+ *       200:
+ *         description: Settings for tenant
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   verified: true
+ *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu" }
+ *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
+ *                   epaper: { type: "PDF", multiEditionEnabled: true }
+ *                   settings: null
+ *                   branding: null
+ *                   seo:
+ *                     config: null
+ *                     urls:
+ *                       baseUrl: "https://epaper.kaburlu.com"
+ *                       robotsTxt: "https://epaper.kaburlu.com/robots.txt"
+ *                       sitemapXml: "https://epaper.kaburlu.com/sitemap.xml"
+ *                   domainSettings: null
+ *                   pdf: { dpi: 150, maxMb: 30, maxPages: 0 }
+ *       404:
+ *         description: Tenant not resolved
+ */
+router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+
+  const asObject = (v: any) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const normalizeType = (v: any) => {
+    const s = String(v ?? '').trim().toUpperCase();
+    if (s === 'PDF') return 'PDF';
+    if (s === 'BLOCK' || s === 'BLOCK_BASED' || s === 'BLOCKBASED') return 'BLOCK';
+    return null;
+  };
+
+  const [settings, tenantTheme, domainSettings] = await Promise.all([
+    p.epaperSettings
+      .findUnique({
+        where: { tenantId: tenant.id },
+        select: {
+          tenantId: true,
+          pageWidthInches: true,
+          pageHeightInches: true,
+          gridColumns: true,
+          paddingTop: true,
+          paddingRight: true,
+          paddingBottom: true,
+          paddingLeft: true,
+          defaultPageCount: true,
+          mainHeaderHeightInches: true,
+          innerHeaderHeightInches: true,
+          footerHeightInches: true,
+          footerStyle: true,
+          showPrinterInfoOnLastPage: true,
+          printerName: true,
+          printerAddress: true,
+          printerCity: true,
+          publisherName: true,
+          editorName: true,
+          ownerName: true,
+          rniNumber: true,
+          lastPageFooterTemplate: true,
+          generationConfig: true,
+          updatedAt: true,
+        },
+      })
+      .catch(() => null),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null),
+  ]);
+
+  const gen = asObject(settings?.generationConfig);
+  const pub = asObject(gen.publicEpaper);
+  const epaperType = normalizeType(pub.type) || 'PDF';
+  const multiEditionEnabled = pub.multiEditionEnabled === undefined ? true : Boolean(pub.multiEditionEnabled);
+
+  const baseUrl = `https://${domain.domain}`;
+
+  return res.json({
+    verified: true,
+    tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+    domain: {
+      id: domain.id,
+      domain: domain.domain,
+      kind: domain.kind,
+      status: domain.status,
+      verifiedAt: domain.verifiedAt,
+    },
+    epaper: {
+      type: epaperType,
+      multiEditionEnabled,
+    },
+    settings,
+    branding: tenantTheme
+      ? {
+          logoUrl: (tenantTheme as any).logoUrl,
+          faviconUrl: (tenantTheme as any).faviconUrl,
+          primaryColor: (tenantTheme as any).primaryColor,
+          secondaryColor: (tenantTheme as any).secondaryColor,
+          headerBgColor: (tenantTheme as any).headerBgColor,
+          footerBgColor: (tenantTheme as any).footerBgColor,
+          headerHtml: (tenantTheme as any).headerHtml,
+          footerHtml: (tenantTheme as any).footerHtml,
+          fontFamily: (tenantTheme as any).fontFamily,
+        }
+      : null,
+    seo: {
+      // TenantTheme.seoConfig is already used elsewhere in the platform; return it as-is for frontend SEO usage.
+      config: (tenantTheme as any)?.seoConfig || null,
+      urls: {
+        baseUrl,
+        robotsTxt: `${baseUrl}/robots.txt`,
+        sitemapXml: `${baseUrl}/sitemap.xml`,
+      },
+    },
+    domainSettings: domainSettings
+      ? {
+          updatedAt: (domainSettings as any).updatedAt,
+          data: (domainSettings as any).data,
+        }
+      : null,
+    pdf: {
+      dpi: Number((config as any)?.epaper?.pdfDpi || 150),
+      maxMb: Number((config as any)?.epaper?.pdfMaxMb || 30),
+      maxPages: Number((config as any)?.epaper?.pdfMaxPages || 0),
+    },
+  });
+});
+
+/**
+ * @swagger
+ * /public/epaper/issues:
+ *   get:
+ *     summary: List PDF-based ePaper issues for a date (all editions/sub-editions)
+ *     description: |
+ *       Public endpoint.
+ *       - If issueDate is omitted, uses today's date (UTC).
+ *       - Returns all issues uploaded for the tenant on that date.
+ *       - Use includePages=true only when you really need all PNG URLs.
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, example: "2026-01-12" }
+ *       - in: query
+ *         name: includePages
+ *         schema: { type: boolean, default: false }
+ *     responses:
+ *       200:
+ *         description: List of issues
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenant: { id: "t_abc", slug: "kaburlu" }
+ *                   issueDate: "2026-01-12"
+ *                   count: 1
+ *                   issues:
+ *                     - id: "iss_1"
+ *                       target: { kind: "edition", editionSlug: "telangana" }
+ *                       edition: { id: "ed_1", name: "Telangana", slug: "telangana" }
+ *                       subEdition: null
+ *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                       pageCount: 12
+ *                       updatedAt: "2026-01-12T06:00:00.000Z"
+ */
+router.get('/epaper/issues', requireVerifiedEpaperDomain, async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+
+  const includePages = String((req.query as any).includePages ?? 'false').toLowerCase() === 'true';
+  const issueDateStrRaw = (req.query as any).issueDate ? String((req.query as any).issueDate).trim() : '';
+  const issueDateStr = issueDateStrRaw || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDateStr)) return res.status(400).json({ error: 'issueDate must be YYYY-MM-DD' });
+  const issueDate = new Date(`${issueDateStr}T00:00:00.000Z`);
+
+  const issues = await p.epaperPdfIssue.findMany({
+    where: { tenantId: tenant.id, issueDate },
+    orderBy: [{ updatedAt: 'desc' }],
+    include: {
+      edition: { select: { id: true, name: true, slug: true } },
+      subEdition: { select: { id: true, name: true, slug: true, edition: { select: { slug: true } } } },
+      pages: includePages ? { orderBy: { pageNumber: 'asc' } } : false,
+    },
+  });
+
+  return res.json({
+    tenant: { id: tenant.id, slug: tenant.slug },
+    issueDate: issueDateStr,
+    count: issues.length,
+    issues: issues.map((it: any) => ({
+      id: it.id,
+      target: it.subEdition
+        ? { kind: 'subEdition', editionSlug: it.subEdition.edition?.slug, subEditionSlug: it.subEdition.slug }
+        : { kind: 'edition', editionSlug: it.edition?.slug },
+      edition: it.edition,
+      subEdition: it.subEdition,
+      pdfUrl: it.pdfUrl,
+      coverImageUrl: it.coverImageUrl,
+      pageCount: it.pageCount,
+      pages: includePages ? it.pages : undefined,
+      updatedAt: it.updatedAt,
+    })),
+  });
+});
+
+/**
+ * @swagger
+ * /public/epaper/latest:
+ *   get:
+ *     summary: Get latest ePaper issues for all editions/sub-editions
+ *     description: |
+ *       Public endpoint.
+ *       - If issueDate is provided, returns issues for that date.
+ *       - If issueDate is omitted, returns the latest issue for each edition and sub-edition.
+ *       - Uses the tenant resolved by epaper subdomain (Host) or X-Tenant-Domain.
+ *
+ *       Notes:
+ *       - includePages=true can be heavy; use only when needed.
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, example: "2026-01-12" }
+ *       - in: query
+ *         name: includePages
+ *         schema: { type: boolean, default: false }
+ *       - in: query
+ *         name: includeEmpty
+ *         description: Include editions/sub-editions even if no issue exists.
+ *         schema: { type: boolean, default: true }
+ *     responses:
+ *       200:
+ *         description: Editions with their latest/date issues
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenant: { id: "t_abc", slug: "kaburlu" }
+ *                   mode: "latest"
+ *                   includePages: false
+ *                   includeEmpty: true
+ *                   editions:
+ *                     - id: "ed_1"
+ *                       name: "Telangana"
+ *                       slug: "telangana"
+ *                       stateId: null
+ *                       coverImageUrl: null
+ *                       seoTitle: null
+ *                       seoDescription: null
+ *                       seoKeywords: null
+ *                       issue:
+ *                         id: "iss_1"
+ *                         issueDate: "2026-01-12T00:00:00.000Z"
+ *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                         coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                         pageCount: 12
+ *                         updatedAt: "2026-01-12T06:00:00.000Z"
+ *                       subEditions: []
+ */
+router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+
+  const includePages = String((req.query as any).includePages ?? 'false').toLowerCase() === 'true';
+  const includeEmpty = String((req.query as any).includeEmpty ?? 'true').toLowerCase() === 'true';
+  const issueDateStr = (req.query as any).issueDate ? String((req.query as any).issueDate).trim() : '';
+  const hasDate = Boolean(issueDateStr);
+  if (hasDate && !/^\d{4}-\d{2}-\d{2}$/.test(issueDateStr)) return res.status(400).json({ error: 'issueDate must be YYYY-MM-DD' });
+  const issueDate = hasDate ? new Date(`${issueDateStr}T00:00:00.000Z`) : null;
+
+  const editions = await p.epaperPublicationEdition.findMany({
+    where: { tenantId: tenant.id, isDeleted: false, isActive: true },
+    orderBy: [{ createdAt: 'desc' }],
+    include: {
+      subEditions: {
+        where: { isDeleted: false, isActive: true },
+        orderBy: [{ createdAt: 'desc' }],
+        select: { id: true, name: true, slug: true },
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      stateId: true,
+      coverImageUrl: true,
+      seoTitle: true,
+      seoDescription: true,
+      seoKeywords: true,
+      subEditions: true,
+    },
+  });
+
+  const issueInclude: any = {
+    pages: includePages ? { orderBy: { pageNumber: 'asc' } } : false,
+  };
+
+  let editionIssues: any[] = [];
+  let subEditionIssues: any[] = [];
+
+  if (hasDate) {
+    const issues = await p.epaperPdfIssue.findMany({
+      where: { tenantId: tenant.id, issueDate: issueDate as any },
+      include: {
+        edition: { select: { id: true, slug: true } },
+        subEdition: { select: { id: true, slug: true } },
+        ...issueInclude,
+      },
+    });
+    editionIssues = issues.filter((it: any) => it.editionId && !it.subEditionId);
+    subEditionIssues = issues.filter((it: any) => it.subEditionId && !it.editionId);
+  } else {
+    editionIssues = await p.epaperPdfIssue.findMany({
+      where: { tenantId: tenant.id, editionId: { not: null }, subEditionId: null },
+      orderBy: [{ issueDate: 'desc' }],
+      distinct: ['editionId'],
+      include: {
+        edition: { select: { id: true, slug: true } },
+        ...issueInclude,
+      },
+    });
+
+    subEditionIssues = await p.epaperPdfIssue.findMany({
+      where: { tenantId: tenant.id, subEditionId: { not: null }, editionId: null },
+      orderBy: [{ issueDate: 'desc' }],
+      distinct: ['subEditionId'],
+      include: {
+        subEdition: { select: { id: true, slug: true, edition: { select: { slug: true } } } },
+        ...issueInclude,
+      },
+    });
+  }
+
+  const byEditionId = new Map<string, any>();
+  for (const it of editionIssues) if (it.editionId) byEditionId.set(String(it.editionId), it);
+  const bySubEditionId = new Map<string, any>();
+  for (const it of subEditionIssues) if (it.subEditionId) bySubEditionId.set(String(it.subEditionId), it);
+
+  const out = editions
+    .map((ed: any) => {
+      const edIssue = byEditionId.get(ed.id);
+      const mappedSub = (ed.subEditions || [])
+        .map((sub: any) => {
+          const subIssue = bySubEditionId.get(sub.id);
+          if (!includeEmpty && !subIssue) return null;
+          return {
+            ...sub,
+            issue: subIssue
+              ? {
+                  id: subIssue.id,
+                  issueDate: subIssue.issueDate,
+                  pdfUrl: subIssue.pdfUrl,
+                  coverImageUrl: subIssue.coverImageUrl,
+                  pageCount: subIssue.pageCount,
+                  pages: includePages ? subIssue.pages : undefined,
+                  updatedAt: subIssue.updatedAt,
+                }
+              : null,
+          };
+        })
+        .filter(Boolean);
+
+      if (!includeEmpty && !edIssue && mappedSub.length === 0) return null;
+
+      return {
+        ...ed,
+        issue: edIssue
+          ? {
+              id: edIssue.id,
+              issueDate: edIssue.issueDate,
+              pdfUrl: edIssue.pdfUrl,
+              coverImageUrl: edIssue.coverImageUrl,
+              pageCount: edIssue.pageCount,
+              pages: includePages ? edIssue.pages : undefined,
+              updatedAt: edIssue.updatedAt,
+            }
+          : null,
+        subEditions: mappedSub,
+      };
+    })
+    .filter(Boolean);
+
+  return res.json({
+    tenant: { id: tenant.id, slug: tenant.slug },
+    mode: hasDate ? 'date' : 'latest',
+    issueDate: hasDate ? issueDateStr : undefined,
+    includePages,
+    includeEmpty,
+    editions: out,
+  });
+});
+
+/**
+ * @swagger
+ * /public/epaper/issue:
+ *   get:
+ *     summary: Get a PDF-based ePaper issue (pages as PNG URLs)
+ *     description: |
+ *       Public endpoint.
+ *       - Provide issueDate (YYYY-MM-DD) to fetch a specific date, or omit to fetch latest available.
+ *       - Provide either editionSlug OR (editionSlug + subEditionSlug).
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, example: "2026-01-12" }
+ *       - in: query
+ *         name: editionSlug
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: subEditionSlug
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Issue with pages
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenant: { id: "t_abc", slug: "kaburlu" }
+ *                   edition: { id: "ed_1", name: "Telangana", slug: "telangana" }
+ *                   subEdition: null
+ *                   issue:
+ *                     id: "iss_1"
+ *                     issueDate: "2026-01-12T00:00:00.000Z"
+ *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                     pageCount: 12
+ *                     pages:
+ *                       - id: "pg_1"
+ *                         issueId: "iss_1"
+ *                         pageNumber: 1
+ *                         imageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *       404:
+ *         description: Not found
+ */
+router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+
+  const issueDateStr = (req.query as any).issueDate ? String((req.query as any).issueDate).trim() : undefined;
+  const editionSlug = (req.query as any).editionSlug ? String((req.query as any).editionSlug).trim() : '';
+  const subEditionSlug = (req.query as any).subEditionSlug ? String((req.query as any).subEditionSlug).trim() : undefined;
+
+  if (!editionSlug) return res.status(400).json({ error: 'editionSlug is required' });
+
+  const edition = await p.epaperPublicationEdition.findFirst({
+    where: { tenantId: tenant.id, slug: editionSlug, isDeleted: false, isActive: true },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!edition) return res.status(404).json({ error: 'Edition not found' });
+
+  let subEdition: any = null;
+  if (subEditionSlug) {
+    subEdition = await p.epaperPublicationSubEdition.findFirst({
+      where: { tenantId: tenant.id, editionId: edition.id, slug: subEditionSlug, isDeleted: false, isActive: true },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!subEdition) return res.status(404).json({ error: 'Sub-edition not found' });
+  }
+
+  const whereTarget = subEdition
+    ? { tenantId: tenant.id, subEditionId: subEdition.id, editionId: null }
+    : { tenantId: tenant.id, editionId: edition.id, subEditionId: null };
+
+  let issue: any = null;
+  if (issueDateStr) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDateStr)) return res.status(400).json({ error: 'issueDate must be YYYY-MM-DD' });
+    const issueDate = new Date(`${issueDateStr}T00:00:00.000Z`);
+    issue = await p.epaperPdfIssue.findFirst({
+      where: { ...whereTarget, issueDate },
+      include: { pages: { orderBy: { pageNumber: 'asc' } } },
+    });
+  } else {
+    issue = await p.epaperPdfIssue.findFirst({
+      where: { ...whereTarget },
+      orderBy: { issueDate: 'desc' },
+      include: { pages: { orderBy: { pageNumber: 'asc' } } },
+    });
+  }
+
+  if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+  return res.json({
+    tenant: { id: tenant.id, slug: tenant.slug },
+    edition,
+    subEdition,
+    issue: {
+      id: issue.id,
+      issueDate: issue.issueDate,
+      pdfUrl: issue.pdfUrl,
+      coverImageUrl: issue.coverImageUrl,
+      pageCount: issue.pageCount,
+      pages: issue.pages,
+    },
+  });
 });
 
 /**

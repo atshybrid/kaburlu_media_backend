@@ -926,6 +926,11 @@ router.get('/homepage', async (_req, res) => {
   
   const wantsV1 = versionParam === '1' || autoShape === 'style1';
   const wantsStyle2 = autoShape === 'style2' || versionParam === '2';
+  // Style2 variants:
+  // - v2 is the default for Style2 unless explicitly requesting v3.
+  // - v3 is requested by ?v=3.
+  const wantsStyle2V3 = versionParam === '3';
+  const wantsStyle2V2 = wantsStyle2 && !wantsStyle2V3;
   // Convenience: allow `shape=style2` to behave like `themeKey=style2` for Style2 homepage.
   const themeKey = String((req.query as any)?.themeKey || (autoShape && autoShape !== 'style1' ? autoShape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
@@ -1125,6 +1130,8 @@ router.get('/homepage', async (_req, res) => {
 
     type V1Section = {
       id: string;
+      // Some helper sections refer to the same identifier as `key`.
+      key?: string;
       type: string;
       label: string;
       ui: any;
@@ -1412,7 +1419,8 @@ router.get('/homepage', async (_req, res) => {
 
     // Add default extra sections if not already configured
     const extraSections = createDefaultExtraSections();
-    const configuredKeys = new Set(sections.map(s => s.key));
+    // V1 sections are keyed by `id`; some helper sections use `key`.
+    const configuredKeys = new Set(sections.map(s => (s as any).key || (s as any).id));
     const additionalSections = [];
 
     for (const extraSection of extraSections) {

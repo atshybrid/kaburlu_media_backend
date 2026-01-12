@@ -176,6 +176,7 @@ model State {
   tenants        Tenant[]
   reporters      Reporter[]
   tenantEntities TenantEntity[] @relation("TenantEntity_publicationState")
+  epaperPublicationEditions EpaperPublicationEdition[] @relation("State_EpaperPublicationEditions")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 }
@@ -206,6 +207,7 @@ model District {
   assemblyConstituencies    AssemblyConstituency[] @relation("DistrictAssemblyConstituencies")
   tenantEntitiesPublication TenantEntity[]         @relation("TenantEntity_publicationDistrict")
   tenantEntitiesPrinting    TenantEntity[]         @relation("TenantEntity_printingDistrict")
+  epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("District_EpaperPublicationSubEditions")
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
 }
@@ -560,9 +562,130 @@ model Tenant {
   epaperSettings       EpaperSettings?       @relation("Tenant_EpaperSettings")
   epaperBlockTemplates EpaperBlockTemplate[] @relation("Tenant_EpaperBlockTemplates")
   epaperEditions       EpaperEdition[]       @relation("Tenant_EpaperEditions")
+  epaperPublicationEditions    EpaperPublicationEdition[]    @relation("Tenant_EpaperPublicationEditions")
+  epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("Tenant_EpaperPublicationSubEditions")
+  epaperPdfIssues              EpaperPdfIssue[]
 
   // Proof/Evidence System
   proofRequests        ArticleProofRequest[] @relation("Tenant_ProofRequests")
+}
+
+/// Tenant ePaper publication edition definition (State-level or umbrella edition).
+/// This is NOT the daily generated EpaperEdition used by the block-layout generator.
+model EpaperPublicationEdition {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation("Tenant_EpaperPublicationEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+
+  name String
+  slug String
+
+  state   State?  @relation("State_EpaperPublicationEditions", fields: [stateId], references: [id])
+  stateId String?
+
+  coverImageUrl  String?
+
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+
+  isActive  Boolean @default(true)
+  isDeleted Boolean @default(false)
+
+  subEditions EpaperPublicationSubEdition[]
+  pdfIssues   EpaperPdfIssue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([stateId])
+  @@index([isActive, isDeleted])
+}
+
+/// Tenant ePaper publication sub-edition definition (District-level).
+model EpaperPublicationSubEdition {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation("Tenant_EpaperPublicationSubEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+
+  edition   EpaperPublicationEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  editionId String
+
+  name String
+  slug String
+
+  district   District? @relation("District_EpaperPublicationSubEditions", fields: [districtId], references: [id])
+  districtId String?
+
+  coverImageUrl  String?
+
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+
+  isActive  Boolean @default(true)
+  isDeleted Boolean @default(false)
+
+  pdfIssues EpaperPdfIssue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([editionId, slug])
+  @@index([tenantId])
+  @@index([editionId])
+  @@index([districtId])
+  @@index([isActive, isDeleted])
+}
+
+/// PDF-based daily issue for a tenant's publication edition/sub-edition.
+/// Exactly one of (editionId, subEditionId) must be set.
+/// Uploading the same (tenantId + issueDate + target) should replace existing.
+model EpaperPdfIssue {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+
+  issueDate DateTime @db.Date
+
+  edition   EpaperPublicationEdition?    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  editionId String?
+
+  subEdition   EpaperPublicationSubEdition? @relation(fields: [subEditionId], references: [id], onDelete: Cascade)
+  subEditionId String?
+
+  pdfUrl        String
+  coverImageUrl String?
+  pageCount     Int @default(0)
+
+  pages EpaperPdfPage[]
+
+  uploadedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, issueDate, editionId])
+  @@unique([tenantId, issueDate, subEditionId])
+  @@index([tenantId, issueDate])
+  @@index([editionId])
+  @@index([subEditionId])
+}
+
+model EpaperPdfPage {
+  id      String @id @default(cuid())
+  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId String
+
+  pageNumber Int
+  imageUrl   String
+
+  createdAt DateTime @default(now())
+
+  @@unique([issueId, pageNumber])
+  @@index([issueId])
 }
 
 /// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)

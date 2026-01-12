@@ -79,6 +79,52 @@ const swaggerDefinition = {
         bearerFormat: 'JWT'
       }
     },
+    parameters: {
+      XTenantDomain: {
+        name: 'X-Tenant-Domain',
+        in: 'header',
+        required: false,
+        description: 'Optional override for tenant/domain detection when testing locally. In production, tenant/domain is inferred from Host / X-Forwarded-Host.',
+        schema: { type: 'string', example: 'epaper.kaburlu.com' }
+      },
+      DomainQuery: {
+        name: 'domain',
+        in: 'query',
+        required: false,
+        description: 'Optional override for domain detection when testing locally (alternative to X-Tenant-Domain).',
+        schema: { type: 'string', example: 'epaper.kaburlu.com' }
+      }
+    },
+    responses: {
+      EpaperDomainNotVerified: {
+        description: 'Domain not verified / not EPAPER / not resolved',
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                code: { type: 'string' },
+                message: { type: 'string' }
+              }
+            },
+            examples: {
+              notVerified: {
+                value: {
+                  code: 'EPAPER_DOMAIN_NOT_VERIFIED',
+                  message: 'ePaper domain not verified/active or not resolved.'
+                }
+              },
+              kindRequired: {
+                value: {
+                  code: 'EPAPER_DOMAIN_KIND_REQUIRED',
+                  message: 'Domain is not configured as an EPAPER domain.'
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     schemas: {
       // ...existing code for schemas...
     }
