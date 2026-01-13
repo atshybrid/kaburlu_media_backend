@@ -1,0 +1,572 @@
+﻿{
+    "version":  "2.0",
+    "tenant":  {
+                   "id":  "cmk7e7tg401ezlp22wkz5rxky",
+                   "slug":  "kaburlu-today",
+                   "name":  "Kaburlu today",
+                   "displayName":  "Kaburlu today",
+                   "nativeName":  "కబుర్లు టుడే",
+                   "language":  {
+                                    "code":  "te",
+                                    "name":  "Telugu"
+                                }
+               },
+    "theme":  {
+                  "key":  "style2"
+              },
+    "feeds":  {
+                  "latest":  {
+                                 "kind":  "latest",
+                                 "limit":  20,
+                                 "items":  [
+
+                                           ]
+                             },
+                  "mostRead":  {
+                                   "kind":  "mostRead",
+                                   "metric":  "viewCount",
+                                   "limit":  5,
+                                   "items":  [
+
+                                             ]
+                               },
+                  "ticker":  {
+                                 "kind":  "ticker",
+                                 "limit":  10,
+                                 "items":  [
+
+                                           ]
+                             },
+                  "breaking":  {
+                                   "kind":  "breaking",
+                                   "limit":  10,
+                                   "items":  [
+
+                                             ]
+                               },
+                  "categories":  {
+                                     "kind":  "categories",
+                                     "perCategoryLimit":  10,
+                                     "items":  [
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-uttar-pradesh",
+                                                                        "name":  "उत्तर प्रदेश",
+                                                                        "href":  "/category/state-news-uttar-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "agriculture-government-schemes",
+                                                                        "name":  "সরকারী స్కీమ్స్",
+                                                                        "href":  "/category/agriculture-government-schemes"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "international",
+                                                                        "name":  "అంతర్జాతీయ",
+                                                                        "href":  "/category/international"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "crime-court-and-legal",
+                                                                        "name":  "అదాలత్ \u0026 చట్టం",
+                                                                        "href":  "/category/crime-court-and-legal"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-arunachal-pradesh",
+                                                                        "name":  "అరుణాచల్ ప్రదేశ్",
+                                                                        "href":  "/category/state-news-arunachal-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-assam",
+                                                                        "name":  "అస్సాం",
+                                                                        "href":  "/category/state-news-assam"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-andaman-and-nicobar-islands",
+                                                                        "name":  "ఆండమాన్ మరియు నికోబార్ దీవులు",
+                                                                        "href":  "/category/state-news-andaman-and-nicobar-islands"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "devotional-spirituality",
+                                                                        "name":  "ఆధ్యాత్మికత",
+                                                                        "href":  "/category/devotional-spirituality"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-andhra-pradesh",
+                                                                        "name":  "ఆంధ్రప్రదేశ్",
+                                                                        "href":  "/category/state-news-andhra-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "accident",
+                                                                        "name":  "ఆపద",
+                                                                        "href":  "/category/accident"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "health",
+                                                                        "name":  "ఆరోగ్యం",
+                                                                        "href":  "/category/health"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "health-health-tips",
+                                                                        "name":  "ఆరోగ్య చిట్కాలు",
+                                                                        "href":  "/category/health-health-tips"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "lifestyle-food-and-recipes",
+                                                                        "name":  "ఆహారం \u0026 రెసిపీలు",
+                                                                        "href":  "/category/lifestyle-food-and-recipes"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "technology-internet-and-apps",
+                                                                        "name":  "ఇంటర్నెట్ \u0026 అప్‌లు",
+                                                                        "href":  "/category/technology-internet-and-apps"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-uttarakhand",
+                                                                        "name":  "ఉత్తరాఖండ్",
+                                                                        "href":  "/category/state-news-uttarakhand"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "education-job-notifications",
+                                                                        "name":  "ఉద్యోగ నోటిఫికేషన్లు",
+                                                                        "href":  "/category/education-job-notifications"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "technology-ai-and-software",
+                                                                        "name":  "ఎఐ మరియు సాఫ్ట్‌వేర్",
+                                                                        "href":  "/category/technology-ai-and-software"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "international-nri-news",
+                                                                        "name":  "ఎన్ ఆర్ ఐ వార్తలు",
+                                                                        "href":  "/category/international-nri-news"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-odisha",
+                                                                        "name":  "ఒడిశా",
+                                                                        "href":  "/category/state-news-odisha"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "sports-olympics",
+                                                                        "name":  "ఒలింపిక్స్",
+                                                                        "href":  "/category/sports-olympics"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "politics-elections",
+                                                                        "name":  "ఓటింగ్",
+                                                                        "href":  "/category/politics-elections"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-karnataka",
+                                                                        "name":  "కర్ణాటక",
+                                                                        "href":  "/category/state-news-karnataka"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "agriculture-farmer-issues",
+                                                                        "name":  "కర్షక సమస్యలు",
+                                                                        "href":  "/category/agriculture-farmer-issues"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "business-corporate-news",
+                                                                        "name":  "కార్పొరేట్ వార్తలు",
+                                                                        "href":  "/category/business-corporate-news"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "community",
+                                                                        "name":  "కాలనీ",
+                                                                        "href":  "/category/community"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   }
+                                               ]
+                                 }
+              },
+    "sections":  [
+                     {
+                         "id":  "flashTicker",
+                         "type":  "flashTicker",
+                         "label":  "Flash News",
+                         "query":  {
+                                       "kind":  "latest",
+                                       "limit":  10
+                                   }
+                     },
+                     {
+                         "id":  "toiGrid3",
+                         "type":  "toiGrid3",
+                         "label":  "Top Stories",
+                         "query":  {
+                                       "kind":  "toiGrid3",
+                                       "left":  {
+                                                    "kind":  "category",
+                                                    "categorySlug":  "state-news-uttar-pradesh",
+                                                    "limit":  12
+                                                },
+                                       "center":  {
+                                                      "kind":  "latest",
+                                                      "limit":  6
+                                                  },
+                                       "rightLatest":  {
+                                                           "kind":  "latest",
+                                                           "label":  "Latest News",
+                                                           "limit":  8,
+                                                           "offset":  6
+                                                       },
+                                       "rightMostRead":  {
+                                                             "kind":  "mostRead",
+                                                             "label":  "Most Read",
+                                                             "limit":  8,
+                                                             "metric":  "viewCount"
+                                                         }
+                                   }
+                     },
+                     {
+                         "id":  "topStoriesGrid",
+                         "type":  "topStoriesGrid",
+                         "label":  "Top Stories",
+                         "query":  {
+                                       "kind":  "latest",
+                                       "limit":  9
+                                   }
+                     },
+                     {
+                         "id":  "section3",
+                         "type":  "section3",
+                         "label":  "More News",
+                         "query":  {
+                                       "kind":  "categories",
+                                       "categorySlugs":  [
+                                                             "technology",
+                                                             "education",
+                                                             "also-in-news"
+                                                         ],
+                                       "perCategoryLimit":  5
+                                   }
+                     },
+                     {
+                         "id":  "section4",
+                         "type":  "section4",
+                         "label":  "Categories",
+                         "query":  {
+                                       "kind":  "categoriesGrid",
+                                       "rows":  3,
+                                       "cols":  3,
+                                       "categorySlugs":  [
+                                                             "state-news-uttar-pradesh",
+                                                             "agriculture-government-schemes",
+                                                             "international",
+                                                             "crime-court-and-legal",
+                                                             "state-news-arunachal-pradesh",
+                                                             "state-news-assam",
+                                                             "state-news-andaman-and-nicobar-islands",
+                                                             "devotional-spirituality",
+                                                             "state-news-andhra-pradesh"
+                                                         ],
+                                       "perCategoryLimit":  5
+                                   }
+                     }
+                 ],
+    "data":  {
+                 "flashTicker":  [
+
+                                 ],
+                 "toiGrid3":  {
+                                  "left":  {
+                                               "category":  {
+                                                                "slug":  "state-news-uttar-pradesh",
+                                                                "name":  "उत्तर प्रदेश",
+                                                                "href":  "/category/state-news-uttar-pradesh"
+                                                            },
+                                               "items":  [
+
+                                                         ]
+                                           },
+                                  "center":  [
+
+                                             ],
+                                  "right":  {
+                                                "latest":  {
+                                                               "label":  "Latest News",
+                                                               "kind":  "latest",
+                                                               "items":  [
+
+                                                                         ]
+                                                           },
+                                                "mostRead":  {
+                                                                 "label":  "Most Read",
+                                                                 "kind":  "mostRead",
+                                                                 "metric":  "viewCount",
+                                                                 "items":  [
+
+                                                                           ]
+                                                             }
+                                            }
+                              },
+                 "topStoriesGrid":  [
+
+                                    ],
+                 "section3":  [
+                                  {
+                                      "category":  {
+                                                       "slug":  "technology",
+                                                       "name":  "సాంకేతికత",
+                                                       "href":  "/category/technology"
+                                                   },
+                                      "items":  [
+
+                                                ]
+                                  },
+                                  {
+                                      "category":  {
+                                                       "slug":  "education",
+                                                       "name":  "శిక్షణ",
+                                                       "href":  "/category/education"
+                                                   },
+                                      "items":  [
+
+                                                ]
+                                  }
+                              ],
+                 "section4":  {
+                                  "rows":  3,
+                                  "cols":  3,
+                                  "cards":  [
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "state-news-uttar-pradesh",
+                                                                     "name":  "उत्तर प्रदेश",
+                                                                     "href":  "/category/state-news-uttar-pradesh"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "agriculture-government-schemes",
+                                                                     "name":  "সরকারী స్కీమ్స్",
+                                                                     "href":  "/category/agriculture-government-schemes"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "international",
+                                                                     "name":  "అంతర్జాతీయ",
+                                                                     "href":  "/category/international"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "crime-court-and-legal",
+                                                                     "name":  "అదాలత్ \u0026 చట్టం",
+                                                                     "href":  "/category/crime-court-and-legal"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "state-news-arunachal-pradesh",
+                                                                     "name":  "అరుణాచల్ ప్రదేశ్",
+                                                                     "href":  "/category/state-news-arunachal-pradesh"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "state-news-assam",
+                                                                     "name":  "అస్సాం",
+                                                                     "href":  "/category/state-news-assam"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "state-news-andaman-and-nicobar-islands",
+                                                                     "name":  "ఆండమాన్ మరియు నికోబార్ దీవులు",
+                                                                     "href":  "/category/state-news-andaman-and-nicobar-islands"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "devotional-spirituality",
+                                                                     "name":  "ఆధ్యాత్మికత",
+                                                                     "href":  "/category/devotional-spirituality"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                },
+                                                {
+                                                    "category":  {
+                                                                     "slug":  "state-news-andhra-pradesh",
+                                                                     "name":  "ఆంధ్రప్రదేశ్",
+                                                                     "href":  "/category/state-news-andhra-pradesh"
+                                                                 },
+                                                    "items":  [
+
+                                                              ]
+                                                }
+                                            ]
+                              }
+             }
+}

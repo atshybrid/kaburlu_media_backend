@@ -124,7 +124,19 @@ app.use(helmet());
 app.use(compression());
 
 // Root-level SEO endpoints (robots.txt/sitemap.xml) for domain-based public sites.
+// Best practice: these files should live at the domain root.
 app.use('/', rootSeoRoutes);
+
+// Compatibility: redirect versioned paths to the root equivalents.
+// (Some clients mistakenly call /api/v1/robots.txt and /api/v1/sitemap.xml.)
+app.get('/api/v1/robots.txt', (req, res) => {
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  return res.redirect(301, `/robots.txt${qs}`);
+});
+app.get('/api/v1/sitemap.xml', (req, res) => {
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  return res.redirect(301, `/sitemap.xml${qs}`);
+});
 app.use(
   express.json({
     verify: (req: any, _res, buf) => {

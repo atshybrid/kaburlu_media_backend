@@ -927,10 +927,12 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  * @swagger
  * /epaper/pdf-issues:
  *   get:
- *     summary: Find a PDF issue by date + target
+ *     summary: Find PDF issues by date (optionally filter by edition/sub-edition)
  *     description: |
  *       Admin-only.
- *       - Provide `issueDate` and exactly one of `editionId`/`subEditionId`.
+ *       - `issueDate` is required.
+ *       - If you provide `editionId` OR `subEditionId`, returns the single matching issue (with pages).
+ *       - If you provide neither, returns all issues for that date as `{ items: [...] }`.
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -949,23 +951,32 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *         name: subEditionId
  *     responses:
  *       200:
- *         description: Issue with pages
+ *         description: Issue with pages OR list of issues
  *         content:
  *           application/json:
  *             examples:
- *               sample:
+ *               singleIssue:
  *                 value:
- *                   issue:
- *                     id: "iss_1"
- *                     issueDate: "2026-01-12T00:00:00.000Z"
- *                     editionId: "ed_1"
- *                     subEditionId: null
- *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
- *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
- *                     pageCount: 12
- *                     pages:
- *                       - pageNumber: 1
- *                         imageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                   id: "iss_1"
+ *                   issueDate: "2026-01-12T00:00:00.000Z"
+ *                   editionId: "ed_1"
+ *                   subEditionId: null
+ *                   pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                   coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                   pageCount: 12
+ *                   pages:
+ *                     - pageNumber: 1
+ *                       imageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *               listByDate:
+ *                 value:
+ *                   items:
+ *                     - id: "iss_1"
+ *                       issueDate: "2026-01-12T00:00:00.000Z"
+ *                       editionId: "ed_1"
+ *                       subEditionId: null
+ *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                       pageCount: 12
  *       400:
  *         description: Validation error (missing/invalid query params)
  */

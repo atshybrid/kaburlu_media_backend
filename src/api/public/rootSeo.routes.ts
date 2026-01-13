@@ -202,10 +202,13 @@ router.get('/sitemap.xml', async (req, res) => {
 
   const editions = await p.epaperPublicationEdition.findMany({
     where: { tenantId: tenant.id, isDeleted: false, isActive: true },
-    include: {
-      subEditions: { where: { tenantId: tenant.id, isDeleted: false, isActive: true }, select: { slug: true } },
+    select: {
+      slug: true,
+      subEditions: {
+        where: { tenantId: tenant.id, isDeleted: false, isActive: true },
+        select: { slug: true },
+      },
     },
-    select: { slug: true, subEditions: true },
   });
 
   // Preload latest issue per target if needed.

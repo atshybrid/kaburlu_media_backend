@@ -1,0 +1,593 @@
+﻿{
+    "version":  "1.0",
+    "tenant":  {
+                   "id":  "cmk7e7tg401ezlp22wkz5rxky",
+                   "slug":  "kaburlu-today",
+                   "name":  "Kaburlu today",
+                   "displayName":  "Kaburlu today",
+                   "nativeName":  "కబుర్లు టుడే",
+                   "language":  {
+                                    "code":  "te",
+                                    "name":  "Telugu"
+                                }
+               },
+    "theme":  {
+                  "key":  "style1"
+              },
+    "uiTokens":  {
+                     "titleMaxLines":  {
+                                           "hero":  2,
+                                           "cardMedium":  2,
+                                           "listRow":  2,
+                                           "ticker":  1
+                                       },
+                     "imageTargets":  {
+                                          "hero16x9":  {
+                                                           "w":  1200,
+                                                           "h":  675
+                                                       },
+                                          "card16x9":  {
+                                                           "w":  900,
+                                                           "h":  506
+                                                       },
+                                          "thumbWide":  {
+                                                            "w":  320,
+                                                            "h":  180
+                                                        },
+                                          "thumbSmall":  {
+                                                             "w":  240,
+                                                             "h":  160
+                                                         }
+                                      }
+                 },
+    "feeds":  {
+                  "latest":  {
+                                 "kind":  "latest",
+                                 "limit":  20,
+                                 "items":  [
+
+                                           ]
+                             },
+                  "mostRead":  {
+                                   "kind":  "mostRead",
+                                   "metric":  "viewCount",
+                                   "limit":  5,
+                                   "items":  [
+
+                                             ]
+                               },
+                  "ticker":  {
+                                 "kind":  "ticker",
+                                 "limit":  10,
+                                 "items":  [
+
+                                           ]
+                             },
+                  "breaking":  {
+                                   "kind":  "breaking",
+                                   "limit":  10,
+                                   "items":  [
+
+                                             ]
+                               },
+                  "categories":  {
+                                     "kind":  "categories",
+                                     "perCategoryLimit":  10,
+                                     "items":  [
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-uttar-pradesh",
+                                                                        "name":  "उत्तर प्रदेश",
+                                                                        "href":  "/category/state-news-uttar-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "agriculture-government-schemes",
+                                                                        "name":  "সরকারী స్కీమ్స్",
+                                                                        "href":  "/category/agriculture-government-schemes"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "international",
+                                                                        "name":  "అంతర్జాతీయ",
+                                                                        "href":  "/category/international"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "crime-court-and-legal",
+                                                                        "name":  "అదాలత్ \u0026 చట్టం",
+                                                                        "href":  "/category/crime-court-and-legal"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-arunachal-pradesh",
+                                                                        "name":  "అరుణాచల్ ప్రదేశ్",
+                                                                        "href":  "/category/state-news-arunachal-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-assam",
+                                                                        "name":  "అస్సాం",
+                                                                        "href":  "/category/state-news-assam"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-andaman-and-nicobar-islands",
+                                                                        "name":  "ఆండమాన్ మరియు నికోబార్ దీవులు",
+                                                                        "href":  "/category/state-news-andaman-and-nicobar-islands"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "devotional-spirituality",
+                                                                        "name":  "ఆధ్యాత్మికత",
+                                                                        "href":  "/category/devotional-spirituality"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-andhra-pradesh",
+                                                                        "name":  "ఆంధ్రప్రదేశ్",
+                                                                        "href":  "/category/state-news-andhra-pradesh"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "accident",
+                                                                        "name":  "ఆపద",
+                                                                        "href":  "/category/accident"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "health",
+                                                                        "name":  "ఆరోగ్యం",
+                                                                        "href":  "/category/health"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "health-health-tips",
+                                                                        "name":  "ఆరోగ్య చిట్కాలు",
+                                                                        "href":  "/category/health-health-tips"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "lifestyle-food-and-recipes",
+                                                                        "name":  "ఆహారం \u0026 రెసిపీలు",
+                                                                        "href":  "/category/lifestyle-food-and-recipes"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "technology-internet-and-apps",
+                                                                        "name":  "ఇంటర్నెట్ \u0026 అప్‌లు",
+                                                                        "href":  "/category/technology-internet-and-apps"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-uttarakhand",
+                                                                        "name":  "ఉత్తరాఖండ్",
+                                                                        "href":  "/category/state-news-uttarakhand"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "education-job-notifications",
+                                                                        "name":  "ఉద్యోగ నోటిఫికేషన్లు",
+                                                                        "href":  "/category/education-job-notifications"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "technology-ai-and-software",
+                                                                        "name":  "ఎఐ మరియు సాఫ్ట్‌వేర్",
+                                                                        "href":  "/category/technology-ai-and-software"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "international-nri-news",
+                                                                        "name":  "ఎన్ ఆర్ ఐ వార్తలు",
+                                                                        "href":  "/category/international-nri-news"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-odisha",
+                                                                        "name":  "ఒడిశా",
+                                                                        "href":  "/category/state-news-odisha"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "sports-olympics",
+                                                                        "name":  "ఒలింపిక్స్",
+                                                                        "href":  "/category/sports-olympics"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "politics-elections",
+                                                                        "name":  "ఓటింగ్",
+                                                                        "href":  "/category/politics-elections"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "state-news-karnataka",
+                                                                        "name":  "కర్ణాటక",
+                                                                        "href":  "/category/state-news-karnataka"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "agriculture-farmer-issues",
+                                                                        "name":  "కర్షక సమస్యలు",
+                                                                        "href":  "/category/agriculture-farmer-issues"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "business-corporate-news",
+                                                                        "name":  "కార్పొరేట్ వార్తలు",
+                                                                        "href":  "/category/business-corporate-news"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   },
+                                                   {
+                                                       "category":  {
+                                                                        "slug":  "community",
+                                                                        "name":  "కాలనీ",
+                                                                        "href":  "/category/community"
+                                                                    },
+                                                       "items":  [
+
+                                                                 ],
+                                                       "message":  "No articles posted yet in this category."
+                                                   }
+                                               ]
+                                 }
+              },
+    "sections":  [
+                     {
+                         "id":  "flashTicker",
+                         "type":  "ticker",
+                         "label":  "Flash News",
+                         "ui":  {
+                                    "itemCount":  10,
+                                    "titleMaxLines":  1
+                                },
+                         "query":  {
+                                       "kind":  "latest",
+                                       "limit":  10
+                                   }
+                     },
+                     {
+                         "id":  "heroStack",
+                         "type":  "heroStack",
+                         "label":  "Top Stories",
+                         "ui":  {
+                                    "hero":  {
+                                                 "count":  1,
+                                                 "image":  "hero16x9",
+                                                 "titleMaxLines":  2
+                                             },
+                                    "medium":  {
+                                                   "count":  2,
+                                                   "image":  "card16x9",
+                                                   "titleMaxLines":  2
+                                               },
+                                    "rows":  {
+                                                 "count":  3,
+                                                 "image":  "thumbWide",
+                                                 "titleMaxLines":  2
+                                             }
+                                },
+                         "query":  {
+                                       "kind":  "latest",
+                                       "limit":  12,
+                                       "dedupeKey":  "heroStack"
+                                   }
+                     },
+                     {
+                         "id":  "categoryHub",
+                         "type":  "categoryHub",
+                         "label":  "Categories",
+                         "ui":  {
+                                    "columns":  4,
+                                    "perCategoryCount":  5,
+                                    "image":  "card16x9",
+                                    "titleMaxLines":  2
+                                },
+                         "query":  {
+                                       "kind":  "navCategories",
+                                       "count":  4,
+                                       "perCategoryLimit":  5
+                                   }
+                     },
+                     {
+                         "id":  "hgBlock",
+                         "type":  "HGBlock",
+                         "label":  "Highlights",
+                         "ui":  {
+                                    "categoryCount":  2,
+                                    "perCategoryCount":  5,
+                                    "image":  "card16x9",
+                                    "titleMaxLines":  2
+                                },
+                         "query":  {
+                                       "kind":  "navCategories",
+                                       "count":  2,
+                                       "perCategoryLimit":  5
+                                   }
+                     },
+                     {
+                         "id":  "lastNews",
+                         "type":  "listWithThumb",
+                         "label":  "Last News",
+                         "ui":  {
+                                    "count":  7,
+                                    "image":  "thumbWide",
+                                    "titleMaxLines":  2
+                                },
+                         "query":  {
+                                       "kind":  "category",
+                                       "categorySlug":  "politics",
+                                       "limit":  8
+                                   }
+                     },
+                     {
+                         "id":  "trendingCategory",
+                         "type":  "twoColRows",
+                         "label":  "Trending News",
+                         "ui":  {
+                                    "count":  6,
+                                    "image":  "thumbWide",
+                                    "titleMaxLines":  2
+                                },
+                         "query":  {
+                                       "kind":  "category",
+                                       "categorySlug":  "sports",
+                                       "limit":  6,
+                                       "sort":  "latest"
+                                   }
+                     },
+                     {
+                         "id":  "rightRailTrendingTitles",
+                         "type":  "titlesOnly",
+                         "label":  "Trending News",
+                         "ui":  {
+                                    "count":  8,
+                                    "titleMaxLines":  2
+                                },
+                         "query":  {
+                                       "kind":  "latest",
+                                       "limit":  8
+                                   }
+                     },
+                     {
+                         "key":  "trending-news",
+                         "title":  "Trending News",
+                         "position":  1000,
+                         "style":  "cards",
+                         "limit":  20,
+                         "items":  [
+
+                                   ]
+                     },
+                     {
+                         "key":  "must-read",
+                         "title":  "Must Read",
+                         "position":  1001,
+                         "style":  "list",
+                         "limit":  10,
+                         "items":  [
+
+                                   ]
+                     },
+                     {
+                         "key":  "most-read",
+                         "title":  "Most Read",
+                         "position":  1002,
+                         "style":  "compact",
+                         "limit":  15,
+                         "items":  [
+
+                                   ]
+                     }
+                 ],
+    "data":  {
+                 "heroStack":  [
+
+                               ],
+                 "flashTicker":  [
+
+                                 ],
+                 "categoryHub":  [
+                                     {
+                                         "category":  {
+                                                          "slug":  "state-news-uttar-pradesh",
+                                                          "name":  "उत्तर प्रदेश"
+                                                      },
+                                         "items":  [
+
+                                                   ],
+                                         "message":  "No articles posted yet in this category."
+                                     },
+                                     {
+                                         "category":  {
+                                                          "slug":  "agriculture-government-schemes",
+                                                          "name":  "সরকারী స్కీమ్స్"
+                                                      },
+                                         "items":  [
+
+                                                   ],
+                                         "message":  "No articles posted yet in this category."
+                                     },
+                                     {
+                                         "category":  {
+                                                          "slug":  "international",
+                                                          "name":  "అంతర్జాతీయ"
+                                                      },
+                                         "items":  [
+
+                                                   ],
+                                         "message":  "No articles posted yet in this category."
+                                     },
+                                     {
+                                         "category":  {
+                                                          "slug":  "crime-court-and-legal",
+                                                          "name":  "అదాలత్ \u0026 చట్టం"
+                                                      },
+                                         "items":  [
+
+                                                   ],
+                                         "message":  "No articles posted yet in this category."
+                                     }
+                                 ],
+                 "hgBlock":  [
+                                 {
+                                     "category":  {
+                                                      "slug":  "state-news-uttar-pradesh",
+                                                      "name":  "उत्तर प्रदेश"
+                                                  },
+                                     "items":  [
+
+                                               ],
+                                     "message":  "No articles posted yet in this category."
+                                 },
+                                 {
+                                     "category":  {
+                                                      "slug":  "agriculture-government-schemes",
+                                                      "name":  "সরকারী స్కీమ్స్"
+                                                  },
+                                     "items":  [
+
+                                               ],
+                                     "message":  "No articles posted yet in this category."
+                                 }
+                             ],
+                 "lastNews":  [
+
+                              ],
+                 "trendingCategory":  [
+
+                                      ],
+                 "rightRailTrendingTitles":  [
+
+                                             ],
+                 "trending-news":  [
+
+                                   ],
+                 "must-read":  [
+
+                               ],
+                 "most-read":  [
+
+                               ]
+             }
+}

@@ -78,7 +78,10 @@ router.get('/', async (_req, res) => {
 router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
   try {
     const id = req.params.id;
-    const d = await (prisma as any).domain.findUnique({ where: { id } });
+    const d = await (prisma as any).domain.findUnique({
+      where: { id },
+      include: { tenant: { include: { state: true } } },
+    });
     if (!d) return res.status(404).json({ error: 'Domain not found' });
     const method = (req.body?.method as string) || 'DNS_TXT';
     const force = Boolean(req.body?.force);
@@ -94,21 +97,13 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
           ...CORE_NEWS_CATEGORIES.map(c => c.slug),
         ]);
 
-        // Add dynamic state categories under state-news.
-        try {
-          const states = await (prisma as any).state.findMany({
-            where: { country: { code: 'IN' } },
-            select: { name: true },
-            take: 100,
-          });
-          for (const st of states || []) {
-            const name = String(st?.name || '').trim();
-            if (!name) continue;
-            const slug = `state-news-${defaultCategorySlugify(name)}`.slice(0, 60);
-            slugSet.add(slug);
-          }
-        } catch {
-          // ignore
+        // Add ONLY tenant's state category under state-news (not all states).
+        // This prevents every tenant from seeing every state's categories.
+        slugSet.add('state-news');
+        const tenantStateName = String(d?.tenant?.state?.name || '').trim();
+        if (tenantStateName) {
+          const slug = `state-news-${defaultCategorySlugify(tenantStateName)}`.slice(0, 60);
+          slugSet.add(slug);
         }
 
         const slugs = Array.from(slugSet);

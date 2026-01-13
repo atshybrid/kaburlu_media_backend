@@ -427,11 +427,29 @@ export const findPdfIssue = async (req: Request, res: Response) => {
     const subEditionId = (req.query as any).subEditionId ? asString((req.query as any).subEditionId) : null;
 
     if (!issueDateStr) return res.status(400).json({ error: 'issueDate is required' });
-    if ((editionId ? 1 : 0) + (subEditionId ? 1 : 0) !== 1) {
-      return res.status(400).json({ error: 'Provide exactly one: editionId or subEditionId' });
+    if (editionId && subEditionId) {
+      return res.status(400).json({ error: 'Provide at most one: editionId or subEditionId' });
     }
 
     const issueDate = parseIsoDateOnly(issueDateStr);
+
+    // If no target is provided, return all issues for this tenant+date.
+    // This supports admin UIs where edition/sub-edition are optional filters.
+    if (!editionId && !subEditionId) {
+      const items = await p.epaperPdfIssue.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          issueDate,
+        },
+        include: {
+          edition: { select: { id: true, name: true, slug: true } },
+          subEdition: { select: { id: true, name: true, slug: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }],
+      });
+
+      return res.json({ items });
+    }
 
     const issue = await p.epaperPdfIssue.findFirst({
       where: {

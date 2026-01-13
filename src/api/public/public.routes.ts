@@ -117,9 +117,17 @@ router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => 
   const editions = await p.epaperPublicationEdition.findMany({
     where: { tenantId: tenant.id, isDeleted: false, isActive: true },
     orderBy: [{ createdAt: 'desc' }],
-    include: includeSubEditions
-      ? {
-          subEditions: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      stateId: true,
+      coverImageUrl: true,
+      seoTitle: true,
+      seoDescription: true,
+      seoKeywords: true,
+      subEditions: includeSubEditions
+        ? {
             where: { isDeleted: false, isActive: true },
             orderBy: [{ createdAt: 'desc' }],
             select: {
@@ -132,19 +140,8 @@ router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => 
               seoDescription: true,
               seoKeywords: true,
             },
-          },
-        }
-      : undefined,
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      stateId: true,
-      coverImageUrl: true,
-      seoTitle: true,
-      seoDescription: true,
-      seoKeywords: true,
-      subEditions: includeSubEditions ? true : false,
+          }
+        : false,
     },
   });
 
@@ -160,13 +157,14 @@ router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => 
  *       Confirms the request resolves to an active tenant/domain (via Host or X-Tenant-Domain).
  *
  *       Notes:
- *       - This endpoint does **not** require EPAPER verification middleware, but it will return 404 if the domain is not EPAPER or not verified.
+ *       - This endpoint does **not** require EPAPER verification middleware.
+ *       - It always returns 200 with `verified=true|false` (frontend-friendly). Other public ePaper endpoints remain strict.
  *     tags: [EPF ePaper - Public]
  *     parameters:
  *       - $ref: '#/components/parameters/XTenantDomain'
  *     responses:
  *       200:
- *         description: Verified mapping
+ *         description: Verified mapping (or details why not verified)
  *         content:
  *           application/json:
  *             examples:
@@ -175,22 +173,13 @@ router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => 
  *                   verified: true
  *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu" }
  *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
- *       404:
- *         description: Not resolved
- *         content:
- *           application/json:
- *             examples:
- *               notResolved:
- *                 value:
- *                   verified: false
- *                   error: "Domain/tenant not resolved (check Host/X-Tenant-Domain)"
  */
 router.get('/epaper/verify-domain', async (req, res) => {
   const tenant = (res.locals as any).tenant;
   const domain = (res.locals as any).domain;
 
   if (!tenant || !domain) {
-    return res.status(404).json({
+    return res.status(200).json({
       verified: false,
       error: 'Domain/tenant not resolved (check Host/X-Tenant-Domain)',
       input: {
@@ -201,7 +190,7 @@ router.get('/epaper/verify-domain', async (req, res) => {
   }
 
   if (String(domain.kind || '').toUpperCase() !== 'EPAPER') {
-    return res.status(404).json({
+    return res.status(200).json({
       verified: false,
       code: 'EPAPER_DOMAIN_KIND_REQUIRED',
       message: 'Domain is active but not configured as an EPAPER domain.',
@@ -211,7 +200,7 @@ router.get('/epaper/verify-domain', async (req, res) => {
   }
 
   if (!domain.verifiedAt) {
-    return res.status(404).json({
+    return res.status(200).json({
       verified: false,
       code: 'EPAPER_DOMAIN_NOT_VERIFIED',
       message: 'Domain is active but not verified yet (verifiedAt is missing).',
@@ -320,6 +309,36 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
   const epaperType = normalizeType(pub.type) || 'PDF';
   const multiEditionEnabled = pub.multiEditionEnabled === undefined ? true : Boolean(pub.multiEditionEnabled);
 
+  // For PDF mode, hide block-layout-specific settings fields from the public contract.
+  // Those settings apply to BLOCK-based generation and confuse PDF-only clients.
+  const sanitizeSettingsForPublic = (row: any, type: 'PDF' | 'BLOCK') => {
+    if (!row || typeof row !== 'object') return row;
+    if (type !== 'PDF') return row;
+
+    const hiddenKeys = new Set<string>([
+      'pageWidthInches',
+      'pageHeightInches',
+      'gridColumns',
+      'paddingTop',
+      'paddingRight',
+      'paddingBottom',
+      'paddingLeft',
+      'defaultPageCount',
+      'mainHeaderHeightInches',
+      'innerHeaderHeightInches',
+      'footerHeightInches',
+      'footerStyle',
+    ]);
+
+    const out: any = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (!hiddenKeys.has(k)) out[k] = v;
+    }
+    return out;
+  };
+
+  const publicSettings = sanitizeSettingsForPublic(settings, epaperType);
+
   const baseUrl = `https://${domain.domain}`;
 
   return res.json({
@@ -336,7 +355,7 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       type: epaperType,
       multiEditionEnabled,
     },
-    settings,
+    settings: publicSettings,
     branding: tenantTheme
       ? {
           logoUrl: (tenantTheme as any).logoUrl,
@@ -527,13 +546,6 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
   const editions = await p.epaperPublicationEdition.findMany({
     where: { tenantId: tenant.id, isDeleted: false, isActive: true },
     orderBy: [{ createdAt: 'desc' }],
-    include: {
-      subEditions: {
-        where: { isDeleted: false, isActive: true },
-        orderBy: [{ createdAt: 'desc' }],
-        select: { id: true, name: true, slug: true },
-      },
-    },
     select: {
       id: true,
       name: true,
@@ -543,7 +555,11 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
       seoTitle: true,
       seoDescription: true,
       seoKeywords: true,
-      subEditions: true,
+      subEditions: {
+        where: { isDeleted: false, isActive: true },
+        orderBy: [{ createdAt: 'desc' }],
+        select: { id: true, name: true, slug: true },
+      },
     },
   });
 
