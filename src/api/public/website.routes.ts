@@ -1114,6 +1114,147 @@ router.get('/homepage', async (_req, res) => {
     }
   }
 
+  // ============================================================
+  // Best-practice unified homepage feeds (used by Style1 + Style2)
+  // ============================================================
+  function extractCategorySlugFromHrefForHomepage(href: string) {
+    const h = String(href || '');
+    const m = h.match(/^\/category\/([^/?#]+)/i);
+    return m?.[1] ? String(m[1]) : null;
+  }
+
+  function resolveHomepageCategorySlugs(maxCount: number) {
+    const want = Math.min(Math.max(Number(maxCount) || 0, 0), 50);
+    const navMenu: any[] = Array.isArray((effective as any)?.navigation?.menu) ? (effective as any).navigation.menu : [];
+    const seenSlugs = new Set<string>();
+    const out: string[] = [];
+
+    // 1) Navigation order first (if configured)
+    for (const item of navMenu) {
+      const slug = extractCategorySlugFromHrefForHomepage(String(item?.href || ''));
+      if (!slug) continue;
+      if (seenSlugs.has(slug)) continue;
+      // Prefer domain-mapped categories
+      if (!categoryBySlug.get(slug)) continue;
+      seenSlugs.add(slug);
+      out.push(slug);
+      if (out.length >= want) return out;
+    }
+
+    // 2) Append remaining domain categories deterministically
+    const domainCatsSorted = (domainCats || [])
+      .map((d: any) => d.category)
+      .filter(Boolean)
+      .slice()
+      .sort((a: any, b: any) => {
+        const an = (translatedNameByCategoryId.get(String(a?.id)) || a?.name || a?.slug || '').toString();
+        const bn = (translatedNameByCategoryId.get(String(b?.id)) || b?.name || b?.slug || '').toString();
+        return an.localeCompare(bn);
+      });
+
+    for (const c of domainCatsSorted) {
+      const slug = c?.slug ? String(c.slug) : '';
+      if (!slug) continue;
+      if (seenSlugs.has(slug)) continue;
+      seenSlugs.add(slug);
+      out.push(slug);
+      if (out.length >= want) return out;
+    }
+
+    return out;
+  }
+
+  const makeHomepageCategoryInfo = (slugRaw: string, cat: any | null) => {
+    const slug = String(slugRaw || '').trim();
+    const name = cat?.id
+      ? (translatedNameByCategoryId.get(String(cat.id)) || String(cat?.name || slug))
+      : String(slug);
+    const href = slug ? `/category/${encodeURIComponent(slug)}` : null;
+    return { slug, name, href };
+  };
+
+  async function fetchMostReadCardsForHomepage(limit: number) {
+    const want = Math.min(Math.max(limit, 1), 50);
+    const take = Math.min(want + 25, 75);
+    const rows = await p.tenantWebArticle.findMany({
+      where: baseWhere,
+      orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take,
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+    const out: any[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (!r?.id) continue;
+      if (seen.has(String(r.id))) continue;
+      seen.add(String(r.id));
+      out.push(toCard(r));
+      if (out.length >= want) break;
+    }
+    return out;
+  }
+
+  async function fetchBreakingCardsForHomepage(limit: number) {
+    const take = Math.min(Math.max(limit, 1), 50);
+    const rows = await p.tenantWebArticle.findMany({
+      where: { ...baseWhere, OR: [{ isBreaking: true }, { tags: { has: 'breaking' } }] },
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take,
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+    return rows.map(toCard);
+  }
+
+  async function fetchCategoryCardsForHomepage(categorySlug: string, limit: number) {
+    const slug = String(categorySlug || '').trim();
+    if (!slug) return [];
+    const resolvedCategory = categoryBySlug.get(slug) || null;
+    // Best practice: only serve domain-mapped categories in homepage category feeds.
+    if (!resolvedCategory) return [];
+
+    const and: any[] = [];
+    if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+    if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+    const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: resolvedCategory.id };
+    if (and.length) where.AND = and;
+
+    const rows = await p.tenantWebArticle.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take: Math.min(Math.max(limit, 1), 50),
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    });
+    return rows.map(toCard);
+  }
+
+  const bestPracticeLatest = baseCards.slice(0, 20);
+  const bestPracticeTicker = baseCards.slice(0, 10);
+  const [bestPracticeMostRead, bestPracticeBreaking] = await Promise.all([
+    fetchMostReadCardsForHomepage(5),
+    fetchBreakingCardsForHomepage(10)
+  ]);
+
+  const homepageCategorySlugs = resolveHomepageCategorySlugs(25);
+  const homepageCategories = await Promise.all(
+    homepageCategorySlugs.map(async (slug) => {
+      const cat = categoryBySlug.get(slug) || null;
+      const items = await fetchCategoryCardsForHomepage(slug, 10);
+      return {
+        category: makeHomepageCategoryInfo(slug, cat),
+        items,
+        message: items.length ? null : 'No articles posted yet in this category.'
+      };
+    })
+  );
+
+  const feeds = {
+    latest: { kind: 'latest', limit: 20, items: bestPracticeLatest },
+    mostRead: { kind: 'mostRead', metric: 'viewCount', limit: 5, items: bestPracticeMostRead },
+    ticker: { kind: 'ticker', limit: 10, items: bestPracticeTicker },
+    breaking: { kind: 'breaking', limit: 10, items: bestPracticeBreaking },
+    categories: { kind: 'categories', perCategoryLimit: 10, items: homepageCategories }
+  };
+
   // Style1 one-API response (opt-in)
   if (wantsV1) {
     res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
@@ -1139,7 +1280,7 @@ router.get('/homepage', async (_req, res) => {
     };
 
     const sections: V1Section[] = [
-      { id: 'flashTicker', type: 'ticker', label: 'Flash News', ui: { itemCount: 12, titleMaxLines: 1 }, query: { kind: 'latest', limit: 12 } },
+      { id: 'flashTicker', type: 'ticker', label: 'Flash News', ui: { itemCount: 10, titleMaxLines: 1 }, query: { kind: 'latest', limit: 10 } },
       {
         id: 'heroStack',
         type: 'heroStack',
@@ -1329,7 +1470,8 @@ router.get('/homepage', async (_req, res) => {
             : String(slug);
           blocks.push({
             category: { slug: String(slug), name: catName },
-            items: (catRows || []).slice(0, perCategoryLimit).map((r: any) => toV1Article(r, target || undefined))
+            items: (catRows || []).slice(0, perCategoryLimit).map((r: any) => toV1Article(r, target || undefined)),
+            message: (catRows || []).length ? null : 'No articles posted yet in this category.'
           });
         }
 
@@ -1446,6 +1588,7 @@ router.get('/homepage', async (_req, res) => {
       },
       theme: { key: 'style1' },
       uiTokens,
+      feeds,
       sections,
       data
     });
@@ -1731,6 +1874,7 @@ router.get('/homepage', async (_req, res) => {
         language: (tenant as any).primaryLanguage || null,
       },
       theme: { key: 'style2' },
+      feeds,
       sections,
       data
     });
@@ -1750,12 +1894,74 @@ router.get('/homepage', async (_req, res) => {
     const style2Config = homepageConfig.style2 || {};
     const themeConfig = style2Config.themeConfig || { sections: [] };
 
+    // Best practice: do not fail the public homepage when theme config is missing.
+    // Instead, derive a reasonable, domain-driven default so new tenants don't see an empty site.
+    let effectiveThemeConfig: any = themeConfig;
+    let usedFallbackThemeConfig = false;
     if (!Array.isArray(themeConfig.sections) || themeConfig.sections.length === 0) {
-      return res.json({
-        success: false,
-        message: 'No Style2 theme configuration found. Use /api/v1/tenant-theme/{tenantId}/style2-config/apply-default to set up.',
-        data: { sections: [] }
-      });
+      usedFallbackThemeConfig = true;
+      const slugs = resolveHomepageCategorySlugs(12);
+      const c1 = slugs.slice(0, 3);
+      const c2 = slugs.slice(3, 6);
+      const c3 = slugs.slice(6, 9);
+
+      effectiveThemeConfig = {
+        sections: [
+          {
+            id: 1,
+            position: 1,
+            section_type: 'hero_sidebar',
+            hero_category: 'latest',
+            sidebar_category: 'trending',
+            bottom_category: 'latest'
+          },
+          {
+            id: 2,
+            position: 2,
+            section_type: 'spotlight',
+            category: 'breaking',
+            theme_color: 'amber'
+          },
+          ...(c1.length
+            ? [
+                {
+                  id: 3,
+                  position: 3,
+                  section_type: 'category_boxes_3col',
+                  categories: c1
+                }
+              ]
+            : []),
+          ...(c2.length
+            ? [
+                {
+                  id: 4,
+                  position: 4,
+                  section_type: 'small_cards_3col',
+                  categories: c2
+                }
+              ]
+            : []),
+          ...(c3.length
+            ? [
+                {
+                  id: 5,
+                  position: 5,
+                  section_type: 'newspaper_columns',
+                  categories: c3,
+                  theme_color: 'blue'
+                }
+              ]
+            : []),
+          {
+            id: 6,
+            position: 6,
+            section_type: 'timeline',
+            category: 'latest',
+            theme_color: 'indigo'
+          }
+        ]
+      };
     }
 
     // Helper to fetch articles based on section configuration
@@ -1801,14 +2007,11 @@ router.get('/homepage', async (_req, res) => {
             const categoryData = await Promise.all(
               section.categories.map(async (catSlug: string) => {
                 const items = await fetchCategoryItems(catSlug, 6);
-                const category = categoryBySlug.get(catSlug) || { slug: catSlug, name: catSlug };
+                const category = categoryBySlug.get(catSlug) || null;
                 return {
-                  category: {
-                    slug: category.slug,
-                    name: category.name,
-                    href: `/category/${category.slug}`
-                  },
-                  items
+                  category: makeHomepageCategoryInfo(catSlug, category),
+                  items,
+                  message: items.length ? null : 'No articles posted yet in this category.'
                 };
               })
             );
@@ -1831,15 +2034,12 @@ router.get('/homepage', async (_req, res) => {
           // Single-category sections
           if (section.category) {
             const items = await fetchCategoryItems(section.category, 12);
-            const category = categoryBySlug.get(section.category) || { slug: section.category, name: section.category };
+            const category = categoryBySlug.get(section.category) || null;
             sectionData.category = section.category;
             sectionData.data = {
-              category: {
-                slug: category.slug,
-                name: category.name,
-                href: `/category/${category.slug}`
-              },
-              items
+              category: makeHomepageCategoryInfo(section.category, category),
+              items,
+              message: items.length ? null : 'No articles posted yet in this category.'
             };
           } else {
             sectionData.category = null;
@@ -1911,12 +2111,12 @@ router.get('/homepage', async (_req, res) => {
 
     // Fetch data for all sections
     const sectionsWithData = await Promise.all(
-      themeConfig.sections.map(fetchSectionData)
+      effectiveThemeConfig.sections.map(fetchSectionData)
     );
 
     // Add default extra sections if not already configured
     const extraSections = createDefaultExtraSections();
-    const configuredKeys = new Set(themeConfig.sections.map((s: any) => s.section_type));
+    const configuredKeys = new Set((effectiveThemeConfig.sections || []).map((s: any) => s.section_type));
     const additionalSections = [];
 
     for (const extraSection of extraSections) {
@@ -1950,7 +2150,11 @@ router.get('/homepage', async (_req, res) => {
     return res.json({
       success: true,
       data: {
-        sections: sectionsWithData
+        feeds,
+        sections: sectionsWithData,
+        meta: usedFallbackThemeConfig
+          ? { fallbackUsed: true, message: 'No Style2 theme configuration found; using domain-driven fallback sections.' }
+          : { fallbackUsed: false }
       }
     });
   }
@@ -2259,6 +2463,7 @@ router.get('/homepage', async (_req, res) => {
         language: (tenant as any).primaryLanguage || null,
       },
       theme: { key: 'style2', style: domainThemeStyle || 'style2' },
+      feeds,
       sections: sectionsMeta,
       data: {
         hero: {
@@ -2462,6 +2667,7 @@ router.get('/homepage', async (_req, res) => {
     topStories,
     sections: sectionRows,
     ...sectionsByKey,
+    feeds,
     config: {
       heroCount,
       topStoriesCount,
