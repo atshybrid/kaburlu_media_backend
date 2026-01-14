@@ -65,6 +65,7 @@ import metaRoutes from './api/meta/meta.routes';
 import familyRoutes from './api/family/family.routes';
 import epaperRoutes from './api/epaper/epaper.routes';
 import proofsRoutes from './api/proofs/proofs.routes';
+import aiHealthRoutes from './api/health/ai.routes';
 
 const app = express();
 
@@ -225,6 +226,8 @@ app.use('/castes', castesRoutes);
 app.use('/meta', metaRoutes);
 app.use('/family', familyRoutes);
 app.use('/epaper', epaperRoutes);
+// Health endpoints
+app.use('/health', aiHealthRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -274,6 +277,7 @@ apiV1.use('/meta', metaRoutes);
 apiV1.use('/family', familyRoutes);
 apiV1.use('/epaper', epaperRoutes);
 apiV1.use('/proofs', proofsRoutes);
+apiV1.use('/health', aiHealthRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);

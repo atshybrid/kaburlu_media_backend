@@ -5,6 +5,8 @@ import { requireReporterOrAdmin } from '../middlewares/authz';
 import { aiGenerateText } from '../../lib/aiProvider';
 import { OPENAI_KEY } from '../../lib/aiConfig';
 
+const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL_REWRITE || 'gpt-4.1-mini');
+
 const router = Router();
 
 function stripCodeFences(text: string): string {
@@ -39,7 +41,7 @@ function tryParseJsonObject(text: string): any | null {
   return null;
 }
 
-async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; content: string }>, model: string) {
+async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; content: string }>, model: string, temperature = 0.2) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const axios = require('axios');
   if (!OPENAI_KEY) throw new Error('Missing OPENAI_KEY');
@@ -54,7 +56,7 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
       {
         model: m,
         messages,
-        temperature: 0.2,
+        temperature,
         // Best-effort strict JSON mode; if unsupported, OpenAI will error and we fall back.
         response_format: { type: 'json_object' },
       },
@@ -78,13 +80,13 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
       if (!looksLikeModelOrFormatIssue) throw e;
 
       // Retry once with a safe, commonly available fallback and without strict JSON mode
-      const fallbackModel = 'gpt-4o-mini';
+      const fallbackModel = DEFAULT_OPENAI_MODEL || 'gpt-4.1-mini';
       const resp = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
           model: fallbackModel,
           messages,
-          temperature: 0.2,
+          temperature,
         },
         {
           headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
@@ -112,26 +114,71 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  *       Allowed roles: SUPER_ADMIN, TENANT_ADMIN, TENANT_EDITOR, ADMIN_EDITOR, NEWS_MODERATOR, REPORTER.
  *     tags: [AI Rewrite]
  *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: debug
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: When true, includes promptKey, systemPrompt, provider, outgoing payload, and usage in the response.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [rawText]
  *             properties:
  *               rawText:
  *                 type: string
- *                 description: Raw Telugu reporter post
+ *                 description: Raw reporter post text (e.g., Telugu). Used with DB prompt when `messages` is not provided.
+ *               allowedCategories:
+ *                 type: array
+ *                 description: Optional category guidance used only with DB prompt mode.
+ *                 items:
+ *                   type: string
+ *                 example: ["Crime", "Local News", "State News"]
  *               model:
  *                 type: string
  *                 description: Optional OpenAI model override (used only when OPENAI_API_KEY is configured)
- *                 example: gpt-4o
+ *                 example: gpt-4.1-mini
+ *               temperature:
+ *                 type: number
+ *                 description: Optional generation temperature (defaults to 0.2). Passed to OpenAI; Gemini uses its own defaults.
+ *                 example: 0.2
+ *               messages:
+ *                 type: array
+ *                 description: Optional direct Chat Completions messages. When provided, DB prompt is ignored and these are sent to OpenAI.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     role:
+ *                       type: string
+ *                       enum: [system, user]
+ *                     content:
+ *                       type: string
  *           examples:
- *             sample:
+ *             rawMode:
+ *               summary: Raw text + allowed categories (DB prompt mode)
  *               value:
- *                 model: gpt-4o
- *                 rawText: "<<< RAW TELUGU REPORTER POST >>>"
+ *                 rawText: "నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు..."
+ *                 allowedCategories: ["Crime", "Local News", "State News"]
+ *                 temperature: 0.2
+ *                 model: gpt-4.1-mini
+ *             messagesMode:
+ *               summary: Direct ChatGPT messages (bypass DB prompt)
+ *               value:
+ *                 model: "gpt-4.1-mini"
+ *                 temperature: 0.2
+ *                 messages:
+ *                   - role: system
+ *                     content: "You are a professional daily newspaper editor and senior journalist..."
+ *                   - role: user
+ *                     content: |
+ *                       RAW_REPORTER_POST:
+ *                       నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు...
+ *
+ *                       ALLOWED_CATEGORIES:
+ *                       Crime, Local News, State News
  *     responses:
  *       200:
  *         description: AI rewritten newspaper JSON
@@ -166,19 +213,38 @@ router.post(
   async (req, res) => {
     try {
       const rawText = String(req.body?.rawText ?? req.body?.raw ?? req.body?.text ?? req.body?.content ?? '').trim();
+      const allowedCategoriesInput = req.body?.allowedCategories;
+      const allowedCategories: string[] = Array.isArray(allowedCategoriesInput)
+        ? allowedCategoriesInput.map((c: any) => String(c)).filter(Boolean)
+        : [];
+      const temperature = Number(req.body?.temperature ?? 0.2);
       if (!rawText) return res.status(400).json({ error: 'rawText is required' });
 
       const debug = String((req.query as any)?.debug || '').toLowerCase() === 'true';
 
       const promptKey = 'daily_newspaper_ai_article_dynamic_language';
-      const p = await (prisma as any).prompt.findUnique({ where: { key: promptKey } }).catch(() => null);
-      const systemPrompt = String(p?.content || '').trim();
-      if (!systemPrompt) return res.status(400).json({ error: `Prompt not found for key: ${promptKey}` });
+      const providedMessages = Array.isArray(req.body?.messages)
+        ? (req.body.messages as Array<{ role: 'system' | 'user'; content: string }>).filter(m => m && (m.role === 'system' || m.role === 'user') && typeof m.content === 'string')
+        : null;
 
-      const messages: Array<{ role: 'system' | 'user'; content: string }> = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: rawText },
-      ];
+      let systemPrompt = '';
+      let messages: Array<{ role: 'system' | 'user'; content: string }> = [];
+      if (providedMessages && providedMessages.length) {
+        messages = providedMessages;
+      } else {
+        const p = await (prisma as any).prompt.findUnique({ where: { key: promptKey } }).catch(() => null);
+        systemPrompt = String(p?.content || '').trim();
+        if (!systemPrompt) return res.status(400).json({ error: `Prompt not found for key: ${promptKey}` });
+
+          const userContent = allowedCategories.length
+            ? `RAW_REPORTER_POST:\n${rawText}\n\nALLOWED_CATEGORIES:\n${allowedCategories.join(', ')}`
+          : rawText;
+
+        messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ];
+      }
 
       // Preferred: OpenAI chat messages (matches the requested system/user format)
       let aiText = '';
@@ -188,22 +254,39 @@ router.post(
       // This is the exact payload shape we send to OpenAI (excluding secrets like OPENAI_API_KEY).
       // Returned ONLY when debug=true.
       const outgoingChatGptPayload = {
-        model: String(req.body?.model || 'gpt-4o').trim() || 'gpt-4o',
+        model: String(req.body?.model || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL,
+        temperature,
         messages,
       };
 
       if (OPENAI_KEY) {
         const model = outgoingChatGptPayload.model;
-        const r = await openaiChatMessages(
-          messages,
-          model
-        );
-        aiText = String(r?.content || '');
-        providerUsed = 'openai';
-        usage = r?.raw?.usage;
+        try {
+          const r = await openaiChatMessages(
+            messages,
+            model,
+            temperature
+          );
+          aiText = String(r?.content || '');
+          providerUsed = 'openai';
+          usage = r?.raw?.usage;
+        } catch (e: any) {
+          const status = e?.response?.status;
+          const ideCode = e?.response?.headers?.['x-openai-ide-error-code'] || '';
+          if (status === 401 || /invalid_api_key/i.test(String(ideCode))) {
+            // Fallback to Gemini if OpenAI key invalid
+              const combined = `${systemPrompt}\n\n<<< RAW TELUGU REPORTER POST >>>\n${rawText}\n\n${allowedCategories.length ? `ALLOWED_CATEGORIES: ${allowedCategories.join(', ')}` : ''}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
+            const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
+            aiText = String(r?.text || '');
+            usage = r?.usage;
+            providerUsed = 'gemini';
+          } else {
+            throw e;
+          }
+        }
       } else {
         // Fallback: configured provider (Gemini/OpenAI via aiProvider) with a combined prompt
-        const combined = `${systemPrompt}\n\n<<< RAW TELUGU REPORTER POST >>>\n${rawText}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
+          const combined = `${systemPrompt}\n\n<<< RAW TELUGU REPORTER POST >>>\n${rawText}\n\n${allowedCategories.length ? `ALLOWED_CATEGORIES: ${allowedCategories.join(', ')}` : ''}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
         const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
         aiText = String(r?.text || '');
         usage = r?.usage;

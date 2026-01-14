@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { ensureEpaperDomainSettings } from '../../lib/epaperDomainSettingsAuto';
 
 const mergeSettings = (base: any, override: any) => ({ ...(base || {}), ...(override || {}) });
 
@@ -66,4 +67,30 @@ export const listDomainSettings = async (req: Request, res: Response) => {
     (prisma as any).domainSettings.count({ where: { tenantId } }),
   ]);
   return res.status(200).json({ meta: { page, pageSize, total }, data: items });
+};
+
+export const bootstrapEpaperDomainSettings = async (req: Request, res: Response) => {
+  try {
+    const { tenantId, domainId } = req.params;
+
+    const domain = await (prisma as any).domain.findUnique({ where: { id: domainId } }).catch(() => null);
+    if (!domain) return res.status(404).json({ error: 'Domain not found' });
+    if (String(domain.tenantId) !== String(tenantId)) {
+      return res.status(400).json({ error: 'Domain does not belong to tenant' });
+    }
+    if (String(domain.kind || '').toUpperCase() !== 'EPAPER') {
+      return res.status(400).json({ error: 'Domain kind must be EPAPER' });
+    }
+
+    await ensureEpaperDomainSettings(tenantId, domainId, { forceFill: true, forceSeo: true });
+
+    const entity = await (prisma as any).entitySettings.findFirst();
+    const tenant = await (prisma as any).tenantSettings.findUnique({ where: { tenantId } });
+    const domainSettings = await (prisma as any).domainSettings.findUnique({ where: { domainId } });
+    const effective = mergeSettings(mergeSettings(entity?.data, tenant?.data), domainSettings?.data);
+    return res.status(200).json({ tenantId, domainId, settings: domainSettings?.data || {}, effective });
+  } catch (e: any) {
+    console.error('bootstrap epaper domain settings error', e);
+    return res.status(500).json({ error: 'Failed to bootstrap epaper domain settings' });
+  }
 };

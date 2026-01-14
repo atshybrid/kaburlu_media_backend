@@ -20,7 +20,7 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
   const roleName = String(user?.role?.name || '').toUpperCase();
   
   const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR';
+  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
   
   // Get tenant from reporter profile
   let tenantId: string | null = null;
@@ -32,9 +32,14 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
     tenantId = reporter?.tenantId || null;
   }
   
-  // Or from query param for super admin
-  if (isSuperAdmin && (req.query as any).tenantId) {
-    tenantId = String((req.query as any).tenantId).trim();
+  // Allow tenantId from query: SUPER_ADMIN always; admin roles if reporter mapping missing
+  if ((req.query as any).tenantId) {
+    const requestedTenantId = String((req.query as any).tenantId).trim();
+    if (isSuperAdmin) {
+      tenantId = requestedTenantId;
+    } else if (isAdmin && !tenantId) {
+      tenantId = requestedTenantId;
+    }
   }
   
   return { tenantId, isAdmin, isSuperAdmin, userId };

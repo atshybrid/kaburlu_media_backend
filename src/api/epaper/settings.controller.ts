@@ -17,7 +17,7 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
   const roleName = String(user?.role?.name || '').toUpperCase();
   
   const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR';
+  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
   
   let tenantId: string | null = null;
   if (!isSuperAdmin && userId) {
@@ -28,8 +28,13 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
     tenantId = reporter?.tenantId || null;
   }
   
-  if (isSuperAdmin && (req.query as any).tenantId) {
-    tenantId = String((req.query as any).tenantId).trim();
+  const requestedTenantId = (req.query as any).tenantId ? String((req.query as any).tenantId).trim() : '';
+  if (requestedTenantId) {
+    if (isSuperAdmin) {
+      tenantId = requestedTenantId;
+    } else if (isAdmin && !tenantId) {
+      tenantId = requestedTenantId;
+    }
   }
   
   return { tenantId, isAdmin, isSuperAdmin, userId };

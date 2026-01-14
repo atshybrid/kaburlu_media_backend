@@ -6,6 +6,7 @@ import { getCategoriesController } from './categories.controller';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 import { validationMiddleware } from '../middlewares/validation.middleware';
 import prisma from '../../lib/prisma';
+import { defaultCategorySlugify } from '../../lib/defaultCategories';
 import { requireReporterOrAdmin } from '../middlewares/authz';
 
 const router = Router();
@@ -192,6 +193,11 @@ router.get('/', getCategoriesController);
  *         schema:
  *           type: string
  *         description: Required for SUPER_ADMIN when domainId is not provided.
+ *       - in: query
+ *         name: stateName
+ *         schema:
+ *           type: string
+ *         description: Optional state filter. When provided, returns general categories plus the state-specific category under "State News". If value is Telangana or Andhra Pradesh, both are included.
  *     responses:
  *       200:
  *         description: Category list with multilingual names.
@@ -262,6 +268,7 @@ router.get('/tenant', passport.authenticate('jwt', { session: false }), requireR
 
     const domainFilterId = req.query.domainId ? String(req.query.domainId) : undefined;
     const tenantIdFromQuery = req.query.tenantId ? String(req.query.tenantId) : undefined;
+    const stateNameRaw = req.query.stateName ? String(req.query.stateName) : undefined;
 
     // Resolve tenant scope
     let tenantId: string | null = null;
@@ -313,9 +320,28 @@ router.get('/tenant', passport.authenticate('jwt', { session: false }), requireR
     for (const dc of domainCats || []) {
       if (dc?.category && !dc.category.isDeleted) catMap.set(dc.categoryId, dc.category);
     }
-    const categories = Array.from(catMap.values());
+    let categories = Array.from(catMap.values());
     if (!categories.length) {
       return res.json({ tenantId, tenantLanguageCode, domainId: domainFilterId || null, categories: [] });
+    }
+
+    // Optional: filter to general categories + selected state category under "State News"
+    if (stateNameRaw) {
+      const stateNews = await (prisma as any).category.findUnique({ where: { slug: 'state-news' }, select: { id: true } }).catch(() => null);
+      const stateKey = defaultCategorySlugify(stateNameRaw);
+      const baseSlug = `state-news-${stateKey}`.slice(0, 60);
+      const specialTelAndhra = ['telangana', 'andhra-pradesh'];
+      const allowedStateSlugs = specialTelAndhra.includes(stateKey)
+        ? ['state-news-telangana', 'state-news-andhra-pradesh']
+        : [baseSlug];
+      if (stateNews?.id) {
+        categories = categories.filter((c: any) => {
+          // Keep if not under State News, or if it is one of the allowed state-specific categories
+          const isUnderStateNews = String(c.parentId || '') === String(stateNews.id);
+          const isAllowedState = allowedStateSlugs.includes(String(c.slug || ''));
+          return !isUnderStateNews || isAllowedState;
+        });
+      }
     }
 
     // Fetch translations for tenant language and English

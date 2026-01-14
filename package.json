@@ -9,10 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-
     "start:dev:env": "dotenv -e .env.development -- ts-node-dev --respawn --transpile-only src/index.ts",
     "start:prod:env": "dotenv -e .env.production -- node dist/index.js",
-
     "seed": "ts-node prisma/seed.ts",
     "prisma:migrate:dev": "npx prisma migrate dev",
     "prisma:migrate:deploy": "npx prisma migrate deploy",
@@ -43,6 +41,8 @@
     "jobs:ai-cron": "ts-node src/jobs/aiQueue.cron.ts",
     "jobs:ai-queue:prod": "node dist/jobs/aiQueue.worker.js",
     "jobs:ai-cron:prod": "node dist/jobs/aiQueue.cron.js",
+    "jobs:location-populate": "ts-node src/workers/locationPopulateCron.ts",
+    "jobs:location-populate:prod": "node dist/workers/locationPopulateCron.js",
     "jobs:db-backup": "ts-node src/jobs/dbBackup.cron.ts",
     "jobs:db-backup-cron": "ts-node src/jobs/dbBackup.cron.ts --cron",
     "jobs:db-backup:prod": "node dist/jobs/dbBackup.cron.js",
@@ -84,6 +84,7 @@
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
+    "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "express-validator": "^7.2.1",
     "ffmpeg-static": "^5.2.0",

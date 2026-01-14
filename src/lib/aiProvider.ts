@@ -110,25 +110,27 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
             : (purpose === 'newspaper' ? DEFAULT_OPENAI_MODEL_NEWSPAPER : DEFAULT_OPENAI_MODEL_SEO)));
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-      const callOpenAI = async (m: string) => {
-        const response = await axios.post('https://api.openai.com/v1/responses', {
+      const callOpenAIChat = async (m: string) => {
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
           model: m,
-          input: prompt
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: DEFAULT_TEMPERATURE,
         }, {
           headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
           signal: ctrl.signal,
         });
         const data = response?.data;
-        const content = Array.isArray(data?.output?.[0]?.content)
-          ? data.output[0].content.map((c: any) => c.text || '').join('\n')
-          : (data?.output_text || data?.output || '');
+        const content = data?.choices?.[0]?.message?.content || '';
         return { data, content };
       };
 
       let data: any;
       let content = '';
       try {
-        const r1 = await callOpenAI(model);
+        const r1 = await callOpenAIChat(model);
         data = r1.data;
         content = r1.content;
       } catch (e: any) {
@@ -139,8 +141,8 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         const looksLikeModelIssue = status === 400 && /model/i.test(String(errMsg));
         if (looksLikeModelIssue) {
           try {
-            const fallbackModel = 'gpt-4o-mini';
-            const r2 = await callOpenAI(fallbackModel);
+            const fallbackModel = 'gpt-4.1-mini';
+            const r2 = await callOpenAIChat(fallbackModel);
             data = r2.data;
             content = r2.content;
           } catch (e2: any) {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { getEntitySettings, upsertEntitySettings, getTenantSettings, upsertTenantSettings, getDomainSettings, upsertDomainSettings, listDomainSettings } from './settings.controller';
+import { getEntitySettings, upsertEntitySettings, getTenantSettings, upsertTenantSettings, getDomainSettings, upsertDomainSettings, listDomainSettings, bootstrapEpaperDomainSettings } from './settings.controller';
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import prisma from '../../lib/prisma';
 
@@ -637,5 +637,42 @@ router.patch('/tenants/:tenantId/domains/:domainId/settings', passport.authentic
  *                         secondaryColor: "#FFC107"
  */
 router.get('/tenants/:tenantId/domains/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, listDomainSettings);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/domains/{domainId}/settings/epaper/auto:
+ *   post:
+ *     summary: Auto-fill EPAPER domain settings (branding/theme) and generate SEO via AI
+ *     description: |
+ *       SUPER_ADMIN only. For EPAPER domains, this endpoint:
+ *       - Seeds DomainSettings.branding/theme from the tenant's primary domain settings (or tenantTheme fallback)
+ *       - Generates SEO fields (title/description/keywords/H1/tagline) using ChatGPT
+ *       - Saves into DomainSettings.data.seo (canonicalBaseUrl is set to https://epaper-domain)
+ *
+ *       Useful when you want to (re)generate EPAPER domain settings on demand.
+ *     tags: [Settings (Admin)]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: domainId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Domain settings saved and effective merged settings returned
+ *       400:
+ *         description: Not an EPAPER domain / invalid tenant-domain relation
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Domain not found
+ */
+router.post('/tenants/:tenantId/domains/:domainId/settings/epaper/auto', passport.authenticate('jwt', { session: false }), requireSuperAdmin, bootstrapEpaperDomainSettings);
 
 export default router;

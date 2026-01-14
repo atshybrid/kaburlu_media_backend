@@ -237,21 +237,69 @@ router.get('/epaper/verify-domain', async (req, res) => {
  *         content:
  *           application/json:
  *             examples:
- *               sample:
+ *               complete:
+ *                 summary: Complete settings including branding and SEO
  *                 value:
  *                   verified: true
  *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu" }
  *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
- *                   epaper: { type: "PDF", multiEditionEnabled: true }
- *                   settings: null
- *                   branding: null
+ *                   epaper: { type: "PDF", multiEditionEnabled: false }
+ *                   settings:
+ *                     tenantId: "t_abc"
+ *                     showPrinterInfoOnLastPage: true
+ *                     printerName: "Kaburlu Printers"
+ *                     printerAddress: "Industrial Area, Adilabad"
+ *                     printerCity: "Adilabad"
+ *                     publisherName: "Publisher Name"
+ *                     editorName: "Editor Name"
+ *                     ownerName: null
+ *                     rniNumber: null
+ *                     lastPageFooterTemplate: null
+ *                     generationConfig:
+ *                       publicEpaper: { type: "PDF", multiEditionEnabled: false }
+ *                     updatedAt: "2026-01-12T20:07:20.515Z"
+ *                   branding:
+ *                     logoUrl: "https://cdn.example.com/branding/logo.png"
+ *                     faviconUrl: "https://cdn.example.com/branding/favicon.ico"
+ *                     primaryColor: "#3F51B5"
+ *                     secondaryColor: "#CDDC39"
+ *                     headerBgColor: "#FFFFFF"
+ *                     footerBgColor: "#0D47A1"
+ *                     fontFamily: "Inter, Arial, sans-serif"
  *                   seo:
- *                     config: null
+ *                     config:
+ *                       defaultMetaTitle: "Kaburlu ePaper – Latest PDF Issues"
+ *                       defaultMetaDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       ogImageUrl: "https://cdn.example.com/seo/default-og.png"
+ *                       canonicalBaseUrl: "https://epaper.kaburlu.com"
  *                     urls:
  *                       baseUrl: "https://epaper.kaburlu.com"
  *                       robotsTxt: "https://epaper.kaburlu.com/robots.txt"
  *                       sitemapXml: "https://epaper.kaburlu.com/sitemap.xml"
- *                   domainSettings: null
+ *                   domainSettings:
+ *                     updatedAt: "2026-01-12T20:07:20.515Z"
+ *                     data:
+ *                       branding:
+ *                         logoUrl: "https://cdn.example.com/branding/logo.png"
+ *                         faviconUrl: "https://cdn.example.com/branding/favicon.ico"
+ *                       theme:
+ *                         colors: { primary: "#3F51B5", secondary: "#CDDC39" }
+ *                         typography: { fontFamily: "Inter, Arial, sans-serif" }
+ *                       seo:
+ *                         defaultMetaTitle: "Kaburlu ePaper – Latest PDF Issues"
+ *                         defaultMetaDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                         ogImageUrl: "https://cdn.example.com/seo/default-og.png"
+ *                         canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                     effective:
+ *                       branding: { logoUrl: "https://cdn.example.com/branding/logo.png", faviconUrl: "https://cdn.example.com/branding/favicon.ico" }
+ *                       theme:
+ *                         colors: { primary: "#3F51B5", secondary: "#CDDC39" }
+ *                         typography: { fontFamily: "Inter, Arial, sans-serif" }
+ *                       seo:
+ *                         defaultMetaTitle: "Kaburlu ePaper – Latest PDF Issues"
+ *                         defaultMetaDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                         ogImageUrl: "https://cdn.example.com/seo/default-og.png"
+ *                         canonicalBaseUrl: "https://epaper.kaburlu.com"
  *                   pdf: { dpi: 150, maxMb: 30, maxPages: 0 }
  *       404:
  *         description: Tenant not resolved
@@ -268,7 +316,7 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     return null;
   };
 
-  const [settings, tenantTheme, domainSettings] = await Promise.all([
+  const [settings, tenantTheme, domainSettings, entitySettings, tenantSettings, tenantEntity, domainLanguages] = await Promise.all([
     p.epaperSettings
       .findUnique({
         where: { tenantId: tenant.id },
@@ -302,6 +350,10 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       .catch(() => null),
     p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
     p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null),
+    p.entitySettings?.findFirst?.().catch(() => null),
+    p.tenantSettings?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id }, include: { language: true } }).catch(() => null),
+    p.domainLanguage?.findMany?.({ where: { domainId: domain.id }, include: { language: true } }).catch(() => []),
   ]);
 
   const gen = asObject(settings?.generationConfig);
@@ -339,7 +391,55 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
 
   const publicSettings = sanitizeSettingsForPublic(settings, epaperType);
 
+  // Compute effective domain settings (entity -> tenant -> domain)
+  const mergeSettings = (a: any, b: any) => ({ ...(a || {}), ...(b || {}) });
+  const effectiveDomainSettings = mergeSettings(
+    mergeSettings(entitySettings?.data, tenantSettings?.data),
+    domainSettings?.data
+  );
+
   const baseUrl = `https://${domain.domain}`;
+
+  // Branding (prefer domain settings, fallback to tenant theme)
+  const branding = {
+    logoUrl: (effectiveDomainSettings as any)?.branding?.logoUrl ?? (tenantTheme as any)?.logoUrl ?? null,
+    faviconUrl: (effectiveDomainSettings as any)?.branding?.faviconUrl ?? (tenantTheme as any)?.faviconUrl ?? null,
+    primaryColor: (tenantTheme as any)?.primaryColor ?? (effectiveDomainSettings as any)?.theme?.colors?.primary ?? null,
+    secondaryColor: (tenantTheme as any)?.secondaryColor ?? (effectiveDomainSettings as any)?.theme?.colors?.secondary ?? null,
+    headerBgColor: (tenantTheme as any)?.headerBgColor ?? null,
+    footerBgColor: (tenantTheme as any)?.footerBgColor ?? null,
+    fontFamily: (tenantTheme as any)?.fontFamily ?? (effectiveDomainSettings as any)?.theme?.typography?.fontFamily ?? null,
+    siteName: (effectiveDomainSettings as any)?.branding?.siteName ?? tenant.name ?? null,
+  };
+
+  // SEO config (prefer domain settings seo)
+  const seoBase = (effectiveDomainSettings as any)?.seo || (tenantTheme as any)?.seoConfig || {};
+  const seoConfig = {
+    defaultMetaTitle: (seoBase as any)?.defaultMetaTitle ?? null,
+    defaultMetaDescription: (seoBase as any)?.defaultMetaDescription ?? null,
+    ogImageUrl: (seoBase as any)?.ogImageUrl ?? null,
+    canonicalBaseUrl: (seoBase as any)?.canonicalBaseUrl ?? baseUrl,
+    colors: {
+      primary: (effectiveDomainSettings as any)?.theme?.colors?.primary ?? (tenantTheme as any)?.primaryColor ?? null,
+      secondary: (effectiveDomainSettings as any)?.theme?.colors?.secondary ?? (tenantTheme as any)?.secondaryColor ?? null,
+      accent: (effectiveDomainSettings as any)?.theme?.colors?.accent ?? null,
+    },
+    layout: {
+      header: (effectiveDomainSettings as any)?.layout?.header ?? null,
+      footer: (effectiveDomainSettings as any)?.layout?.footer ?? null,
+      showTicker: (effectiveDomainSettings as any)?.layout?.showTicker ?? null,
+      showTopBar: (effectiveDomainSettings as any)?.layout?.showTopBar ?? null,
+    },
+    typography: {
+      fontFamily: branding.fontFamily,
+      baseSize: (effectiveDomainSettings as any)?.theme?.typography?.baseSize ?? null,
+    },
+  };
+
+  const contentConfig = {
+    defaultLanguage: (tenantEntity as any)?.language?.code ?? null,
+    supportedLanguages: Array.from(new Set((domainLanguages as any[]).map(dl => dl?.language?.code).filter(Boolean))),
+  };
 
   return res.json({
     verified: true,
@@ -356,40 +456,132 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       multiEditionEnabled,
     },
     settings: publicSettings,
-    branding: tenantTheme
-      ? {
-          logoUrl: (tenantTheme as any).logoUrl,
-          faviconUrl: (tenantTheme as any).faviconUrl,
-          primaryColor: (tenantTheme as any).primaryColor,
-          secondaryColor: (tenantTheme as any).secondaryColor,
-          headerBgColor: (tenantTheme as any).headerBgColor,
-          footerBgColor: (tenantTheme as any).footerBgColor,
-          headerHtml: (tenantTheme as any).headerHtml,
-          footerHtml: (tenantTheme as any).footerHtml,
-          fontFamily: (tenantTheme as any).fontFamily,
-        }
-      : null,
+    branding,
     seo: {
-      // TenantTheme.seoConfig is already used elsewhere in the platform; return it as-is for frontend SEO usage.
-      config: (tenantTheme as any)?.seoConfig || null,
+      // Prefer domain-level SEO config enriched with theme/layout; fallback values merged
+      config: seoConfig,
       urls: {
         baseUrl,
         robotsTxt: `${baseUrl}/robots.txt`,
         sitemapXml: `${baseUrl}/sitemap.xml`,
       },
     },
+    content: contentConfig,
     domainSettings: domainSettings
       ? {
           updatedAt: (domainSettings as any).updatedAt,
           data: (domainSettings as any).data,
+          effective: effectiveDomainSettings,
         }
-      : null,
+      : { updatedAt: null, data: null, effective: effectiveDomainSettings || null },
     pdf: {
       dpi: Number((config as any)?.epaper?.pdfDpi || 150),
       maxMb: Number((config as any)?.epaper?.pdfMaxMb || 30),
       maxPages: Number((config as any)?.epaper?.pdfMaxPages || 0),
     },
   });
+});
+
+/**
+ * @swagger
+ * /public/epaper/ticker:
+ *   get:
+ *     summary: Latest ticker news (title + cover image)
+ *     description: |
+ *       Returns the latest published website news items for the tenant resolved by EPAPER domain.
+ *       Intended for lightweight header/footer tickers on the ePaper site.
+ *
+ *       Notes:
+ *       - Source is `TenantWebArticle` scoped by tenant, status=PUBLISHED.
+ *       - Use `limit` to control item count (default 15).
+ *       - Optional `lang` filters by article language code.
+ *
+ *       EPAPER domain verification:
+ *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 15, minimum: 1, maximum: 50 }
+ *       - in: query
+ *         name: lang
+ *         required: false
+ *         schema: { type: string, example: 'te' }
+ *     responses:
+ *       200:
+ *         description: Latest ticker items
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenant: { id: "t_abc", slug: "kaburlu" }
+ *                   count: 2
+ *                   items:
+ *                     - id: "wa_1"
+ *                       slug: "headline-1"
+ *                       title: "Top headline"
+ *                       coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                       publishedAt: "2026-01-12T10:00:00.000Z"
+ *                     - id: "wa_2"
+ *                       slug: "breaking-news"
+ *                       title: "Breaking news"
+ *                       coverImageUrl: null
+ *                       publishedAt: null
+ */
+router.get('/epaper/ticker', requireVerifiedEpaperDomain, async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+
+  const rawLimit = Number((req.query as any).limit ?? 15);
+  const limit = Math.min(Math.max(isFinite(rawLimit) ? rawLimit : 15, 1), 50);
+  const langCode = String((req.query as any).lang || '').trim() || null;
+
+  let languageId: string | null = null;
+  if (langCode) {
+    const lang = await p.language.findUnique({ where: { code: langCode } }).catch(() => null);
+    if (!lang) return res.status(400).json({ code: 'INVALID_LANG', message: 'Unknown lang code' });
+    languageId = (lang as any).id;
+  }
+
+  const itemsRaw = await p.tenantWebArticle.findMany({
+    where: {
+      tenantId: tenant.id,
+      status: 'PUBLISHED',
+      ...(languageId ? { languageId } : {}),
+      OR: [{ publishedAt: { not: null } }, { publishedAt: null }],
+    },
+    orderBy: [
+      { publishedAt: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: limit,
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      coverImageUrl: true,
+      publishedAt: true,
+      contentJson: true,
+      category: { select: { id: true, slug: true, name: true } },
+      language: { select: { code: true } },
+      tags: true,
+      metaDescription: true,
+    },
+  });
+
+  const items = itemsRaw.map((a: any) => {
+    const card = toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null });
+    return {
+      id: card.id,
+      slug: card.slug,
+      title: card.title,
+      coverImageUrl: card.coverImageUrl,
+      publishedAt: card.publishedAt,
+    };
+  });
+
+  return res.json({ tenant: { id: tenant.id, slug: tenant.slug }, count: items.length, items });
 });
 
 /**

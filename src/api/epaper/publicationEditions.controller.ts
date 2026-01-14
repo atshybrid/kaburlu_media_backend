@@ -15,7 +15,7 @@ async function getTenantContext(req: Request): Promise<TenantCtx> {
   const roleName = String(user?.role?.name || '').toUpperCase();
 
   const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR';
+  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
 
   let tenantId: string | null = null;
 
@@ -28,9 +28,14 @@ async function getTenantContext(req: Request): Promise<TenantCtx> {
     tenantId = reporter?.tenantId || null;
   }
 
-  // Superadmin may specify tenantId explicitly.
-  if (isSuperAdmin && (req.query as any).tenantId) {
-    tenantId = String((req.query as any).tenantId).trim();
+  // Allow explicit tenantId: SUPER_ADMIN always; admin roles when reporter mapping is missing
+  const requestedTenantId = (req.query as any).tenantId ? String((req.query as any).tenantId).trim() : '';
+  if (requestedTenantId) {
+    if (isSuperAdmin) {
+      tenantId = requestedTenantId;
+    } else if (isAdmin && !tenantId) {
+      tenantId = requestedTenantId;
+    }
   }
 
   return { tenantId, isAdmin, isSuperAdmin, userId };

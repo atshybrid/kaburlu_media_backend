@@ -33,6 +33,7 @@ Thumbs.db
 .env
 .env.*.local
 .env.render
+!.env.render.example
 env.production
 
 # IDE files

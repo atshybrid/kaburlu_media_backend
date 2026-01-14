@@ -51,6 +51,12 @@ router.get('/', async (_req, res) => {
  * /domains/{id}/verify:
  *   post:
  *     summary: Verify a domain (DNS TXT or manual) [Superadmin]
+ *     description: |
+ *       Marks the domain as verified/active.
+ *
+ *       EPAPER automation:
+ *       - If the domain kind is EPAPER and it becomes ACTIVE, the backend auto-seeds DomainSettings
+ *         (logo/colors) and auto-generates EPAPER SEO using AI (if missing).
  *     tags: [Domains]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -88,6 +94,17 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
     // For now, allow manual verify or force to ACTIVE; DNS check can be implemented with real lookup later
     const status = force || method === 'MANUAL' ? 'ACTIVE' : 'VERIFYING';
     const updated = await (prisma as any).domain.update({ where: { id }, data: { status, verifiedAt: new Date() } });
+
+    // If this is an EPAPER domain, ensure it has domain settings and SEO.
+    if (status === 'ACTIVE' && String(updated?.kind || '').toUpperCase() === 'EPAPER') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { ensureEpaperDomainSettings } = require('../../lib/epaperDomainSettingsAuto');
+        Promise.resolve(ensureEpaperDomainSettings(updated.tenantId, updated.id)).catch(() => null);
+      } catch {
+        // ignore
+      }
+    }
 
     // When a domain becomes ACTIVE, auto-link default categories (create missing only).
     if (status === 'ACTIVE') {

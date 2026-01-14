@@ -43,6 +43,8 @@ export const DEFAULT_OPENAI_MODEL_REWRITE = process.env.OPENAI_MODEL_REWRITE || 
 export const DEFAULT_OPENAI_MODEL_NEWSPAPER = process.env.OPENAI_MODEL_NEWSPAPER || DEFAULT_OPENAI_MODEL_SEO;
 
 export const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 12000);
+// Optional: verify provider keys on startup (dev-safe; off by default)
+export const AI_CHECK_KEYS_ON_STARTUP = parseBool(process.env.AI_CHECK_KEYS_ON_STARTUP, false);
 
 // Basic generation defaults; individual callers can override
 export const DEFAULT_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.6);

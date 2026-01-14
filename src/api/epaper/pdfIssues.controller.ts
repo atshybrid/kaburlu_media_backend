@@ -255,7 +255,7 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
   const roleName = asString(user?.role?.name || '').toUpperCase();
 
   const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR';
+  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
 
   let tenantId: string | null = null;
   if (!isSuperAdmin && userId) {
@@ -267,13 +267,12 @@ async function getTenantContext(req: Request): Promise<{ tenantId: string | null
   if (requestedTenantId) {
     if (isSuperAdmin) {
       tenantId = asString(requestedTenantId);
-    } else {
-      // Tenant admins/editors are locked to their own tenant context.
-      if (!tenantId) {
-        // Keep existing behavior: will be rejected by caller with "Tenant context required".
-      } else if (asString(requestedTenantId) !== tenantId) {
-        throw new HttpError(403, 'You cannot override tenantId', 'TENANT_OVERRIDE_NOT_ALLOWED');
-      }
+    } else if (isAdmin && !tenantId) {
+      // Allow admin roles to specify tenantId if reporter mapping is missing
+      tenantId = asString(requestedTenantId);
+    } else if (!isSuperAdmin && tenantId && asString(requestedTenantId) !== tenantId) {
+      // Prevent overriding to a different tenant
+      throw new HttpError(403, 'You cannot override tenantId', 'TENANT_OVERRIDE_NOT_ALLOWED');
     }
   }
 

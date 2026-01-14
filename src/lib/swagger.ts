@@ -33,7 +33,7 @@ const swaggerDefinition = {
     { name: 'Articles' },
     { name: 'AI', description: 'AI utility endpoints (test, headline generation, etc.)' },
     { name: 'AI Rewrite', description: 'AI rewrite controls, usage metering, and billing limits' },
-    { name: 'Location AI', description: 'AI helper endpoints for location translations (DB is source-of-truth)' },
+    { name: 'Location AI', description: 'AI-powered location data generation and translation - Generate complete state hierarchies (districts→mandals→villages) in multiple Indian languages using ChatGPT' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },
     { name: 'Reactions' },
@@ -70,6 +70,7 @@ const swaggerDefinition = {
     { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
     { name: 'Public - Reporter Join', description: 'Public endpoints to check reporter slot availability & initiate onboarding payments' },
     { name: 'Webhooks' }
+    ,{ name: 'Health', description: 'System and provider readiness checks' }
   ],
   components: {
     securitySchemes: {

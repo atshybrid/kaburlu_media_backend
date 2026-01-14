@@ -5,6 +5,7 @@ import http from 'http';
 import { config } from './config/env';
 import prisma from './lib/prisma';
 import { ensureCoreSeeds } from './lib/bootstrap';
+import { runAIStartupDiagnostics } from './lib/aiDiagnostics';
 
 const port = config.port;
 
@@ -65,6 +66,8 @@ async function start() {
     server.listen(port, () => {
       console.log(`[Bootstrap] Server running (env=${config.env}) http://localhost:${port}`);
       console.log(`[Bootstrap] Swagger: http://localhost:${port}/api/docs`);
+      // Optional: verify AI provider keys on startup (dev-safe, controlled by env flag)
+      runAIStartupDiagnostics().catch(() => void 0);
     });
 
     // graceful shutdown

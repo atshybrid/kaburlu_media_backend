@@ -615,6 +615,11 @@ router.patch('/:id', auth, requireSuperAdmin, async (req, res) => {
  *               domain: { type: string }
  *               isPrimary: { type: boolean, default: false }
  *     description: Allows at most one primary domain and one epaper subdomain per tenant.
+ *
+ *       EPAPER automation:
+ *       - If the `domain` starts with `epaper.`, the domain is created with kind=EPAPER.
+ *       - The backend will auto-seed DomainSettings (logo/colors) from the primary domain/tenantTheme.
+ *       - The backend will also auto-generate basic SEO for the EPAPER domain using AI.
  *     responses:
  *       200: { description: Created }
  */
@@ -640,8 +645,28 @@ router.post('/:tenantId/domains', auth, requireSuperOrTenantAdminScoped, async (
     }
     const token = crypto.randomBytes(12).toString('hex');
     const row = await (prisma as any).domain.create({
-      data: { tenantId, domain, isPrimary: Boolean(isPrimary), status: 'PENDING', verificationToken: token, verificationMethod: 'DNS_TXT' }
+      data: {
+        tenantId,
+        domain,
+        isPrimary: Boolean(isPrimary),
+        kind: isEpaper ? 'EPAPER' : 'NEWS',
+        status: 'PENDING',
+        verificationToken: token,
+        verificationMethod: 'DNS_TXT'
+      }
     });
+
+    // Auto-seed EPAPER domain settings (branding/theme) and backfill SEO via AI.
+    // Fire-and-forget so domain creation stays fast.
+    if (isEpaper) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { ensureEpaperDomainSettings } = require('../../lib/epaperDomainSettingsAuto');
+        Promise.resolve(ensureEpaperDomainSettings(tenantId, row.id)).catch(() => null);
+      } catch {
+        // ignore
+      }
+    }
     res.json({ domain: row, verifyInstruction: { type: 'DNS_TXT', name: `_kaburlu-verify.${domain}`, value: token } });
   } catch (e: any) {
     if (String(e.message).includes('Unique constraint') || String(e.code) === 'P2002') {

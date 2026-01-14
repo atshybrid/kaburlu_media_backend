@@ -63,6 +63,9 @@ function tryParseJson(text: string): any | null {
   return null;
 }
 
+// Import new populate routes
+import locationPopulateRoutes from './locationPopulate.routes';
+
 async function openaiChatJson(messages: Array<{ role: 'system' | 'user'; content: string }>, model: string) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const axios = require('axios');
@@ -452,5 +455,8 @@ router.post('/villages', passport.authenticate('jwt', { session: false }), requi
     return res.status(500).json({ error: 'Failed to translate villages', message: e?.message || String(e) });
   }
 });
+
+// Mount new populate routes
+router.use('/ai', locationPopulateRoutes);
 
 export default router;
