@@ -177,20 +177,30 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                   canonicalBaseUrl: { type: string, nullable: true }
  *                   defaultMetaTitle: { type: string, nullable: true }
  *                   defaultMetaDescription: { type: string, nullable: true }
- *                   keywords: { type: string, nullable: true }
- *                   ogImageUrl: { type: string, nullable: true }
- *                   homepageH1: { type: string, nullable: true }
- *                   tagline: { type: string, nullable: true }
+ *                   keywords: { type: string, nullable: true, example: "kaburlu,epaper,news,telangana" }
+ *                   ogImageUrl: { type: string, nullable: true, example: "https://cdn.example.com/og-image.png" }
+ *                   ogTitle: { type: string, nullable: true, example: "Kaburlu ePaper" }
+ *                   ogDescription: { type: string, nullable: true, example: "Latest newspaper editions online" }
+ *                   homepageH1: { type: string, nullable: true, example: "Kaburlu ePaper - Latest Editions" }
+ *                   tagline: { type: string, nullable: true, example: "Your trusted source for local news" }
  *                   robotsTxt:
  *                     type: string
  *                     nullable: true
+ *                     example: "User-agent: *\\nAllow: /\\nDisallow: /api\\nSitemap: https://epaper.example.com/sitemap.xml"
  *                     description: |
  *                       Full override for `/robots.txt` content (EPAPER domain).
  *                       If omitted/null, backend serves a safe default robots.txt.
  *                   robots: { type: string, nullable: true, example: "index,follow" }
- *                   sitemapEnabled: { type: boolean, nullable: true }
- *                   organization: { type: object, nullable: true }
- *                   socialLinks: { type: array, items: { type: string }, nullable: true }
+ *                   sitemapEnabled: { type: boolean, nullable: true, example: true }
+ *                   organization:
+ *                     type: object
+ *                     nullable: true
+ *                     example: { name: "Kaburlu Media", logo: "https://cdn.example.com/logo.png" }
+ *                   socialLinks:
+ *                     type: array
+ *                     items: { type: string }
+ *                     nullable: true
+ *                     example: ["https://facebook.com/kaburlu", "https://twitter.com/kaburlu"]
  *               layout: { type: object }
  *               integrations:
  *                 type: object
@@ -213,12 +223,35 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                   - google.serviceAccountJson (if you integrate server-side Google APIs)
  *           examples:
  *             minimal:
+ *               summary: Minimal setup (AI will auto-fill SEO)
  *               value:
  *                 epaper: { type: "PDF", multiEditionEnabled: true }
  *                 branding: { logoUrl: "https://cdn.example.com/logo.png", faviconUrl: "https://cdn.example.com/favicon.ico" }
  *                 theme: { colors: { primary: "#0D47A1", secondary: "#FFB300" } }
  *                 seo: { defaultMetaTitle: null, defaultMetaDescription: null, keywords: null, ogImageUrl: "https://cdn.example.com/og.png" }
+ *             completeSeo:
+ *               summary: Complete SEO configuration with all fields
+ *               value:
+ *                 branding:
+ *                   logoUrl: "https://cdn.example.com/logo.png"
+ *                   faviconUrl: "https://cdn.example.com/favicon.ico"
+ *                   siteName: "Kaburlu ePaper"
+ *                 seo:
+ *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest News Editions"
+ *                   defaultMetaDescription: "Read the latest Kaburlu newspaper editions in digital format."
+ *                   keywords: "kaburlu,epaper,news,telangana,adilabad"
+ *                   ogImageUrl: "https://cdn.example.com/og-image.png"
+ *                   ogTitle: "Kaburlu ePaper"
+ *                   ogDescription: "Latest newspaper editions online"
+ *                   homepageH1: "Kaburlu ePaper - Read Latest Editions"
+ *                   tagline: "Your trusted source for local news"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                   organization: { name: "Kaburlu Media", logo: "https://cdn.example.com/logo.png" }
+ *                   socialLinks: ["https://facebook.com/kaburlu", "https://twitter.com/kaburlu"]
  *             withRobotsTxt:
+ *               summary: Custom robots.txt override
  *               value:
  *                 seo:
  *                   robotsTxt: "User-agent: *\nAllow: /\nDisallow: /api\nSitemap: https://epaper.example.com/sitemap.xml\n"
@@ -275,19 +308,68 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *               theme: { type: object }
  *               seo:
  *                 type: object
+ *                 description: All SEO fields are optional for PATCH (deep merge)
  *                 properties:
+ *                   canonicalBaseUrl: { type: string, nullable: true }
+ *                   defaultMetaTitle: { type: string, nullable: true }
+ *                   defaultMetaDescription: { type: string, nullable: true }
+ *                   keywords: { type: string, nullable: true }
+ *                   ogImageUrl: { type: string, nullable: true }
+ *                   ogTitle: { type: string, nullable: true }
+ *                   ogDescription: { type: string, nullable: true }
+ *                   homepageH1: { type: string, nullable: true }
+ *                   tagline: { type: string, nullable: true }
  *                   robotsTxt:
  *                     type: string
  *                     nullable: true
  *                     description: Full override for `/robots.txt` content (EPAPER domain)
+ *                   robots: { type: string, nullable: true }
  *                   sitemapEnabled: { type: boolean, nullable: true }
+ *                   organization: { type: object, nullable: true }
+ *                   socialLinks: { type: array, items: { type: string }, nullable: true }
  *               layout: { type: object }
  *               integrations: { type: object }
  *               secrets: { type: object }
  *           examples:
  *             patchLogoOnly:
+ *               summary: Update only logo
  *               value:
  *                 branding: { logoUrl: "https://cdn.example.com/new-logo.png" }
+ *             patchSeoTitle:
+ *               summary: Update SEO title and description only
+ *               value:
+ *                 seo:
+ *                   defaultMetaTitle: "New Kaburlu ePaper Title"
+ *                   defaultMetaDescription: "Updated meta description for better SEO"
+ *             patchColors:
+ *               summary: Update theme colors only
+ *               value:
+ *                 theme:
+ *                   colors:
+ *                     primary: "#1976D2"
+ *                     secondary: "#FFC107"
+ *             patchIntegrations:
+ *               summary: Add Google Analytics and AdSense
+ *               value:
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890"
+ *             patchMultipleFields:
+ *               summary: Update multiple nested fields at once
+ *               value:
+ *                 branding:
+ *                   siteName: "Kaburlu ePaper Updated"
+ *                 seo:
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest Editions"
+ *                   keywords: "kaburlu,epaper,news,telangana,adilabad,updated"
+ *                   homepageH1: "Welcome to Kaburlu ePaper"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                 theme:
+ *                   colors:
+ *                     primary: "#0D47A1"
  *     responses:
  *       200:
  *         description: Updated settings
