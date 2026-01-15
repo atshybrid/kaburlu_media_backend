@@ -226,6 +226,10 @@ router.get('/epaper/verify-domain', async (req, res) => {
  *       - Verifies domain/subdomain via tenantResolver.
  *       - Returns public-safe ePaper settings and PDF conversion limits.
  *
+ *       Security notes:
+ *       - Any sensitive keys (FCM server key, VAPID private key, service-account JSON, etc.) must NEVER be returned here.
+ *       - `domainSettings.data` and `domainSettings.effective` are sanitized to exclude secrets.
+ *
  *       EPAPER domain verification:
  *       - When `MULTI_TENANCY=true`, requires a verified EPAPER domain.
  *     tags: [EPF ePaper - Public]
@@ -270,8 +274,35 @@ router.get('/epaper/verify-domain', async (req, res) => {
  *                     config:
  *                       defaultMetaTitle: "Kaburlu ePaper – Latest PDF Issues"
  *                       defaultMetaDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       keywords: "kaburlu,epaper,adilabad"
+ *                       homepageH1: "Kaburlu ePaper"
+ *                       tagline: "Latest PDF ePaper issues"
+ *                       ogTitle: "Kaburlu ePaper – Latest PDF Issues"
+ *                       ogDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
  *                       ogImageUrl: "https://cdn.example.com/seo/default-og.png"
  *                       canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                       robots: "index,follow"
+ *                       sitemapEnabled: true
+ *                       organization: { name: "Kaburlu", logoUrl: "https://cdn.example.com/branding/logo.png" }
+ *                       socialLinks: ["https://facebook.com/kaburlu", "https://x.com/kaburlu"]
+ *                     meta:
+ *                       title: "Kaburlu ePaper – Latest PDF Issues"
+ *                       description: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       keywords: "kaburlu,epaper,adilabad"
+ *                       canonicalUrl: "https://epaper.kaburlu.com"
+ *                       robots: "index,follow"
+ *                     openGraph:
+ *                       url: "https://epaper.kaburlu.com"
+ *                       title: "Kaburlu ePaper – Latest PDF Issues"
+ *                       description: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       imageUrl: "https://cdn.example.com/seo/default-og.png"
+ *                       siteName: "Kaburlu"
+ *                     twitter:
+ *                       card: "summary_large_image"
+ *                       handle: "@kaburlu"
+ *                       title: "Kaburlu ePaper – Latest PDF Issues"
+ *                       description: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       imageUrl: "https://cdn.example.com/seo/default-og.png"
  *                     urls:
  *                       baseUrl: "https://epaper.kaburlu.com"
  *                       robotsTxt: "https://epaper.kaburlu.com/robots.txt"
@@ -398,6 +429,69 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     domainSettings?.data
   );
 
+  // IMPORTANT: domainSettings can contain private secrets (push keys, API keys, etc.).
+  // Public endpoint must never return secrets.
+  const isPlainObject = (v: any) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+  const sanitizeDomainSettingsForPublic = (input: any) => {
+    const src = isPlainObject(input) ? (input as any) : {};
+    const out: any = {};
+
+    // Allowed top-level keys
+    if (isPlainObject(src.branding)) out.branding = src.branding;
+    if (isPlainObject(src.theme)) out.theme = src.theme;
+    if (isPlainObject(src.seo)) out.seo = src.seo;
+    if (isPlainObject(src.layout)) out.layout = src.layout;
+    if (typeof src.themeStyle === 'string') out.themeStyle = src.themeStyle;
+
+    // integrations: allow only public IDs/tokens (never secret keys)
+    if (isPlainObject(src.integrations)) {
+      const integ = src.integrations;
+      const safe: any = {};
+
+      if (isPlainObject(integ.analytics)) {
+        safe.analytics = {
+          googleAnalyticsMeasurementId: integ.analytics.googleAnalyticsMeasurementId ?? integ.analytics.gaMeasurementId ?? null,
+          googleTagManagerId: integ.analytics.googleTagManagerId ?? integ.analytics.gtmContainerId ?? null,
+        };
+      }
+      if (isPlainObject(integ.searchConsole)) {
+        safe.searchConsole = {
+          googleSiteVerification: integ.searchConsole.googleSiteVerification ?? null,
+          bingSiteVerification: integ.searchConsole.bingSiteVerification ?? null,
+        };
+      }
+      if (isPlainObject(integ.ads)) {
+        safe.ads = {
+          // AdSense
+          adsenseClientId: integ.ads.adsenseClientId ?? integ.ads.adsensePublisherId ?? null,
+
+          // Google Ads (conversion / remarketing). These are public identifiers (not secrets).
+          googleAdsConversionId: integ.ads.googleAdsConversionId ?? integ.ads.googleAdsCustomerId ?? null,
+          googleAdsConversionLabel: integ.ads.googleAdsConversionLabel ?? null,
+
+          // Google Ad Manager (GAM) public identifiers
+          adManagerNetworkCode: integ.ads.adManagerNetworkCode ?? null,
+          adManagerAppId: integ.ads.adManagerAppId ?? null,
+        };
+      }
+      if (isPlainObject(integ.push)) {
+        safe.push = {
+          // Public key is safe to expose; private key must NOT be stored here for public.
+          webPushVapidPublicKey: integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null,
+          fcmSenderId: integ.push.fcmSenderId ?? integ.push.firebaseSenderId ?? null,
+        };
+      }
+
+      // Only include integrations if at least one section exists
+      if (Object.keys(safe).length) out.integrations = safe;
+    }
+
+    return out;
+  };
+
+  const publicDomainSettingsData = domainSettings ? sanitizeDomainSettingsForPublic((domainSettings as any).data) : null;
+  const publicEffectiveDomainSettings = sanitizeDomainSettingsForPublic(effectiveDomainSettings);
+
   const baseUrl = `https://${domain.domain}`;
 
   // Branding (prefer domain settings, fallback to tenant theme)
@@ -417,8 +511,19 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
   const seoConfig = {
     defaultMetaTitle: (seoBase as any)?.defaultMetaTitle ?? null,
     defaultMetaDescription: (seoBase as any)?.defaultMetaDescription ?? null,
+    keywords: (seoBase as any)?.keywords ?? null,
+    homepageH1: (seoBase as any)?.homepageH1 ?? null,
+    tagline: (seoBase as any)?.tagline ?? null,
+    ogTitle: (seoBase as any)?.ogTitle ?? (seoBase as any)?.defaultMetaTitle ?? null,
+    ogDescription: (seoBase as any)?.ogDescription ?? (seoBase as any)?.defaultMetaDescription ?? null,
     ogImageUrl: (seoBase as any)?.ogImageUrl ?? null,
     canonicalBaseUrl: (seoBase as any)?.canonicalBaseUrl ?? baseUrl,
+    // SEO controls (optional)
+    robots: (seoBase as any)?.robots ?? null,
+    sitemapEnabled: (seoBase as any)?.sitemapEnabled ?? null,
+    // Structured data helpers (optional). Frontend can use this to render Organization/WebSite JSON-LD.
+    organization: (seoBase as any)?.organization ?? null,
+    socialLinks: (seoBase as any)?.socialLinks ?? null,
     colors: {
       primary: (effectiveDomainSettings as any)?.theme?.colors?.primary ?? (tenantTheme as any)?.primaryColor ?? null,
       secondary: (effectiveDomainSettings as any)?.theme?.colors?.secondary ?? (tenantTheme as any)?.secondaryColor ?? null,
@@ -434,6 +539,31 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       fontFamily: branding.fontFamily,
       baseSize: (effectiveDomainSettings as any)?.theme?.typography?.baseSize ?? null,
     },
+  };
+
+  // Extra SEO meta bundles for frontend convenience (optional; backward compatible)
+  const seoMeta = {
+    title: seoConfig.defaultMetaTitle,
+    description: seoConfig.defaultMetaDescription,
+    keywords: seoConfig.keywords,
+    canonicalUrl: seoConfig.canonicalBaseUrl,
+    robots: seoConfig.robots,
+  };
+
+  const seoOpenGraph = {
+    url: seoConfig.canonicalBaseUrl,
+    title: seoConfig.ogTitle,
+    description: seoConfig.ogDescription,
+    imageUrl: seoConfig.ogImageUrl,
+    siteName: branding.siteName,
+  };
+
+  const seoTwitter = {
+    card: (seoBase as any)?.twitterCard ?? null,
+    handle: (seoBase as any)?.twitterHandle ?? null,
+    title: (seoBase as any)?.twitterTitle ?? seoConfig.ogTitle,
+    description: (seoBase as any)?.twitterDescription ?? seoConfig.ogDescription,
+    imageUrl: (seoBase as any)?.twitterImageUrl ?? seoConfig.ogImageUrl,
   };
 
   const contentConfig = {
@@ -460,6 +590,9 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     seo: {
       // Prefer domain-level SEO config enriched with theme/layout; fallback values merged
       config: seoConfig,
+      meta: seoMeta,
+      openGraph: seoOpenGraph,
+      twitter: seoTwitter,
       urls: {
         baseUrl,
         robotsTxt: `${baseUrl}/robots.txt`,
@@ -470,10 +603,10 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     domainSettings: domainSettings
       ? {
           updatedAt: (domainSettings as any).updatedAt,
-          data: (domainSettings as any).data,
-          effective: effectiveDomainSettings,
+          data: publicDomainSettingsData,
+          effective: publicEffectiveDomainSettings,
         }
-      : { updatedAt: null, data: null, effective: effectiveDomainSettings || null },
+      : { updatedAt: null, data: null, effective: publicEffectiveDomainSettings || null },
     pdf: {
       dpi: Number((config as any)?.epaper?.pdfDpi || 150),
       maxMb: Number((config as any)?.epaper?.pdfMaxMb || 30),

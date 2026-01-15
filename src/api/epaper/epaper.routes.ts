@@ -45,6 +45,12 @@ import {
   putEpaperPublicConfigType,
   putEpaperPublicConfigMultiEdition,
 } from './publicConfig.controller';
+import {
+  getEpaperDomainSettingsForAdmin,
+  putEpaperDomainSettingsForAdmin,
+  patchEpaperDomainSettingsForAdmin,
+  autoGenerateEpaperDomainSeoForAdmin,
+} from './domainSettings.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -53,6 +59,288 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: Math.max(1, Math.floor(epaperPdfMaxMb * 1024 * 1024)) },
 });
+
+// ============================================================================
+// EPAPER DOMAIN SETTINGS (Branding/SEO/Theme per EPAPER domain)
+// ============================================================================
+
+/**
+ * @swagger
+ * /epaper/domain/settings:
+ *   get:
+ *     summary: Get EPAPER domain settings for current tenant
+ *     description: |
+ *       Admin endpoint.
+ *       - Resolves tenant from JWT (reporter -> tenantId).
+ *       - Finds the tenant's EPAPER domain and returns domainSettings + effective settings.
+ *     tags: [ePaper Domain Settings - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; some admin flows)
+ *       - in: query
+ *         name: domainId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional explicit domainId (must be EPAPER + belong to tenant)
+ *     responses:
+ *       200:
+ *         description: Domain settings
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "t_abc"
+ *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
+ *                   settings:
+ *                     branding: { logoUrl: "https://cdn.example.com/logo.png", faviconUrl: "https://cdn.example.com/favicon.ico" }
+ *                     theme: { colors: { primary: "#0D47A1", secondary: "#FFB300" } }
+ *                     seo: { defaultMetaTitle: "Kaburlu ePaper", defaultMetaDescription: "Latest ePaper PDFs", keywords: "kaburlu,epaper" }
+ *                   effective:
+ *                     branding: { logoUrl: "https://cdn.example.com/logo.png", faviconUrl: "https://cdn.example.com/favicon.ico" }
+ *                     theme: { colors: { primary: "#0D47A1", secondary: "#FFB300" } }
+ *                     seo: { canonicalBaseUrl: "https://epaper.kaburlu.com" }
+ *                   updatedAt: "2026-01-12T20:07:20.515Z"
+ */
+router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
+
+/**
+ * @swagger
+ * /epaper/domain/settings:
+ *   put:
+ *     summary: Replace EPAPER domain settings (branding/theme/seo/integrations)
+ *     description: |
+ *       Admin endpoint.
+ *       - Replaces the stored JSON settings for the EPAPER domain.
+ *       - By default triggers AI SEO autofill for missing SEO fields (autoSeo=true).
+ *
+ *       Security note:
+ *       - You may store sensitive values under `secrets`, but they are NEVER returned by public APIs like `/public/epaper/settings`.
+ *     tags: [ePaper Domain Settings - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; some admin flows)
+ *       - in: query
+ *         name: domainId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional explicit domainId (must be EPAPER + belong to tenant)
+ *       - in: query
+ *         name: autoSeo
+ *         required: false
+ *         schema: { type: boolean, default: true }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               epaper:
+ *                 type: object
+ *                 description: Optional. Updates tenant epaper public config in the same call.
+ *                 properties:
+ *                   type: { type: string, enum: [PDF, BLOCK], nullable: true }
+ *                   multiEditionEnabled: { type: boolean, nullable: true }
+ *               branding:
+ *                 type: object
+ *                 properties:
+ *                   logoUrl: { type: string, nullable: true }
+ *                   faviconUrl: { type: string, nullable: true }
+ *                   siteName: { type: string, nullable: true }
+ *               theme:
+ *                 type: object
+ *                 properties:
+ *                   colors:
+ *                     type: object
+ *                     properties:
+ *                       primary: { type: string, example: "#0D47A1", nullable: true }
+ *                       secondary: { type: string, example: "#FFB300", nullable: true }
+ *                       accent: { type: string, nullable: true }
+ *                   typography:
+ *                     type: object
+ *                     properties:
+ *                       fontFamily: { type: string, nullable: true }
+ *               seo:
+ *                 type: object
+ *                 description: |
+ *                   Optional; you can pass null/empty and backend will AI-fill missing parts when autoSeo=true.
+ *                 properties:
+ *                   canonicalBaseUrl: { type: string, nullable: true }
+ *                   defaultMetaTitle: { type: string, nullable: true }
+ *                   defaultMetaDescription: { type: string, nullable: true }
+ *                   keywords: { type: string, nullable: true }
+ *                   ogImageUrl: { type: string, nullable: true }
+ *                   homepageH1: { type: string, nullable: true }
+ *                   tagline: { type: string, nullable: true }
+ *                   robotsTxt:
+ *                     type: string
+ *                     nullable: true
+ *                     description: |
+ *                       Full override for `/robots.txt` content (EPAPER domain).
+ *                       If omitted/null, backend serves a safe default robots.txt.
+ *                   robots: { type: string, nullable: true, example: "index,follow" }
+ *                   sitemapEnabled: { type: boolean, nullable: true }
+ *                   organization: { type: object, nullable: true }
+ *                   socialLinks: { type: array, items: { type: string }, nullable: true }
+ *               layout: { type: object }
+ *               integrations:
+ *                 type: object
+ *                 description: |
+ *                   Public IDs/tokens only (do not put secrets here). Recommended keys:
+ *                   - analytics.googleAnalyticsMeasurementId
+ *                   - analytics.googleTagManagerId
+ *                   - searchConsole.googleSiteVerification
+ *                   - ads.adsenseClientId
+ *                   - ads.googleAdsConversionId
+ *                   - ads.googleAdsConversionLabel
+ *                   - ads.adManagerNetworkCode
+ *                   - push.webPushVapidPublicKey
+ *               secrets:
+ *                 type: object
+ *                 description: |
+ *                   Sensitive keys (never returned by public APIs). Recommended keys:
+ *                   - push.webPushVapidPrivateKey
+ *                   - push.fcmServerKey (if you use legacy FCM)
+ *                   - google.serviceAccountJson (if you integrate server-side Google APIs)
+ *           examples:
+ *             minimal:
+ *               value:
+ *                 epaper: { type: "PDF", multiEditionEnabled: true }
+ *                 branding: { logoUrl: "https://cdn.example.com/logo.png", faviconUrl: "https://cdn.example.com/favicon.ico" }
+ *                 theme: { colors: { primary: "#0D47A1", secondary: "#FFB300" } }
+ *                 seo: { defaultMetaTitle: null, defaultMetaDescription: null, keywords: null, ogImageUrl: "https://cdn.example.com/og.png" }
+ *             withRobotsTxt:
+ *               value:
+ *                 seo:
+ *                   robotsTxt: "User-agent: *\nAllow: /\nDisallow: /api\nSitemap: https://epaper.example.com/sitemap.xml\n"
+ *                   sitemapEnabled: true
+ *     responses:
+ *       200:
+ *         description: Updated settings
+ */
+router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
+
+/**
+ * @swagger
+ * /epaper/domain/settings:
+ *   patch:
+ *     summary: Patch EPAPER domain settings (deep-merge)
+ *     description: |
+ *       Admin endpoint.
+ *       - Deep-merges the payload into existing domain settings.
+ *       - By default triggers AI SEO autofill for missing SEO fields (autoSeo=true).
+ *
+ *       Security note:
+ *       - You may store sensitive values under `secrets`, but they are NEVER returned by public APIs like `/public/epaper/settings`.
+ *     tags: [ePaper Domain Settings - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; some admin flows)
+ *       - in: query
+ *         name: domainId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional explicit domainId (must be EPAPER + belong to tenant)
+ *       - in: query
+ *         name: autoSeo
+ *         required: false
+ *         schema: { type: boolean, default: true }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               epaper:
+ *                 type: object
+ *                 description: Optional. Updates tenant epaper public config in the same call.
+ *                 properties:
+ *                   type: { type: string, enum: [PDF, BLOCK], nullable: true }
+ *                   multiEditionEnabled: { type: boolean, nullable: true }
+ *               branding: { type: object }
+ *               theme: { type: object }
+ *               seo:
+ *                 type: object
+ *                 properties:
+ *                   robotsTxt:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Full override for `/robots.txt` content (EPAPER domain)
+ *                   sitemapEnabled: { type: boolean, nullable: true }
+ *               layout: { type: object }
+ *               integrations: { type: object }
+ *               secrets: { type: object }
+ *           examples:
+ *             patchLogoOnly:
+ *               value:
+ *                 branding: { logoUrl: "https://cdn.example.com/new-logo.png" }
+ *     responses:
+ *       200:
+ *         description: Updated settings
+ */
+router.patch('/domain/settings', auth, patchEpaperDomainSettingsForAdmin);
+
+/**
+ * @swagger
+ * /epaper/domain/settings/seo/auto:
+ *   post:
+ *     summary: Auto-generate missing SEO fields for EPAPER domain
+ *     description: |
+ *       Admin endpoint.
+ *       - Runs AI to fill missing SEO fields (title, description, keywords, H1, tagline) for the EPAPER domain.
+ *       - Does NOT overwrite admin-provided SEO text; it only fills missing values.
+ *
+ *       Tip: use this for a "Generate SEO" button in admin UI.
+ *     tags: [ePaper Domain Settings - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; some admin flows)
+ *       - in: query
+ *         name: domainId
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional explicit domainId (must be EPAPER + belong to tenant)
+ *     responses:
+ *       200:
+ *         description: Updated domain settings
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "t_abc"
+ *                   domainId: "dom_1"
+ *                   updatedAt: "2026-01-12T20:07:20.515Z"
+ *                   settings:
+ *                     seo:
+ *                       canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                       defaultMetaTitle: "Kaburlu ePaper – Latest PDF Issues"
+ *                       defaultMetaDescription: "Read the latest Kaburlu ePaper PDF issues by edition and date."
+ *                       keywords: "kaburlu,epaper,adilabad"
+ *                       homepageH1: "Kaburlu ePaper"
+ *                       tagline: "Latest PDF ePaper issues"
+ *                       generatedBy: "ai"
+ *                       generatedAt: "2026-01-12T20:07:20.515Z"
+ */
+router.post('/domain/settings/seo/auto', auth, autoGenerateEpaperDomainSeoForAdmin);
 
 // ============================================================================
 // BLOCK TEMPLATES

@@ -176,8 +176,30 @@ export async function ensureEpaperDomainSettings(
     const latestData = latest?.data;
     const seo = pickObject((latestData as any)?.seo);
 
-    const hasSeo = Boolean(seo.defaultMetaTitle || seo.defaultMetaDescription || seo.metaTitle || seo.metaDescription);
-    if (hasSeo) return;
+    const norm = (v: any) => String(v ?? '').trim();
+    const has = (v: any) => norm(v).length > 0;
+
+    const canonicalBaseUrl = `https://${domain.domain}`;
+    const missingCanonical = !has((seo as any)?.canonicalBaseUrl);
+
+    // Check for partial SEO gaps (do not skip if only some fields exist)
+    const existingTitle = (seo as any)?.defaultMetaTitle ?? (seo as any)?.metaTitle;
+    const existingDesc = (seo as any)?.defaultMetaDescription ?? (seo as any)?.metaDescription;
+    const missingTitle = !has(existingTitle);
+    const missingDesc = !has(existingDesc);
+    const missingKeywords = !has((seo as any)?.keywords);
+    const missingH1 = !has((seo as any)?.homepageH1);
+    const missingTagline = !has((seo as any)?.tagline);
+
+    // If only canonical is missing, fill it without AI.
+    if (missingCanonical && !(missingTitle || missingDesc || missingKeywords || missingH1 || missingTagline)) {
+      const updatedCanonicalOnly = mergeSettings(latestData, { seo: mergeSettings((latestData as any)?.seo, { canonicalBaseUrl }) });
+      await (prisma as any).domainSettings.update({ where: { id: latest.id }, data: { data: updatedCanonicalOnly } });
+      return;
+    }
+
+    const needsAi = missingTitle || missingDesc || missingKeywords || missingH1 || missingTagline;
+    if (!needsAi) return;
 
     const langCode = String(tenantEntity?.language?.code || 'te');
     const langName = languageNameFromCode(langCode);
@@ -221,18 +243,21 @@ Return ONLY valid JSON in this exact format:
     const h1 = String(parsed.h1 || '').trim();
     const tagline = String(parsed.tagline || '').trim();
 
-    const canonicalBaseUrl = `https://${domain.domain}`;
-
     const nextSeo: any = {
       canonicalBaseUrl,
-      defaultMetaTitle: title || undefined,
-      defaultMetaDescription: description || undefined,
-      keywords: keywords || undefined,
-      homepageH1: h1 || undefined,
-      tagline: tagline || undefined,
       generatedBy: 'ai',
       generatedAt: new Date().toISOString(),
     };
+
+    // Only fill missing values (do not overwrite admin-provided text)
+    if (missingTitle && title) nextSeo.defaultMetaTitle = title;
+    if (missingDesc && description) nextSeo.defaultMetaDescription = description;
+    if (missingKeywords && keywords) nextSeo.keywords = keywords;
+    if (missingH1 && h1) nextSeo.homepageH1 = h1;
+    if (missingTagline && tagline) nextSeo.tagline = tagline;
+
+    // Always ensure canonicalBaseUrl exists
+    if (missingCanonical) nextSeo.canonicalBaseUrl = canonicalBaseUrl;
 
     const updated = mergeSettings(latestData, { seo: mergeSettings((latestData as any)?.seo, nextSeo) });
     await (prisma as any).domainSettings.update({ where: { id: latest.id }, data: { data: updated } });

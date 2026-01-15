@@ -614,7 +614,8 @@ router.patch('/:id', auth, requireSuperAdmin, async (req, res) => {
  *             properties:
  *               domain: { type: string }
  *               isPrimary: { type: boolean, default: false }
- *     description: Allows at most one primary domain and one epaper subdomain per tenant.
+ *     description: |
+ *       Allows at most one primary domain and one epaper subdomain per tenant.
  *
  *       EPAPER automation:
  *       - If the `domain` starts with `epaper.`, the domain is created with kind=EPAPER.

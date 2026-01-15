@@ -103,7 +103,21 @@ router.get('/robots.txt', async (req, res) => {
   const ds = asObject(domainSettings?.data);
   const seoConfig = asObject(tenantTheme?.seoConfig);
 
-  const robotsOverride = typeof ds.robotsTxt === 'string' ? ds.robotsTxt : typeof seoConfig.robotsTxt === 'string' ? seoConfig.robotsTxt : null;
+  // Prefer new nested SEO structure: DomainSettings.data.seo.robotsTxt
+  const dsSeo = asObject((ds as any).seo);
+
+  // Backward compatible override priority:
+  // 1) DomainSettings.data.seo.robotsTxt
+  // 2) DomainSettings.data.robotsTxt (legacy)
+  // 3) TenantTheme.seoConfig.robotsTxt
+  const robotsOverride =
+    typeof (dsSeo as any).robotsTxt === 'string'
+      ? (dsSeo as any).robotsTxt
+      : typeof (ds as any).robotsTxt === 'string'
+        ? (ds as any).robotsTxt
+        : typeof (seoConfig as any).robotsTxt === 'string'
+          ? (seoConfig as any).robotsTxt
+          : null;
   const robots = robotsOverride || buildDefaultRobotsTxt(baseUrl);
 
   return res.type('text/plain').send(robots);
@@ -178,7 +192,22 @@ router.get('/sitemap.xml', async (req, res) => {
   const ds = asObject(domainSettings?.data);
   const seoConfig = asObject(tenantTheme?.seoConfig);
 
-  const sitemapEnabled = ds.sitemapEnabled === undefined ? (seoConfig.sitemapEnabled === undefined ? true : Boolean(seoConfig.sitemapEnabled)) : Boolean(ds.sitemapEnabled);
+  // Prefer new nested SEO structure: DomainSettings.data.seo.sitemapEnabled
+  const dsSeo = asObject((ds as any).seo);
+
+  // Backward compatible enablement priority:
+  // 1) DomainSettings.data.seo.sitemapEnabled
+  // 2) DomainSettings.data.sitemapEnabled (legacy)
+  // 3) TenantTheme.seoConfig.sitemapEnabled
+  // 4) default true
+  const sitemapEnabled =
+    (dsSeo as any).sitemapEnabled === undefined
+      ? (ds as any).sitemapEnabled === undefined
+        ? (seoConfig as any).sitemapEnabled === undefined
+          ? true
+          : Boolean((seoConfig as any).sitemapEnabled)
+        : Boolean((ds as any).sitemapEnabled)
+      : Boolean((dsSeo as any).sitemapEnabled);
   if (!sitemapEnabled) {
     return res.status(404).type('text/plain').send('Not Found');
   }
