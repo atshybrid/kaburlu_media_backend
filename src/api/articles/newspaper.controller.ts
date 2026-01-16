@@ -338,7 +338,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const subTitle = body.subTitle != null ? String(body.subTitle).trim() : undefined;
         const heading = String(body.heading || title || '').trim();
         const publishedAt = body.publishedAt ? String(body.publishedAt) : undefined;
-        const roleName = user?.role?.name;
+        const roleName = String(user?.role?.name || '').toUpperCase();
         let reporterAutoPublish = false;
         if (roleName === 'REPORTER') {
             const rep = await (prisma as any).reporter.findFirst({ where: { userId: authorId }, select: { kycData: true } }).catch(() => null);
@@ -347,10 +347,12 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
 
         // Status is server-controlled (ignore any status passed from client):
         // - REPORTER: autoPublish=true => PUBLISHED, else => PENDING
-        // - All other roles: PUBLISHED
+        // - TENANT_ADMIN, EDITOR, SUPER_ADMIN: Always PUBLISHED
         const effectiveStatus = roleName === 'REPORTER'
             ? (reporterAutoPublish ? 'PUBLISHED' : 'PENDING')
             : 'PUBLISHED';
+        
+        console.log(`[NewspaperArticle CREATE] User role: ${roleName}, effectiveStatus: ${effectiveStatus}, reporterAutoPublish: ${reporterAutoPublish}`);
         const shouldPublish = effectiveStatus === 'PUBLISHED';
         const location = body.location;
         if (!location || typeof location !== 'object') {
@@ -611,6 +613,13 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         }
 
         // Create NewspaperArticle (print form)
+        // Status logic:
+        // - TENANT_ADMIN/EDITOR: Always PUBLISHED (already approved)
+        // - REPORTER with autoPublish=true: PUBLISHED (trusted reporter)
+        // - REPORTER with autoPublish=false: PENDING (needs approval)
+        // Note: Web & Short News are auto-created by AI queue regardless of newspaper status
+        const newspaperStatus = effectiveStatus;
+        
         const created = await (prisma as any).newspaperArticle.create({
             data: {
                 tenantId,
@@ -630,8 +639,7 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 districtId: locationRef?.districtId || null,
                 mandalId: locationRef?.mandalId || null,
                 villageId: locationRef?.villageId || null,
-                // Keep pending until AI rewrite finishes; worker will publish on AI_APPROVED if requested.
-                status: 'PENDING'
+                status: newspaperStatus
             }
         });
 
@@ -1003,7 +1011,7 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
             }
         });
 
-        // Best-effort propagation: if status changed, sync base Article + linked TenantWebArticle.
+        // Best-effort propagation: if status changed, sync base Article + linked TenantWebArticle + ShortNews.
         if (nextStatus && existing?.baseArticleId) {
             try {
                 await prisma.article.update({
@@ -1018,13 +1026,27 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                     select: { contentJson: true }
                 });
                 const webId = (base as any)?.contentJson?.webArticleId ? String((base as any).contentJson.webArticleId) : null;
+                const shortNewsId = (base as any)?.contentJson?.shortNewsId ? String((base as any).contentJson.shortNewsId) : null;
+                
+                // Update web article status
                 if (webId) {
                     await prisma.tenantWebArticle.updateMany({
                         where: { id: webId },
                         data: {
-                            status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT',
+                            status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : (nextStatus === 'REJECTED' ? 'REJECTED' : 'DRAFT'),
                             publishedAt: nextStatus === 'PUBLISHED' ? new Date() : null,
                         } as any
+                    });
+                }
+                
+                // Update short news status when rejected
+                // When tenant admin rejects newspaper article, web and short news should also be rejected
+                if (shortNewsId && nextStatus === 'REJECTED') {
+                    await (prisma as any).shortNews.updateMany({
+                        where: { id: shortNewsId },
+                        data: {
+                            status: 'REJECTED'
+                        }
                     });
                 }
             } catch {}
