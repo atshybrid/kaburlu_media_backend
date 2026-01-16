@@ -222,6 +222,70 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                   - push.fcmServerKey (if you use legacy FCM)
  *                   - google.serviceAccountJson (if you integrate server-side Google APIs)
  *           examples:
+ *             completePayload:
+ *               summary: "⭐ COMPLETE PAYLOAD - All Fields (Branding, SEO, Theme, Integrations, Secrets)"
+ *               value:
+ *                 epaper:
+ *                   type: "PDF"
+ *                   multiEditionEnabled: true
+ *                 branding:
+ *                   logoUrl: "https://cdn.example.com/logo.png"
+ *                   faviconUrl: "https://cdn.example.com/favicon.ico"
+ *                   siteName: "Kaburlu ePaper"
+ *                 theme:
+ *                   colors:
+ *                     primary: "#0D47A1"
+ *                     secondary: "#FFB300"
+ *                     accent: "#4CAF50"
+ *                   typography:
+ *                     fontFamily: "Roboto, sans-serif"
+ *                 seo:
+ *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest News Editions"
+ *                   defaultMetaDescription: "Read the latest Kaburlu newspaper editions in digital format."
+ *                   keywords: "kaburlu,epaper,news,telangana,adilabad"
+ *                   ogImageUrl: "https://cdn.example.com/og-image.png"
+ *                   ogTitle: "Kaburlu ePaper"
+ *                   ogDescription: "Latest newspaper editions online"
+ *                   homepageH1: "Kaburlu ePaper - Read Latest Editions"
+ *                   tagline: "Your trusted source for local news"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                   organization:
+ *                     name: "Kaburlu Media"
+ *                     logo: "https://cdn.example.com/logo.png"
+ *                   socialLinks:
+ *                     - "https://facebook.com/kaburlu"
+ *                     - "https://twitter.com/kaburlu"
+ *                     - "https://instagram.com/kaburlu"
+ *                     - "https://youtube.com/@kaburlu"
+ *                 layout:
+ *                   header: "centered"
+ *                   footer: "full-width"
+ *                   showTicker: true
+ *                   showTopBar: true
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                     googleTagManagerId: "GTM-XXXXXXX"
+ *                   searchConsole:
+ *                     googleSiteVerification: "google-site-verification-code-here"
+ *                     bingSiteVerification: "bing-verification-code-here"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890123456"
+ *                     googleAdsConversionId: "AW-123456789"
+ *                     googleAdsConversionLabel: "AbC-DEfGHiJkLmN"
+ *                     adManagerNetworkCode: "12345678"
+ *                     adManagerAppId: "app-id-123"
+ *                   push:
+ *                     webPushVapidPublicKey: "BFG1x2y3z4a5b6c7d8e9f0..."
+ *                     fcmSenderId: "123456789012"
+ *                 secrets:
+ *                   push:
+ *                     webPushVapidPrivateKey: "your-vapid-private-key-here"
+ *                     fcmServerKey: "AAAA1234567890:APA91b..."
+ *                   google:
+ *                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project-id\",\"private_key_id\":\"key123\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIE...\\n-----END PRIVATE KEY-----\\n\",\"client_email\":\"service@project.iam.gserviceaccount.com\"}"
  *             minimal:
  *               summary: Minimal setup (AI will auto-fill SEO)
  *               value:
@@ -256,6 +320,74 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                 seo:
  *                   robotsTxt: "User-agent: *\nAllow: /\nDisallow: /api\nSitemap: https://epaper.example.com/sitemap.xml\n"
  *                   sitemapEnabled: true
+ *             withIntegrations:
+ *               summary: Complete integrations setup (Google Analytics, Search Console, AdSense, etc.)
+ *               value:
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                     googleTagManagerId: "GTM-XXXXXXX"
+ *                   searchConsole:
+ *                     googleSiteVerification: "your-google-site-verification-code"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890123456"
+ *                     googleAdsConversionId: "AW-123456789"
+ *                     googleAdsConversionLabel: "AbC-DEfGHiJkLmN"
+ *                     adManagerNetworkCode: "12345678"
+ *                   push:
+ *                     webPushVapidPublicKey: "BFG...your-vapid-public-key"
+ *                 secrets:
+ *                   push:
+ *                     webPushVapidPrivateKey: "your-vapid-private-key"
+ *                     fcmServerKey: "your-fcm-server-key"
+ *                   google:
+ *                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project\"}"
+ *             withAllFields:
+ *               summary: Complete configuration with all fields (branding, SEO, integrations, secrets)
+ *               value:
+ *                 epaper:
+ *                   type: "PDF"
+ *                   multiEditionEnabled: true
+ *                 branding:
+ *                   logoUrl: "https://cdn.example.com/logo.png"
+ *                   faviconUrl: "https://cdn.example.com/favicon.ico"
+ *                   siteName: "Kaburlu ePaper"
+ *                 theme:
+ *                   colors:
+ *                     primary: "#0D47A1"
+ *                     secondary: "#FFB300"
+ *                     accent: "#4CAF50"
+ *                   typography:
+ *                     fontFamily: "Roboto, sans-serif"
+ *                 seo:
+ *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest News"
+ *                   defaultMetaDescription: "Read the latest Kaburlu newspaper editions"
+ *                   keywords: "kaburlu,epaper,news,telangana"
+ *                   ogImageUrl: "https://cdn.example.com/og-image.png"
+ *                   ogTitle: "Kaburlu ePaper"
+ *                   ogDescription: "Latest newspaper editions online"
+ *                   homepageH1: "Kaburlu ePaper - Latest Editions"
+ *                   tagline: "Your trusted news source"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                     googleTagManagerId: "GTM-XXXXXXX"
+ *                   searchConsole:
+ *                     googleSiteVerification: "google-verification-code"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890123456"
+ *                     googleAdsConversionId: "AW-123456789"
+ *                     googleAdsConversionLabel: "conversion-label"
+ *                     adManagerNetworkCode: "12345678"
+ *                   push:
+ *                     webPushVapidPublicKey: "BFG...vapid-public-key"
+ *                 secrets:
+ *                   push:
+ *                     webPushVapidPrivateKey: "vapid-private-key"
+ *                     fcmServerKey: "fcm-server-key"
  *     responses:
  *       200:
  *         description: Updated settings
@@ -331,6 +463,70 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *               integrations: { type: object }
  *               secrets: { type: object }
  *           examples:
+ *             completePayload:
+ *               summary: "⭐ COMPLETE PAYLOAD - All Fields (Branding, SEO, Theme, Integrations, Secrets)"
+ *               value:
+ *                 epaper:
+ *                   type: "PDF"
+ *                   multiEditionEnabled: true
+ *                 branding:
+ *                   logoUrl: "https://cdn.example.com/logo.png"
+ *                   faviconUrl: "https://cdn.example.com/favicon.ico"
+ *                   siteName: "Kaburlu ePaper"
+ *                 theme:
+ *                   colors:
+ *                     primary: "#0D47A1"
+ *                     secondary: "#FFB300"
+ *                     accent: "#4CAF50"
+ *                   typography:
+ *                     fontFamily: "Roboto, sans-serif"
+ *                 seo:
+ *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest News Editions"
+ *                   defaultMetaDescription: "Read the latest Kaburlu newspaper editions in digital format."
+ *                   keywords: "kaburlu,epaper,news,telangana,adilabad"
+ *                   ogImageUrl: "https://cdn.example.com/og-image.png"
+ *                   ogTitle: "Kaburlu ePaper"
+ *                   ogDescription: "Latest newspaper editions online"
+ *                   homepageH1: "Kaburlu ePaper - Read Latest Editions"
+ *                   tagline: "Your trusted source for local news"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                   organization:
+ *                     name: "Kaburlu Media"
+ *                     logo: "https://cdn.example.com/logo.png"
+ *                   socialLinks:
+ *                     - "https://facebook.com/kaburlu"
+ *                     - "https://twitter.com/kaburlu"
+ *                     - "https://instagram.com/kaburlu"
+ *                     - "https://youtube.com/@kaburlu"
+ *                 layout:
+ *                   header: "centered"
+ *                   footer: "full-width"
+ *                   showTicker: true
+ *                   showTopBar: true
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                     googleTagManagerId: "GTM-XXXXXXX"
+ *                   searchConsole:
+ *                     googleSiteVerification: "google-site-verification-code-here"
+ *                     bingSiteVerification: "bing-verification-code-here"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890123456"
+ *                     googleAdsConversionId: "AW-123456789"
+ *                     googleAdsConversionLabel: "AbC-DEfGHiJkLmN"
+ *                     adManagerNetworkCode: "12345678"
+ *                     adManagerAppId: "app-id-123"
+ *                   push:
+ *                     webPushVapidPublicKey: "BFG1x2y3z4a5b6c7d8e9f0..."
+ *                     fcmSenderId: "123456789012"
+ *                 secrets:
+ *                   push:
+ *                     webPushVapidPrivateKey: "your-vapid-private-key-here"
+ *                     fcmServerKey: "AAAA1234567890:APA91b..."
+ *                   google:
+ *                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project-id\",\"private_key_id\":\"key123\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIE...\\n-----END PRIVATE KEY-----\\n\",\"client_email\":\"service@project.iam.gserviceaccount.com\"}"
  *             patchLogoOnly:
  *               summary: Update only logo
  *               value:
@@ -356,6 +552,43 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
  *                   ads:
  *                     adsenseClientId: "ca-pub-1234567890"
+ *             patchOrganizationAndSocial:
+ *               summary: Update SEO organization and social links
+ *               value:
+ *                 seo:
+ *                   organization:
+ *                     name: "Kaburlu Media"
+ *                     logo: "https://cdn.example.com/logo.png"
+ *                   socialLinks:
+ *                     - "https://facebook.com/kaburlu"
+ *                     - "https://twitter.com/kaburlu"
+ *                     - "https://instagram.com/kaburlu"
+ *                     - "https://youtube.com/@kaburlu"
+ *             patchCompleteSeo:
+ *               summary: Update complete SEO configuration with all fields
+ *               value:
+ *                 branding:
+ *                   logoUrl: "https://cdn.example.com/logo.png"
+ *                   faviconUrl: "https://cdn.example.com/favicon.ico"
+ *                   siteName: "Kaburlu ePaper"
+ *                 seo:
+ *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
+ *                   defaultMetaTitle: "Kaburlu ePaper - Latest News Editions"
+ *                   defaultMetaDescription: "Read the latest Kaburlu newspaper editions in digital format."
+ *                   keywords: "kaburlu,epaper,news,telangana,adilabad"
+ *                   ogImageUrl: "https://cdn.example.com/og-image.png"
+ *                   ogTitle: "Kaburlu ePaper"
+ *                   ogDescription: "Latest newspaper editions online"
+ *                   homepageH1: "Kaburlu ePaper - Read Latest Editions"
+ *                   tagline: "Your trusted source for local news"
+ *                   robots: "index,follow"
+ *                   sitemapEnabled: true
+ *                   organization:
+ *                     name: "Kaburlu Media"
+ *                     logo: "https://cdn.example.com/logo.png"
+ *                   socialLinks:
+ *                     - "https://facebook.com/kaburlu"
+ *                     - "https://twitter.com/kaburlu"
  *             patchMultipleFields:
  *               summary: Update multiple nested fields at once
  *               value:
@@ -370,6 +603,31 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *                 theme:
  *                   colors:
  *                     primary: "#0D47A1"
+ *             patchIntegrationsComplete:
+ *               summary: Update all integration keys (Google Analytics, Search Console, AdSense, Ads, Push)
+ *               value:
+ *                 integrations:
+ *                   analytics:
+ *                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+ *                     googleTagManagerId: "GTM-XXXXXXX"
+ *                   searchConsole:
+ *                     googleSiteVerification: "your-google-site-verification-code"
+ *                   ads:
+ *                     adsenseClientId: "ca-pub-1234567890123456"
+ *                     googleAdsConversionId: "AW-123456789"
+ *                     googleAdsConversionLabel: "AbC-DEfGHiJkLmN"
+ *                     adManagerNetworkCode: "12345678"
+ *                   push:
+ *                     webPushVapidPublicKey: "BFG...your-vapid-public-key"
+ *             patchSecretsOnly:
+ *               summary: Update secrets (private keys, server keys)
+ *               value:
+ *                 secrets:
+ *                   push:
+ *                     webPushVapidPrivateKey: "your-vapid-private-key"
+ *                     fcmServerKey: "your-fcm-server-key"
+ *                   google:
+ *                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n\"}"
  *     responses:
  *       200:
  *         description: Updated settings
