@@ -48,6 +48,75 @@ router.get('/', async (_req, res) => {
 
 /**
  * @swagger
+ * /domains/{tenantId}:
+ *   get:
+ *     summary: Get all domains for a specific tenant
+ *     tags: [Domains]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *         description: Tenant ID
+ *     responses:
+ *       200:
+ *         description: List of domains for the tenant
+ *         content:
+ *           application/json:
+ *             examples:
+ *               success:
+ *                 value:
+ *                   - id: "dom_01"
+ *                     tenantId: "tenant_01"
+ *                     domain: "example.com"
+ *                     isPrimary: true
+ *                     status: "ACTIVE"
+ *                     kind: "NEWS"
+ *                     verifiedAt: "2025-01-01T00:00:00.000Z"
+ *                     createdAt: "2025-01-01T00:00:00.000Z"
+ *                   - id: "dom_02"
+ *                     tenantId: "tenant_01"
+ *                     domain: "epaper.example.com"
+ *                     isPrimary: false
+ *                     status: "ACTIVE"
+ *                     kind: "EPAPER"
+ *                     verifiedAt: "2025-01-10T00:00:00.000Z"
+ *                     createdAt: "2025-01-10T00:00:00.000Z"
+ *       404:
+ *         description: Tenant not found
+ */
+router.get('/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    
+    // Verify tenant exists
+    const tenant = await (prisma as any).tenant.findUnique({ 
+      where: { id: tenantId },
+      select: { id: true, name: true }
+    });
+    
+    if (!tenant) {
+      return res.status(404).json({ error: 'Tenant not found' });
+    }
+
+    // Get all domains for this tenant
+    const domains = await (prisma as any).domain.findMany({
+      where: { tenantId },
+      orderBy: [
+        { isPrimary: 'desc' },
+        { createdAt: 'asc' }
+      ]
+    });
+
+    res.json(domains);
+  } catch (e) {
+    console.error('get tenant domains error', e);
+    res.status(500).json({ error: 'Failed to fetch domains' });
+  }
+});
+
+/**
+ * @swagger
  * /domains/{id}/verify:
  *   post:
  *     summary: Verify a domain (DNS TXT or manual) [Superadmin]
