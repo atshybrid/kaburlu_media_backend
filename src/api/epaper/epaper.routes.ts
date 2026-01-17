@@ -169,6 +169,18 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                     type: object
  *                     properties:
  *                       fontFamily: { type: string, nullable: true }
+ *               notifications:
+ *                 type: object
+ *                 description: Web push notification configuration
+ *                 properties:
+ *                   enabled: { type: boolean, nullable: true }
+ *                   providers:
+ *                     type: object
+ *                     properties:
+ *                       webpush:
+ *                         type: object
+ *                         properties:
+ *                           publicKey: { type: string, nullable: true }
  *               seo:
  *                 type: object
  *                 description: |
@@ -239,6 +251,11 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                     accent: "#4CAF50"
  *                   typography:
  *                     fontFamily: "Roboto, sans-serif"
+ *                 notifications:
+ *                   enabled: true
+ *                   providers:
+ *                     webpush:
+ *                       publicKey: "BExxx..."
  *                 seo:
  *                   canonicalBaseUrl: "https://epaper.kaburlu.com"
  *                   defaultMetaTitle: "Kaburlu ePaper - Latest News Editions"

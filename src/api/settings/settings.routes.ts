@@ -450,7 +450,16 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *                     secondaryColor: "#CDDC39"
  *   put:
  *     summary: Replace domain settings
- *     description: SUPER_ADMIN only. Replaces entire domain settings JSON.
+ *     description: |
+ *       SUPER_ADMIN only. Replaces entire domain settings JSON.
+ *
+ *       Auto-SEO:
+ *       - Set autoSeo=true (default) to auto-generate missing SEO fields using AI.
+ *       - Only fills missing values; does not overwrite existing SEO.
+ *
+ *       Security note:
+ *       - You may store sensitive values under `secrets`, but they are NEVER returned by public APIs.
+ *       - Public APIs will only expose integrations with public IDs/tokens.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -462,20 +471,146 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *         name: domainId
  *         required: true
  *         schema: { type: string }
+ *       - in: query
+ *         name: autoSeo
+ *         required: false
+ *         schema: { type: boolean, default: true }
+ *         description: Auto-generate missing SEO fields using AI
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             properties:
+ *               themeStyle: { type: string, enum: [style1, style2], nullable: true }
+ *               branding:
+ *                 type: object
+ *                 properties:
+ *                   logoUrl: { type: string, nullable: true }
+ *                   faviconUrl: { type: string, nullable: true }
+ *                   siteName: { type: string, nullable: true }
+ *               theme:
+ *                 type: object
+ *                 properties:
+ *                   theme: { type: string, enum: [light, dark], nullable: true }
+ *                   colors:
+ *                     type: object
+ *                     properties:
+ *                       primary: { type: string, nullable: true }
+ *                       secondary: { type: string, nullable: true }
+ *                       accent: { type: string, nullable: true }
+ *                   typography:
+ *                     type: object
+ *                     properties:
+ *                       fontFamily: { type: string, nullable: true }
+ *                       baseSize: { type: number, nullable: true }
+ *                   layout:
+ *                     type: object
+ *                     properties:
+ *                       header: { type: string, nullable: true }
+ *                       footer: { type: string, nullable: true }
+ *                       showTopBar: { type: boolean, nullable: true }
+ *                       showTicker: { type: boolean, nullable: true }
+ *               navigation:
+ *                 type: object
+ *                 properties:
+ *                   menu:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         label: { type: string }
+ *                         href: { type: string }
+ *               notifications:
+ *                 type: object
+ *                 description: Web push notification configuration
+ *                 properties:
+ *                   enabled: { type: boolean, nullable: true }
+ *                   providers:
+ *                     type: object
+ *                     properties:
+ *                       webpush:
+ *                         type: object
+ *                         properties:
+ *                           publicKey: { type: string, nullable: true }
+ *               seo:
+ *                 type: object
+ *                 properties:
+ *                   canonicalBaseUrl: { type: string, nullable: true }
+ *                   defaultMetaTitle: { type: string, nullable: true }
+ *                   defaultMetaDescription: { type: string, nullable: true }
+ *                   keywords: { type: string, nullable: true }
+ *                   ogImageUrl: { type: string, nullable: true }
+ *                   ogTitle: { type: string, nullable: true }
+ *                   ogDescription: { type: string, nullable: true }
+ *                   homepageH1: { type: string, nullable: true }
+ *                   tagline: { type: string, nullable: true }
+ *                   robotsTxt:
+ *                     type: string
+ *                     nullable: true
+ *                     example: "User-agent: *\\nAllow: /\\nDisallow: /api\\nSitemap: https://news.example.com/sitemap.xml"
+ *                     description: |
+ *                       Full override for `/robots.txt` content.
+ *                       If omitted/null, backend serves a safe default robots.txt.
+ *                   robots: { type: string, nullable: true }
+ *                   sitemapEnabled: { type: boolean, nullable: true }
+ *                   organization:
+ *                     type: object
+ *                     nullable: true
+ *                   socialLinks:
+ *                     type: array
+ *                     items: { type: string }
+ *                     nullable: true
+ *               integrations:
+ *                 type: object
+ *                 description: Public IDs/tokens only (do not put secrets here)
+ *                 properties:
+ *                   analytics:
+ *                     type: object
+ *                     properties:
+ *                       googleAnalyticsMeasurementId: { type: string, nullable: true }
+ *                       googleTagManagerId: { type: string, nullable: true }
+ *                   searchConsole:
+ *                     type: object
+ *                     properties:
+ *                       googleSiteVerification: { type: string, nullable: true }
+ *                       bingSiteVerification: { type: string, nullable: true }
+ *                   ads:
+ *                     type: object
+ *                     properties:
+ *                       adsenseClientId: { type: string, nullable: true }
+ *                       googleAdsConversionId: { type: string, nullable: true }
+ *                       googleAdsConversionLabel: { type: string, nullable: true }
+ *                       adManagerNetworkCode: { type: string, nullable: true }
+ *                       adManagerAppId: { type: string, nullable: true }
+ *                   push:
+ *                     type: object
+ *                     properties:
+ *                       webPushVapidPublicKey: { type: string, nullable: true }
+ *                       fcmSenderId: { type: string, nullable: true }
+ *               secrets:
+ *                 type: object
+ *                 description: Sensitive keys (never returned by public APIs)
+ *                 properties:
+ *                   push:
+ *                     type: object
+ *                     properties:
+ *                       webPushVapidPrivateKey: { type: string, nullable: true }
+ *                       fcmServerKey: { type: string, nullable: true }
+ *                   google:
+ *                     type: object
+ *                     properties:
+ *                       serviceAccountJson: { type: string, nullable: true }
 	*           examples:
-	*             sample:
-	*               summary: Full website config (recommended sections)
+	*             completePayload:
+	*               summary: "⭐ COMPLETE PAYLOAD - All Fields (Branding, SEO, Theme, Integrations, Secrets)"
 	*               value:
 	*                 themeStyle: "style2"
 	*                 branding:
 	*                   logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
 	*                   faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
+	*                   siteName: "Kaburlu News"
 	*                 theme:
 	*                   theme: "light"
 	*                   colors:
@@ -494,14 +629,31 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*                   menu:
 	*                     - { label: "Home", href: "/" }
 	*                     - { label: "Politics", href: "/category/politics" }
+	*                     - { label: "Business", href: "/category/business" }
 	*                 content:
 	*                   defaultLanguage: "en"
 	*                   supportedLanguages: ["en","te"]
 	*                 seo:
-	*                   defaultMetaTitle: "Kaburlu News"
-	*                   defaultMetaDescription: "Latest breaking news and updates."
-	*                   ogImageUrl: "https://cdn.kaburlu.com/seo/default-og.png"
 	*                   canonicalBaseUrl: "https://news.kaburlu.com"
+	*                   defaultMetaTitle: "Kaburlu News - Breaking News & Latest Updates"
+	*                   defaultMetaDescription: "Get the latest breaking news, political updates, business news, and sports coverage from Kaburlu News."
+	*                   keywords: "kaburlu,news,breaking news,telangana,politics,business"
+	*                   ogImageUrl: "https://cdn.kaburlu.com/seo/default-og.png"
+	*                   ogTitle: "Kaburlu News"
+	*                   ogDescription: "Latest breaking news and updates"
+	*                   homepageH1: "Kaburlu News - Your Trusted News Source"
+	*                   tagline: "Truth. Integrity. Impact."
+	*                   robotsTxt: "User-agent: *\nAllow: /\nDisallow: /api\nSitemap: https://news.kaburlu.com/sitemap.xml\n"
+	*                   robots: "index,follow,max-image-preview:large"
+	*                   sitemapEnabled: true
+	*                   organization:
+	*                     name: "Kaburlu Media"
+	*                     logo: "https://cdn.kaburlu.com/logo.png"
+	*                   socialLinks:
+	*                     - "https://facebook.com/kaburlu"
+	*                     - "https://twitter.com/kaburlu"
+	*                     - "https://instagram.com/kaburlu"
+	*                     - "https://youtube.com/@kaburlu"
 	*                 notifications:
 	*                   enabled: true
 	*                   providers:
@@ -509,12 +661,65 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*                       publicKey: "BExxx..."
 	*                 integrations:
 	*                   analytics:
-	*                     provider: "gtag"
-	*                     measurementId: "G-XXXXXXX"
+	*                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+	*                     googleTagManagerId: "GTM-XXXXXXX"
+	*                   searchConsole:
+	*                     googleSiteVerification: "google-site-verification-code-here"
+	*                     bingSiteVerification: "bing-verification-code-here"
+	*                   ads:
+	*                     adsenseClientId: "ca-pub-1234567890123456"
+	*                     googleAdsConversionId: "AW-123456789"
+	*                     googleAdsConversionLabel: "AbC-DEfGHiJkLmN"
+	*                     adManagerNetworkCode: "12345678"
+	*                     adManagerAppId: "app-id-123"
+	*                   push:
+	*                     webPushVapidPublicKey: "BFG1x2y3z4a5b6c7d8e9f0..."
+	*                     fcmSenderId: "123456789012"
+	*                 secrets:
+	*                   push:
+	*                     webPushVapidPrivateKey: "your-vapid-private-key-here"
+	*                     fcmServerKey: "AAAA1234567890:APA91b..."
+	*                   google:
+	*                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project\"}"
 	*                 flags:
 	*                   enableComments: true
 	*                   enableBookmarks: true
 	*                 customCss: "body{font-family:Inter;}"
+	*             minimalSeo:
+	*               summary: Minimal SEO setup
+	*               value:
+	*                 branding:
+	*                   logoUrl: "https://cdn.kaburlu.com/logo.png"
+	*                   faviconUrl: "https://cdn.kaburlu.com/favicon.ico"
+	*                 seo:
+	*                   canonicalBaseUrl: "https://news.kaburlu.com"
+	*                   defaultMetaTitle: "Kaburlu News"
+	*                   defaultMetaDescription: "Latest breaking news"
+	*                   keywords: "news,kaburlu,breaking"
+	*             withIntegrations:
+	*               summary: Complete integrations setup (Analytics, Search Console, Ads, Push)
+	*               value:
+	*                 integrations:
+	*                   analytics:
+	*                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+	*                     googleTagManagerId: "GTM-XXXXXXX"
+	*                   searchConsole:
+	*                     googleSiteVerification: "your-google-site-verification-code"
+	*                     bingSiteVerification: "your-bing-verification-code"
+	*                   ads:
+	*                     adsenseClientId: "ca-pub-1234567890123456"
+	*                     googleAdsConversionId: "AW-123456789"
+	*                     googleAdsConversionLabel: "conversion-label"
+	*                     adManagerNetworkCode: "12345678"
+	*                   push:
+	*                     webPushVapidPublicKey: "BFG...your-vapid-public-key"
+	*                     fcmSenderId: "123456789012"
+	*                 secrets:
+	*                   push:
+	*                     webPushVapidPrivateKey: "your-vapid-private-key"
+	*                     fcmServerKey: "your-fcm-server-key"
+	*                   google:
+	*                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project\"}"
 	 *     responses:
 	 *       200:
 	 *         description: Domain settings saved
@@ -530,8 +735,17 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	 *                       theme: "light"
 	 *                     customCss: "body{font-family:Inter;}"
  *   patch:
- *     summary: Update parts of domain settings
- *     description: SUPER_ADMIN only. Partially updates domain settings JSON.
+ *     summary: Update parts of domain settings (deep-merge)
+ *     description: |
+ *       SUPER_ADMIN only. Deep-merges the payload into existing domain settings.
+ *
+ *       Auto-SEO:
+ *       - Set autoSeo=true (default) to auto-generate missing SEO fields using AI.
+ *       - Only fills missing values; does not overwrite existing SEO.
+ *
+ *       Security note:
+ *       - You may store sensitive values under `secrets`, but they are NEVER returned by public APIs.
+ *       - Public APIs will only expose integrations with public IDs/tokens.
  *     tags: [Settings (Admin)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -543,6 +757,11 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *         name: domainId
  *         required: true
  *         schema: { type: string }
+ *       - in: query
+ *         name: autoSeo
+ *         required: false
+ *         schema: { type: boolean, default: true }
+ *         description: Auto-generate missing SEO fields using AI
  *     requestBody:
  *       required: true
  *       content:
@@ -569,11 +788,53 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*                   logoUrl: "https://cdn.kaburlu.com/logos/domain.png"
 	*                   faviconUrl: "https://cdn.kaburlu.com/favicons/domain.ico"
 	*             seoUpdate:
-	*               summary: Update SEO defaults
+	*               summary: Update SEO defaults with all recommended fields
 	*               value:
 	*                 seo:
-	*                   defaultMetaTitle: "Kaburlu News"
-	*                   defaultMetaDescription: "Latest breaking news."
+	*                   canonicalBaseUrl: "https://news.kaburlu.com"
+	*                   defaultMetaTitle: "Kaburlu News - Breaking News & Latest Updates"
+	*                   defaultMetaDescription: "Get the latest breaking news, political updates, business news, and sports coverage."
+	*                   keywords: "kaburlu,news,breaking news,telangana,politics"
+	*                   ogImageUrl: "https://cdn.kaburlu.com/seo/og.png"
+	*                   ogTitle: "Kaburlu News"
+	*                   ogDescription: "Latest breaking news"
+	*                   homepageH1: "Kaburlu News - Your Trusted News Source"
+	*                   tagline: "Truth. Integrity. Impact."
+	*                   robots: "index,follow,max-image-preview:large"
+	*                   sitemapEnabled: true
+	*                   organization:
+	*                     name: "Kaburlu Media"
+	*                     logo: "https://cdn.kaburlu.com/logo.png"
+	*                   socialLinks:
+	*                     - "https://facebook.com/kaburlu"
+	*                     - "https://twitter.com/kaburlu"
+	*             integrationsUpdate:
+	*               summary: Update integrations (Analytics, Search Console, Ads, Push)
+	*               value:
+	*                 integrations:
+	*                   analytics:
+	*                     googleAnalyticsMeasurementId: "G-XXXXXXXXXX"
+	*                     googleTagManagerId: "GTM-XXXXXXX"
+	*                   searchConsole:
+	*                     googleSiteVerification: "google-verification-code"
+	*                     bingSiteVerification: "bing-verification-code"
+	*                   ads:
+	*                     adsenseClientId: "ca-pub-1234567890123456"
+	*                     googleAdsConversionId: "AW-123456789"
+	*                     googleAdsConversionLabel: "conversion-label"
+	*                     adManagerNetworkCode: "12345678"
+	*                   push:
+	*                     webPushVapidPublicKey: "BFG...your-vapid-public-key"
+	*                     fcmSenderId: "123456789012"
+	*             secretsUpdate:
+	*               summary: Update secrets (private keys, server keys)
+	*               value:
+	*                 secrets:
+	*                   push:
+	*                     webPushVapidPrivateKey: "your-vapid-private-key"
+	*                     fcmServerKey: "your-fcm-server-key"
+	*                   google:
+	*                     serviceAccountJson: "{\"type\":\"service_account\",\"project_id\":\"your-project\"}"
 	*             customCssUpdate:
 	*               summary: Add custom CSS only
 	*               value:

@@ -340,6 +340,46 @@ router.get('/domain/settings', async (req, res) => {
     // Never fail the settings response due to optional static pages
   }
 
+  // IMPORTANT: Remove secrets before sending to public (same as ePaper sanitization)
+  // Domain settings can contain private keys (push.webPushVapidPrivateKey, fcmServerKey, google.serviceAccountJson, etc.)
+  if (out.secrets) delete out.secrets;
+  
+  // Sanitize integrations to only include public IDs/tokens
+  if (out.integrations && typeof out.integrations === 'object') {
+    const integ = out.integrations;
+    const safe: any = {};
+    
+    if (integ.analytics && typeof integ.analytics === 'object') {
+      safe.analytics = {
+        googleAnalyticsMeasurementId: integ.analytics.googleAnalyticsMeasurementId ?? integ.analytics.gaMeasurementId ?? null,
+        googleTagManagerId: integ.analytics.googleTagManagerId ?? integ.analytics.gtmContainerId ?? null,
+      };
+    }
+    if (integ.searchConsole && typeof integ.searchConsole === 'object') {
+      safe.searchConsole = {
+        googleSiteVerification: integ.searchConsole.googleSiteVerification ?? null,
+        bingSiteVerification: integ.searchConsole.bingSiteVerification ?? null,
+      };
+    }
+    if (integ.ads && typeof integ.ads === 'object') {
+      safe.ads = {
+        adsenseClientId: integ.ads.adsenseClientId ?? integ.ads.adsensePublisherId ?? null,
+        googleAdsConversionId: integ.ads.googleAdsConversionId ?? integ.ads.googleAdsCustomerId ?? null,
+        googleAdsConversionLabel: integ.ads.googleAdsConversionLabel ?? null,
+        adManagerNetworkCode: integ.ads.adManagerNetworkCode ?? null,
+        adManagerAppId: integ.ads.adManagerAppId ?? null,
+      };
+    }
+    if (integ.push && typeof integ.push === 'object') {
+      safe.push = {
+        webPushVapidPublicKey: integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null,
+        fcmSenderId: integ.push.fcmSenderId ?? integ.push.firebaseSenderId ?? null,
+      };
+    }
+    
+    out.integrations = Object.keys(safe).length > 0 ? safe : undefined;
+  }
+
   res.json({ domain: domain.domain, tenantId: tenant.id, effective: out });
 });
 

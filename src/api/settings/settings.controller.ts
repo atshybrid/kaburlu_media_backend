@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { ensureEpaperDomainSettings } from '../../lib/epaperDomainSettingsAuto';
+import { ensureNewsDomainSettings } from '../../lib/newsDomainSettingsAuto';
 
 const mergeSettings = (base: any, override: any) => ({ ...(base || {}), ...(override || {}) });
 
@@ -55,7 +56,27 @@ export const upsertDomainSettings = async (req: Request, res: Response) => {
   const saved = existing
     ? await (prisma as any).domainSettings.update({ where: { id: existing.id }, data: { data } })
     : await (prisma as any).domainSettings.create({ data: { tenantId, domainId, data } });
-  return res.status(200).json({ tenantId, domainId, settings: saved.data });
+  
+  // Auto-generate SEO if requested (default: true)
+  const autoSeoParam = String((req.query as any).autoSeo ?? 'true').toLowerCase();
+  const autoSeo = autoSeoParam === '1' || autoSeoParam === 'true' || autoSeoParam === 'yes' || autoSeoParam === 'y' || autoSeoParam === 'on';
+  
+  if (autoSeo) {
+    // Check domain kind to determine which auto-SEO to use
+    const domain = await (prisma as any).domain.findUnique({ where: { id: domainId } }).catch(() => null);
+    const kind = String(domain?.kind || '').toUpperCase();
+    
+    if (kind === 'EPAPER') {
+      await ensureEpaperDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
+    } else {
+      // NEWS or other domains
+      await ensureNewsDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
+    }
+  }
+  
+  // Return latest data after potential SEO generation
+  const latest = await (prisma as any).domainSettings.findUnique({ where: { domainId } }).catch(() => null);
+  return res.status(200).json({ tenantId, domainId, settings: latest?.data || saved.data });
 };
 
 export const listDomainSettings = async (req: Request, res: Response) => {
