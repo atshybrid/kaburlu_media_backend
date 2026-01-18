@@ -178,6 +178,12 @@ async function upsertPdfIssueFromBuffer(params: {
     select: { id: true, pageCount: true },
   });
 
+  if (existing) {
+    console.log(`⚠️  Replacing existing issue: ${existing.id} for date ${issueDateStr}`);
+  } else {
+    console.log(`✓ Creating new issue for date ${issueDateStr}`);
+  }
+
   // Best-effort cleanup: if old issue had more pages than new, delete leftover objects.
   if (existing?.pageCount && existing.pageCount > pages.length) {
     const deletes: Promise<void>[] = [];

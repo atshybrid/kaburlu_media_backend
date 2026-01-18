@@ -51,6 +51,12 @@ import {
   patchEpaperDomainSettingsForAdmin,
   autoGenerateEpaperDomainSeoForAdmin,
 } from './domainSettings.controller';
+import {
+  getAllIssuesByDate,
+  getTenantIssues,
+  deleteIssue,
+  checkIssueExists,
+} from './issueManagement.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -1686,5 +1692,342 @@ router.get('/pdf-issues/:id', auth, getPdfIssue);
  *                 alternatives: { type: array, items: { type: object } }
  */
 router.post('/suggest-block', auth, suggestBlockTemplate);
+
+// ============================================================================
+// ISSUE MANAGEMENT (SUPER_ADMIN & DESK_EDITOR)
+// ============================================================================
+
+/**
+ * @swagger
+ * /epaper/issues/all-by-date:
+ *   get:
+ *     summary: Get all ePaper issues by date (SUPER_ADMIN & DESK_EDITOR only)
+ *     description: |
+ *       Get all ePaper PDF issues filtered by date with pagination.
+ *       
+ *       **Access**:
+ *       - SUPER_ADMIN: Can see all tenants' issues
+ *       - DESK_EDITOR: Can see only their tenant's issues
+ *       
+ *       **Features**:
+ *       - Date filtering (optional - all dates if omitted)
+ *       - Pagination support
+ *       - Includes tenant, edition, sub-edition info
+ *       - Optional page images
+ *       - Uploaded by user information
+ *     tags: [EPF ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, example: "2026-01-18" }
+ *         description: Filter by specific date (YYYY-MM-DD). Omit to see all dates.
+ *       - in: query
+ *         name: includePages
+ *         schema: { type: boolean, default: false }
+ *         description: Include page image URLs
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1, minimum: 1 }
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+ *         description: Items per page
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only - filter by specific tenant
+ *     responses:
+ *       200:
+ *         description: List of issues with pagination
+ *         content:
+ *           application/json:
+ *             examples:
+ *               superadmin:
+ *                 summary: SUPER_ADMIN viewing all tenants
+ *                 value:
+ *                   success: true
+ *                   pagination:
+ *                     page: 1
+ *                     limit: 50
+ *                     total: 127
+ *                     totalPages: 3
+ *                   issues:
+ *                     - id: "iss_1"
+ *                       issueDate: "2026-01-18T00:00:00.000Z"
+ *                       tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu News" }
+ *                       edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
+ *                       subEdition: null
+ *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
+ *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
+ *                       pageCount: 12
+ *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
+ *                       createdAt: "2026-01-18T06:00:00.000Z"
+ *                       updatedAt: "2026-01-18T06:00:00.000Z"
+ *                     - id: "iss_2"
+ *                       issueDate: "2026-01-18T00:00:00.000Z"
+ *                       tenant: { id: "t_xyz", slug: "newsportal", name: "News Portal" }
+ *                       edition: { id: "ed_5", name: "Karnataka Edition", slug: "karnataka" }
+ *                       subEdition: null
+ *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/karnataka.pdf"
+ *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/karnataka/p1.png"
+ *                       pageCount: 16
+ *                       uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
+ *                       createdAt: "2026-01-18T05:30:00.000Z"
+ *                       updatedAt: "2026-01-18T05:30:00.000Z"
+ *               deskEditor:
+ *                 summary: DESK_EDITOR viewing their tenant only
+ *                 value:
+ *                   success: true
+ *                   pagination:
+ *                     page: 1
+ *                     limit: 50
+ *                     total: 23
+ *                     totalPages: 1
+ *                   issues:
+ *                     - id: "iss_1"
+ *                       issueDate: "2026-01-18T00:00:00.000Z"
+ *                       tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu News" }
+ *                       edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
+ *                       subEdition: null
+ *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
+ *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
+ *                       pageCount: 12
+ *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
+ *                       createdAt: "2026-01-18T06:00:00.000Z"
+ *                       updatedAt: "2026-01-18T06:00:00.000Z"
+ *       403:
+ *         description: Unauthorized - Only SUPER_ADMIN and DESK_EDITOR can access
+ */
+router.get('/issues/all-by-date', auth, getAllIssuesByDate);
+
+/**
+ * @swagger
+ * /epaper/issues/tenant:
+ *   get:
+ *     summary: Get tenant ePaper issues with PDFs (SUPER_ADMIN & DESK_EDITOR only)
+ *     description: |
+ *       Get all ePaper issues for a specific tenant with filtering options.
+ *       
+ *       **Access**:
+ *       - SUPER_ADMIN: Can view any tenant's issues (specify tenantId)
+ *       - DESK_EDITOR: Can view only their tenant's issues
+ *       
+ *       **Features**:
+ *       - Date range filtering
+ *       - Edition/sub-edition filtering
+ *       - Results grouped by date
+ *       - PDF URLs and page information
+ *       - Upload metadata
+ *     tags: [EPF ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only - specify tenant to view
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, example: "2026-01-01" }
+ *         description: Start date (YYYY-MM-DD) - inclusive
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, example: "2026-01-31" }
+ *         description: End date (YYYY-MM-DD) - inclusive
+ *       - in: query
+ *         name: editionId
+ *         schema: { type: string }
+ *         description: Filter by specific edition
+ *       - in: query
+ *         name: subEditionId
+ *         schema: { type: string }
+ *         description: Filter by specific sub-edition
+ *       - in: query
+ *         name: includePages
+ *         schema: { type: boolean, default: false }
+ *         description: Include page image URLs
+ *     responses:
+ *       200:
+ *         description: Tenant issues grouped by date
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   success: true
+ *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu News" }
+ *                   totalIssues: 45
+ *                   issuesByDate:
+ *                     "2026-01-18":
+ *                       - id: "iss_1"
+ *                         edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
+ *                         subEdition: null
+ *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
+ *                         coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
+ *                         pageCount: 12
+ *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
+ *                         createdAt: "2026-01-18T06:00:00.000Z"
+ *                         updatedAt: "2026-01-18T06:00:00.000Z"
+ *                       - id: "iss_2"
+ *                         edition: { id: "ed_2", name: "Andhra Pradesh Edition", slug: "andhra" }
+ *                         subEdition: null
+ *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/andhra.pdf"
+ *                         coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/andhra/p1.png"
+ *                         pageCount: 10
+ *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
+ *                         createdAt: "2026-01-18T06:15:00.000Z"
+ *                         updatedAt: "2026-01-18T06:15:00.000Z"
+ *                     "2026-01-17":
+ *                       - id: "iss_3"
+ *                         edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
+ *                         subEdition: null
+ *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/17/telangana.pdf"
+ *                         coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/17/telangana/p1.png"
+ *                         pageCount: 14
+ *                         uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
+ *                         createdAt: "2026-01-17T06:00:00.000Z"
+ *                         updatedAt: "2026-01-17T06:00:00.000Z"
+ *       403:
+ *         description: Unauthorized
+ */
+router.get('/issues/tenant', auth, getTenantIssues);
+
+/**
+ * @swagger
+ * /epaper/issues/check-exists:
+ *   get:
+ *     summary: Check if issue already exists (duplicate prevention)
+ *     description: |
+ *       Check if an ePaper issue already exists for a specific date and edition/sub-edition.
+ *       
+ *       **Duplicate Prevention Logic**:
+ *       - Prevents uploading the same issue multiple times
+ *       - Returns existing issue details if found
+ *       - Suggests actions: delete or replace existing issue
+ *       - Call this BEFORE uploading to avoid wasted processing
+ *       
+ *       **Best Practice**:
+ *       1. Call this endpoint before upload
+ *       2. If exists=true, either:
+ *          - Delete existing issue first (DELETE /epaper/issues/:id)
+ *          - Re-upload to replace (POST /epaper/pdf-issues/upload replaces automatically)
+ *       3. If exists=false, proceed with upload
+ *     tags: [EPF ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: issueDate
+ *         required: true
+ *         schema: { type: string, example: "2026-01-18" }
+ *         description: Date to check (YYYY-MM-DD)
+ *       - in: query
+ *         name: editionId
+ *         schema: { type: string }
+ *         description: Edition ID (provide exactly one: editionId OR subEditionId)
+ *       - in: query
+ *         name: subEditionId
+ *         schema: { type: string }
+ *         description: Sub-edition ID (provide exactly one: editionId OR subEditionId)
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only
+ *     responses:
+ *       200:
+ *         description: Existence check result
+ *         content:
+ *           application/json:
+ *             examples:
+ *               exists:
+ *                 summary: Issue already exists
+ *                 value:
+ *                   exists: true
+ *                   message: "Issue already exists for this date and edition/sub-edition"
+ *                   issue:
+ *                     id: "iss_1"
+ *                     issueDate: "2026-01-18T00:00:00.000Z"
+ *                     edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
+ *                     subEdition: null
+ *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
+ *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
+ *                     pageCount: 12
+ *                     uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
+ *                     createdAt: "2026-01-18T06:00:00.000Z"
+ *                     updatedAt: "2026-01-18T06:00:00.000Z"
+ *                   action:
+ *                     canReplace: true
+ *                     canDelete: true
+ *                     suggestion: "Delete existing issue first or use replace/update endpoint"
+ *               notExists:
+ *                 summary: No existing issue found
+ *                 value:
+ *                   exists: false
+ *                   message: "No existing issue found. Safe to upload."
+ *                   canUpload: true
+ *       400:
+ *         description: Validation error (missing date or invalid edition/sub-edition combo)
+ *       403:
+ *         description: Unauthorized
+ */
+router.get('/issues/check-exists', auth, checkIssueExists);
+
+/**
+ * @swagger
+ * /epaper/issues/{id}:
+ *   delete:
+ *     summary: Delete ePaper issue (SUPER_ADMIN & DESK_EDITOR only)
+ *     description: |
+ *       Delete an ePaper PDF issue completely.
+ *       
+ *       **Access**:
+ *       - SUPER_ADMIN: Can delete any issue from any tenant
+ *       - DESK_EDITOR: Can delete only issues from their own tenant
+ *       
+ *       **What gets deleted**:
+ *       - Issue database record
+ *       - All page records (cascade)
+ *       - PDF file from object storage
+ *       - All page PNG images from object storage
+ *       
+ *       **Use Cases**:
+ *       - Remove duplicate issues
+ *       - Delete incorrect uploads
+ *       - Clear old issues for re-upload
+ *       - Free up storage space
+ *       
+ *       **Note**: Deletion is permanent and cannot be undone!
+ *     tags: [EPF ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Issue ID to delete
+ *     responses:
+ *       200:
+ *         description: Issue deleted successfully
+ *         content:
+ *           application/json:
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   message: "Issue deleted successfully"
+ *                   deleted:
+ *                     issueId: "iss_1"
+ *                     issueDate: "2026-01-18T00:00:00.000Z"
+ *                     edition: "Telangana Edition"
+ *                     subEdition: null
+ *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
+ *                     pageCount: 12
+ *                     deletedAt: "2026-01-18T10:30:00.000Z"
+ *       403:
+ *         description: Unauthorized (wrong role or different tenant)
+ *       404:
+ *         description: Issue not found
+ */
+router.delete('/issues/:id', auth, deleteIssue);
 
 export default router;

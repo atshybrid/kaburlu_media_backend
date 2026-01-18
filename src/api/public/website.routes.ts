@@ -3228,7 +3228,7 @@ async function getStaticPageForTenant(tenantId: string, slug: string) {
  * /public/about-us:
  *   get:
  *     summary: Get About Us page for this domain
- *     tags: [Public - Website]
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3236,8 +3236,28 @@ async function getStaticPageForTenant(tenantId: string, slug: string) {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: About Us page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "about-us"
+ *                   title: "About Us"
+ *                   contentHtml: "<h1>About Kaburlu News</h1><p>We are committed to quality journalism...</p>"
+ *                   meta: { keywords: "about, news, journalism" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/about-us', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -3252,7 +3272,7 @@ router.get('/about-us', async (_req, res) => {
  * /public/contact-us:
  *   get:
  *     summary: Get Contact Us page for this domain
- *     tags: [Public - Website]
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3260,8 +3280,28 @@ router.get('/about-us', async (_req, res) => {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: Contact Us page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "contact-us"
+ *                   title: "Contact Us"
+ *                   contentHtml: "<h1>Contact Kaburlu News</h1><p>Email: contact@kaburlu.com</p>"
+ *                   meta: { keywords: "contact, support, email" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/contact-us', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -3276,7 +3316,7 @@ router.get('/contact-us', async (_req, res) => {
  * /public/privacy-policy:
  *   get:
  *     summary: Get Privacy Policy page for this domain
- *     tags: [Public - Website]
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3284,8 +3324,28 @@ router.get('/contact-us', async (_req, res) => {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: Privacy Policy page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "privacy-policy"
+ *                   title: "Privacy Policy"
+ *                   contentHtml: "<h1>Privacy Policy</h1><p>We collect and protect your data...</p>"
+ *                   meta: { keywords: "privacy, data protection, GDPR" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/privacy-policy', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -3299,8 +3359,8 @@ router.get('/privacy-policy', async (_req, res) => {
  * @swagger
  * /public/terms:
  *   get:
- *     summary: Get Terms page for this domain
- *     tags: [Public - Website]
+ *     summary: Get Terms of Service page for this domain
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3308,8 +3368,28 @@ router.get('/privacy-policy', async (_req, res) => {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: Terms of Service page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "terms"
+ *                   title: "Terms of Service"
+ *                   contentHtml: "<h1>Terms of Service</h1><p>By using our website, you agree...</p>"
+ *                   meta: { keywords: "terms, conditions, legal" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/terms', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -3324,7 +3404,7 @@ router.get('/terms', async (_req, res) => {
  * /public/disclaimer:
  *   get:
  *     summary: Get Disclaimer page for this domain
- *     tags: [Public - Website]
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3332,8 +3412,28 @@ router.get('/terms', async (_req, res) => {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: Disclaimer page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "disclaimer"
+ *                   title: "Disclaimer"
+ *                   contentHtml: "<h1>Disclaimer</h1><p>Information provided is for general purposes...</p>"
+ *                   meta: { keywords: "disclaimer, liability, legal" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/disclaimer', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
@@ -3348,7 +3448,7 @@ router.get('/disclaimer', async (_req, res) => {
  * /public/editorial-policy:
  *   get:
  *     summary: Get Editorial Policy page for this domain
- *     tags: [Public - Website]
+ *     tags: [Public - Website, Legal Pages]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -3356,8 +3456,28 @@ router.get('/disclaimer', async (_req, res) => {
  *         description: Optional override for tenant/domain detection when testing locally.
  *         schema: { type: string }
  *     responses:
- *       200: { description: Page }
- *       404: { description: Not found }
+ *       200:
+ *         description: Editorial Policy page content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 contentHtml: { type: string }
+ *                 meta: { type: object }
+ *                 updatedAt: { type: string, format: date-time }
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   slug: "editorial-policy"
+ *                   title: "Editorial Policy"
+ *                   contentHtml: "<h1>Editorial Policy</h1><p>We maintain the highest standards of journalism...</p>"
+ *                   meta: { keywords: "editorial, journalism, ethics" }
+ *                   updatedAt: "2026-01-18T10:00:00.000Z"
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
  */
 router.get('/editorial-policy', async (_req, res) => {
   const tenant = (res.locals as any).tenant;

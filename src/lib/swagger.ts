@@ -69,8 +69,12 @@ const swaggerDefinition = {
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
     { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
     { name: 'Public - Reporter Join', description: 'Public endpoints to check reporter slot availability & initiate onboarding payments' },
-    { name: 'Webhooks' }
-    ,{ name: 'Health', description: 'System and provider readiness checks' }
+    { name: 'Webhooks' },
+    { name: 'Health', description: 'System and provider readiness checks' },
+    // ePaper Module tags
+    { name: 'EPF ePaper - Admin', description: 'ePaper management endpoints - Settings, Editions, Sub-editions, PDF Issues, Domain Settings, and Issue Management (SUPER_ADMIN & DESK_EDITOR)' },
+    { name: 'EPF ePaper - Public', description: 'Public ePaper endpoints - Latest issues, editions list, and PDF page delivery' },
+    { name: 'Block ePaper - Admin', description: 'Block-based ePaper templates and layout generation (Admin only)' }
   ],
   components: {
     securitySchemes: {

@@ -245,7 +245,7 @@ router.get('/epaper/verify-domain', async (req, res) => {
  *                 summary: Complete settings including branding and SEO
  *                 value:
  *                   verified: true
- *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu" }
+ *                   tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu", nativeName: "కబుర్లు" }
  *                   domain: { id: "dom_1", domain: "epaper.kaburlu.com", kind: "EPAPER", status: "ACTIVE", verifiedAt: "2026-01-01T00:00:00.000Z" }
  *                   epaper: { type: "PDF", multiEditionEnabled: false }
  *                   settings:
@@ -573,7 +573,12 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
 
   return res.json({
     verified: true,
-    tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+    tenant: { 
+      id: tenant.id, 
+      slug: tenant.slug, 
+      name: tenant.name,
+      nativeName: (tenantEntity as any)?.nativeName ?? null,
+    },
     domain: {
       id: domain.id,
       domain: domain.domain,

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { ensureEpaperDomainSettings } from '../../lib/epaperDomainSettingsAuto';
 import { ensureNewsDomainSettings } from '../../lib/newsDomainSettingsAuto';
+import { autoGenerateLegalPages } from '../../lib/legalPagesAuto';
 
 const mergeSettings = (base: any, override: any) => ({ ...(base || {}), ...(override || {}) });
 
@@ -61,16 +62,29 @@ export const upsertDomainSettings = async (req: Request, res: Response) => {
   const autoSeoParam = String((req.query as any).autoSeo ?? 'true').toLowerCase();
   const autoSeo = autoSeoParam === '1' || autoSeoParam === 'true' || autoSeoParam === 'yes' || autoSeoParam === 'y' || autoSeoParam === 'on';
   
-  if (autoSeo) {
-    // Check domain kind to determine which auto-SEO to use
+  // Auto-generate legal pages if requested (default: true)
+  const autoLegalParam = String((req.query as any).autoLegal ?? 'true').toLowerCase();
+  const autoLegal = autoLegalParam === '1' || autoLegalParam === 'true' || autoLegalParam === 'yes' || autoLegalParam === 'y' || autoLegalParam === 'on';
+  
+  if (autoSeo || autoLegal) {
+    // Check domain kind to determine which auto-generation to use
     const domain = await (prisma as any).domain.findUnique({ where: { id: domainId } }).catch(() => null);
     const kind = String(domain?.kind || '').toUpperCase();
     
-    if (kind === 'EPAPER') {
-      await ensureEpaperDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
-    } else {
-      // NEWS or other domains
-      await ensureNewsDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
+    if (autoSeo) {
+      if (kind === 'EPAPER') {
+        await ensureEpaperDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
+      } else {
+        // NEWS or other domains
+        await ensureNewsDomainSettings(tenantId, domainId, { forceSeo: true }).catch(() => null);
+      }
+    }
+    
+    if (autoLegal) {
+      // Generate legal pages (privacy-policy, terms, disclaimer, etc.) using AI
+      await autoGenerateLegalPages(tenantId, domainId, { force: false }).catch((err) => {
+        console.error('[DomainSettings] Legal pages generation failed:', err);
+      });
     }
   }
   

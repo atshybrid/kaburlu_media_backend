@@ -457,6 +457,12 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *       - Set autoSeo=true (default) to auto-generate missing SEO fields using AI.
  *       - Only fills missing values; does not overwrite existing SEO.
  *
+ *       Auto-Legal Pages:
+ *       - Set autoLegal=true (default) to auto-generate legal/footer pages (Privacy Policy, Terms, Disclaimer, About Us, Contact Us, Editorial Policy).
+ *       - Uses AI with tenant context (TenantEntity + DomainSettings) to create personalized, legally compliant content.
+ *       - Skips pages that already exist (unless force=true).
+ *       - Generates content in site's language (supports bilingual for Telugu).
+ *
  *       Security note:
  *       - You may store sensitive values under `secrets`, but they are NEVER returned by public APIs.
  *       - Public APIs will only expose integrations with public IDs/tokens.
@@ -476,6 +482,11 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *         required: false
  *         schema: { type: boolean, default: true }
  *         description: Auto-generate missing SEO fields using AI
+ *       - in: query
+ *         name: autoLegal
+ *         required: false
+ *         schema: { type: boolean, default: true }
+ *         description: Auto-generate legal/footer pages using AI
  *     requestBody:
  *       required: true
  *       content:
@@ -935,5 +946,72 @@ router.get('/tenants/:tenantId/domains/settings', passport.authenticate('jwt', {
  *         description: Domain not found
  */
 router.post('/tenants/:tenantId/domains/:domainId/settings/epaper/auto', passport.authenticate('jwt', { session: false }), requireSuperAdmin, bootstrapEpaperDomainSettings);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/domains/{domainId}/legal-pages/auto:
+ *   post:
+ *     summary: Auto-generate legal/footer pages using AI (SUPER_ADMIN only)
+ *     description: |
+ *       Generates comprehensive legal pages (Privacy Policy, Terms, Disclaimer, About Us, Contact Us, Editorial Policy)
+ *       using AI with tenant context from TenantEntity and DomainSettings.
+ *
+ *       Features:
+ *       - Personalized content based on publisher, editor, address, registration info
+ *       - Legally compliant (Indian IT Act, Press Council guidelines for domestic sites)
+ *       - Supports bilingual content (English/Telugu)
+ *       - Skips pages that already exist unless force=true
+ *     tags: [Settings (Admin)]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: domainId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: force
+ *         required: false
+ *         schema: { type: boolean, default: false }
+ *         description: Regenerate even if pages already exist
+ *     responses:
+ *       200:
+ *         description: Legal pages generated successfully
+ *         content:
+ *           application/json:
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   message: "Legal pages generated successfully"
+ *                   generated: ["privacy-policy", "terms", "disclaimer", "about-us", "contact-us", "editorial-policy"]
+ *       500:
+ *         description: Failed to generate legal pages
+ */
+router.post('/tenants/:tenantId/domains/:domainId/legal-pages/auto', passport.authenticate('jwt', { session: false }), requireSuperAdmin, async (req, res) => {
+  try {
+    const { tenantId, domainId } = req.params;
+    const force = String(req.query.force || 'false').toLowerCase() === 'true';
+
+    await autoGenerateLegalPages(tenantId, domainId, { force });
+
+    const pages = ['privacy-policy', 'terms', 'disclaimer', 'about-us', 'contact-us', 'editorial-policy'];
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Legal pages generated successfully',
+      generated: pages
+    });
+  } catch (error: any) {
+    console.error('[LegalPagesAuto] Error:', error);
+    return res.status(500).json({
+      error: 'Failed to generate legal pages',
+      details: error.message
+    });
+  }
+});
 
 export default router;

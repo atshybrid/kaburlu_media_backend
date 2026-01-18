@@ -93,11 +93,12 @@ async function processLocationHierarchy(jobId: string, stateName: string, langua
   const job = jobStore.get(jobId);
   if (!job) return;
 
-  const MAX_DISTRICTS_PER_STATE = 50;
-  const MAX_MANDALS_PER_DISTRICT = 40;
-  const MAX_VILLAGES_PER_MANDAL = 30;
-  const DELAY_BETWEEN_DISTRICTS = 500;
-  const DELAY_BETWEEN_MANDALS = 250;
+  // BEST PRACTICE: Keep API calls small (max 40 items) to avoid overwhelming ChatGPT
+  const MAX_DISTRICTS_PER_STATE = 40;  // Max districts in one ChatGPT call
+  const MAX_MANDALS_PER_DISTRICT = 40; // Max mandals in one ChatGPT call
+  const MAX_VILLAGES_PER_MANDAL = 40;  // Max villages in one ChatGPT call
+  const DELAY_BETWEEN_DISTRICTS = 1000; // 1 second delay between district processing
+  const DELAY_BETWEEN_MANDALS = 500;    // 500ms delay between mandal processing
 
   try {
     job.status = 'processing';
@@ -114,7 +115,7 @@ async function processLocationHierarchy(jobId: string, stateName: string, langua
       return langs.map(l => map[l] || l).join(', ');
     };
 
-    // Helper function to build language keys for JSON
+    // Helper function to build language keys for JSON (with language name hints for ChatGPT)
     const buildLanguageKeys = (langs: string[]): string => {
       const map: Record<string, string> = {
         'te': 'Telugu', 'hi': 'Hindi', 'kn': 'Kannada',
@@ -122,7 +123,9 @@ async function processLocationHierarchy(jobId: string, stateName: string, langua
         'ur': 'Urdu', 'gu': 'Gujarati', 'ml': 'Malayalam',
         'pa': 'Punjabi', 'or': 'Odia', 'as': 'Assamese'
       };
-      return langs.map(l => `"${l}": "Name in ${map[l] || l}"`).join(', ');
+      // Format: "te": "translated name in Telugu", "hi": "translated name in Hindi"
+      // This gives ChatGPT clear guidance while using proper language codes as keys
+      return langs.map(l => `"${l}": "translated name in ${map[l] || l}"`).join(', ');
     };
 
     const langNames = buildLanguageNames(languages);
@@ -165,10 +168,40 @@ async function processLocationHierarchy(jobId: string, stateName: string, langua
       }
     }
 
-    job.progress.currentStep = 'Fetching districts';
+    job.progress.currentStep = 'Checking existing data';
 
-    // Step 3: Get all districts from ChatGPT
-    const districtPrompt = `List ALL districts in ${stateName} state, India.
+    // Step 3: Check if districts already exist with translations
+    // If all districts already have all translations, skip ChatGPT call
+    const existingDistricts = await prisma.district.findMany({
+      where: { stateId: state.id, isDeleted: false },
+      include: {
+        translations: {
+          where: { language: { in: languages } }
+        }
+      }
+    });
+
+    const hasCompleteData = existingDistricts.length > 0 && existingDistricts.every(d => 
+      languages.every(lang => d.translations.some(t => t.language === lang))
+    );
+
+    let districts: any[] = [];
+
+    if (hasCompleteData) {
+      // Use existing data, no need to call ChatGPT
+      console.log(`✓ All districts for ${stateName} already exist with complete translations. Skipping AI call.`);
+      districts = existingDistricts.map(d => ({
+        en: d.name,
+        ...Object.fromEntries(
+          d.translations.map(t => [t.language, t.name])
+        )
+      }));
+      job.progress.totalDistricts = districts.length;
+    } else {
+      // Need to fetch from ChatGPT
+      job.progress.currentStep = 'Fetching districts from AI';
+      
+      const districtPrompt = `List ALL districts in ${stateName} state, India.
 For each district, provide the name in English and translations in: ${langNames}.
 Return ONLY valid JSON in this exact format:
 {
@@ -178,15 +211,16 @@ Return ONLY valid JSON in this exact format:
 }
 Maximum ${MAX_DISTRICTS_PER_STATE} districts to keep response manageable.`;
 
-    const districtResult = await askChatGPT(districtPrompt);
-    const districtData = parseJSON(districtResult);
+      const districtResult = await askChatGPT(districtPrompt);
+      const districtData = parseJSON(districtResult);
 
-    if (!districtData?.districts || !Array.isArray(districtData.districts)) {
-      throw new Error('Invalid district data from ChatGPT');
+      if (!districtData?.districts || !Array.isArray(districtData.districts)) {
+        throw new Error('Invalid district data from ChatGPT');
+      }
+
+      districts = districtData.districts.slice(0, MAX_DISTRICTS_PER_STATE);
+      job.progress.totalDistricts = districts.length;
     }
-
-    const districts = districtData.districts.slice(0, MAX_DISTRICTS_PER_STATE);
-    job.progress.totalDistricts = districts.length;
 
     // Process each district
     for (let i = 0; i < districts.length; i++) {
@@ -225,7 +259,34 @@ Maximum ${MAX_DISTRICTS_PER_STATE} districts to keep response manageable.`;
       }
 
       // Step 4: Get mandals for this district
-      const mandalPrompt = `List mandals/tehsils in ${distData.en} district, ${stateName} state, India.
+      // Check if mandals already exist with translations
+      const existingMandals = await prisma.mandal.findMany({
+        where: { districtId: district.id, isDeleted: false },
+        include: {
+          translations: {
+            where: { language: { in: languages } }
+          }
+        }
+      });
+
+      const hasCompleteMandals = existingMandals.length > 0 && existingMandals.every(m => 
+        languages.every(lang => m.translations.some(t => t.language === lang))
+      );
+
+      let mandals: any[] = [];
+
+      if (hasCompleteMandals) {
+        // Use existing data, skip AI call
+        console.log(`✓ All mandals for ${distData.en} district already exist with complete translations. Skipping AI call.`);
+        mandals = existingMandals.map(m => ({
+          en: m.name,
+          ...Object.fromEntries(
+            m.translations.map(t => [t.language, t.name])
+          )
+        }));
+      } else {
+        // Need to fetch from ChatGPT
+        const mandalPrompt = `List mandals/tehsils in ${distData.en} district, ${stateName} state, India.
 For each mandal, provide the name in English and translations in: ${langNames}.
 Return ONLY valid JSON:
 {
@@ -235,13 +296,17 @@ Return ONLY valid JSON:
 }
 Maximum ${MAX_MANDALS_PER_DISTRICT} mandals.`;
 
-      await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_DISTRICTS));
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_DISTRICTS));
 
-      const mandalResult = await askChatGPT(mandalPrompt);
-      const mandalData = parseJSON(mandalResult);
+        const mandalResult = await askChatGPT(mandalPrompt);
+        const mandalData = parseJSON(mandalResult);
 
-      if (mandalData?.mandals && Array.isArray(mandalData.mandals)) {
-        const mandals = mandalData.mandals.slice(0, MAX_MANDALS_PER_DISTRICT);
+        if (mandalData?.mandals && Array.isArray(mandalData.mandals)) {
+          mandals = mandalData.mandals.slice(0, MAX_MANDALS_PER_DISTRICT);
+        }
+      }
+
+      if (mandals.length > 0) {
 
         for (let j = 0; j < mandals.length; j++) {
           const manData = mandals[j];
@@ -279,7 +344,27 @@ Maximum ${MAX_MANDALS_PER_DISTRICT} mandals.`;
 
           // Step 5: Get villages for this mandal (limit to first 10 mandals to avoid overwhelming)
           if (j < 10) {
-            const villagePrompt = `List villages in ${manData.en} mandal, ${distData.en} district, India.
+            // Check if villages already exist with translations
+            const existingVillages = await prisma.village.findMany({
+              where: { mandalId: mandal.id, isDeleted: false },
+              include: {
+                translations: {
+                  where: { language: { in: languages } }
+                }
+              }
+            });
+
+            const hasCompleteVillages = existingVillages.length > 0 && existingVillages.every(v => 
+              languages.every(lang => v.translations.some(t => t.language === lang))
+            );
+
+            if (hasCompleteVillages) {
+              // Use existing data, skip AI call
+              console.log(`✓ All villages for ${manData.en} mandal already exist with complete translations. Skipping AI call.`);
+              job.progress.villagesProcessed += existingVillages.length;
+            } else {
+              // Need to fetch from ChatGPT
+              const villagePrompt = `List villages in ${manData.en} mandal, ${distData.en} district, India.
 For each village, provide the name in English and translations in: ${langNames}.
 Return ONLY valid JSON in this exact format:
 {
@@ -289,20 +374,56 @@ Return ONLY valid JSON in this exact format:
 }
 Maximum ${MAX_VILLAGES_PER_MANDAL} villages.`;
 
-            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_MANDALS));
-
-            try {
-              const villageResult = await askChatGPT(villagePrompt);
-              const villageData = parseJSON(villageResult);
-
-              if (villageData?.villages && Array.isArray(villageData.villages)) {
-                job.progress.villagesProcessed += villageData.villages.length;
-              }
-
               await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_MANDALS));
-            } catch (err) {
-              console.error(`Failed to fetch villages for ${manData.en}:`, err);
-              // Continue with next mandal
+
+              try {
+                const villageResult = await askChatGPT(villagePrompt);
+                const villageData = parseJSON(villageResult);
+
+                if (villageData?.villages && Array.isArray(villageData.villages)) {
+                  const villages = villageData.villages.slice(0, MAX_VILLAGES_PER_MANDAL);
+                  
+                  // Create village records with translations
+                  for (const villData of villages) {
+                    // Create or find village
+                    let village = await prisma.village.findFirst({
+                      where: {
+                        name: { equals: villData.en, mode: 'insensitive' },
+                        mandalId: mandal.id,
+                        isDeleted: false
+                      }
+                    });
+
+                    if (!village) {
+                      village = await (prisma as any).village.create({
+                        data: { name: villData.en, mandalId: mandal.id, tenantId: domain.tenantId, isDeleted: false }
+                      });
+                    }
+
+                    // Create translations for each language
+                    for (const lang of languages) {
+                      if (villData[lang]) {
+                        const existing = await prisma.villageTranslation.findFirst({
+                          where: { villageId: village.id, language: lang }
+                        });
+
+                        if (!existing) {
+                          await prisma.villageTranslation.create({
+                            data: { villageId: village.id, language: lang, name: villData[lang] }
+                          });
+                        }
+                      }
+                    }
+                  }
+                  
+                  job.progress.villagesProcessed += villages.length;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_MANDALS));
+              } catch (err) {
+                console.error(`Failed to fetch villages for ${manData.en}:`, err);
+                // Continue with next mandal
+              }
             }
           }
         }
@@ -621,24 +742,54 @@ router.post('/populate/state', passport.authenticate('jwt', { session: false }),
       return res.status(400).json({ error: 'stateName is required' });
     }
 
+    const normalizedStateName = stateName.trim();
     const targetLanguages = Array.isArray(languages) && languages.length > 0
       ? languages
       : ['te', 'hi', 'kn', 'ta', 'mr'];
+
+    // BEST PRACTICE: Check if job already running or completed for this state
+    const existingJob = Array.from(jobStore.values()).find(j => 
+      j.stateName.toLowerCase() === normalizedStateName.toLowerCase()
+    );
+
+    if (existingJob) {
+      if (existingJob.status === 'processing' || existingJob.status === 'queued') {
+        return res.status(409).json({
+          error: 'Job already running',
+          message: `A job for "${existingJob.stateName}" is already ${existingJob.status}. Check /location/ai/populate/state/status for progress.`,
+          existingJobId: existingJob.id,
+          status: existingJob.status,
+          progress: existingJob.progress,
+          suggestion: `GET /location/ai/populate/state/status/${existingJob.id}`
+        });
+      }
+
+      if (existingJob.status === 'completed') {
+        return res.status(409).json({
+          error: 'Job already completed',
+          message: `Location data for "${existingJob.stateName}" has already been populated. Use manual CRUD APIs to add missing data or fix translations.`,
+          existingJobId: existingJob.id,
+          completedAt: existingJob.completedAt,
+          suggestion: 'Use POST /location/districts, POST /location/mandals, POST /location/villages for manual additions. Use PUT endpoints to fix translation names.'
+        });
+      }
+    }
 
     // Import the cron worker
     const { runLocationPopulateCron } = require('../../workers/locationPopulateCron');
     
     // Start in background (don't await)
-    runLocationPopulateCron(stateName.trim(), targetLanguages).catch((err: any) => {
+    runLocationPopulateCron(normalizedStateName, targetLanguages).catch((err: any) => {
       console.error('State processing error:', err);
     });
 
     return res.status(202).json({
       success: true,
-      message: `Processing ${stateName} state completely (districts → mandals → villages). Check server logs for progress.`,
-      stateName: stateName.trim(),
+      message: `Processing ${normalizedStateName} state completely (districts → mandals → villages). Check server logs for progress.`,
+      stateName: normalizedStateName,
       languages: targetLanguages,
-      estimatedDuration: '5-15 minutes depending on state size'
+      estimatedDuration: '5-15 minutes depending on state size',
+      checkProgress: 'Use GET /location/ai/populate/jobs to see all running jobs'
     });
 
   } catch (error: any) {

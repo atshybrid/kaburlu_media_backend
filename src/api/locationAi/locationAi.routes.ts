@@ -65,6 +65,7 @@ function tryParseJson(text: string): any | null {
 
 // Import new populate routes
 import locationPopulateRoutes from './locationPopulate.routes';
+import locationManualRoutes from './locationManual.routes';
 
 async function openaiChatJson(messages: Array<{ role: 'system' | 'user'; content: string }>, model: string) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -458,5 +459,8 @@ router.post('/villages', passport.authenticate('jwt', { session: false }), requi
 
 // Mount new populate routes
 router.use('/ai', locationPopulateRoutes);
+
+// Mount manual CRUD routes for location management
+router.use('/manual', locationManualRoutes);
 
 export default router;
