@@ -3,6 +3,7 @@ import passport from 'passport';
 import { getEntitySettings, upsertEntitySettings, getTenantSettings, upsertTenantSettings, getDomainSettings, upsertDomainSettings, listDomainSettings, bootstrapEpaperDomainSettings } from './settings.controller';
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import prisma from '../../lib/prisma';
+import { autoGenerateLegalPages } from '../../lib/legalPagesAuto';
 
 const router = Router();
 

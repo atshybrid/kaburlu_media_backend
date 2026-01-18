@@ -396,11 +396,12 @@ Maximum ${MAX_VILLAGES_PER_MANDAL} villages.`;
 
                     if (!village) {
                       village = await (prisma as any).village.create({
-                        data: { name: villData.en, mandalId: mandal.id, tenantId: domain.tenantId, isDeleted: false }
+                      data: { name: villData.en, mandalId: mandal.id, isDeleted: false }
                       });
                     }
 
                     // Create translations for each language
+                  if (village) {
                     for (const lang of languages) {
                       if (villData[lang]) {
                         const existing = await prisma.villageTranslation.findFirst({
@@ -411,6 +412,7 @@ Maximum ${MAX_VILLAGES_PER_MANDAL} villages.`;
                           await prisma.villageTranslation.create({
                             data: { villageId: village.id, language: lang, name: villData[lang] }
                           });
+                        }
                         }
                       }
                     }
