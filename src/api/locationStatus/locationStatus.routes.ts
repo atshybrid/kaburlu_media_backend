@@ -400,6 +400,12 @@ OUTPUT (JSON only):
         return res.status(500).json({ error: 'Invalid AI response' });
       }
 
+      // Get first tenant for village association (villages are shared across tenants)
+      const firstTenant = await prisma.tenant.findFirst();
+      if (!firstTenant) {
+        return res.status(500).json({ error: 'No tenant found in database' });
+      }
+
       // Translate names
       const villageNames = villageData.villages.map((v: any) => v.villageName);
       const translations = await translateNames(villageNames, AUTO_LANGUAGES);
@@ -411,6 +417,7 @@ OUTPUT (JSON only):
           data: {
             name: vill.villageName,
             mandalId: mandal.id,
+            tenantId: firstTenant.id,
             isDeleted: false
           }
         });
