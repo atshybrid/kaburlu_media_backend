@@ -154,24 +154,26 @@ export async function resolveOrCreateCategoryIdByName(opts: {
 }
 
 // Seed list to reduce auto-created categories.
+// Core news categories - these are seeded automatically on startup
+// Keep this list updated with the main categories you want for all tenants
 export const CORE_NEWS_CATEGORIES: Array<{ name: string; slug: string }> = [
   { name: 'Politics', slug: 'politics' },
-  { name: 'State News', slug: 'state-news' },
-  { name: 'Crime', slug: 'crime' },
-  { name: 'Accident', slug: 'accident' },
-  { name: 'Weather', slug: 'weather' },
-  { name: 'Sports', slug: 'sports' },
-  { name: 'Business', slug: 'business' },
-  { name: 'Education', slug: 'education' },
-  { name: 'Health', slug: 'health' },
-  { name: 'Environment', slug: 'environment' },
-  { name: 'Technology', slug: 'technology' },
-  { name: 'Entertainment', slug: 'entertainment' },
-  { name: 'Devotional', slug: 'devotional' },
-  { name: 'Lifestyle', slug: 'lifestyle' },
-  { name: 'Community', slug: 'community' },
-  { name: 'Traffic', slug: 'traffic' },
-  { name: 'Agriculture', slug: 'agriculture' },
   { name: 'National', slug: 'national' },
   { name: 'International', slug: 'international' },
+  { name: 'State News', slug: 'state-news' },
+  { name: 'Crime', slug: 'crime' },
+  { name: 'Sports', slug: 'sports' },
+  { name: 'Business', slug: 'business' },
+  { name: 'Entertainment', slug: 'entertainment' },
+  { name: 'Technology', slug: 'technology' },
+  { name: 'Health', slug: 'health' },
+  { name: 'Education', slug: 'education' },
+  { name: 'Agriculture', slug: 'agriculture' },
+  { name: 'Environment', slug: 'environment' },
+  { name: 'Devotional', slug: 'devotional' },
+  { name: 'Lifestyle', slug: 'lifestyle' },
+  { name: 'Weather', slug: 'weather' },
+  { name: 'Traffic', slug: 'traffic' },
+  { name: 'Accident', slug: 'accident' },
+  { name: 'Community', slug: 'community' },
 ];
