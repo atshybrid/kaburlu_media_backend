@@ -14,6 +14,10 @@ const AUTO_LANGUAGES = ['te', 'hi', 'kn', 'ta', 'mr'];
 async function askChatGPT(prompt: string): Promise<string> {
   if (!OPENAI_KEY) throw new Error('Missing OPENAI_API_KEY');
   
+  console.log('\n📤 SENDING TO AI:');
+  console.log('─'.repeat(70));
+  console.log(prompt.substring(0, 300) + '...\n');
+  
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -32,7 +36,14 @@ async function askChatGPT(prompt: string): Promise<string> {
       headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' }
     }
   );
-  return resp?.data?.choices?.[0]?.message?.content || '';
+  
+  const result = resp?.data?.choices?.[0]?.message?.content || '';
+  console.log('📥 AI RESPONSE:');
+  console.log('─'.repeat(70));
+  console.log(result.substring(0, 500) + (result.length > 500 ? '...' : ''));
+  console.log('─'.repeat(70) + '\n');
+  
+  return result;
 }
 
 function parseJSON(text: string): any {
@@ -111,6 +122,10 @@ OUTPUT (JSON only):
   ]
 }`;
 
+  console.log('🔍 DISTRICT PROMPT:');
+  console.log(districtPrompt);
+  console.log('\n⏳ Calling ChatGPT API...\n');
+
   const districtResult = await askChatGPT(districtPrompt);
   const districtData = parseJSON(districtResult);
 
@@ -128,32 +143,44 @@ OUTPUT (JSON only):
   // Translate district names
   const districtNames = districtData.districts.map((d: any) => d.districtName);
   console.log(`🤖 Translating ${districtNames.length} districts to 5 languages...`);
-  const districtTranslations = await translateNames(districtNames, AUTO_LANGUAGES);
+  
+  let districtTranslations: any = null;
+  try {
+    districtTranslations = await translateNames(districtNames, AUTO_LANGUAGES);
+    console.log(`✅ Translation successful!`);
+  } catch (err: any) {
+    console.log(`⚠️  Translation failed: ${err.message}`);
+    console.log(`   Continuing without translations...`);
+  }
 
   // Create districts
   for (const dist of districtData.districts) {
-    const district = await prisma.district.create({
-      data: {
-        name: dist.districtName,
-        stateId: telangana.id,
-        isDeleted: false
-      }
-    });
-    totalDistricts++;
+    try {
+      const district = await prisma.district.create({
+        data: {
+          name: dist.districtName,
+          stateId: telangana.id,
+          isDeleted: false
+        }
+      });
+      totalDistricts++;
 
-    // Add translations
-    const trans = districtTranslations?.translations?.[dist.districtName];
-    if (trans) {
-      for (const lang of AUTO_LANGUAGES) {
-        if (trans[lang]) {
-          await prisma.districtTranslation.create({
-            data: { districtId: district.id, language: lang, name: trans[lang] }
-          });
+      // Add translations
+      const trans = districtTranslations?.translations?.[dist.districtName];
+      if (trans) {
+        for (const lang of AUTO_LANGUAGES) {
+          if (trans[lang]) {
+            await prisma.districtTranslation.create({
+              data: { districtId: district.id, language: lang, name: trans[lang] }
+            });
+          }
         }
       }
-    }
 
-    console.log(`   ✓ ${dist.districtName}`);
+      console.log(`   ✓ ${dist.districtName}`);
+    } catch (err: any) {
+      console.log(`   ❌ Failed to create ${dist.districtName}: ${err.message}`);
+    }
   }
 
   console.log(`\n✅ Created ${totalDistricts} districts\n`);
@@ -202,41 +229,65 @@ OUTPUT (JSON only):
   ]
 }`;
 
+    console.log(`\n🔍 MANDAL PROMPT for ${district.name}:`);
+    console.log(mandalPrompt);
+    console.log('\n⏳ Calling ChatGPT API...\n');
+
     const mandalResult = await askChatGPT(mandalPrompt);
     const mandalData = parseJSON(mandalResult);
 
     if (!mandalData?.mandals) {
-      console.log(`   ❌ Invalid response - skipping`);
+      console.log(`   ❌ Invalid AI response - skipping`);
+      console.log(`   Response was: ${JSON.stringify(mandalData)}`);
       continue;
     }
 
-    console.log(`   ✓ AI returned ${mandalData.totalMandals} mandals (actual: ${mandalData.mandals.length})`);
+    console.log(`   ✅ AI returned ${mandalData.totalMandals} mandals (actual: ${mandalData.mandals.length})`);
+    
+    if (mandalData.totalMandals !== mandalData.mandals.length) {
+      console.log(`   ⚠️  COUNT MISMATCH! Declared: ${mandalData.totalMandals}, Received: ${mandalData.mandals.length}`);
+    }
+    
+    console.log(`   📝 Mandals: ${mandalData.mandals.map((m: any) => m.mandalName).join(', ')}`);
 
     // Translate mandal names
+    console.log(`\n   🤖 Translating ${mandalData.mandals.length} mandals...`);
     const mandalNames = mandalData.mandals.map((m: any) => m.mandalName);
-    const mandalTrans = await translateNames(mandalNames, AUTO_LANGUAGES);
+    
+    let mandalTrans: any = null;
+    try {
+      mandalTrans = await translateNames(mandalNames, AUTO_LANGUAGES);
+      console.log(`   ✅ Translation successful!`);
+    } catch (err: any) {
+      console.log(`   ⚠️  Translation failed: ${err.message}`);
+      console.log(`   Continuing without translations...`);
+    }
 
     // Create mandals
     for (const mand of mandalData.mandals) {
-      const mandal = await prisma.mandal.create({
-        data: {
-          name: mand.mandalName,
-          districtId: district.id,
-          isDeleted: false
-        }
-      });
-      totalMandals++;
+      try {
+        const mandal = await prisma.mandal.create({
+          data: {
+            name: mand.mandalName,
+            districtId: district.id,
+            isDeleted: false
+          }
+        });
+        totalMandals++;
 
-      // Add translations
-      const trans = mandalTrans?.translations?.[mand.mandalName];
-      if (trans) {
-        for (const lang of AUTO_LANGUAGES) {
-          if (trans[lang]) {
-            await prisma.mandalTranslation.create({
-              data: { mandalId: mandal.id, language: lang, name: trans[lang] }
-            });
+        // Add translations
+        const trans = mandalTrans?.translations?.[mand.mandalName];
+        if (trans) {
+          for (const lang of AUTO_LANGUAGES) {
+            if (trans[lang]) {
+              await prisma.mandalTranslation.create({
+                data: { mandalId: mandal.id, language: lang, name: trans[lang] }
+              });
+            }
           }
         }
+      } catch (err: any) {
+        console.log(`      ❌ Failed to create ${mand.mandalName}: ${err.message}`);
       }
     }
 

@@ -34,6 +34,7 @@ const swaggerDefinition = {
     { name: 'AI', description: 'AI utility endpoints (test, headline generation, etc.)' },
     { name: 'AI Rewrite', description: 'AI rewrite controls, usage metering, and billing limits' },
     { name: 'Location AI', description: 'AI-powered location data generation and translation - Generate complete state hierarchies (districts→mandals→villages) in multiple Indian languages using ChatGPT' },
+    { name: 'Location', description: 'Location data status monitoring and retry APIs - Check population progress and retry failed districts/mandals' },
     { name: 'ShortNews' },
     { name: 'ShortNews Options' },
     { name: 'Reactions' },
