@@ -127,7 +127,6 @@ export const getAllIssuesByDate = async (req: Request, res: Response) => {
           edition: { select: { id: true, name: true, slug: true } },
           subEdition: { select: { id: true, name: true, slug: true } },
           pages: includePages ? { orderBy: { pageNumber: 'asc' } } : false,
-          uploadedBy: { select: { id: true, name: true, email: true } },
         },
       }),
       p.epaperPdfIssue.count({ where: whereClause }),
@@ -151,7 +150,7 @@ export const getAllIssuesByDate = async (req: Request, res: Response) => {
         coverImageUrl: issue.coverImageUrl,
         pageCount: issue.pageCount,
         pages: includePages ? issue.pages : undefined,
-        uploadedBy: issue.uploadedBy,
+        uploadedByUserId: issue.uploadedByUserId,
         createdAt: issue.createdAt,
         updatedAt: issue.updatedAt,
       })),
@@ -218,7 +217,6 @@ export const getTenantIssues = async (req: Request, res: Response) => {
         edition: { select: { id: true, name: true, slug: true } },
         subEdition: { select: { id: true, name: true, slug: true } },
         pages: includePages ? { orderBy: { pageNumber: 'asc' } } : false,
-        uploadedBy: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -237,7 +235,7 @@ export const getTenantIssues = async (req: Request, res: Response) => {
         coverImageUrl: issue.coverImageUrl,
         pageCount: issue.pageCount,
         pages: includePages ? issue.pages : undefined,
-        uploadedBy: issue.uploadedBy,
+        uploadedByUserId: issue.uploadedByUserId,
         createdAt: issue.createdAt,
         updatedAt: issue.updatedAt,
       });
@@ -388,7 +386,6 @@ export const checkIssueExists = async (req: Request, res: Response) => {
       include: {
         edition: { select: { id: true, name: true, slug: true } },
         subEdition: { select: { id: true, name: true, slug: true } },
-        uploadedBy: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -404,7 +401,7 @@ export const checkIssueExists = async (req: Request, res: Response) => {
           pdfUrl: existingIssue.pdfUrl,
           coverImageUrl: existingIssue.coverImageUrl,
           pageCount: existingIssue.pageCount,
-          uploadedBy: existingIssue.uploadedBy,
+          uploadedByUserId: existingIssue.uploadedByUserId,
           createdAt: existingIssue.createdAt,
           updatedAt: existingIssue.updatedAt,
         },
