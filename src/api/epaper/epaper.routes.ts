@@ -1924,11 +1924,11 @@ router.get('/issues/tenant', auth, getTenantIssues);
  *       - in: query
  *         name: editionId
  *         schema: { type: string }
- *         description: Edition ID (provide exactly one: editionId OR subEditionId)
+ *         description: "Edition ID (provide exactly one: editionId OR subEditionId)"
  *       - in: query
  *         name: subEditionId
  *         schema: { type: string }
- *         description: Sub-edition ID (provide exactly one: editionId OR subEditionId)
+ *         description: "Sub-edition ID (provide exactly one: editionId OR subEditionId)"
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
