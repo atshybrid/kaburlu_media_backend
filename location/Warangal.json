@@ -4,7 +4,7 @@
     "name_te": "వరంగల్",
     "state_en": "Telangana",
     "state_te": "తెలంగాణ",
-    "total_mandals": 11
+    "total_mandals": 14
   },
   "mandals": [
     { "name_en": "Warangal", "name_te": "వరంగల్" },
@@ -17,6 +17,9 @@
     { "name_en": "Khanapur (Warangal)", "name_te": "ఖానాపూర్ (వరంగల్)" },
     { "name_en": "Nallabelly", "name_te": "నల్లబెల్లి" },
     { "name_en": "Shayampet (Warangal)", "name_te": "శాయంపేట్ (వరంగల్)" },
-    { "name_en": "Chennaraopet", "name_te": "చెన్నారావుపేట" }
+    { "name_en": "Chennaraopet", "name_te": "చెన్నారావుపేట" },
+    { "name_en": "Dharmasagar", "name_te": "ధర్మసాగర్" },
+    { "name_en": "Nekkonda", "name_te": "నెక్కొండ" },
+    { "name_en": "Sangem", "name_te": "సంగెం" }
   ]
 }

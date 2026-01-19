@@ -4,7 +4,7 @@
     "name_te": "భద్రాద్రి కొత్తగూడెం",
     "state_en": "Telangana",
     "state_te": "తెలంగాణ",
-    "total_mandals": 15
+    "total_mandals": 24
   },
   "mandals": [
     { "name_en": "Kothagudem", "name_te": "కొత్తగూడెం" },
@@ -21,6 +21,15 @@
     { "name_en": "Mulakalapalli", "name_te": "ములకలపల్లి" },
     { "name_en": "Pinapaka", "name_te": "పినపాక" },
     { "name_en": "Sujathanagar", "name_te": "సుజాతానగర్" },
-    { "name_en": "Chandrugonda", "name_te": "చంద్రుగొండ" }
+    { "name_en": "Chandrugonda", "name_te": "చంద్రుగొండ" },
+    { "name_en": "Manuguru", "name_te": "మానుగూరు" },
+    { "name_en": "Venkatapuram", "name_te": "వెంకటాపురం" },
+    { "name_en": "Bhadrachalam", "name_te": "భద్రాచలం" },
+    { "name_en": "Kunavaram", "name_te": "కునవరం" },
+    { "name_en": "Annapureddipalli", "name_te": "అన్నపురెడ్డిపల్లి" },
+    { "name_en": "Kukunoor", "name_te": "కుకునూర్" },
+    { "name_en": "Chintoor", "name_te": "చింతూర్" },
+    { "name_en": "Vararamachandrapuram", "name_te": "వరరామచంద్రపురం" },
+    { "name_en": "Dammapeta", "name_te": "దమ్మపేట" }
   ]
 }
