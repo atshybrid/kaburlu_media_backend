@@ -274,8 +274,24 @@ router.get('/search-combined', async (req, res) => {
             includeVillage: false,
         });
 
+        // Get tenant context first to use its language as fallback
+        const tenantCtxId = tenantId || (res.locals as any)?.tenant?.id || '';
+        const tenantCtx = tenantCtxId
+            ? await (prisma as any).tenant.findUnique({
+                where: { id: tenantCtxId },
+                include: { entity: { include: { language: true } } },
+            }).catch(() => null)
+            : null;
+        
+        const tenantLangCode = tenantCtx?.entity?.language?.code || '';
+
+        // Try to get user language from auth, fallback to tenant language
         const userLang = await getUserLanguageCodeFromAuth(req);
-        const lang = userLang && (userLang === 'te' || userLang === 'hi') ? userLang : '';
+        const lang = userLang && (userLang === 'te' || userLang === 'hi') 
+            ? userLang 
+            : (tenantLangCode && (tenantLangCode === 'te' || tenantLangCode === 'hi'))
+                ? tenantLangCode
+                : '';
 
         // Collect ids for translation lookup (only when lang is te/hi)
         const stateIds = new Set<string>();
@@ -297,13 +313,6 @@ router.get('/search-combined', async (req, res) => {
             villageIds: Array.from(villageIds),
         });
 
-        const tenantCtxId = tenantId || (res.locals as any)?.tenant?.id || '';
-        const tenantCtx = tenantCtxId
-            ? await (prisma as any).tenant.findUnique({
-                where: { id: tenantCtxId },
-                include: { entity: { include: { language: true } } },
-            }).catch(() => null)
-            : null;
         const tenantOut = tenantCtx
             ? {
                 id: tenantCtx.id,
