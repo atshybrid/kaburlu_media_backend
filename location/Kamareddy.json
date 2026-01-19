@@ -1,0 +1,33 @@
+{
+  "district": {
+    "name_en": "Kamareddy",
+    "name_te": "కామారెడ్డి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 22
+  },
+  "mandals": [
+    { "name_en": "Kamareddy", "name_te": "కామారెడ్డి" },
+    { "name_en": "Banswada", "name_te": "బాన్సువాడ" },
+    { "name_en": "Bichkunda", "name_te": "బిచ్కుంద" },
+    { "name_en": "Bhiknoor", "name_te": "భిక్నూర్" },
+    { "name_en": "Bibipet", "name_te": "బిబిపేట్" },
+    { "name_en": "Domakonda", "name_te": "డోమకొండ" },
+    { "name_en": "Gandhari", "name_te": "గాంధారి" },
+    { "name_en": "Jukkal", "name_te": "జుక్కల్" },
+    { "name_en": "Machareddy", "name_te": "మాచారెడ్డి" },
+    { "name_en": "Madnur", "name_te": "మద్నూర్" },
+    { "name_en": "Nagireddypet", "name_te": "నాగిరెడ్డిపేట్" },
+    { "name_en": "Nizamsagar", "name_te": "నిజాంసాగర్" },
+    { "name_en": "Pitlam", "name_te": "పిట్లం" },
+    { "name_en": "Ramareddy", "name_te": "రామారెడ్డి" },
+    { "name_en": "Sadasivanagar", "name_te": "సదాశివనగర్" },
+    { "name_en": "Tadwai", "name_te": "తాడ్వాయి" },
+    { "name_en": "Yellareddy", "name_te": "ఎల్లారెడ్డి" },
+    { "name_en": "Birkoor", "name_te": "బీర్కూర్" },
+    { "name_en": "Dongli", "name_te": "డొంగ్లీ" },
+    { "name_en": "Nasrullabad", "name_te": "నస్రుల్లాబాద్" },
+    { "name_en": "Lingampet", "name_te": "లింగంపేట్" },
+    { "name_en": "Bodhan Rural (Kamareddy)", "name_te": "బోధన్ రూరల్ (కామారెడ్డి)" }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "district": {
+    "name_en": "Hyderabad",
+    "name_te": "హైదరాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 16
+  },
+  "mandals": [
+    { "name_en": "Ameerpet", "name_te": "అమీర్‌పేట్" },
+    { "name_en": "Asifnagar", "name_te": "ఆసిఫ్‌నగర్" },
+    { "name_en": "Bahadurpura", "name_te": "బహదూర్‌పురా" },
+    { "name_en": "Bandlaguda", "name_te": "బండ్లగూడ" },
+    { "name_en": "Charminar", "name_te": "చార్మినార్" },
+    { "name_en": "Golconda", "name_te": "గోల్కొండ" },
+    { "name_en": "Himayatnagar", "name_te": "హిమాయత్‌నగర్" },
+    { "name_en": "Khairatabad", "name_te": "ఖైరతాబాద్" },
+    { "name_en": "Maredpally", "name_te": "మారెడ్‌పల్లి" },
+    { "name_en": "Musheerabad", "name_te": "ముషీరాబాద్" },
+    { "name_en": "Nampally", "name_te": "నాంపల్లి" },
+    { "name_en": "Saidabad", "name_te": "సైదాబాద్" },
+    { "name_en": "Shaikpet", "name_te": "షేక్‌పేట్" },
+    { "name_en": "Secunderabad", "name_te": "సికింద్రాబాద్" },
+    { "name_en": "Serilingampally", "name_te": "సెరిలింగంపల్లి" },
+    { "name_en": "Tirumalagiri", "name_te": "తిరుమలగిరి" }
+  ]
+}

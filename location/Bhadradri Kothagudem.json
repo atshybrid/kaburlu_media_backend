@@ -1,0 +1,26 @@
+{
+  "district": {
+    "name_en": "Bhadradri Kothagudem",
+    "name_te": "భద్రాద్రి కొత్తగూడెం",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 15
+  },
+  "mandals": [
+    { "name_en": "Kothagudem", "name_te": "కొత్తగూడెం" },
+    { "name_en": "Palvancha", "name_te": "పాల్వంచ" },
+    { "name_en": "Yellandu", "name_te": "యల్లందు" },
+    { "name_en": "Tekulapalli", "name_te": "టేకులపల్లి" },
+    { "name_en": "Julurpad", "name_te": "జూలూరుపాడు" },
+    { "name_en": "Aswapuram", "name_te": "అశ్వాపురం" },
+    { "name_en": "Burgampahad", "name_te": "బూర్గంపాడు" },
+    { "name_en": "Cherla", "name_te": "చెర్ల" },
+    { "name_en": "Dummugudem", "name_te": "దుమ్ముగూడెం" },
+    { "name_en": "Gundala", "name_te": "గుండాల" },
+    { "name_en": "Laxmidevipalli", "name_te": "లక్ష్మీదేవిపల్లి" },
+    { "name_en": "Mulakalapalli", "name_te": "ములకలపల్లి" },
+    { "name_en": "Pinapaka", "name_te": "పినపాక" },
+    { "name_en": "Sujathanagar", "name_te": "సుజాతానగర్" },
+    { "name_en": "Chandrugonda", "name_te": "చంద్రుగొండ" }
+  ]
+}

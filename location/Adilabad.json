@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "Adilabad",
+    "name_te": "ఆదిలాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Adilabad (Urban)", "name_te": "ఆదిలాబాద్ (అర్బన్)" },
+    { "name_en": "Adilabad (Rural)", "name_te": "ఆదిలాబాద్ (రూరల్)" },
+    { "name_en": "Bazarhathnoor", "name_te": "బజార్ హత్నూర్" },
+    { "name_en": "Bela", "name_te": "బేలా" },
+    { "name_en": "Bheempur", "name_te": "భీంపూర్" },
+    { "name_en": "Boath", "name_te": "బోత్" },
+    { "name_en": "Gudihatnoor", "name_te": "గుడిహత్నూర్" },
+    { "name_en": "Ichoda", "name_te": "ఇచ్చోడ" },
+    { "name_en": "Inderavelly", "name_te": "ఇందరవెల్లి" },
+    { "name_en": "Jainad", "name_te": "జైనాద్" },
+    { "name_en": "Mavala", "name_te": "మావల" },
+    { "name_en": "Narnoor", "name_te": "నార్నూర్" },
+    { "name_en": "Neradigonda", "name_te": "నేరడిగొండ" },
+    { "name_en": "Sirikonda", "name_te": "సిరికొండ" },
+    { "name_en": "Talamadugu", "name_te": "తలమడుగు" },
+    { "name_en": "Tamsi", "name_te": "టాంసి" },
+    { "name_en": "Utnoor", "name_te": "ఉట్నూర్" },
+    { "name_en": "Gadiguda", "name_te": "గడిగూడ" }
+  ]
+}

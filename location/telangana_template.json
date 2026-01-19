@@ -1,0 +1,42 @@
+{
+  "state": {
+    "code": "TS",
+    "name_en": "Telangana",
+    "name_te": "తెలంగాణ"
+  },
+  "districts": [
+    { "id": 1, "name_en": "Adilabad", "name_te": "ఆదిలాబాద్" },
+    { "id": 2, "name_en": "Bhadradri Kothagudem", "name_te": "భద్రాద్రి కొత్తగూడెం" },
+    { "id": 3, "name_en": "Hanumakonda", "name_te": "హనుమకొండ" },
+    { "id": 4, "name_en": "Hyderabad", "name_te": "హైదరాబాద్" },
+    { "id": 5, "name_en": "Jagtial", "name_te": "జగిత్యాల" },
+    { "id": 6, "name_en": "Jangaon", "name_te": "జనగామ" },
+    { "id": 7, "name_en": "Jayashankar Bhupalpally", "name_te": "జయశంకర్ భూపాలపల్లి" },
+    { "id": 8, "name_en": "Jogulamba Gadwal", "name_te": "జోగులాంబ గద్వాల" },
+    { "id": 9, "name_en": "Kamareddy", "name_te": "కామారెడ్డి" },
+    { "id": 10, "name_en": "Karimnagar", "name_te": "కరీంనగర్" },
+    { "id": 11, "name_en": "Khammam", "name_te": "ఖమ్మం" },
+    { "id": 12, "name_en": "Komaram Bheem Asifabad", "name_te": "కొమరం భీమ్ ఆసిఫాబాద్" },
+    { "id": 13, "name_en": "Mahabubabad", "name_te": "మహబూబాబాద్" },
+    { "id": 14, "name_en": "Mahabubnagar", "name_te": "మహబూబ్‌నగర్" },
+    { "id": 15, "name_en": "Mancherial", "name_te": "మంచేరియల్" },
+    { "id": 16, "name_en": "Medak", "name_te": "మెదక్" },
+    { "id": 17, "name_en": "Medchal–Malkajgiri", "name_te": "మెడ్చల్–మల్కాజ్‌గిరి" },
+    { "id": 18, "name_en": "Mulugu", "name_te": "ములుగు" },
+    { "id": 19, "name_en": "Nagarkurnool", "name_te": "నాగర్‌కర్నూల్" },
+    { "id": 20, "name_en": "Nalgonda", "name_te": "నల్గొండ" },
+    { "id": 21, "name_en": "Narayanpet", "name_te": "నారాయణపేట" },
+    { "id": 22, "name_en": "Nirmal", "name_te": "నిర్మల్" },
+    { "id": 23, "name_en": "Nizamabad", "name_te": "నిజామాబాద్" },
+    { "id": 24, "name_en": "Peddapalli", "name_te": "పెద్దపల్లి" },
+    { "id": 25, "name_en": "Rajanna Sircilla", "name_te": "రాజన్న సిరిసిల్ల" },
+    { "id": 26, "name_en": "Ranga Reddy", "name_te": "రంగారెడ్డి" },
+    { "id": 27, "name_en": "Sangareddy", "name_te": "సంగారెడ్డి" },
+    { "id": 28, "name_en": "Siddipet", "name_te": "సిద్దిపేట" },
+    { "id": 29, "name_en": "Suryapet", "name_te": "సూర్యాపేట" },
+    { "id": 30, "name_en": "Vikarabad", "name_te": "వికారాబాద్" },
+    { "id": 31, "name_en": "Wanaparthy", "name_te": "వనపర్తి" },
+    { "id": 32, "name_en": "Warangal", "name_te": "వరంగల్" },
+    { "id": 33, "name_en": "Yadadri Bhuvanagiri", "name_te": "యాదాద్రి భువనగిరి" }
+  ]
+}

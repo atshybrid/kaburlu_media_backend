@@ -1,0 +1,30 @@
+{
+  "district": {
+    "name_en": "Nirmal",
+    "name_te": "నిర్మల్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 19
+  },
+  "mandals": [
+    { "name_en": "Nirmal", "name_te": "నిర్మల్" },
+    { "name_en": "Nirmal Rural", "name_te": "నిర్మల్ రూరల్" },
+    { "name_en": "Dilawarpur", "name_te": "దిలావర్‌పూర్" },
+    { "name_en": "Khanapur", "name_te": "ఖానాపూర్" },
+    { "name_en": "Kubeer", "name_te": "కుబీర్" },
+    { "name_en": "Laxmanchanda", "name_te": "లక్ష్మణచాంద" },
+    { "name_en": "Lokeshwaram", "name_te": "లోకేశ్వరం" },
+    { "name_en": "Mamda", "name_te": "మాందా" },
+    { "name_en": "Mudhole", "name_te": "ముధోల్" },
+    { "name_en": "Sarangapur", "name_te": "సారంగాపూర్" },
+    { "name_en": "Soan", "name_te": "సోయన్" },
+    { "name_en": "Tanur", "name_te": "తానూర్" },
+    { "name_en": "Bhainsa", "name_te": "భైంసా" },
+    { "name_en": "Bhainsa Rural", "name_te": "భైంసా రూరల్" },
+    { "name_en": "Kadam (Peddur)", "name_te": "కడం (పెద్దూర్)" },
+    { "name_en": "Pembi", "name_te": "పెంబి" },
+    { "name_en": "Basar", "name_te": "బాసర" },
+    { "name_en": "Laxmanchanda Rural", "name_te": "లక్ష్మణచాంద రూరల్" },
+    { "name_en": "Sarangapur Rural", "name_te": "సారంగాపూర్ రూరల్" }
+  ]
+}

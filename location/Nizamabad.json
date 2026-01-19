@@ -1,0 +1,31 @@
+{
+  "district": {
+    "name_en": "Nizamabad",
+    "name_te": "నిజామాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 19
+  },
+  "mandals": [
+    { "name_en": "Nizamabad (Urban)", "name_te": "నిజామాబాద్ (అర్బన్)" },
+    { "name_en": "Nizamabad (Rural)", "name_te": "నిజామాబాద్ (రూరల్)" },
+    { "name_en": "Armoor", "name_te": "ఆర్మూర్" },
+    { "name_en": "Balkonda", "name_te": "బాల్కొండ" },
+    { "name_en": "Bheemgal", "name_te": "భీమ్‌గల్" },
+    { "name_en": "Bodhan", "name_te": "బోధన్" },
+    { "name_en": "Dharpally", "name_te": "ధర్పల్లి" },
+    { "name_en": "Dichpally", "name_te": "డిచ్‌పల్లి" },
+    { "name_en": "Indalwai", "name_te": "ఇండల్‌వాయి" },
+    { "name_en": "Jakranpally", "name_te": "జక్రాన్‌పల్లి" },
+    { "name_en": "Kammarapally", "name_te": "కమ్మరపల్లి" },
+    { "name_en": "Kotgiri", "name_te": "కోట్గిరి" },
+    { "name_en": "Makloor", "name_te": "మాక్లూర్" },
+    { "name_en": "Mortad", "name_te": "మోర్తాడ్" },
+    { "name_en": "Mugpal", "name_te": "ముగ్పాల్" },
+    { "name_en": "Navipet", "name_te": "నవీపేట్" },
+    { "name_en": "Rudrur", "name_te": "రుద్రూర్" },
+    { "name_en": "Sirikonda", "name_te": "సిరికొండ" },
+    { "name_en": "Varni", "name_te": "వర్ణి" },
+    { "name_en": "Yedpalle", "name_te": "యెడ్పల్లి" }
+  ]
+}

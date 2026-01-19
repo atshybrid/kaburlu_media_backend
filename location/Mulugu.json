@@ -1,0 +1,20 @@
+{
+  "district": {
+    "name_en": "Mulugu",
+    "name_te": "ములుగు",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 9
+  },
+  "mandals": [
+    { "name_en": "Mulugu", "name_te": "ములుగు" },
+    { "name_en": "Govindaraopet", "name_te": "గోవిందరావుపేట" },
+    { "name_en": "Venkatapur (Mulugu)", "name_te": "వెంకటాపూర్ (ములుగు)" },
+    { "name_en": "Kannaigudem", "name_te": "కన్నాయిగూడెం" },
+    { "name_en": "Mangapet", "name_te": "మంగాపేట" },
+    { "name_en": "Eturunagaram", "name_te": "ఎటూరునాగారం" },
+    { "name_en": "Tadvai", "name_te": "తాడ్వాయి" },
+    { "name_en": "Palimela", "name_te": "పాలిమెల" },
+    { "name_en": "Wazeedu", "name_te": "వాజేడు" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "district": {
+    "name_en": "Wanaparthy",
+    "name_te": "వనపర్తి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 7
+  },
+  "mandals": [
+    { "name_en": "Wanaparthy", "name_te": "వనపర్తి" },
+    { "name_en": "Pebbair", "name_te": "పెబ్బైర్" },
+    { "name_en": "Ghanpur", "name_te": "ఘన్‌పూర్" },
+    { "name_en": "Amarchintha", "name_te": "అమర్చింత" },
+    { "name_en": "Kothakota", "name_te": "కొత్తకోట" },
+    { "name_en": "Chinnambavi", "name_te": "చిన్నంబవి" },
+    { "name_en": "Revally", "name_te": "రేవల్లి" }
+  ]
+}

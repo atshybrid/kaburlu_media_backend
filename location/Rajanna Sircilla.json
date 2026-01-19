@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Rajanna Sircilla",
+    "name_te": "రాజన్న సిరిసిల్ల",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 13
+  },
+  "mandals": [
+    { "name_en": "Sircilla", "name_te": "సిరిసిల్ల" },
+    { "name_en": "Sircilla Rural", "name_te": "సిరిసిల్ల రూరల్" },
+    { "name_en": "Vemulawada", "name_te": "వేములవాడ" },
+    { "name_en": "Vemulawada Rural", "name_te": "వేములవాడ రూరల్" },
+    { "name_en": "Gambhiraopet", "name_te": "గంభీరావుపేట" },
+    { "name_en": "Mustabad", "name_te": "ముస్తాబాద్" },
+    { "name_en": "Yellareddipet", "name_te": "ఎల్లారెడ్డిపేట" },
+    { "name_en": "Thangallapalli", "name_te": "తంగళ్లపల్లి" },
+    { "name_en": "Chandurthi", "name_te": "చందుర్తి" },
+    { "name_en": "Konaraopet", "name_te": "కొనరావుపేట" },
+    { "name_en": "Boinpalli", "name_te": "బోయిన్‌పల్లి" },
+    { "name_en": "Ellanthakunta", "name_te": "ఎల్లంతకుంట" },
+    { "name_en": "Rudrangi", "name_te": "రుద్రంగి" }
+  ]
+}

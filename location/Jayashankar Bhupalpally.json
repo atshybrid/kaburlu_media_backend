@@ -1,0 +1,23 @@
+{
+  "district": {
+    "name_en": "Jayashankar Bhupalpally",
+    "name_te": "జయశంకర్ భూపాలపల్లి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 12
+  },
+  "mandals": [
+    { "name_en": "Bhupalpally", "name_te": "భూపాలపల్లి" },
+    { "name_en": "Chityal", "name_te": "చిట్యాల" },
+    { "name_en": "Ghanpur (Mulug)", "name_te": "ఘన్‌పూర్ (ములుగు)" },
+    { "name_en": "Kataram", "name_te": "కాటారం" },
+    { "name_en": "Mahadevpur", "name_te": "మహాదేవ్‌పూర్" },
+    { "name_en": "Mutharam (Mahadevpur)", "name_te": "ముత్తారం (మహాదేవ్‌పూర్)" },
+    { "name_en": "Palimela", "name_te": "పాలిమెల" },
+    { "name_en": "Regonda", "name_te": "రేగొండ" },
+    { "name_en": "Tekumatla", "name_te": "టేకుమట్ల" },
+    { "name_en": "Kothagudem (Bhupalpally)", "name_te": "కొత్తగూడెం (భూపాలపల్లి)" },
+    { "name_en": "Eturunagaram", "name_te": "ఎటూరునాగారం" },
+    { "name_en": "Mangapet", "name_te": "మంగాపేట్" }
+  ]
+}

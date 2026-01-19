@@ -1,0 +1,27 @@
+{
+  "district": {
+    "name_en": "Karimnagar",
+    "name_te": "కరీంనగర్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 16
+  },
+  "mandals": [
+    { "name_en": "Karimnagar", "name_te": "కరీంనగర్" },
+    { "name_en": "Karimnagar Rural", "name_te": "కరీంనగర్ రూరల్" },
+    { "name_en": "Kothapalli", "name_te": "కొత్తపల్లి" },
+    { "name_en": "Manakondur", "name_te": "మనకొండూర్" },
+    { "name_en": "Ramadugu", "name_te": "రామడుగు" },
+    { "name_en": "Ganneruvaram", "name_te": "గన్నేరువరం" },
+    { "name_en": "Choppadandi", "name_te": "చొప్పదండి" },
+    { "name_en": "Gangadhara", "name_te": "గంగాధర" },
+    { "name_en": "Illanthakunta", "name_te": "ఇల్లంతకుంట" },
+    { "name_en": "Veenavanka", "name_te": "వీణవంక" },
+    { "name_en": "Thimmapur", "name_te": "తిమ్మాపూర్" },
+    { "name_en": "Huzurabad", "name_te": "హుజూరాబాద్" },
+    { "name_en": "Jammikunta", "name_te": "జమ్మికుంట" },
+    { "name_en": "Shankarapatnam", "name_te": "శంకరపట్నం" },
+    { "name_en": "Ellandakunta", "name_te": "ఎల్లందకుంట" },
+    { "name_en": "Saidapur", "name_te": "సైదాపూర్" }
+  ]
+}

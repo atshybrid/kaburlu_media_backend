@@ -1,0 +1,32 @@
+{
+  "district": {
+    "name_en": "Khammam",
+    "name_te": "ఖమ్మం",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 21
+  },
+  "mandals": [
+    { "name_en": "Khammam Urban", "name_te": "ఖమ్మం అర్బన్" },
+    { "name_en": "Khammam Rural", "name_te": "ఖమ్మం రూరల్" },
+    { "name_en": "Kallur", "name_te": "కల్లూరు" },
+    { "name_en": "Konijerla", "name_te": "కొణిజర్ల" },
+    { "name_en": "Kusumanchi", "name_te": "కుసుమంచి" },
+    { "name_en": "Madhira", "name_te": "మధిర" },
+    { "name_en": "Mudigonda", "name_te": "ముదిగొండ" },
+    { "name_en": "Nelakondapalli", "name_te": "నేలకొండపల్లి" },
+    { "name_en": "Penuballi", "name_te": "పెనుబల్లి" },
+    { "name_en": "Sattupalli", "name_te": "సత్తుపల్లి" },
+    { "name_en": "Singareni", "name_te": "సింగరేణి" },
+    { "name_en": "Thallada", "name_te": "తల్లాడ" },
+    { "name_en": "Vemsoor", "name_te": "వేమ్సూరు" },
+    { "name_en": "Wyra", "name_te": "వైరా" },
+    { "name_en": "Yerrupalem", "name_te": "యెర్రుపాలెం" },
+    { "name_en": "Bonakal", "name_te": "బోనకల్" },
+    { "name_en": "Chinthakani", "name_te": "చింతకాని" },
+    { "name_en": "Raghunadhapalem", "name_te": "రఘునాథపాలెం" },
+    { "name_en": "Tallada", "name_te": "తల్లాడ" },
+    { "name_en": "Enkoor", "name_te": "ఎంకూర్" },
+    { "name_en": "Kamepalli", "name_te": "కామేపల్లి" }
+  ]
+}

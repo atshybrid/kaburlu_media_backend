@@ -1,0 +1,27 @@
+{
+  "district": {
+    "name_en": "Mahabubabad",
+    "name_te": "మహబూబాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 16
+  },
+  "mandals": [
+    { "name_en": "Mahabubabad", "name_te": "మహబూబాబాద్" },
+    { "name_en": "Dornakal", "name_te": "దోర్నకల్" },
+    { "name_en": "Kuravi", "name_te": "కురవి" },
+    { "name_en": "Kesamudram", "name_te": "కేశముద్రం" },
+    { "name_en": "Gudur", "name_te": "గూడూరు" },
+    { "name_en": "Nellikudur", "name_te": "నెల్లికుదురు" },
+    { "name_en": "Thorrur", "name_te": "తోర్రూరు" },
+    { "name_en": "Maripeda", "name_te": "మరిపెడ" },
+    { "name_en": "Narsimhulapet", "name_te": "నర్సింహులపేట" },
+    { "name_en": "Danthalapalle", "name_te": "దంతాలపల్లి" },
+    { "name_en": "Gangaram", "name_te": "గంగారం" },
+    { "name_en": "Bayyaram", "name_te": "బయ్యారం" },
+    { "name_en": "Peddavangara", "name_te": "పెద్దవంగర" },
+    { "name_en": "Kothaguda", "name_te": "కొత్తగూడ" },
+    { "name_en": "Garla", "name_te": "గర్ల" },
+    { "name_en": "Chinnagudur", "name_te": "చిన్నగూడూరు" }
+  ]
+}

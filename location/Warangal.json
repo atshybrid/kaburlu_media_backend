@@ -1,0 +1,22 @@
+{
+  "district": {
+    "name_en": "Warangal",
+    "name_te": "వరంగల్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 11
+  },
+  "mandals": [
+    { "name_en": "Warangal", "name_te": "వరంగల్" },
+    { "name_en": "Warangal Rural", "name_te": "వరంగల్ రూరల్" },
+    { "name_en": "Narsampet", "name_te": "నర్సంపేట్" },
+    { "name_en": "Duggondi", "name_te": "దుగ్గొండి" },
+    { "name_en": "Geesugonda", "name_te": "గీసుగొండ" },
+    { "name_en": "Atmakur (Warangal)", "name_te": "ఆత్మకూర్ (వరంగల్)" },
+    { "name_en": "Parvathagiri", "name_te": "పర్వతగిరి" },
+    { "name_en": "Khanapur (Warangal)", "name_te": "ఖానాపూర్ (వరంగల్)" },
+    { "name_en": "Nallabelly", "name_te": "నల్లబెల్లి" },
+    { "name_en": "Shayampet (Warangal)", "name_te": "శాయంపేట్ (వరంగల్)" },
+    { "name_en": "Chennaraopet", "name_te": "చెన్నారావుపేట" }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "district": {
+    "name_en": "Hanumakonda",
+    "name_te": "హనుమకొండ",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 14
+  },
+  "mandals": [
+    { "name_en": "Hanumakonda", "name_te": "హనుమకొండ" },
+    { "name_en": "Kazipet", "name_te": "కాజీపేట్" },
+    { "name_en": "Inavolu", "name_te": "ఇనోవోలు" },
+    { "name_en": "Hasanparthy", "name_te": "హసన్‌పర్తి" },
+    { "name_en": "Velair", "name_te": "వేలిరు" },
+    { "name_en": "Dharmasagar", "name_te": "ధర్మసాగర్" },
+    { "name_en": "Elkathurthi", "name_te": "ఎల్కతుర్తి" },
+    { "name_en": "Bheemadevarapalli", "name_te": "భీమదేవరపల్లి" },
+    { "name_en": "Kamalapur", "name_te": "కమలాపూర్" },
+    { "name_en": "Parkal", "name_te": "పరకాలు" },
+    { "name_en": "Nadikuda", "name_te": "నడికూడ" },
+    { "name_en": "Damera", "name_te": "దామేర" },
+    { "name_en": "Athmakur", "name_te": "ఆత్మకూరు" },
+    { "name_en": "Shayampet", "name_te": "శాయంపేట్" }
+  ]
+}

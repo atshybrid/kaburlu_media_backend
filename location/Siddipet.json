@@ -1,0 +1,33 @@
+{
+  "district": {
+    "name_en": "Siddipet",
+    "name_te": "సిద్దిపేట",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 22
+  },
+  "mandals": [
+    { "name_en": "Siddipet (Urban)", "name_te": "సిద్దిపేట (అర్బన్)" },
+    { "name_en": "Siddipet (Rural)", "name_te": "సిద్దిపేట (రూరల్)" },
+    { "name_en": "Dubbak", "name_te": "దుబ్బాక" },
+    { "name_en": "Gajwel", "name_te": "గజ్వేల్" },
+    { "name_en": "Jagdevpur", "name_te": "జగదేవ్‌పూర్" },
+    { "name_en": "Thoguta", "name_te": "తోగుట" },
+    { "name_en": "Nangnoor", "name_te": "నంగనూర్" },
+    { "name_en": "Cherial", "name_te": "చెరియాల్" },
+    { "name_en": "Koheda", "name_te": "కొహెడ" },
+    { "name_en": "Mulug (Siddipet)", "name_te": "ములుగు (సిద్దిపేట)" },
+    { "name_en": "Markook", "name_te": "మర్కుక్" },
+    { "name_en": "Wargal", "name_te": "వర్గల్" },
+    { "name_en": "Raipole", "name_te": "రాయిపోల్" },
+    { "name_en": "Komuravelli", "name_te": "కొమురవెల్లి" },
+    { "name_en": "Akbarpet–Bhoompally", "name_te": "అక్బర్‌పేట్–భూంపల్లి" },
+    { "name_en": "Kondapak", "name_te": "కొండపాక్" },
+    { "name_en": "Doultabad", "name_te": "దౌల్తాబాద్" },
+    { "name_en": "Mirdoddi", "name_te": "మిర్దొడ్డి" },
+    { "name_en": "Husnabad", "name_te": "హుస్నాబాద్" },
+    { "name_en": "Chinnakodur", "name_te": "చిన్నకొడూర్" },
+    { "name_en": "Yellareddypet", "name_te": "ఎల్లారెడ్డిపేట" },
+    { "name_en": "Narsapur (Siddipet)", "name_te": "నర్సాపూర్ (సిద్దిపేట)" }
+  ]
+}

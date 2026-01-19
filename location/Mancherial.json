@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "Mancherial",
+    "name_te": "మంచేరియల్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Mancherial", "name_te": "మంచేరియల్" },
+    { "name_en": "Mancherial Rural", "name_te": "మంచేరియల్ రూరల్" },
+    { "name_en": "Bellampalli", "name_te": "బెల్లంపల్లి" },
+    { "name_en": "Bellampalli Rural", "name_te": "బెల్లంపల్లి రూరల్" },
+    { "name_en": "Chennur", "name_te": "చెన్నూర్" },
+    { "name_en": "Jaipur", "name_te": "జైపూర్" },
+    { "name_en": "Kasipet", "name_te": "కాశిపేట్" },
+    { "name_en": "Kotapalli", "name_te": "కొటపల్లి" },
+    { "name_en": "Luxettipet", "name_te": "లక్సెట్టిపేట్" },
+    { "name_en": "Mandamarri", "name_te": "మందమర్రి" },
+    { "name_en": "Naspur", "name_te": "నస్పూర్" },
+    { "name_en": "Hajipur", "name_te": "హజీపూర్" },
+    { "name_en": "Dandepalli", "name_te": "దండేపల్లి" },
+    { "name_en": "Jannaram", "name_te": "జన్నారం" },
+    { "name_en": "Vemanpally", "name_te": "వేమన్‌పల్లి" },
+    { "name_en": "Bheemaram", "name_te": "భీమారం" },
+    { "name_en": "Nennel", "name_te": "నేనెల్" },
+    { "name_en": "Tandur", "name_te": "తాండూర్" }
+  ]
+}

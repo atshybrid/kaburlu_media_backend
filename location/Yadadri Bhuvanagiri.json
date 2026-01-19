@@ -1,0 +1,28 @@
+{
+  "district": {
+    "name_en": "Yadadri Bhuvanagiri",
+    "name_te": "యాదాద్రి భువనగిరి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 17
+  },
+  "mandals": [
+    { "name_en": "Bhongir", "name_te": "భువనగిరి" },
+    { "name_en": "Bhuvanagiri Rural", "name_te": "భువనగిరి రూరల్" },
+    { "name_en": "Yadagirigutta", "name_te": "యాదగిరిగుట్ట" },
+    { "name_en": "Alair", "name_te": "అలేరు" },
+    { "name_en": "Atmakur (M)", "name_te": "ఆత్మకూర్ (ఎం)" },
+    { "name_en": "Bibinagar", "name_te": "బీబీనగర్" },
+    { "name_en": "Bommalaramaram", "name_te": "బొమ్మలరామారం" },
+    { "name_en": "Mothkur", "name_te": "మోత్కూర్" },
+    { "name_en": "Narayanapur", "name_te": "నారాయణాపూర్" },
+    { "name_en": "Pochampally", "name_te": "పోచంపల్లి" },
+    { "name_en": "Rajapet", "name_te": "రాజాపేట్" },
+    { "name_en": "Ramannapet", "name_te": "రామన్నపేట" },
+    { "name_en": "Thurkapally", "name_te": "తుర్కపల్లి" },
+    { "name_en": "Valigonda", "name_te": "వాలిగొండ" },
+    { "name_en": "Yadagirigutta Temple Area", "name_te": "యాదగిరిగుట్ట దేవస్థాన పరిధి" },
+    { "name_en": "Gundala (Yadadri)", "name_te": "గుండాల (యాదాద్రి)" },
+    { "name_en": "Choutuppal", "name_te": "చౌటుప్పల్" }
+  ]
+}

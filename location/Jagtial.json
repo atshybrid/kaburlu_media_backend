@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "Jagtial",
+    "name_te": "జగిత్యాల",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Jagtial", "name_te": "జగిత్యాల" },
+    { "name_en": "Jagityal Rural", "name_te": "జగిత్యాల రూరల్" },
+    { "name_en": "Dharmapuri", "name_te": "ధర్మపురి" },
+    { "name_en": "Buggaram", "name_te": "బుగ్గారం" },
+    { "name_en": "Gollapalli", "name_te": "గొల్లపల్లి" },
+    { "name_en": "Ibrahimpatnam", "name_te": "ఇబ్రాహీంపట్నం" },
+    { "name_en": "Jagtial Rural", "name_te": "జగిత్యాల గ్రామీణ" },
+    { "name_en": "Koratla", "name_te": "కోరుట్ల" },
+    { "name_en": "Mallial", "name_te": "మల్లియాల్" },
+    { "name_en": "Medipalli", "name_te": "మెడిపల్లి" },
+    { "name_en": "Metpalli", "name_te": "మెట్‌పల్లి" },
+    { "name_en": "Pegadapalli", "name_te": "పెగడపల్లి" },
+    { "name_en": "Raikal", "name_te": "రాయికల్" },
+    { "name_en": "Sarangapur", "name_te": "సారంగాపూర్" },
+    { "name_en": "Velgatur", "name_te": "వేల్గటూర్" },
+    { "name_en": "Kondapur", "name_te": "కొండాపూర్" },
+    { "name_en": "Kodimial", "name_te": "కొడిమియాల్" },
+    { "name_en": "Mallapur", "name_te": "మల్లాపూర్" }
+  ]
+}

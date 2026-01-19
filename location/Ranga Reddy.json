@@ -1,0 +1,38 @@
+{
+  "district": {
+    "name_en": "Ranga Reddy",
+    "name_te": "రంగారెడ్డి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 27
+  },
+  "mandals": [
+    { "name_en": "Shamshabad", "name_te": "శంషాబాద్" },
+    { "name_en": "Maheshwaram", "name_te": "మహేశ్వరం" },
+    { "name_en": "Ibrahimpatnam", "name_te": "ఇబ్రాహీంపట్నం" },
+    { "name_en": "Kandukur", "name_te": "కందుకూర్" },
+    { "name_en": "Keshampet", "name_te": "కేశంపేట్" },
+    { "name_en": "Kothur", "name_te": "కొత్తూర్" },
+    { "name_en": "Farooqnagar", "name_te": "ఫరూక్‌నగర్" },
+    { "name_en": "Talakondapalle", "name_te": "తలకొండపల్లి" },
+    { "name_en": "Yacharam", "name_te": "యాచారం" },
+    { "name_en": "Manchal", "name_te": "మంచల్" },
+    { "name_en": "Chevella", "name_te": "చేవెళ్ల" },
+    { "name_en": "Moinabad", "name_te": "మోయినాబాద్" },
+    { "name_en": "Shabad", "name_te": "షాబాద్" },
+    { "name_en": "Pargi", "name_te": "పరిగి" },
+    { "name_en": "Doma", "name_te": "దోమ" },
+    { "name_en": "Gandeed", "name_te": "గండీడ్" },
+    { "name_en": "Vikarabad", "name_te": "వికారాబాద్" },
+    { "name_en": "Bantwaram", "name_te": "బంట్వారం" },
+    { "name_en": "Basheerabad", "name_te": "బషీరాబాద్" },
+    { "name_en": "Tandur", "name_te": "తాండూర్" },
+    { "name_en": "Yalal", "name_te": "యాలాల్" },
+    { "name_en": "Kodangal", "name_te": "కొడంగల్" },
+    { "name_en": "Dharur", "name_te": "ధారూర్" },
+    { "name_en": "Nawabpet", "name_te": "నవాబ్‌పేట్" },
+    { "name_en": "Peddemul", "name_te": "పెద్దెముల్" },
+    { "name_en": "Kulkacherla", "name_te": "కుల్కచెర్ల" },
+    { "name_en": "Marpalle", "name_te": "మర్పల్లి" }
+  ]
+}

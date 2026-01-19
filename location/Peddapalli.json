@@ -1,0 +1,25 @@
+{
+  "district": {
+    "name_en": "Peddapalli",
+    "name_te": "పెద్దపల్లి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 14
+  },
+  "mandals": [
+    { "name_en": "Peddapalli", "name_te": "పెద్దపల్లి" },
+    { "name_en": "Ramagundam", "name_te": "రామగుండం" },
+    { "name_en": "Godavarikhani", "name_te": "గోదావరిఖని" },
+    { "name_en": "Sultanabad", "name_te": "సుల్తానాబాద్" },
+    { "name_en": "Manthani", "name_te": "మంథని" },
+    { "name_en": "Ramagiri", "name_te": "రామగిరి" },
+    { "name_en": "Julapalli", "name_te": "జూలపల్లి" },
+    { "name_en": "Odela", "name_te": "ఓదెల" },
+    { "name_en": "Eligaid", "name_te": "ఎలిగేడ్" },
+    { "name_en": "Anthergaon", "name_te": "అంతర్గాం" },
+    { "name_en": "Kamanpur", "name_te": "కమాన్‌పూర్" },
+    { "name_en": "Palakurthy", "name_te": "పాలకుర్తి" },
+    { "name_en": "Mutharam (Manthani)", "name_te": "ముత్తారం (మంథని)" },
+    { "name_en": "Srirampur", "name_te": "శ్రీరాంపూర్" }
+  ]
+}

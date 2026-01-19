@@ -1,0 +1,23 @@
+{
+  "district": {
+    "name_en": "Komaram Bheem Asifabad",
+    "name_te": "కొమరం భీమ్ ఆసిఫాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 12
+  },
+  "mandals": [
+    { "name_en": "Asifabad", "name_te": "ఆసిఫాబాద్" },
+    { "name_en": "Kagaznagar", "name_te": "కాగజ్‌నగర్" },
+    { "name_en": "Sirpur (T)", "name_te": "సిర్పూర్ (టి)" },
+    { "name_en": "Sirpur (U)", "name_te": "సిర్పూర్ (యు)" },
+    { "name_en": "Bejjur", "name_te": "బెజ్జూర్" },
+    { "name_en": "Chintalamanepalli", "name_te": "చింతలమానేపల్లి" },
+    { "name_en": "Dahegaon", "name_te": "దహెగావ్" },
+    { "name_en": "Kouthala", "name_te": "కౌతాల" },
+    { "name_en": "Lingapur", "name_te": "లింగాపూర్" },
+    { "name_en": "Rebbena", "name_te": "రెబ్బెన" },
+    { "name_en": "Tiryani", "name_te": "తిర్యాణి" },
+    { "name_en": "Wankidi", "name_te": "వాంకిడి" }
+  ]
+}

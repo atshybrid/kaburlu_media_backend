@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Jogulamba Gadwal",
+    "name_te": "జోగులాంబ గద్వాల",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 12
+  },
+  "mandals": [
+    { "name_en": "Gadwal", "name_te": "గద్వాల" },
+    { "name_en": "Alampur", "name_te": "ఆలంపూర్" },
+    { "name_en": "Ieeja", "name_te": "ఈజ" },
+    { "name_en": "Itikyala", "name_te": "ఇటిక్యాల" },
+    { "name_en": "Kaloor Thimmandoddi", "name_te": "కలూర్ తిమ్మండొడ్డి" },
+    { "name_en": "Maldakal", "name_te": "మాల్దకల్" },
+    { "name_en": "Manopad", "name_te": "మనోపాడు" },
+    { "name_en": "Undavelly", "name_te": "ఉండవెల్లి" },
+    { "name_en": "Waddepally", "name_te": "వడ్డేపల్లి" },
+    { "name_en": "Ghattu", "name_te": "ఘట్టు" },
+    { "name_en": "Rajoli", "name_te": "రాజోలి" },
+    { "name_en": "Pullur", "name_te": "పుల్లూరు" }
+  ]
+}
+

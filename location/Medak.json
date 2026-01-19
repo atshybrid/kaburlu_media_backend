@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "Medak",
+    "name_te": "మెదక్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Medak", "name_te": "మెదక్" },
+    { "name_en": "Alladurg", "name_te": "అల్లాదుర్గ్" },
+    { "name_en": "Chegunta", "name_te": "చేగుంట" },
+    { "name_en": "Chilipched", "name_te": "చిలిప్చెడ్" },
+    { "name_en": "Hathnoora", "name_te": "హత్నూరా" },
+    { "name_en": "Kowdipalle", "name_te": "కౌడిపల్లి" },
+    { "name_en": "Kulcharam", "name_te": "కుల్చారం" },
+    { "name_en": "Manoharabad", "name_te": "మనోహరాబాద్" },
+    { "name_en": "Narsapur", "name_te": "నర్సాపూర్" },
+    { "name_en": "Papannapet", "name_te": "పాపన్నపేట" },
+    { "name_en": "Ramayampet", "name_te": "రామాయంపేట" },
+    { "name_en": "Regode", "name_te": "రేగోడ్" },
+    { "name_en": "Shankarampet (A)", "name_te": "శంకరంపేట (ఎ)" },
+    { "name_en": "Shankarampet (R)", "name_te": "శంకరంపేట (ఆర్)" },
+    { "name_en": "Tekmal", "name_te": "టెక్‌మాల్" },
+    { "name_en": "Tupran", "name_te": "తూప్రాన్" },
+    { "name_en": "Yeldurthy", "name_te": "యెల్దుర్తి" },
+    { "name_en": "Shivampet", "name_te": "శివాంపేట్" }
+  ]
+}

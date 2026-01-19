@@ -1,0 +1,37 @@
+{
+  "district": {
+    "name_en": "Sangareddy",
+    "name_te": "సంగారెడ్డి",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 26
+  },
+  "mandals": [
+    { "name_en": "Sangareddy", "name_te": "సంగారెడ్డి" },
+    { "name_en": "Andole", "name_te": "అందోల్" },
+    { "name_en": "Hathnoora", "name_te": "హత్నూరా" },
+    { "name_en": "Jharasangam", "name_te": "ఝరాసంగం" },
+    { "name_en": "Kalher", "name_te": "కల్హేర్" },
+    { "name_en": "Kangti", "name_te": "కాంగ్టి" },
+    { "name_en": "Kohir", "name_te": "కోహీర్" },
+    { "name_en": "Manoor", "name_te": "మనూర్" },
+    { "name_en": "Munipally", "name_te": "మునిపల్లి" },
+    { "name_en": "Narayankhed", "name_te": "నారాయణఖేడ్" },
+    { "name_en": "Nyalkal", "name_te": "న్యాల్కల్" },
+    { "name_en": "Patancheru", "name_te": "పటాన్‌చెరు" },
+    { "name_en": "Pulkal", "name_te": "పుల్కల్" },
+    { "name_en": "Raikode", "name_te": "రాయికోడ్" },
+    { "name_en": "Sadasivpet", "name_te": "సదాశివపేట" },
+    { "name_en": "Zahirabad", "name_te": "జహీరాబాద్" },
+    { "name_en": "Kondapur", "name_te": "కొండాపూర్" },
+    { "name_en": "Kandi", "name_te": "కండి" },
+    { "name_en": "Jinnaram", "name_te": "జిన్నారం" },
+    { "name_en": "Vatpally", "name_te": "వట్‌పల్లి" },
+    { "name_en": "Ameenpur", "name_te": "అమీన్పూర్" },
+    { "name_en": "Gummadidala", "name_te": "గుమ్మడిదల" },
+    { "name_en": "Mogudampally", "name_te": "మొగుడంపల్లి" },
+    { "name_en": "Sirgapoor", "name_te": "సిర్గాపూర్" },
+    { "name_en": "Choutuppal (Sangareddy)", "name_te": "చౌటుప్పల్ (సంగారెడ్డి)" },
+    { "name_en": "Shankarampet (Sangareddy)", "name_te": "శంకరంపేట (సంగారెడ్డి)" }
+  ]
+}

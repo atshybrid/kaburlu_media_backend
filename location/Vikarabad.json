@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "Vikarabad",
+    "name_te": "వికారాబాద్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Vikarabad", "name_te": "వికారాబాద్" },
+    { "name_en": "Vikarabad Rural", "name_te": "వికారాబాద్ రూరల్" },
+    { "name_en": "Pargi", "name_te": "పరిగి" },
+    { "name_en": "Doma", "name_te": "దోమ" },
+    { "name_en": "Dharur", "name_te": "ధారూర్" },
+    { "name_en": "Tandur", "name_te": "తాండూర్" },
+    { "name_en": "Basheerabad", "name_te": "బషీరాబాద్" },
+    { "name_en": "Kodangal", "name_te": "కొడంగల్" },
+    { "name_en": "Nawabpet", "name_te": "నవాబ్‌పేట్" },
+    { "name_en": "Peddemul", "name_te": "పెద్దెముల్" },
+    { "name_en": "Kulkacherla", "name_te": "కుల్కచెర్ల" },
+    { "name_en": "Marpalle", "name_te": "మర్పల్లి" },
+    { "name_en": "Mominpet", "name_te": "మొమిన్‌పేట్" },
+    { "name_en": "Yalal", "name_te": "యాలాల్" },
+    { "name_en": "Bantwaram", "name_te": "బంట్వారం" },
+    { "name_en": "Gandeed", "name_te": "గండీడ్" },
+    { "name_en": "Kotepally", "name_te": "కోటేపల్లి" },
+    { "name_en": "Pudur", "name_te": "పుదూర్" }
+  ]
+}

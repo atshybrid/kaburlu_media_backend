@@ -1,0 +1,23 @@
+{
+  "district": {
+    "name_en": "Jangaon",
+    "name_te": "జనగాం",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 12
+  },
+  "mandals": [
+    { "name_en": "Jangaon", "name_te": "జనగాం" },
+    { "name_en": "Lingala Ghanpur", "name_te": "లింగాల ఘన్‌పూర్" },
+    { "name_en": "Bachannapet", "name_te": "బచ్చన్నపేట్" },
+    { "name_en": "Devaruppula", "name_te": "దేవరుప్పుల" },
+    { "name_en": "Narmetta", "name_te": "నర్మెట్ట" },
+    { "name_en": "Tharigoppula", "name_te": "తరిగొప్పుల" },
+    { "name_en": "Ragunathpally", "name_te": "రఘునాథపల్లి" },
+    { "name_en": "Ghanpur (Station)", "name_te": "ఘన్‌పూర్ (స్టేషన్)" },
+    { "name_en": "Chilpur", "name_te": "చిల్పూర్" },
+    { "name_en": "Zaffergadh", "name_te": "జఫ్ఫర్‌గడ్" },
+    { "name_en": "Palakurthy", "name_te": "పాలకుర్తి" },
+    { "name_en": "Kodakandla", "name_te": "కొడకండ్ల" }
+  ]
+}

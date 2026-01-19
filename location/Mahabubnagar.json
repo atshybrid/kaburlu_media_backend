@@ -1,0 +1,27 @@
+{
+  "district": {
+    "name_en": "Mahabubnagar",
+    "name_te": "మహబూబ్‌నగర్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 16
+  },
+  "mandals": [
+    { "name_en": "Mahabubnagar (Urban)", "name_te": "మహబూబ్‌నగర్ (అర్బన్)" },
+    { "name_en": "Mahabubnagar (Rural)", "name_te": "మహబూబ్‌నగర్ (రూరల్)" },
+    { "name_en": "Bhoothpur", "name_te": "భూత్పూర్" },
+    { "name_en": "Jadcherla", "name_te": "జడ్చర్ల" },
+    { "name_en": "Midjil", "name_te": "మిడ్జిల్" },
+    { "name_en": "Hanwada", "name_te": "హన్వాడ" },
+    { "name_en": "Nawabpet", "name_te": "నవాబ్‌పేట్" },
+    { "name_en": "Devarakadra", "name_te": "దేవరకద్ర" },
+    { "name_en": "Koilkonda", "name_te": "కొయిల్‌కొండ" },
+    { "name_en": "Moosapet", "name_te": "మూసాపేట్" },
+    { "name_en": "Balanagar", "name_te": "బాలానగర్" },
+    { "name_en": "Addakal", "name_te": "అడ్డకల్" },
+    { "name_en": "Chinnachintakunta", "name_te": "చిన్నచింతకుంట" },
+    { "name_en": "Rajapur", "name_te": "రాజాపూర్" },
+    { "name_en": "Utkoor", "name_te": "ఉట్కూర్" },
+    { "name_en": "Ghanpur", "name_te": "ఘన్‌పూర్" }
+  ]
+}

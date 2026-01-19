@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Nagarkurnool",
+    "name_te": "నాగర్‌కర్నూల్",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 13
+  },
+  "mandals": [
+    { "name_en": "Nagarkurnool", "name_te": "నాగర్‌కర్నూల్" },
+    { "name_en": "Achampet", "name_te": "అచ్చంపేట" },
+    { "name_en": "Amrabad", "name_te": "అమ్రాబాద్" },
+    { "name_en": "Bijinapalle", "name_te": "బీజినపల్లి" },
+    { "name_en": "Kodair", "name_te": "కొడేర్" },
+    { "name_en": "Kollapur", "name_te": "కొల్లాపూర్" },
+    { "name_en": "Lingal", "name_te": "లింగల్" },
+    { "name_en": "Padara", "name_te": "పడర" },
+    { "name_en": "Pentlavelli", "name_te": "పెంట్లవెల్లి" },
+    { "name_en": "Telkapally", "name_te": "తెల్కపల్లి" },
+    { "name_en": "Thimmajipeta", "name_te": "తిమ్మజిపేట" },
+    { "name_en": "Tadoor", "name_te": "తాడూర్" },
+    { "name_en": "Veldanda", "name_te": "వెల్దండ" }
+  ]
+}

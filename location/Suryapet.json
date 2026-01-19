@@ -1,0 +1,34 @@
+{
+  "district": {
+    "name_en": "Suryapet",
+    "name_te": "సూర్యాపేట",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 23
+  },
+  "mandals": [
+    { "name_en": "Suryapet (Urban)", "name_te": "సూర్యాపేట (అర్బన్)" },
+    { "name_en": "Suryapet (Rural)", "name_te": "సూర్యాపేట (రూరల్)" },
+    { "name_en": "Atmakur (S)", "name_te": "ఆత్మకూర్ (ఎస్)" },
+    { "name_en": "Chilkur", "name_te": "చిల్కూర్" },
+    { "name_en": "Chivvemla", "name_te": "చివ్వెంల" },
+    { "name_en": "Garidepally", "name_te": "గరిడేపల్లి" },
+    { "name_en": "Huzurnagar", "name_te": "హుజూర్నగర్" },
+    { "name_en": "Jajireddigudem", "name_te": "జాజిరెడ్డిగూడెం" },
+    { "name_en": "Kodad", "name_te": "కొడాద్" },
+    { "name_en": "Mattampally", "name_te": "మట్టంపల్లి" },
+    { "name_en": "Mellacheruvu", "name_te": "మేళ్ల చెరువు" },
+    { "name_en": "Munagala", "name_te": "మునగాల" },
+    { "name_en": "Nadigudem", "name_te": "నడిగూడెం" },
+    { "name_en": "Neredcherla", "name_te": "నేరెడ్‌చెర్ల" },
+    { "name_en": "Nuthankal", "name_te": "నూతన్‌కల్" },
+    { "name_en": "Palakeedu", "name_te": "పాలకీడు" },
+    { "name_en": "Penpahad", "name_te": "పెన్‌పహాడ్" },
+    { "name_en": "Thirumalagiri", "name_te": "తిరుమలగిరి" },
+    { "name_en": "Thungathurthy", "name_te": "తుంగతుర్తి" },
+    { "name_en": "Mothey", "name_te": "మోతే" },
+    { "name_en": "Ananthagiri", "name_te": "అనంతగిరి" },
+    { "name_en": "Garidepally Rural", "name_te": "గరిడేపల్లి రూరల్" },
+    { "name_en": "Huzurnagar Rural", "name_te": "హుజూర్నగర్ రూరల్" }
+  ]
+}

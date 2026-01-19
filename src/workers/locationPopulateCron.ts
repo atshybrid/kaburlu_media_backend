@@ -175,10 +175,18 @@ async function processState(stateName: string, languages: string[], stats: Proce
     const langKeys = buildLanguageKeys(languages);
     const langNames = buildLanguageNames(languages);
 
-    const districtPrompt = `List ALL districts in ${stateName} state, India.
+    const districtPrompt = `List ALL districts ONLY in ${stateName} state, India.
+
+STRICT RULES:
+- ONLY return districts that belong to ${stateName} state
+- DO NOT include districts from other states (Kerala, Karnataka, etc.)
+- Verify each district actually exists in ${stateName}
+- Use official government Census 2011 data
+
 For each district, provide the name in English and translations in: ${langNames}.
 Return ONLY valid JSON in this exact format:
 {
+  "state": "${stateName}",
   "districts": [
     { "en": "District Name", ${langKeys} }
   ]
@@ -192,6 +200,11 @@ Maximum ${MAX_DISTRICTS_PER_STATE} districts to keep response manageable.`;
       throw new Error('Invalid district data from ChatGPT');
     }
 
+    // VALIDATION: Ensure response is for correct state
+    if (districtData.state && districtData.state.toLowerCase() !== stateName.toLowerCase()) {
+      console.warn(`  ⚠️  WARNING: ChatGPT returned data for "${districtData.state}" instead of "${stateName}"`);
+    }
+
     const districts = districtData.districts.slice(0, MAX_DISTRICTS_PER_STATE);
     console.log(`  📊 Found ${districts.length} districts`);
 
@@ -199,6 +212,16 @@ Maximum ${MAX_DISTRICTS_PER_STATE} districts to keep response manageable.`;
     for (let i = 0; i < districts.length; i++) {
       const distData = districts[i];
       console.log(`\n  [${i + 1}/${districts.length}] Processing District: ${distData.en}`);
+
+      // VALIDATION: Verify district belongs to state (prevent Kerala districts in Telangana)
+      const verifyPrompt = `Is "${distData.en}" district located in ${stateName} state, India? Answer with JSON: {"valid": true/false, "actualState": "state name if different"}`;
+      const verifyResult = await askChatGPT(verifyPrompt);
+      const verification = parseJSON(verifyResult);
+      
+      if (verification && verification.valid === false) {
+        console.log(`    ⚠️  SKIPPED: ${distData.en} does not belong to ${stateName} (belongs to ${verification.actualState})`);
+        continue; // Skip this district
+      }
 
       // Create or find district
       let district = await prisma.district.findFirst({

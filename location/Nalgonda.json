@@ -1,0 +1,42 @@
+{
+  "district": {
+    "name_en": "Nalgonda",
+    "name_te": "నల్గొండ",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 31
+  },
+  "mandals": [
+    { "name_en": "Nalgonda", "name_te": "నల్గొండ" },
+    { "name_en": "Chandur", "name_te": "చందూర్" },
+    { "name_en": "Chityal", "name_te": "చిట్యాల" },
+    { "name_en": "Dameracherla", "name_te": "దామెరచర్ల" },
+    { "name_en": "Devarakonda", "name_te": "దేవరకొండ" },
+    { "name_en": "Gurrampode", "name_te": "గుర్రంపోడు" },
+    { "name_en": "Kanagal", "name_te": "కనగల్" },
+    { "name_en": "Kattangur", "name_te": "కట్టంగూర్" },
+    { "name_en": "Kethepalli", "name_te": "కేతేపల్లి" },
+    { "name_en": "Kondamallepally", "name_te": "కొండమల్లెపల్లి" },
+    { "name_en": "Madugulapally", "name_te": "మాడుగులపల్లి" },
+    { "name_en": "Miryalaguda", "name_te": "మిర్యాలగూడ" },
+    { "name_en": "Munugode", "name_te": "మునుగోడు" },
+    { "name_en": "Nakrekal", "name_te": "నక్రేకల్" },
+    { "name_en": "Nampally", "name_te": "నాంపల్లి" },
+    { "name_en": "Narayanapur", "name_te": "నారాయణాపూర్" },
+    { "name_en": "Neredugommu", "name_te": "నేరేడుగొమ్ము" },
+    { "name_en": "Pedda Adiserla Pally", "name_te": "పెద్ద ఆదిశర్లపల్లి" },
+    { "name_en": "Shaligouraram", "name_te": "శాలిగౌరారం" },
+    { "name_en": "Thipparthy", "name_te": "తిప్పర్తి" },
+    { "name_en": "Thripuraram", "name_te": "త్రిపురారం" },
+    { "name_en": "Vemulapally", "name_te": "వేములపల్లి" },
+    { "name_en": "Anumula", "name_te": "అనుముల" },
+    { "name_en": "Chintha Pally", "name_te": "చింతపల్లి" },
+    { "name_en": "Mella Cheruvu", "name_te": "మేళ్ల చెరువు" },
+    { "name_en": "Peddavoora", "name_te": "పెద్దవూర" },
+    { "name_en": "Chandampet", "name_te": "చందంపేట" },
+    { "name_en": "Narketpally", "name_te": "నార్కట్‌పల్లి" },
+    { "name_en": "Gundlapally", "name_te": "గుండ్లపల్లి" },
+    { "name_en": "Yerrupalem (Nalgonda)", "name_te": "యెర్రుపాలెం (నల్గొండ)" },
+    { "name_en": "Tirumalagiri Sagar", "name_te": "తిరుమలగిరి సాగర్" }
+  ]
+}

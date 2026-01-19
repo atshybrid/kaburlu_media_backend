@@ -1,0 +1,20 @@
+{
+  "district": {
+    "name_en": "Narayanpet",
+    "name_te": "నారాయణపేట",
+    "state_en": "Telangana",
+    "state_te": "తెలంగాణ",
+    "total_mandals": 9
+  },
+  "mandals": [
+    { "name_en": "Narayanpet", "name_te": "నారాయణపేట" },
+    { "name_en": "Balu Naik Thanda", "name_te": "బాలు నాయిక్ థండ" },
+    { "name_en": "Basaralu", "name_te": "బాసరాలు" },
+    { "name_en": "Bhoothpur", "name_te": "భూత్పూర్" },
+    { "name_en": "Gopalpet", "name_te": "గోపాలపేట" },
+    { "name_en": "Halim Alampur", "name_te": "హాలిం ఆలంపూర్" },
+    { "name_en": "Jadkal", "name_te": "జడ్కల్" },
+    { "name_en": "Kudloor", "name_te": "కూడ్లూర్" },
+    { "name_en": "Nadipelli", "name_te": "నాడిపెల్లి" }
+  ]
+}
