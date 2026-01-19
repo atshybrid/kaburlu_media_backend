@@ -1,0 +1,34 @@
+{
+  "district": {
+    "name_en": "Anakapalli",
+    "name_te": "అనకాపల్లి",
+    "name_hi": "अनकापल्ली",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 21
+  },
+  "mandals": [
+    { "name_en": "Anakapalli", "name_te": "అనకాపల్లి", "name_hi": "अनकापल्ली" },
+    { "name_en": "Chodavaram", "name_te": "చోడవరం", "name_hi": "चोडावरम" },
+    { "name_en": "Devarapalle", "name_te": "దేవరపల్లె", "name_hi": "देवरपल्ले" },
+    { "name_en": "Elamanchili", "name_te": "ఎలమంచిలి", "name_hi": "एलमंचिली" },
+    { "name_en": "Golugonda", "name_te": "గొలుగొండ", "name_hi": "गोलुगोंडा" },
+    { "name_en": "K. Kotapadu", "name_te": "కె. కోటపాడు", "name_hi": "के. कोटापाडु" },
+    { "name_en": "Kasimkota", "name_te": "కాసింకోట", "name_hi": "कासिमकोटा" },
+    { "name_en": "Makavarapalem", "name_te": "మాకవరపాలెం", "name_hi": "माकवरापालेम" },
+    { "name_en": "Munagapaka", "name_te": "ముణగపాక", "name_hi": "मुणगपाका" },
+    { "name_en": "Nakkapalle", "name_te": "నక్కపల్లె", "name_hi": "नक्कपल्ले" },
+    { "name_en": "Narsipatnam", "name_te": "నర్సీపట్నం", "name_hi": "नरसीपट्नम" },
+    { "name_en": "Nathavaram", "name_te": "నత్తావరం", "name_hi": "नत्तावरम" },
+    { "name_en": "Paravada", "name_te": "పరవాడ", "name_hi": "परवाडा" },
+    { "name_en": "Payakaraopeta", "name_te": "పాయకరావుపేట", "name_hi": "पायकरावुपेटा" },
+    { "name_en": "Pedagantyada", "name_te": "పెదగంట్యాడ", "name_hi": "पेदगंट्याडा" },
+    { "name_en": "Rambilli", "name_te": "రాంబిల్లి", "name_hi": "रामबिल्ली" },
+    { "name_en": "Ravikamatham", "name_te": "రవికామత్యం", "name_hi": "रविकामत्यम" },
+    { "name_en": "Rolugunta", "name_te": "రోలుగుంట", "name_hi": "रोलुगुंटा" },
+    { "name_en": "S. Rayavaram", "name_te": "ఎస్. రాయవరం", "name_hi": "एस. रायवरम" },
+    { "name_en": "Sabbavaram", "name_te": "సబ్బవరం", "name_hi": "सब्बवरम" },
+    { "name_en": "Yelamanchili", "name_te": "ఎలమంచిలి", "name_hi": "येलमंचिली" }
+  ]
+}
