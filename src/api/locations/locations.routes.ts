@@ -34,38 +34,100 @@ async function getUserLanguageCodeFromAuth(req: any): Promise<string> {
 }
 
 async function loadTranslationsByIds(params: {
-    lang: string;
     stateIds: string[];
     districtIds: string[];
     mandalIds: string[];
     villageIds: string[];
-}): Promise<{ states: Record<string, string>; districts: Record<string, string>; mandals: Record<string, string>; villages: Record<string, string> }> {
-    const lang = normalizeLangCode(params.lang);
-    if (!lang || lang === 'en') return { states: {}, districts: {}, mandals: {}, villages: {} };
-
-    const [st, ds, md, vg] = await Promise.all([
+}): Promise<{ 
+    states: Record<string, { te?: string; hi?: string }>; 
+    districts: Record<string, { te?: string; hi?: string }>; 
+    mandals: Record<string, { te?: string; hi?: string }>; 
+    villages: Record<string, { te?: string; hi?: string }> 
+}> {
+    // Load ALL translations (Telugu AND Hindi) for all entities
+    const [stTe, stHi, dsTe, dsHi, mdTe, mdHi, vgTe, vgHi] = await Promise.all([
+        // States - Telugu
         params.stateIds.length
-            ? (prisma as any).stateTranslation.findMany({ where: { language: lang, stateId: { in: params.stateIds } }, select: { stateId: true, name: true } })
+            ? (prisma as any).stateTranslation.findMany({ where: { language: 'te', stateId: { in: params.stateIds } }, select: { stateId: true, name: true } })
             : Promise.resolve([]),
+        // States - Hindi
+        params.stateIds.length
+            ? (prisma as any).stateTranslation.findMany({ where: { language: 'hi', stateId: { in: params.stateIds } }, select: { stateId: true, name: true } })
+            : Promise.resolve([]),
+        // Districts - Telugu
         params.districtIds.length
-            ? (prisma as any).districtTranslation.findMany({ where: { language: lang, districtId: { in: params.districtIds } }, select: { districtId: true, name: true } })
+            ? (prisma as any).districtTranslation.findMany({ where: { language: 'te', districtId: { in: params.districtIds } }, select: { districtId: true, name: true } })
             : Promise.resolve([]),
+        // Districts - Hindi
+        params.districtIds.length
+            ? (prisma as any).districtTranslation.findMany({ where: { language: 'hi', districtId: { in: params.districtIds } }, select: { districtId: true, name: true } })
+            : Promise.resolve([]),
+        // Mandals - Telugu
         params.mandalIds.length
-            ? (prisma as any).mandalTranslation.findMany({ where: { language: lang, mandalId: { in: params.mandalIds } }, select: { mandalId: true, name: true } })
+            ? (prisma as any).mandalTranslation.findMany({ where: { language: 'te', mandalId: { in: params.mandalIds } }, select: { mandalId: true, name: true } })
             : Promise.resolve([]),
+        // Mandals - Hindi
+        params.mandalIds.length
+            ? (prisma as any).mandalTranslation.findMany({ where: { language: 'hi', mandalId: { in: params.mandalIds } }, select: { mandalId: true, name: true } })
+            : Promise.resolve([]),
+        // Villages - Telugu
         params.villageIds.length
-            ? (prisma as any).villageTranslation.findMany({ where: { language: lang, villageId: { in: params.villageIds } }, select: { villageId: true, name: true } })
+            ? (prisma as any).villageTranslation.findMany({ where: { language: 'te', villageId: { in: params.villageIds } }, select: { villageId: true, name: true } })
+            : Promise.resolve([]),
+        // Villages - Hindi
+        params.villageIds.length
+            ? (prisma as any).villageTranslation.findMany({ where: { language: 'hi', villageId: { in: params.villageIds } }, select: { villageId: true, name: true } })
             : Promise.resolve([]),
     ]);
 
-    const states: Record<string, string> = {};
-    const districts: Record<string, string> = {};
-    const mandals: Record<string, string> = {};
-    const villages: Record<string, string> = {};
-    for (const r of st || []) states[String(r.stateId)] = String(r.name);
-    for (const r of ds || []) districts[String(r.districtId)] = String(r.name);
-    for (const r of md || []) mandals[String(r.mandalId)] = String(r.name);
-    for (const r of vg || []) villages[String(r.villageId)] = String(r.name);
+    const states: Record<string, { te?: string; hi?: string }> = {};
+    const districts: Record<string, { te?: string; hi?: string }> = {};
+    const mandals: Record<string, { te?: string; hi?: string }> = {};
+    const villages: Record<string, { te?: string; hi?: string }> = {};
+
+    // Combine Telugu translations
+    for (const r of stTe || []) {
+        const id = String(r.stateId);
+        if (!states[id]) states[id] = {};
+        states[id].te = String(r.name);
+    }
+    for (const r of dsTe || []) {
+        const id = String(r.districtId);
+        if (!districts[id]) districts[id] = {};
+        districts[id].te = String(r.name);
+    }
+    for (const r of mdTe || []) {
+        const id = String(r.mandalId);
+        if (!mandals[id]) mandals[id] = {};
+        mandals[id].te = String(r.name);
+    }
+    for (const r of vgTe || []) {
+        const id = String(r.villageId);
+        if (!villages[id]) villages[id] = {};
+        villages[id].te = String(r.name);
+    }
+
+    // Combine Hindi translations
+    for (const r of stHi || []) {
+        const id = String(r.stateId);
+        if (!states[id]) states[id] = {};
+        states[id].hi = String(r.name);
+    }
+    for (const r of dsHi || []) {
+        const id = String(r.districtId);
+        if (!districts[id]) districts[id] = {};
+        districts[id].hi = String(r.name);
+    }
+    for (const r of mdHi || []) {
+        const id = String(r.mandalId);
+        if (!mandals[id]) mandals[id] = {};
+        mandals[id].hi = String(r.name);
+    }
+    for (const r of vgHi || []) {
+        const id = String(r.villageId);
+        if (!villages[id]) villages[id] = {};
+        villages[id].hi = String(r.name);
+    }
 
     return { states, districts, mandals, villages };
 }
@@ -293,7 +355,7 @@ router.get('/search-combined', async (req, res) => {
                 ? tenantLangCode
                 : '';
 
-        // Collect ids for translation lookup (only when lang is te/hi)
+        // Collect ids for translation lookup
         const stateIds = new Set<string>();
         const districtIds = new Set<string>();
         const mandalIds = new Set<string>();
@@ -305,8 +367,8 @@ router.get('/search-combined', async (req, res) => {
             if (it.villageId) villageIds.add(String(it.villageId));
         }
 
+        // Load ALL available translations (Telugu and Hindi)
         const translations = await loadTranslationsByIds({
-            lang,
             stateIds: Array.from(stateIds),
             districtIds: Array.from(districtIds),
             mandalIds: Array.from(mandalIds),
@@ -324,44 +386,45 @@ router.get('/search-combined', async (req, res) => {
 
         const items = rawItems.map((it: any) => {
             const type = String(it.type || '').toUpperCase();
+            
+            // Build names object with all available translations
+            const buildNames = (id: string | null, entityType: 'state' | 'district' | 'mandal' | 'village', englishName: string) => {
+                if (!id) return { en: englishName };
+                
+                const trans = translations[`${entityType}s`][id] || {};
+                return {
+                    en: englishName,
+                    ...(trans.te ? { te: trans.te } : {}),
+                    ...(trans.hi ? { hi: trans.hi } : {}),
+                };
+            };
+
             const state = it.stateId
                 ? {
                     id: it.stateId,
                     name: it.stateName,
-                    names: {
-                        en: it.stateName,
-                        ...(lang ? { [lang]: translations.states[String(it.stateId)] || null } : {}),
-                    },
+                    names: buildNames(it.stateId, 'state', it.stateName),
                 }
                 : null;
             const district = it.districtId
                 ? {
                     id: it.districtId,
                     name: it.districtName,
-                    names: {
-                        en: it.districtName,
-                        ...(lang ? { [lang]: translations.districts[String(it.districtId)] || null } : {}),
-                    },
+                    names: buildNames(it.districtId, 'district', it.districtName),
                 }
                 : null;
             const mandal = it.mandalId
                 ? {
                     id: it.mandalId,
                     name: it.mandalName,
-                    names: {
-                        en: it.mandalName,
-                        ...(lang ? { [lang]: translations.mandals[String(it.mandalId)] || null } : {}),
-                    },
+                    names: buildNames(it.mandalId, 'mandal', it.mandalName),
                 }
                 : null;
             const village = it.villageId
                 ? {
                     id: it.villageId,
                     name: it.villageName,
-                    names: {
-                        en: it.villageName,
-                        ...(lang ? { [lang]: translations.villages[String(it.villageId)] || null } : {}),
-                    },
+                    names: buildNames(it.villageId, 'village', it.villageName),
                 }
                 : null;
 
