@@ -2057,7 +2057,7 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                       createdAt: "2026-01-18T06:00:00.000Z"
  *                       updatedAt: "2026-01-18T06:00:00.000Z"
- *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-18/1"
  *                       metaTitle: "Telangana Edition | 18 January 2026"
  *                       metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
  *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
