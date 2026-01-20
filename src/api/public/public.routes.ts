@@ -933,10 +933,25 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
     });
   }
 
+  const domain = (res.locals as any).domain;
+  const baseUrl = `https://${domain?.domain || 'epaper.kaburlutoday.com'}`;
+
   const byEditionId = new Map<string, any>();
   for (const it of editionIssues) if (it.editionId) byEditionId.set(String(it.editionId), it);
   const bySubEditionId = new Map<string, any>();
   for (const it of subEditionIssues) if (it.subEditionId) bySubEditionId.set(String(it.subEditionId), it);
+
+  // Helper to format issue date for display
+  const formatIssueDate = (d: Date) => {
+    const date = new Date(d);
+    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  // Helper to format date for URL (YYYY-MM-DD)
+  const formatDateForUrl = (d: Date) => {
+    const date = new Date(d);
+    return date.toISOString().split('T')[0];
+  };
 
   const out = editions
     .map((ed: any) => {
@@ -945,38 +960,73 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
         .map((sub: any) => {
           const subIssue = bySubEditionId.get(sub.id);
           if (!includeEmpty && !subIssue) return null;
+
+          // Build SEO metadata for sub-edition issue
+          let issueMeta = null;
+          if (subIssue) {
+            const dateStr = formatDateForUrl(subIssue.issueDate);
+            const displayDate = formatIssueDate(subIssue.issueDate);
+            issueMeta = {
+              id: subIssue.id,
+              issueDate: subIssue.issueDate,
+              pdfUrl: subIssue.pdfUrl,
+              coverImageUrl: subIssue.coverImageUrl,
+              coverImageUrlWebp: subIssue.coverImageUrlWebp || null,
+              pageCount: subIssue.pageCount,
+              pages: includePages
+                ? (subIssue.pages || []).map((pg: any) => ({
+                    ...pg,
+                    imageUrlWebp: pg.imageUrlWebp || null,
+                  }))
+                : undefined,
+              updatedAt: subIssue.updatedAt,
+              // SEO / Sharing metadata
+              canonicalUrl: `${baseUrl}/${ed.slug}/${sub.slug}/${dateStr}`,
+              metaTitle: `${sub.name} - ${ed.name} | ${displayDate}`,
+              metaDescription: `Read ${sub.name} (${ed.name}) ePaper edition for ${displayDate}. ${subIssue.pageCount} pages available.`,
+              ogImage: subIssue.coverImageUrlWebp || subIssue.coverImageUrl,
+            };
+          }
+
           return {
             ...sub,
-            issue: subIssue
-              ? {
-                  id: subIssue.id,
-                  issueDate: subIssue.issueDate,
-                  pdfUrl: subIssue.pdfUrl,
-                  coverImageUrl: subIssue.coverImageUrl,
-                  pageCount: subIssue.pageCount,
-                  pages: includePages ? subIssue.pages : undefined,
-                  updatedAt: subIssue.updatedAt,
-                }
-              : null,
+            issue: issueMeta,
           };
         })
         .filter(Boolean);
 
       if (!includeEmpty && !edIssue && mappedSub.length === 0) return null;
 
+      // Build SEO metadata for edition issue
+      let editionIssueMeta = null;
+      if (edIssue) {
+        const dateStr = formatDateForUrl(edIssue.issueDate);
+        const displayDate = formatIssueDate(edIssue.issueDate);
+        editionIssueMeta = {
+          id: edIssue.id,
+          issueDate: edIssue.issueDate,
+          pdfUrl: edIssue.pdfUrl,
+          coverImageUrl: edIssue.coverImageUrl,
+          coverImageUrlWebp: edIssue.coverImageUrlWebp || null,
+          pageCount: edIssue.pageCount,
+          pages: includePages
+            ? (edIssue.pages || []).map((pg: any) => ({
+                ...pg,
+                imageUrlWebp: pg.imageUrlWebp || null,
+              }))
+            : undefined,
+          updatedAt: edIssue.updatedAt,
+          // SEO / Sharing metadata
+          canonicalUrl: `${baseUrl}/${ed.slug}/${dateStr}`,
+          metaTitle: `${ed.name} | ${displayDate}`,
+          metaDescription: ed.seoDescription || `Read ${ed.name} ePaper edition for ${displayDate}. ${edIssue.pageCount} pages available.`,
+          ogImage: edIssue.coverImageUrlWebp || edIssue.coverImageUrl,
+        };
+      }
+
       return {
         ...ed,
-        issue: edIssue
-          ? {
-              id: edIssue.id,
-              issueDate: edIssue.issueDate,
-              pdfUrl: edIssue.pdfUrl,
-              coverImageUrl: edIssue.coverImageUrl,
-              pageCount: edIssue.pageCount,
-              pages: includePages ? edIssue.pages : undefined,
-              updatedAt: edIssue.updatedAt,
-            }
-          : null,
+        issue: editionIssueMeta,
         subEditions: mappedSub,
       };
     })
@@ -1088,6 +1138,21 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
 
   if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
+  // Build SEO / sharing metadata
+  const domain = (res.locals as any).domain;
+  const baseUrl = `https://${domain?.domain || 'epaper.kaburlutoday.com'}`;
+  const dateStr = new Date(issue.issueDate).toISOString().split('T')[0];
+  const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const targetName = subEdition ? `${subEdition.name} - ${edition.name}` : edition.name;
+  const canonicalUrl = subEdition
+    ? `${baseUrl}/${edition.slug}/${subEdition.slug}/${dateStr}`
+    : `${baseUrl}/${edition.slug}/${dateStr}`;
+
   return res.json({
     tenant: { id: tenant.id, slug: tenant.slug },
     edition,
@@ -1097,8 +1162,17 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
       issueDate: issue.issueDate,
       pdfUrl: issue.pdfUrl,
       coverImageUrl: issue.coverImageUrl,
+      coverImageUrlWebp: issue.coverImageUrlWebp || null,
       pageCount: issue.pageCount,
-      pages: issue.pages,
+      pages: (issue.pages || []).map((pg: any) => ({
+        ...pg,
+        imageUrlWebp: pg.imageUrlWebp || null,
+      })),
+      // SEO / Sharing metadata
+      canonicalUrl,
+      metaTitle: `${targetName} | ${displayDate}`,
+      metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
+      ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
     },
   });
 });
