@@ -1,0 +1,32 @@
+{
+  "district": {
+    "name_en": "Nandyal",
+    "name_te": "నంద్యాల",
+    "name_hi": "नंद्याल",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 19
+  },
+  "mandals": [
+    { "name_en": "Nandyal", "name_te": "నంద్యాల", "name_hi": "नंद्याल" },
+    { "name_en": "Allagadda", "name_te": "ఆళ్లగడ్డ", "name_hi": "अल्लागड्डा" },
+    { "name_en": "Banaganapalle", "name_te": "బనగానపల్లె", "name_hi": "बनगानापल्ले" },
+    { "name_en": "Bethamcherla", "name_te": "బేతంచెర్ల", "name_hi": "बेथमचेरला" },
+    { "name_en": "Chagalamarri", "name_te": "చాగలమర్రి", "name_hi": "चागलमर्री" },
+    { "name_en": "Dornipadu", "name_te": "దోర్నిపాడు", "name_hi": "दोर्निपाडु" },
+    { "name_en": "Gadivemula", "name_te": "గడివేముల", "name_hi": "गडिवेमुला" },
+    { "name_en": "Gospadu", "name_te": "గోస్పాడు", "name_hi": "गोसपाडु" },
+    { "name_en": "Jupadu Bungalow", "name_te": "జూపాడు బంగ్లా", "name_hi": "जूपाडु बंगला" },
+    { "name_en": "Koilkuntla", "name_te": "కోయిలకుంట్ల", "name_hi": "कोयलकुंटला" },
+    { "name_en": "Kolimigundla", "name_te": "కొలిమిగుండ్ల", "name_hi": "कोलिमिगुंडला" },
+    { "name_en": "Mahanandi", "name_te": "మహానంది", "name_hi": "महानंदी" },
+    { "name_en": "Owk", "name_te": "ఓక్", "name_hi": "ओव्क" },
+    { "name_en": "Peapully", "name_te": "పీపల్లి", "name_hi": "पीपल्ली" },
+    { "name_en": "Rudravaram", "name_te": "రుద్రవరం", "name_hi": "रुद्रवरम" },
+    { "name_en": "Sirivella", "name_te": "శిరివెళ్ల", "name_hi": "शिरिवेल्ला" },
+    { "name_en": "Srisailam", "name_te": "శ్రీశైలం", "name_hi": "श्रीशैलम" },
+    { "name_en": "Uyyalawada", "name_te": "ఉయ్యాలవాడ", "name_hi": "उय्यालवाड़ा" },
+    { "name_en": "Velugodu", "name_te": "వెలుగోడు", "name_hi": "वेलुगोडु" }
+  ]
+}

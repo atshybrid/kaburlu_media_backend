@@ -1,0 +1,22 @@
+{
+  "district": {
+    "name_en": "Parvathipuram Manyam",
+    "name_te": "పార్వతీపురం మన్యం",
+    "name_hi": "पार्वतीपुरम मन्यम",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 9
+  },
+  "mandals": [
+    { "name_en": "Parvathipuram", "name_te": "పార్వతీపురం", "name_hi": "पार्वतीपुरम" },
+    { "name_en": "Balijipeta", "name_te": "బలిజిపేట", "name_hi": "बलिजीपेटा" },
+    { "name_en": "Garugubilli", "name_te": "గరుగుబిల్లి", "name_hi": "गरुगुबिल्ली" },
+    { "name_en": "Gummalakshmipuram", "name_te": "గుమ్మలక్ష్మీపురం", "name_hi": "गुम्मलक्ष्मीपुरम" },
+    { "name_en": "Kurupam", "name_te": "కురుపాం", "name_hi": "कुरुपाम" },
+    { "name_en": "Makkuva", "name_te": "మక్కువ", "name_hi": "मक्कुवा" },
+    { "name_en": "Pachipenta", "name_te": "పచ్చిపెంట", "name_hi": "पच्चिपेंटा" },
+    { "name_en": "Seethanagaram", "name_te": "సీతానగరం", "name_hi": "सीतानगरम" },
+    { "name_en": "Salur", "name_te": "సాలూరు", "name_hi": "सालूर" }
+  ]
+}

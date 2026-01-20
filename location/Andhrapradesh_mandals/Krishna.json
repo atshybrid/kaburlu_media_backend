@@ -1,0 +1,38 @@
+{
+  "district": {
+    "name_en": "Krishna",
+    "name_te": "కృష్ణా",
+    "name_hi": "कृष्णा",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 25
+  },
+  "mandals": [
+    { "name_en": "Machilipatnam", "name_te": "మచిలీపట్నం", "name_hi": "मछलीपट्टनम" },
+    { "name_en": "Gudivada", "name_te": "గుడివాడ", "name_hi": "गुडिवाड़ा" },
+    { "name_en": "Pedana", "name_te": "పెదన", "name_hi": "पेदना" },
+    { "name_en": "Pamarru", "name_te": "పామర్రు", "name_hi": "पामर्रु" },
+    { "name_en": "Movva", "name_te": "మొవ్వ", "name_hi": "मोव्वा" },
+    { "name_en": "Avanigadda", "name_te": "అవనిగడ్డ", "name_hi": "अवनिगड्डा" },
+    { "name_en": "Challapalli", "name_te": "చల్లపల్లి", "name_hi": "चल्लापल्ली" },
+    { "name_en": "Ghantasala", "name_te": "ఘంటసాల", "name_hi": "घंटसाला" },
+    { "name_en": "Mopidevi", "name_te": "మోపిదేవి", "name_hi": "मोपिदेवी" },
+    { "name_en": "Nagayalanka", "name_te": "నాగాయలంక", "name_hi": "नागायलंका" },
+    { "name_en": "Koduru", "name_te": "కోడూరు", "name_hi": "कोडूरु" },
+    { "name_en": "Kruthivennu", "name_te": "కృత్తివెన్ను", "name_hi": "कृतिवेन्नु" },
+    { "name_en": "Bantumilli", "name_te": "బంటుమిల్లి", "name_hi": "बंटुमिल्ली" },
+    { "name_en": "Gudlavalleru", "name_te": "గుడ్లవల్లేరు", "name_hi": "गुड्लवल्लेरु" },
+    { "name_en": "Guduru", "name_te": "గూడూరు", "name_hi": "गुडूरु" },
+    { "name_en": "Mandavalli", "name_te": "మండవల్లి", "name_hi": "मंडवल्ली" },
+    { "name_en": "Pamidimukkala", "name_te": "పామిడిముక్కల", "name_hi": "पामिडिमुक्कला" },
+    { "name_en": "Pedaparupudi", "name_te": "పెదపరుపూడి", "name_hi": "पेदपरुपुडी" },
+    { "name_en": "Kankipadu", "name_te": "కంకిపాడు", "name_hi": "कंकिपाडु" },
+    { "name_en": "Pamarru Rural", "name_te": "పామర్రు గ్రామీణం", "name_hi": "पामर्रु ग्रामीण" },
+    { "name_en": "Gudivada Rural", "name_te": "గుడివాడ గ్రామీణం", "name_hi": "गुडिवाड़ा ग्रामीण" },
+    { "name_en": "Machilipatnam Rural", "name_te": "మచిలీపట్నం గ్రామీణం", "name_hi": "मछलीपट्टनम ग्रामीण" },
+    { "name_en": "Movva Rural", "name_te": "మొవ్వ గ్రామీణం", "name_hi": "मोव्वा ग्रामीण" },
+    { "name_en": "Pedana Rural", "name_te": "పెదన గ్రామీణం", "name_hi": "पेदना ग्रामीण" },
+    { "name_en": "Avanigadda Rural", "name_te": "అవనిగడ్డ గ్రామీణం", "name_hi": "अवनिगड्डा ग्रामीण" }
+  ]
+}

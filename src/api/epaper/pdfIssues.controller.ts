@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { convertPdfToPngPages } from '../../lib/pdfToPng';
+import { convertPngToWebp } from '../../lib/pngToWebp';
 import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
 import { config } from '../../config/env';
 import axios from 'axios';
@@ -154,18 +155,34 @@ async function upsertPdfIssueFromBuffer(params: {
     contentType: 'application/pdf',
   });
 
-  // 2) Convert to PNG pages
+  // 2) Convert to PNG pages (lossless masters)
   const pageBuffers = await convertPdfToPngPages(pdfBuffer);
 
-  // 3) Upload PNG pages
-  const pages = await mapWithConcurrency(pageBuffers, 4, async (buf, idx) => {
+  // 3) Upload PNG pages (masters) AND generate WebP versions for delivery
+  const pages = await mapWithConcurrency(pageBuffers, 4, async (pngBuf, idx) => {
     const pageNumber = idx + 1;
     const pageKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.png`;
-    const up = await putPublicObject({ key: pageKey, body: buf, contentType: 'image/png' });
-    return { pageNumber, imageUrl: up.publicUrl };
+    const webpKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.webp`;
+
+    // Upload PNG master (archive quality, never deleted)
+    const pngUpload = await putPublicObject({ key: pageKey, body: pngBuf, contentType: 'image/png' });
+
+    // Convert PNG to WebP for optimized frontend delivery
+    let webpUrl: string | null = null;
+    try {
+      const webpBuf = await convertPngToWebp(pngBuf);
+      const webpUpload = await putPublicObject({ key: webpKey, body: webpBuf, contentType: 'image/webp' });
+      webpUrl = webpUpload.publicUrl;
+    } catch (webpErr) {
+      // WebP generation is non-critical; log and continue with PNG only
+      console.warn(`⚠️  WebP conversion failed for page ${pageNumber}:`, webpErr);
+    }
+
+    return { pageNumber, imageUrl: pngUpload.publicUrl, imageUrlWebp: webpUrl };
   });
 
   const coverImageUrl = pages[0]?.imageUrl || null;
+  const coverImageUrlWebp = pages[0]?.imageUrlWebp || null;
 
   // 4) Upsert/replace DB record
   const existing = await p.epaperPdfIssue.findFirst({
@@ -188,8 +205,10 @@ async function upsertPdfIssueFromBuffer(params: {
   if (existing?.pageCount && existing.pageCount > pages.length) {
     const deletes: Promise<void>[] = [];
     for (let n = pages.length + 1; n <= existing.pageCount; n++) {
-      const oldKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.png`;
-      deletes.push(deletePublicObject({ key: oldKey }).catch(() => undefined as any));
+      const oldPngKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.png`;
+      const oldWebpKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.webp`;
+      deletes.push(deletePublicObject({ key: oldPngKey }).catch(() => undefined as any));
+      deletes.push(deletePublicObject({ key: oldWebpKey }).catch(() => undefined as any));
     }
     await Promise.allSettled(deletes);
   }
@@ -204,6 +223,7 @@ async function upsertPdfIssueFromBuffer(params: {
         data: {
           pdfUrl: pdfUpload.publicUrl,
           coverImageUrl,
+          coverImageUrlWebp,
           pageCount: pages.length,
           uploadedByUserId: userId || null,
           editionId: editionId || null,
@@ -211,7 +231,12 @@ async function upsertPdfIssueFromBuffer(params: {
         },
       });
       await t.epaperPdfPage.createMany({
-        data: pages.map((p) => ({ issueId: updated.id, pageNumber: p.pageNumber, imageUrl: p.imageUrl })),
+        data: pages.map((p) => ({
+          issueId: updated.id,
+          pageNumber: p.pageNumber,
+          imageUrl: p.imageUrl,
+          imageUrlWebp: p.imageUrlWebp,
+        })),
       });
       return updated;
     }
@@ -224,13 +249,19 @@ async function upsertPdfIssueFromBuffer(params: {
         subEditionId: subEditionId || null,
         pdfUrl: pdfUpload.publicUrl,
         coverImageUrl,
+        coverImageUrlWebp,
         pageCount: pages.length,
         uploadedByUserId: userId || null,
       },
     });
 
     await t.epaperPdfPage.createMany({
-      data: pages.map((p) => ({ issueId: created.id, pageNumber: p.pageNumber, imageUrl: p.imageUrl })),
+      data: pages.map((p) => ({
+        issueId: created.id,
+        pageNumber: p.pageNumber,
+        imageUrl: p.imageUrl,
+        imageUrlWebp: p.imageUrlWebp,
+      })),
     });
 
     return created;
@@ -251,6 +282,7 @@ async function upsertPdfIssueFromBuffer(params: {
       pdfUrl: pdfUpload.publicUrl,
       pageCount: pages.length,
       coverImageUrl,
+      coverImageUrlWebp,
     },
   };
 }

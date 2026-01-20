@@ -1,0 +1,43 @@
+{
+  "district": {
+    "name_en": "Chittoor",
+    "name_te": "చిత్తూరు",
+    "name_hi": "चित्तूर",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 31
+  },
+  "mandals": [
+    { "name_en": "Chittoor", "name_te": "చిత్తూరు", "name_hi": "चित्तूर" },
+    { "name_en": "Gangadhara Nellore", "name_te": "గంగాధర నెల్లూరు", "name_hi": "गंगाधर नेल्लोर" },
+    { "name_en": "Yadamari", "name_te": "యదమరి", "name_hi": "यदमरी" },
+    { "name_en": "Penumuru", "name_te": "పెనుమూరు", "name_hi": "पेनुमूरु" },
+    { "name_en": "Bangarupalem", "name_te": "బంగారుపాళెం", "name_hi": "बंगारुपालेम" },
+    { "name_en": "Palamaner", "name_te": "పాలమనేరు", "name_hi": "पालमनेर" },
+    { "name_en": "Gangavaram", "name_te": "గంగవరం", "name_hi": "गंगावरम" },
+    { "name_en": "Kuppam", "name_te": "కుప్పం", "name_hi": "कुप्पम" },
+    { "name_en": "Gudupalle", "name_te": "గుడుపల్లె", "name_hi": "गुडुपल्ले" },
+    { "name_en": "Ramakuppam", "name_te": "రామకుప్పం", "name_hi": "रामकुप्पम" },
+    { "name_en": "Santhipuram", "name_te": "శాంతిపురం", "name_hi": "शांतिपुरम" },
+    { "name_en": "Vedurukuppam", "name_te": "వెదురుకుప్పం", "name_hi": "वेदुरुकुप्पम" },
+    { "name_en": "Irala", "name_te": "ఇరాల", "name_hi": "इराला" },
+    { "name_en": "Srirangarajapuram", "name_te": "శ్రీరంగరాజపురం", "name_hi": "श्रीरंगराजपुरम" },
+    { "name_en": "Pulicherla", "name_te": "పులిచెర్ల", "name_hi": "पुलिचेरला" },
+    { "name_en": "Rompicherla", "name_te": "రోంపిచెర్ల", "name_hi": "रोमपिचेरला" },
+    { "name_en": "Thavanampalle", "name_te": "తవణంపల్లె", "name_hi": "थवणमपल्ले" },
+    { "name_en": "Chowdepalle", "name_te": "చౌడేపల్లె", "name_hi": "चौडेपल्ले" },
+    { "name_en": "Punganur", "name_te": "పుంగనూరు", "name_hi": "पुंगनूर" },
+    { "name_en": "Somala", "name_te": "సోమల", "name_hi": "सोमला" },
+    { "name_en": "Sodam", "name_te": "సోదం", "name_hi": "सोडम" },
+    { "name_en": "Baireddipalle", "name_te": "బైరెడ్డిపల్లె", "name_hi": "बैरेड्डीपल्ले" },
+    { "name_en": "Gudipala", "name_te": "గుడిపాల", "name_hi": "गुडिपाला" },
+    { "name_en": "Karvetinagar", "name_te": "కార్వేటినగర్", "name_hi": "कार्वेटीनगर" },
+    { "name_en": "Nagari", "name_te": "నగరి", "name_hi": "नगरि" },
+    { "name_en": "Nindra", "name_te": "నింద్ర", "name_hi": "निंद्रा" },
+    { "name_en": "Puttur", "name_te": "పుత్తూరు", "name_hi": "पुत्तूर" },
+    { "name_en": "Narayanavanam", "name_te": "నారాయణవనం", "name_hi": "नारायणवनम" },
+    { "name_en": "Vijayapuram", "name_te": "విజయపురం", "name_hi": "विजयपुरम" },
+    { "name_en": "Yerpedu", "name_te": "యెర్పేడు", "name_hi": "येरपेडु" }
+  ]
+}

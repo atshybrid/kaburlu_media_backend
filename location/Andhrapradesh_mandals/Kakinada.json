@@ -1,0 +1,34 @@
+{
+  "district": {
+    "name_en": "Kakinada",
+    "name_te": "కాకినాడ",
+    "name_hi": "काकिनाडा",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 21
+  },
+  "mandals": [
+    { "name_en": "Kakinada Urban", "name_te": "కాకినాడ అర్బన్", "name_hi": "काकिनाडा शहरी" },
+    { "name_en": "Kakinada Rural", "name_te": "కాకినాడ గ్రామీణం", "name_hi": "काकिनाडा ग्रामीण" },
+    { "name_en": "Karapa", "name_te": "కరప", "name_hi": "करपा" },
+    { "name_en": "Kotananduru", "name_te": "కోటనందూరు", "name_hi": "कोटनंदूरु" },
+    { "name_en": "Thondangi", "name_te": "తోండంగి", "name_hi": "थोंडंगी" },
+    { "name_en": "Gollaprolu", "name_te": "గొల్లప్రోలు", "name_hi": "गोल्लप्रोलु" },
+    { "name_en": "Pithapuram", "name_te": "పిఠాపురం", "name_hi": "पीठापुरम" },
+    { "name_en": "U. Kothapalle", "name_te": "యు. కొత్తపల్లి", "name_hi": "यू. कोथापल्ली" },
+    { "name_en": "Samalkota", "name_te": "సామర్లకోట", "name_hi": "सामलकोटा" },
+    { "name_en": "Pedapudi", "name_te": "పెదపూడి", "name_hi": "पेदपुडी" },
+    { "name_en": "Jaggampeta", "name_te": "జగ్గంపేట", "name_hi": "जग्गमपेटा" },
+    { "name_en": "Gandepalle", "name_te": "గండేపల్లి", "name_hi": "गंडेपल्ली" },
+    { "name_en": "Prathipadu", "name_te": "ప్రత్తిపాడు", "name_hi": "प्रत्तिपाडु" },
+    { "name_en": "Yeleswaram", "name_te": "యేలేశ్వరం", "name_hi": "येलेश्वरम" },
+    { "name_en": "Rowthulapudi", "name_te": "రౌతులపూడి", "name_hi": "रौतुलापूडी" },
+    { "name_en": "Tuni", "name_te": "తుని", "name_hi": "तुनी" },
+    { "name_en": "Kotananduru Rural", "name_te": "కోటనందూరు గ్రామీణం", "name_hi": "कोटनंदूरु ग्रामीण" },
+    { "name_en": "Payakaraopeta", "name_te": "పాయకరావుపేట", "name_hi": "पायकऱावपेटा" },
+    { "name_en": "Sankhavaram", "name_te": "శంఖవరం", "name_hi": "शंखवरम" },
+    { "name_en": "Prathipadu Rural", "name_te": "ప్రత్తిపాడు గ్రామీణం", "name_hi": "प्रत्तिपाडु ग्रामीण" },
+    { "name_en": "Gollaprolu Rural", "name_te": "గొల్లప్రోలు గ్రామీణం", "name_hi": "गोल्लप्रोलु ग्रामीण" }
+  ]
+}

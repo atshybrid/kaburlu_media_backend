@@ -1,0 +1,29 @@
+{
+  "district": {
+    "name_en": "NTR",
+    "name_te": "ఎన్‌టీఆర్",
+    "name_hi": "एनटीआर",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 16
+  },
+  "mandals": [
+    { "name_en": "Vijayawada Urban", "name_te": "విజయవాడ అర్బన్", "name_hi": "विजयवाड़ा शहरी" },
+    { "name_en": "Vijayawada Rural", "name_te": "విజయవాడ గ్రామీణం", "name_hi": "विजयवाड़ा ग्रामीण" },
+    { "name_en": "Ibrahimpatnam", "name_te": "ఇబ్రహీంపట్నం", "name_hi": "इब्राहीमपट्टनम" },
+    { "name_en": "Penamaluru", "name_te": "పెనమలూరు", "name_hi": "पेनमलूरु" },
+    { "name_en": "G. Konduru", "name_te": "జి. కొండూరు", "name_hi": "जी. कोंडूरु" },
+    { "name_en": "A. Konduru", "name_te": "ఎ. కొండూరు", "name_hi": "ए. कोंडूरु" },
+    { "name_en": "Konduru", "name_te": "కొండూరు", "name_hi": "कोंडूरु" },
+    { "name_en": "Mylavaram", "name_te": "మైలవరం", "name_hi": "मैलावरम" },
+    { "name_en": "Nandigama", "name_te": "నందిగామ", "name_hi": "नंदीगामा" },
+    { "name_en": "Jaggayyapeta", "name_te": "జగ్గయ్యపేట", "name_hi": "जग्गय्यपेटा" },
+    { "name_en": "Tiruvuru", "name_te": "తిరువూరు", "name_hi": "तिरुवूरु" },
+    { "name_en": "Reddigudem", "name_te": "రెడ్డిగూడెం", "name_hi": "रेड्डीगुडेम" },
+    { "name_en": "Chandarlapadu", "name_te": "చందర్లపాడు", "name_hi": "चंदरलपाडु" },
+    { "name_en": "Kanchikacherla", "name_te": "కంచికచెర్ల", "name_hi": "कांचीकेचेरला" },
+    { "name_en": "Vatsavai", "name_te": "వత్సవాయి", "name_hi": "वत्सवायी" },
+    { "name_en": "Veerullapadu", "name_te": "వీరుల్లపాడు", "name_hi": "वीरुल्लपाडु" }
+  ]
+}

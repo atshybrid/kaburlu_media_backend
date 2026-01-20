@@ -1,0 +1,39 @@
+{
+  "district": {
+    "name_en": "Kurnool",
+    "name_te": "కర్నూలు",
+    "name_hi": "कर्नूल",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 26
+  },
+  "mandals": [
+    { "name_en": "Kurnool", "name_te": "కర్నూలు", "name_hi": "कर्नूल" },
+    { "name_en": "Kallur", "name_te": "కల్లూరు", "name_hi": "कल्लूरु" },
+    { "name_en": "Orvakal", "name_te": "ఒర్వకల్", "name_hi": "ओर्वकल" },
+    { "name_en": "Kodumur", "name_te": "కోడుమూరు", "name_hi": "कोडुमूरु" },
+    { "name_en": "Gudur", "name_te": "గూడూరు", "name_hi": "गुडूरु" },
+    { "name_en": "Veldurthi", "name_te": "వెల్దుర్తి", "name_hi": "वेल्दुर्थी" },
+    { "name_en": "Yemmiganur", "name_te": "యెమ్మిగనూరు", "name_hi": "येम्मिगनूर" },
+    { "name_en": "Nandikotkur", "name_te": "నందికొట్కూరు", "name_hi": "नंदिकोटकूर" },
+    { "name_en": "Pagidyala", "name_te": "పగిడ్యాల", "name_hi": "पगिड्याला" },
+    { "name_en": "Pamulapadu", "name_te": "పాములపాడు", "name_hi": "पामुलपाडु" },
+    { "name_en": "Maddikera East", "name_te": "మద్దికెర తూర్పు", "name_hi": "मद्दिकेरा पूर्व" },
+    { "name_en": "Maddikera West", "name_te": "మద్దికెర పడమర", "name_hi": "मद्दिकेरा पश्चिम" },
+    { "name_en": "Adoni", "name_te": "ఆదోని", "name_hi": "आदोनी" },
+    { "name_en": "Mantralayam", "name_te": "మంత్రాలయం", "name_hi": "मंत्रालयम" },
+    { "name_en": "Kosigi", "name_te": "కోసిగి", "name_hi": "कोसिगी" },
+    { "name_en": "Kowthalam", "name_te": "కౌతాళం", "name_hi": "कौथलम" },
+    { "name_en": "Pattikonda", "name_te": "పత్తికొండ", "name_hi": "पट्टिकोंडा" },
+    { "name_en": "Tuggali", "name_te": "తుగ్గలి", "name_hi": "तुग्गली" },
+    { "name_en": "Chippagiri", "name_te": "చిప్పగిరి", "name_hi": "चिप्पगिरी" },
+    { "name_en": "Devanakonda", "name_te": "దేవనకొండ", "name_hi": "देवनकोंडा" },
+    { "name_en": "Aspari", "name_te": "అస్పరి", "name_hi": "अस्परी" },
+    { "name_en": "Holagunda", "name_te": "హొళగుంద", "name_hi": "होलगुंडा" },
+    { "name_en": "Alur", "name_te": "ఆలూరు", "name_hi": "आलूर" },
+    { "name_en": "Halaharvi", "name_te": "హాలహర్వి", "name_hi": "हालाहर्वी" },
+    { "name_en": "C. Belagal", "name_te": "సి. బెలగల్", "name_hi": "सी. बेलगल" },
+    { "name_en": "Nandavaram", "name_te": "నందవరం", "name_hi": "नंदवरम" }
+  ]
+}

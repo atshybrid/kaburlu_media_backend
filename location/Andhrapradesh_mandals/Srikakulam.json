@@ -1,0 +1,43 @@
+{
+  "district": {
+    "name_en": "Srikakulam",
+    "name_te": "శ్రీకాకుళం",
+    "name_hi": "श्रीकाकुलम",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 30
+  },
+  "mandals": [
+    { "name_en": "Srikakulam", "name_te": "శ్రీకాకుళం", "name_hi": "श्रीकाकुलम" },
+    { "name_en": "Amadalavalasa", "name_te": "అమదాలవలస", "name_hi": "अमदालवलसा" },
+    { "name_en": "Etcherla", "name_te": "ఎచ్చెర్ల", "name_hi": "एचेरला" },
+    { "name_en": "Gara", "name_te": "గార", "name_hi": "गारा" },
+    { "name_en": "Ranasthalam", "name_te": "రణస్థలం", "name_hi": "रणस्थलम" },
+    { "name_en": "Laveru", "name_te": "లావేరు", "name_hi": "लावेरु" },
+    { "name_en": "Ponduru", "name_te": "పొందూరు", "name_hi": "पोंदूरु" },
+    { "name_en": "Sarubujjili", "name_te": "సరుబుజ్జిలి", "name_hi": "सरुबुज्जिली" },
+    { "name_en": "Burja", "name_te": "బుర్జా", "name_hi": "बुर्जा" },
+    { "name_en": "Palasa", "name_te": "పలాస", "name_hi": "पलासा" },
+    { "name_en": "Mandasa", "name_te": "మందస", "name_hi": "मंदसा" },
+    { "name_en": "Kanchili", "name_te": "కంచిలి", "name_hi": "कांचीली" },
+    { "name_en": "Ichchapuram", "name_te": "ఇచ్చాపురం", "name_hi": "इच्छापुरम" },
+    { "name_en": "Kaviti", "name_te": "కవిటి", "name_hi": "कविटी" },
+    { "name_en": "Sompeta", "name_te": "సొంపేట", "name_hi": "सोंपेटा" },
+    { "name_en": "Tekkali", "name_te": "టెక్కలి", "name_hi": "टेक्कली" },
+    { "name_en": "Santhabommali", "name_te": "సంతబొమ్మాళి", "name_hi": "संतबोम्माली" },
+    { "name_en": "Nandigam", "name_te": "నందిగాం", "name_hi": "नंदीगाम" },
+    { "name_en": "Kotabommali", "name_te": "కోటబొమ్మాళి", "name_hi": "कोटबोम्माली" },
+    { "name_en": "Jalumuru", "name_te": "జలుమూరు", "name_hi": "जलुमुरु" },
+    { "name_en": "Hiramandalam", "name_te": "హిరమండలం", "name_hi": "हिरमंडलम" },
+    { "name_en": "Lakshminarasupeta", "name_te": "లక్ష్మీనరసుపేట", "name_hi": "लक्ष्मीनरसुपेटा" },
+    { "name_en": "Pathapatnam", "name_te": "పాతపట్నం", "name_hi": "पाथापटनम" },
+    { "name_en": "Meliaputti", "name_te": "మెలియాపుట్టి", "name_hi": "मेलियापुट्टी" },
+    { "name_en": "Seethampeta", "name_te": "సీతంపేట", "name_hi": "सीथमपेटा" },
+    { "name_en": "Bhamini", "name_te": "భామిని", "name_hi": "भामिनी" },
+    { "name_en": "Kotturu", "name_te": "కొత్తూరు", "name_hi": "कोत्तूरु" },
+    { "name_en": "Veeraghattam", "name_te": "వీరఘట్టం", "name_hi": "वीरघट्टम" },
+    { "name_en": "Palakonda", "name_te": "పాలకొండ", "name_hi": "पालकोंडा" },
+    { "name_en": "Regidi Amadalavalasa", "name_te": "రేగిడి అమదాలవలస", "name_hi": "रेगिडी अमदालवलसा" }
+  ]
+}

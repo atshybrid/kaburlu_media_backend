@@ -208,13 +208,18 @@ export const config = {
     // Optional: path to Poppler's pdftoppm binary for PDF->PNG conversion.
     // On Windows, you can set this to something like: C:\\Program Files\\poppler\\Library\\bin\\pdftoppm.exe
     pdftoppmPath: process.env.PDFTOPPM_PATH || process.env.POPPLER_PDFTOPPM_PATH,
-    // DPI used when converting PDF pages to PNG.
+    // DPI used when converting PDF pages to PNG (default: 150, recommended: 200-300 for sharp text).
     pdfDpi: parseIntSafe(process.env.EPAPER_PDF_DPI, 150),
 
     // Upload/conversion guards
     pdfMaxMb: parseIntSafe(process.env.EPAPER_PDF_MAX_MB, 30),
     // If set, limits conversion to first N pages. 0/undefined means no limit.
     pdfMaxPages: parseIntSafe(process.env.EPAPER_PDF_MAX_PAGES, 0),
+
+    // WebP quality for optimized delivery images (1-100, default: 80).
+    // Range 75-82 provides excellent balance for newspaper text.
+    // PNG masters are always preserved; WebP is for frontend delivery only.
+    webpQuality: parseIntSafe(process.env.EPAPER_WEBP_QUALITY, 80),
   },
 
   seo: {

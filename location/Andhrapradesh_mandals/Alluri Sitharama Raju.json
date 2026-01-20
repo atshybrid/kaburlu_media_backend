@@ -1,0 +1,35 @@
+{
+  "district": {
+    "name_en": "Alluri Sitharama Raju",
+    "name_te": "అల్లూరి సీతారామరాజు",
+    "name_hi": "अल्लूरी सीतारामराजु",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 22
+  },
+  "mandals": [
+    { "name_en": "Paderu", "name_te": "పాడేరు", "name_hi": "पाडेरू" },
+    { "name_en": "G. Madugula", "name_te": "జి. మాడుగుల", "name_hi": "जी. माडुगुला" },
+    { "name_en": "Hukumpeta", "name_te": "హుకుంపేట", "name_hi": "हुकुमपेटा" },
+    { "name_en": "Dumbriguda", "name_te": "డుంబ్రిగూడ", "name_hi": "डुम्ब्रिगुडा" },
+    { "name_en": "Araku Valley", "name_te": "ఆరకు లోయ", "name_hi": "अराकू घाटी" },
+    { "name_en": "Ananthagiri", "name_te": "అనంతగిరి", "name_hi": "अनंतगिरि" },
+    { "name_en": "Pedabayalu", "name_te": "పెదబయలు", "name_hi": "पेदाबयालु" },
+    { "name_en": "Munchingiputtu", "name_te": "ముంచింగిపుట్టు", "name_hi": "मुंचिंगिपुट्टू" },
+    { "name_en": "Gudem Kotha Veedhi", "name_te": "గూడెం కొత్త వీధి", "name_hi": "गुडेम कोथा वीडी" },
+    { "name_en": "Chintapalle", "name_te": "చింతపల్లి", "name_hi": "चिंतापल्ली" },
+    { "name_en": "Koyyuru", "name_te": "కొయ్యూరు", "name_hi": "कोय्यूरु" },
+    { "name_en": "Rampachodavaram", "name_te": "రంపచోడవరం", "name_hi": "रामपचोडवरम" },
+    { "name_en": "Maredumilli", "name_te": "మారేడుమిల్లి", "name_hi": "मारेडुमिल्ली" },
+    { "name_en": "Gangavaram", "name_te": "గంగవరం", "name_hi": "गंगावरम" },
+    { "name_en": "Devipatnam", "name_te": "దేవీపట్నం", "name_hi": "देवीपटनम" },
+    { "name_en": "Y. Ramavaram", "name_te": "వై. రామవరం", "name_hi": "वाई रामावरम" },
+    { "name_en": "Addateegala", "name_te": "అడ్డతీగల", "name_hi": "अड्डातीगाला" },
+    { "name_en": "Rajavommangi", "name_te": "రాజవొమ్మంగి", "name_hi": "राजवोममंगी" },
+    { "name_en": "Kunavaram", "name_te": "కునవరం", "name_hi": "कुनावरम" },
+    { "name_en": "Chintoor", "name_te": "చింతూరు", "name_hi": "चिंतूर" },
+    { "name_en": "Vararamachandrapuram", "name_te": "వరరామచంద్రపురం", "name_hi": "वररामचंद्रपुरम" },
+    { "name_en": "Yetapaka", "name_te": "యేటపాక", "name_hi": "येटापाका" }
+  ]
+}

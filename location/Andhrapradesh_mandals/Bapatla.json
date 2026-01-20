@@ -1,0 +1,38 @@
+{
+  "district": {
+    "name_en": "Bapatla",
+    "name_te": "బాపట్ల",
+    "name_hi": "बापटला",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 25
+  },
+  "mandals": [
+    { "name_en": "Bapatla", "name_te": "బాపట్ల", "name_hi": "बापटला" },
+    { "name_en": "Karlapalem", "name_te": "కర్లపాలెం", "name_hi": "करलापालेम" },
+    { "name_en": "Pittalavanipalem", "name_te": "పిట్టలవానిపాలెం", "name_hi": "पिट्टलावनिपालेम" },
+    { "name_en": "Nizampatnam", "name_te": "నిజాంపట్నం", "name_hi": "निज़ामपट्टनम" },
+    { "name_en": "Repalle", "name_te": "రేపల్లె", "name_hi": "रेपल्ले" },
+    { "name_en": "Cherukupalle", "name_te": "చెరుకుపల్లి", "name_hi": "चेरुकुपल्ले" },
+    { "name_en": "Tsundur", "name_te": "త్సుండూరు", "name_hi": "त्सुंदूर" },
+    { "name_en": "Vemuru", "name_te": "వేమూరు", "name_hi": "वेमूरु" },
+    { "name_en": "Amruthalur", "name_te": "అమృతలూరు", "name_hi": "अमृतलूर" },
+    { "name_en": "Kollur", "name_te": "కొల్లూరు", "name_hi": "कोल्लूर" },
+    { "name_en": "Bhattiprolu", "name_te": "భట్టిప్రోలు", "name_hi": "भट्टीप्रोलु" },
+    { "name_en": "Nagaram", "name_te": "నగరం", "name_hi": "नगरम" },
+    { "name_en": "Appikatla", "name_te": "అప్పికట్ల", "name_hi": "अप्पिकट्ला" },
+    { "name_en": "Ippagunta", "name_te": "ఇప్పగుంట", "name_hi": "इप्पगुंटा" },
+    { "name_en": "Ponnur Rural", "name_te": "పొన్నూరు గ్రామీణం", "name_hi": "पोन्नूर ग्रामीण" },
+    { "name_en": "Ponnur Urban", "name_te": "పొన్నూరు అర్బన్", "name_hi": "पोन्नूर शहरी" },
+    { "name_en": "Tenali Rural", "name_te": "తెనాలి గ్రామీణం", "name_hi": "तेनाली ग्रामीण" },
+    { "name_en": "Tenali Urban", "name_te": "తెనాలి అర్బన్", "name_hi": "तेनाली शहरी" },
+    { "name_en": "Chebrolu", "name_te": "చేబ్రోలు", "name_hi": "चेब्रोलु" },
+    { "name_en": "Kakumanu", "name_te": "కాకుమాను", "name_hi": "काकुमानु" },
+    { "name_en": "Nandivelugu", "name_te": "నందివెలుగు", "name_hi": "नंदिवेलुगु" },
+    { "name_en": "Emani", "name_te": "ఈమని", "name_hi": "ईमनी" },
+    { "name_en": "Duggirala", "name_te": "దుగ్గిరాల", "name_hi": "दुग्गिराला" },
+    { "name_en": "Pedakakani", "name_te": "పెదకాకాని", "name_hi": "पेदकाकानी" },
+    { "name_en": "Mangalagiri Rural", "name_te": "మంగళగిరి గ్రామీణం", "name_hi": "मंगलगिरि ग्रामीण" }
+  ]
+}

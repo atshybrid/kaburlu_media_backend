@@ -1,0 +1,33 @@
+{
+  "district": {
+    "name_en": "West Godavari",
+    "name_te": "పశ్చిమ గోదావరి",
+    "name_hi": "पश्चिम गोदावरी",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 20
+  },
+  "mandals": [
+    { "name_en": "Bhimavaram", "name_te": "భీమవరం", "name_hi": "भीमवरम" },
+    { "name_en": "Bhimavaram Rural", "name_te": "భీమవరం గ్రామీణం", "name_hi": "भीमवरम ग्रामीण" },
+    { "name_en": "Tadepalligudem", "name_te": "తాడేపల్లిగూడెం", "name_hi": "ताड़ेपल्लिगूडेम" },
+    { "name_en": "Tadepalligudem Rural", "name_te": "తాడేపల్లిగూడెం గ్రామీణం", "name_hi": "ताड़ेपल्लिगूडेम ग्रामीण" },
+    { "name_en": "Tanuku", "name_te": "తణుకు", "name_hi": "तनुकु" },
+    { "name_en": "Tanuku Rural", "name_te": "తణుకు గ్రామీణం", "name_hi": "तनुकु ग्रामीण" },
+    { "name_en": "Nidadavole", "name_te": "నిడదవోలు", "name_hi": "निददावोलु" },
+    { "name_en": "Undrajavaram", "name_te": "ఉండ్రాజవరం", "name_hi": "उंद्राजवरम" },
+    { "name_en": "Pentapadu", "name_te": "పెంటపాడు", "name_hi": "पेंटपाडु" },
+    { "name_en": "Attili", "name_te": "అత్తిలి", "name_hi": "अत्तिली" },
+    { "name_en": "Iragavaram", "name_te": "ఇరగవరం", "name_hi": "इरगवरम" },
+    { "name_en": "Palacoderu", "name_te": "పాలకొడేరు", "name_hi": "पालकोडेरु" },
+    { "name_en": "Achanta", "name_te": "ఆచంట", "name_hi": "आचंता" },
+    { "name_en": "Penumantra", "name_te": "పెనుమంత్ర", "name_hi": "पेनुमंत्रा" },
+    { "name_en": "Poduru", "name_te": "పోడూరు", "name_hi": "पोडूरु" },
+    { "name_en": "Akividu", "name_te": "ఆకివీడు", "name_hi": "आकिवीडु" },
+    { "name_en": "Kalla", "name_te": "కళ్ళా", "name_hi": "कल्ला" },
+    { "name_en": "Palakollu", "name_te": "పాలకొల్లు", "name_hi": "पालकोल्लु" },
+    { "name_en": "Palakollu Rural", "name_te": "పాలకొల్లు గ్రామీణం", "name_hi": "पालकोल्लु ग्रामीण" },
+    { "name_en": "Yelamanchili", "name_te": "యేలమంచిలి", "name_hi": "येलमंचिली" }
+  ]
+}

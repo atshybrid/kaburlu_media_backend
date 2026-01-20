@@ -1,0 +1,31 @@
+{
+  "district": {
+    "name_en": "Guntur",
+    "name_te": "గుంటూరు",
+    "name_hi": "गुंटूर",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 18
+  },
+  "mandals": [
+    { "name_en": "Guntur", "name_te": "గుంటూరు", "name_hi": "गुंटूर" },
+    { "name_en": "Pedakakani", "name_te": "పెదకాకాని", "name_hi": "पेदकाकानी" },
+    { "name_en": "Duggirala", "name_te": "దుగ్గిరాల", "name_hi": "दुग्गिराला" },
+    { "name_en": "Tadikonda", "name_te": "తాడికొండ", "name_hi": "ताडिकोंडा" },
+    { "name_en": "Phirangipuram", "name_te": "ఫిరంగిపురం", "name_hi": "फिरंगिपुरम" },
+    { "name_en": "Medikonduru", "name_te": "మెదికొండూరు", "name_hi": "मेदिकोंडूरु" },
+    { "name_en": "Chebrolu", "name_te": "చేబ్రోలు", "name_hi": "चेब्रोलु" },
+    { "name_en": "Kakumanu", "name_te": "కాకుమాను", "name_hi": "काकुमानु" },
+    { "name_en": "Ponnekallu", "name_te": "పొన్నెకల్లు", "name_hi": "पोन्नेकल्लु" },
+    { "name_en": "Prathipadu", "name_te": "ప్రత్తిపాడు", "name_hi": "प्रत्तिपाडु" },
+    { "name_en": "Takkellapadu", "name_te": "తక్కెల్లపాడు", "name_hi": "तक्केल्लपाडु" },
+    { "name_en": "Nallapadu", "name_te": "నల్లపాడు", "name_hi": "नल्लपाडु" },
+    { "name_en": "Chinakakani", "name_te": "చిన్నకాకాని", "name_hi": "चिन्नकाकानी" },
+    { "name_en": "Navuluru", "name_te": "నవులూరు", "name_hi": "नवुलूरु" },
+    { "name_en": "Perecherla", "name_te": "పెరేచర్ల", "name_hi": "पेरेचेरला" },
+    { "name_en": "Emani", "name_te": "ఈమని", "name_hi": "ईमनी" },
+    { "name_en": "Namburu", "name_te": "నంబూరు", "name_hi": "नंबूरु" },
+    { "name_en": "Etukuru", "name_te": "ఎటుకూరు", "name_hi": "एटुकूरु" }
+  ]
+}

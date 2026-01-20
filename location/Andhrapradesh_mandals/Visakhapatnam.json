@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Visakhapatnam",
+    "name_te": "విశాఖపట్నం",
+    "name_hi": "विशाखापट्टनम",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 11
+  },
+  "mandals": [
+    { "name_en": "Visakhapatnam Urban", "name_te": "విశాఖపట్నం అర్బన్", "name_hi": "विशाखापट्टनम शहरी" },
+    { "name_en": "Visakhapatnam Rural", "name_te": "విశాఖపట్నం గ్రామీణం", "name_hi": "विशाखापट्टनम ग्रामीण" },
+    { "name_en": "Bheemunipatnam", "name_te": "భీమునిపట్నం", "name_hi": "भीमुनिपट्टनम" },
+    { "name_en": "Anandapuram", "name_te": "ఆనందపురం", "name_hi": "आनंदपुरम" },
+    { "name_en": "Padmanabham", "name_te": "పద్మనాభం", "name_hi": "पद्मनाभम" },
+    { "name_en": "Gajuwaka", "name_te": "గాజువాక", "name_hi": "गाजुवाका" },
+    { "name_en": "Pedagantyada", "name_te": "పెదగంట్యాడ", "name_hi": "पेदगंट्याडा" },
+    { "name_en": "Paravada", "name_te": "పరవాడ", "name_hi": "परवाड़ा" },
+    { "name_en": "Sabbavaram", "name_te": "సబ్బవరం", "name_hi": "सब्बवरम" },
+    { "name_en": "Kasimkota", "name_te": "కాసింకోట", "name_hi": "कासिमकोटा" },
+    { "name_en": "Munagapaka", "name_te": "మునగపాక", "name_hi": "मुनगपाका" }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "district": {
+    "name_en": "Palnadu",
+    "name_te": "పల్నాడు",
+    "name_hi": "पलनाडु",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 28
+  },
+  "mandals": [
+    { "name_en": "Narasaraopet", "name_te": "నరసరావుపేట", "name_hi": "नरसारावपेट" },
+    { "name_en": "Chilakaluripet", "name_te": "చిలకలూరిపేట", "name_hi": "चिलकलूरिपेट" },
+    { "name_en": "Sattenapalle", "name_te": "సత్తెనపల్లి", "name_hi": "सत्तेनपल्ली" },
+    { "name_en": "Vinukonda", "name_te": "వినుకొండ", "name_hi": "विनुकोंडा" },
+    { "name_en": "Gurazala", "name_te": "గురజాల", "name_hi": "गुरजाला" },
+    { "name_en": "Macherla", "name_te": "మాచర్ల", "name_hi": "माचेरला" },
+    { "name_en": "Piduguralla", "name_te": "పిడుగురాళ్ల", "name_hi": "पिदुगुराल्ला" },
+    { "name_en": "Rentachintala", "name_te": "రెంటచింతల", "name_hi": "रेंटचिंतला" },
+    { "name_en": "Dachepalle", "name_te": "దాచేపల్లి", "name_hi": "दाचेपल्ली" },
+    { "name_en": "Bellamkonda", "name_te": "బెల్లంకొండ", "name_hi": "बेल्लमकोंडा" },
+    { "name_en": "Atchampet", "name_te": "అచ్చంపేట", "name_hi": "अचंपेट" },
+    { "name_en": "Krosuru", "name_te": "క్రోసూరు", "name_hi": "क्रोसूरु" },
+    { "name_en": "Amaravathi", "name_te": "అమరావతి", "name_hi": "अमरावती" },
+    { "name_en": "Pedakurapadu", "name_te": "పెదకూరపాడు", "name_hi": "पेदकूरपाडु" },
+    { "name_en": "Muppalla", "name_te": "ముప్పాళ్ల", "name_hi": "मुप्पल्ला" },
+    { "name_en": "Nekarikallu", "name_te": "నెకరికల్లు", "name_hi": "नेकरिकल्लु" },
+    { "name_en": "Rajupalem", "name_te": "రాజుపాలెం", "name_hi": "राजुपालेम" },
+    { "name_en": "Savalyapuram", "name_te": "సావల్యాపురం", "name_hi": "सावल्यापुरम" },
+    { "name_en": "Ipur", "name_te": "ఇపుర్", "name_hi": "इपुर" },
+    { "name_en": "Rompicherla", "name_te": "రోంపిచెర్ల", "name_hi": "रोमपिचेरला" },
+    { "name_en": "Edlapadu", "name_te": "ఎడ్లపాడు", "name_hi": "एडलपाडु" },
+    { "name_en": "Bollapalle", "name_te": "బొల్లపల్లి", "name_hi": "बोल्लपल्ली" },
+    { "name_en": "Durgi", "name_te": "దుర్గి", "name_hi": "दुर्गी" },
+    { "name_en": "Machavaram", "name_te": "మాచవరం", "name_hi": "माचावरम" },
+    { "name_en": "Veldurthi", "name_te": "వెల్దుర్తి", "name_hi": "वेल्दुर्थी" },
+    { "name_en": "Nadendla", "name_te": "నాదెండ్ల", "name_hi": "नादेंडला" },
+    { "name_en": "Karempudi", "name_te": "కారెంపూడి", "name_hi": "कारेम्पुडी" }
+  ]
+}

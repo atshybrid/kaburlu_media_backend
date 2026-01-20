@@ -1,0 +1,32 @@
+{
+  "district": {
+    "name_en": "East Godavari",
+    "name_te": "తూర్పు గోదావరి",
+    "name_hi": "पूर्व गोदावरी",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 19
+  },
+  "mandals": [
+    { "name_en": "Rajamahendravaram Urban", "name_te": "రాజమహేంద్రవరం అర్బన్", "name_hi": "राजमहेंद्रवरम शहरी" },
+    { "name_en": "Rajamahendravaram Rural", "name_te": "రాజమహేంద్రవరం గ్రామీణం", "name_hi": "राजमहेंद्रवरम ग्रामीण" },
+    { "name_en": "Kadiam", "name_te": "కడియం", "name_hi": "कडियम" },
+    { "name_en": "Rajanagaram", "name_te": "రాజానగరం", "name_hi": "राजानगरम" },
+    { "name_en": "Tallapudi", "name_te": "తాళ్లపూడి", "name_hi": "तल्लापूडी" },
+    { "name_en": "Gokavaram", "name_te": "గోకవరం", "name_hi": "गोकावरम" },
+    { "name_en": "Seethanagaram", "name_te": "సీతానగరం", "name_hi": "सीतानगरम" },
+    { "name_en": "Korukonda", "name_te": "కోరుకొండ", "name_hi": "कोरुकोंडा" },
+    { "name_en": "Anaparthy", "name_te": "అనపర్తి", "name_hi": "अनपर्थी" },
+    { "name_en": "Biccavolu", "name_te": "బిక్కవోలు", "name_hi": "बिक्कावोलु" },
+    { "name_en": "Rangampeta", "name_te": "రంగంపేట", "name_hi": "रंगमपेटा" },
+    { "name_en": "Mandapeta", "name_te": "మండపేట", "name_hi": "मंडपेटा" },
+    { "name_en": "Rayavaram", "name_te": "రాయవరం", "name_hi": "रायावरम" },
+    { "name_en": "Pedapudi", "name_te": "పెదపూడి", "name_hi": "पेदपुडी" },
+    { "name_en": "Samalkota", "name_te": "సామర్లకోట", "name_hi": "सामलकोटा" },
+    { "name_en": "Peddapuram", "name_te": "పెద్దాపురం", "name_hi": "पेद्दापुरम" },
+    { "name_en": "Jaggampeta", "name_te": "జగ్గంపేట", "name_hi": "जग्गमपेटा" },
+    { "name_en": "Gandepalle", "name_te": "గండేపల్లి", "name_hi": "गंडेपल्ली" },
+    { "name_en": "Devarapalle", "name_te": "దేవరపల్లి", "name_hi": "देवरपल्ली" }
+  ]
+}

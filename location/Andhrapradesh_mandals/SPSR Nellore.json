@@ -1,0 +1,35 @@
+{
+  "district": {
+    "name_en": "SPSR Nellore",
+    "name_te": "ఎస్‌పిఎస్‌ఆర్ నెల్లూరు",
+    "name_hi": "एसपीएसआर नेल्लोर",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 22
+  },
+  "mandals": [
+    { "name_en": "Nellore Urban", "name_te": "నెల్లూరు అర్బన్", "name_hi": "नेल्लोर शहरी" },
+    { "name_en": "Nellore Rural", "name_te": "నెల్లూరు గ్రామీణం", "name_hi": "नेल्लोर ग्रामीण" },
+    { "name_en": "Kovur", "name_te": "కోవూరు", "name_hi": "कोवूर" },
+    { "name_en": "Atmakur", "name_te": "ఆత్మకూరు", "name_hi": "आत्मकूर" },
+    { "name_en": "Udayagiri", "name_te": "ఉదయగిరి", "name_hi": "उदयगिरि" },
+    { "name_en": "Duttalur", "name_te": "దుత్తలూరు", "name_hi": "दुत्तलूरु" },
+    { "name_en": "Marripadu", "name_te": "మర్రిపాడు", "name_hi": "मर्रीपाडु" },
+    { "name_en": "Podalakur", "name_te": "పొదలకూరు", "name_hi": "पोदलकूर" },
+    { "name_en": "Ananthasagaram", "name_te": "అనంతసాగరం", "name_hi": "अनंतसागरम" },
+    { "name_en": "Kaligiri", "name_te": "కలిగిరి", "name_hi": "कलिगिरि" },
+    { "name_en": "Bogole", "name_te": "బొగోలు", "name_hi": "बोगोलु" },
+    { "name_en": "Jaladanki", "name_te": "జలదంకి", "name_hi": "जलदंकी" },
+    { "name_en": "Kodavalur", "name_te": "కోడవలూరు", "name_hi": "कोडवलूरु" },
+    { "name_en": "Vidavalur", "name_te": "విడవలూరు", "name_hi": "विडवलूरु" },
+    { "name_en": "Indukurpet", "name_te": "ఇందుకూరుపేట", "name_hi": "इंदुकूरपेट" },
+    { "name_en": "Thotapalligudur", "name_te": "తోటపల్లిగూడూరు", "name_hi": "थोटापल्लीगुडूर" },
+    { "name_en": "Allur", "name_te": "అల్లూరు", "name_hi": "अल्लूर" },
+    { "name_en": "Buchireddypalem", "name_te": "బుచ్చిరెడ్డిపాలెం", "name_hi": "बुच्चिरेड्डीपालेम" },
+    { "name_en": "Dagadarthi", "name_te": "డగదర్తి", "name_hi": "डगदर्थी" },
+    { "name_en": "Chejerla", "name_te": "చేజర్ల", "name_hi": "चेजरला" },
+    { "name_en": "Sangam", "name_te": "సంగం", "name_hi": "संगम" },
+    { "name_en": "Rapur", "name_te": "రాపూరు", "name_hi": "रापुर" }
+  ]
+}

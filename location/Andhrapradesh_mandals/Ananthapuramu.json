@@ -1,0 +1,43 @@
+{
+  "district": {
+    "name_en": "Ananthapuramu",
+    "name_te": "అనంతపురము",
+    "name_hi": "अनंतपुरमु",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 31
+  },
+  "mandals": [
+    { "name_en": "Anantapur", "name_te": "అనంతపురం", "name_hi": "अनंतपुर" },
+    { "name_en": "Atmakur", "name_te": "ఆత్మకూరు", "name_hi": "आत्मकूर" },
+    { "name_en": "Beluguppa", "name_te": "బెలుగుప్ప", "name_hi": "बेलुगुप्पा" },
+    { "name_en": "Bommanahal", "name_te": "బొమ్మనహాళ్", "name_hi": "बोम्मनहाल" },
+    { "name_en": "Bukkarayasamudram", "name_te": "బుక్కరాయసముద్రం", "name_hi": "बुक्करायसमुद्रम" },
+    { "name_en": "D. Hirehal", "name_te": "డి. హీరేహాళ్", "name_hi": "डी. हीरेहाल" },
+    { "name_en": "Garladinne", "name_te": "గార్లదిన్నె", "name_hi": "गार्लदिन्नी" },
+    { "name_en": "Gooty", "name_te": "గుత్తి", "name_hi": "गूटी" },
+    { "name_en": "Gummagatta", "name_te": "గుమ్మగట్ట", "name_hi": "गुम्मागट्टा" },
+    { "name_en": "Kalyandurg", "name_te": "కళ్యాణదుర్గం", "name_hi": "कल्याणदुर्ग" },
+    { "name_en": "Kambadur", "name_te": "కంబదూరు", "name_hi": "कंबदूर" },
+    { "name_en": "Kanaganapalle", "name_te": "కనగనపల్లి", "name_hi": "कनगनपल्ली" },
+    { "name_en": "Kudair", "name_te": "కుదేరు", "name_hi": "कुदैर" },
+    { "name_en": "Kundurpi", "name_te": "కుందుర్పి", "name_hi": "कुंदुरपी" },
+    { "name_en": "Narpala", "name_te": "నార్పల", "name_hi": "नारपला" },
+    { "name_en": "Pamidi", "name_te": "పామిడి", "name_hi": "पामिडी" },
+    { "name_en": "Putlur", "name_te": "పుట్లూరు", "name_hi": "पुटलूर" },
+    { "name_en": "Peddavadugur", "name_te": "పెద్దవడుగూరు", "name_hi": "पेड्डावडुगुर" },
+    { "name_en": "Rayadurg", "name_te": "రాయదుర్గం", "name_hi": "रायदुर्ग" },
+    { "name_en": "Settur", "name_te": "సెత్తూరు", "name_hi": "सेत्तूर" },
+    { "name_en": "Singanamala", "name_te": "సింగనమల", "name_hi": "सिंगनमाला" },
+    { "name_en": "Tadimarri", "name_te": "తాడిమర్రి", "name_hi": "ताड़ीमर्री" },
+    { "name_en": "Talupula", "name_te": "తలుపుల", "name_hi": "तलुपुला" },
+    { "name_en": "Uravakonda", "name_te": "ఉరవకొండ", "name_hi": "उरवकोंडा" },
+    { "name_en": "Vajrakarur", "name_te": "వజ్రకరూర్", "name_hi": "वज्रकरूर" },
+    { "name_en": "Vidapanakal", "name_te": "విడపనకల్", "name_hi": "विडपनकल" },
+    { "name_en": "Yadiki", "name_te": "యాడికి", "name_hi": "याडिकी" },
+    { "name_en": "Yellanur", "name_te": "యల్లనూరు", "name_hi": "येल्लनूर" },
+    { "name_en": "Raptadu", "name_te": "రాప్తాడు", "name_hi": "राप्ताडु" },
+    { "name_en": "Kundurti", "name_te": "కుందుర్తి", "name_hi": "कुंदुरती" }
+  ]
+}

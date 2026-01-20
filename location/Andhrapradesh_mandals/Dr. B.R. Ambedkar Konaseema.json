@@ -1,0 +1,35 @@
+{
+  "district": {
+    "name_en": "Dr. B.R. Ambedkar Konaseema",
+    "name_te": "డా. బి.ఆర్. అంబేద్కర్ కోనసీమ",
+    "name_hi": "डॉ. बी.आर. अंबेडकर कोनसीमा",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 22
+  },
+  "mandals": [
+    { "name_en": "Amalapuram", "name_te": "అమలాపురం", "name_hi": "अमलापुरम" },
+    { "name_en": "Mummidivaram", "name_te": "ముమ్మిడివరం", "name_hi": "मुम्मिडीवरम" },
+    { "name_en": "I. Polavaram", "name_te": "ఐ. పోలవరం", "name_hi": "आई. पोलावरम" },
+    { "name_en": "Katrenikona", "name_te": "కాట్రేనికోనా", "name_hi": "कात्रेनीकोना" },
+    { "name_en": "Uppalaguptam", "name_te": "ఉప్పలగుప్తం", "name_hi": "उप्पलगुप्तम" },
+    { "name_en": "Allavaram", "name_te": "అల్లవరం", "name_hi": "अल्लावरम" },
+    { "name_en": "Mamidikuduru", "name_te": "మామిడికుదురు", "name_hi": "मामिडिकुदुरु" },
+    { "name_en": "Razole", "name_te": "రాజోలు", "name_hi": "राजोलु" },
+    { "name_en": "Malikipuram", "name_te": "మలికిపురం", "name_hi": "मलिकीपुरम" },
+    { "name_en": "Sakhinetipalli", "name_te": "సఖినేటిపల్లి", "name_hi": "सखिनेटीपल्ली" },
+    { "name_en": "Malkipuram", "name_te": "మాల్కిపురం", "name_hi": "माल्कीपुरम" },
+    { "name_en": "Kothapeta", "name_te": "కొత్తపేట", "name_hi": "कोथापेटा" },
+    { "name_en": "Ramachandrapuram", "name_te": "రామచంద్రపురం", "name_hi": "रामचंद्रपुरम" },
+    { "name_en": "Mandapeta", "name_te": "మండపేట", "name_hi": "मंडपेटा" },
+    { "name_en": "Alamuru", "name_te": "ఆలమూరు", "name_hi": "आलमूरु" },
+    { "name_en": "Atreyapuram", "name_te": "ఆత్రేయపురం", "name_hi": "आत्रेयपुरम" },
+    { "name_en": "P. Gannavaram", "name_te": "పి. గన్నవరం", "name_hi": "पी. गन्नावरम" },
+    { "name_en": "Ambajipeta", "name_te": "అంబాజీపేట", "name_hi": "अंबाजीपेटा" },
+    { "name_en": "Rayavaram", "name_te": "రాయవరం", "name_hi": "रायावरम" },
+    { "name_en": "Ravulapalem", "name_te": "రవులపాలెం", "name_hi": "रवुलापालेम" },
+    { "name_en": "Kapileswarapuram", "name_te": "కపిలేశ్వరపురం", "name_hi": "कपिलेश्वरपुरम" },
+    { "name_en": "Peravali", "name_te": "పెరవలి", "name_hi": "पेरवली" }
+  ]
+}

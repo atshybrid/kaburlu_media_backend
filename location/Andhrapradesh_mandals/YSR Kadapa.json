@@ -1,0 +1,34 @@
+{
+  "district": {
+    "name_en": "YSR Kadapa",
+    "name_te": "వై.ఎస్.ఆర్ కడప",
+    "name_hi": "वाईएसआर कडपा",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 21
+  },
+  "mandals": [
+    { "name_en": "Kadapa", "name_te": "కడప", "name_hi": "कडपा" },
+    { "name_en": "Chennur", "name_te": "చెన్నూరు", "name_hi": "चेन्नूर" },
+    { "name_en": "Vontimitta", "name_te": "వొంటిమిట్ట", "name_hi": "वोंटिमिट्टा" },
+    { "name_en": "Sidhout", "name_te": "సిద్దౌట్", "name_hi": "सिद्धौट" },
+    { "name_en": "Yerraguntla", "name_te": "ఎర్రగుంట్ల", "name_hi": "एर्रगुंटला" },
+    { "name_en": "Proddatur", "name_te": "ప్రొద్దుటూరు", "name_hi": "प्रोद्दटूर" },
+    { "name_en": "Jammalamadugu", "name_te": "జమ్మలమడుగు", "name_hi": "जम्मलमडुगु" },
+    { "name_en": "Mydukur", "name_te": "మైదుకూరు", "name_hi": "मैदुकूर" },
+    { "name_en": "Brahmamgarimattam", "name_te": "బ్రహ్మంగారిమఠం", "name_hi": "ब्रह्मंगारिमठम" },
+    { "name_en": "Badvel", "name_te": "బద్వేలు", "name_hi": "बदवेलु" },
+    { "name_en": "Porumamilla", "name_te": "పోరుమామిళ్ళ", "name_hi": "पोरुमामिल्ला" },
+    { "name_en": "Atlur", "name_te": "అట్లూరు", "name_hi": "अटलूर" },
+    { "name_en": "B. Kodur", "name_te": "బి. కోడూరు", "name_hi": "बी. कोडूर" },
+    { "name_en": "Rajampet", "name_te": "రాజంపేట", "name_hi": "राजमपेट" },
+    { "name_en": "Pullampeta", "name_te": "పుల్లంపేట", "name_hi": "पुल्लमपेट" },
+    { "name_en": "Obulavaripalle", "name_te": "ఒబులవారిపల్లె", "name_hi": "ओबुलावरीपल्ले" },
+    { "name_en": "Kodur", "name_te": "కోడూరు", "name_hi": "कोडूर" },
+    { "name_en": "Chitvel", "name_te": "చిట్వేల్", "name_hi": "चिटवेल" },
+    { "name_en": "T. Sundupalle", "name_te": "టి. సుందుపల్లె", "name_hi": "टी. सुंदुपल्ले" },
+    { "name_en": "Veeraballi", "name_te": "వీరబల్లి", "name_hi": "वीरबल्लि" },
+    { "name_en": "Nandalur", "name_te": "నందలూరు", "name_hi": "नंदलूर" }
+  ]
+}

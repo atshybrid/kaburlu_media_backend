@@ -658,6 +658,8 @@ model EpaperPdfIssue {
 
   pdfUrl        String
   coverImageUrl String?
+  /// WebP version of cover image for optimized delivery (frontend prefers this)
+  coverImageUrlWebp String?
   pageCount     Int @default(0)
 
   pages EpaperPdfPage[]
@@ -680,7 +682,10 @@ model EpaperPdfPage {
   issueId String
 
   pageNumber Int
+  /// PNG master image URL (lossless, archive quality)
   imageUrl   String
+  /// WebP optimized image URL for frontend delivery (~80% smaller)
+  imageUrlWebp String?
 
   createdAt DateTime @default(now())
 
