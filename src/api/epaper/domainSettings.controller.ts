@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { resolveAdminTenantContext } from './adminTenantContext';
 import { ensureEpaperDomainSettings } from '../../lib/epaperDomainSettingsAuto';
 
 function asObject(value: any): Record<string, any> {
@@ -23,28 +24,7 @@ function mergeDeep(base: any, patch: any): any {
   return out;
 }
 
-async function getTenantContext(req: Request): Promise<{ tenantId: string | null; isAdmin: boolean; isSuperAdmin: boolean; userId: string }> {
-  const user = (req as any).user;
-  const userId = String(user?.id || '');
-  const roleName = String(user?.role?.name || '').toUpperCase();
-
-  const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
-
-  let tenantId: string | null = null;
-  if (!isSuperAdmin && userId) {
-    const reporter = await prisma.reporter.findFirst({ where: { userId }, select: { tenantId: true } });
-    tenantId = reporter?.tenantId || null;
-  }
-
-  const requestedTenantId = (req.query as any).tenantId ? String((req.query as any).tenantId).trim() : '';
-  if (requestedTenantId) {
-    if (isSuperAdmin) tenantId = requestedTenantId;
-    else if (isAdmin && !tenantId) tenantId = requestedTenantId;
-  }
-
-  return { tenantId, isAdmin, isSuperAdmin, userId };
-}
+const getTenantContext = resolveAdminTenantContext;
 
 async function resolveEpaperDomainId(tenantId: string, req: Request): Promise<string | null> {
   const requestedDomainId = (req.query as any).domainId ? String((req.query as any).domainId).trim() : '';

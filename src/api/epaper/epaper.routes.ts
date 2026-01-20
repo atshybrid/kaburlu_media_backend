@@ -82,6 +82,21 @@ const upload = multer({
  *     tags: [ePaper Domain Settings - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         required: false
@@ -92,6 +107,11 @@ const upload = multer({
  *         required: false
  *         schema: { type: string }
  *         description: Optional explicit domainId (must be EPAPER + belong to tenant)
+ *       - in: query
+ *         name: domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional domain (alternative to X-Tenant-Domain)
  *     responses:
  *       200:
  *         description: Domain settings
@@ -129,6 +149,21 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *     tags: [ePaper Domain Settings - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         required: false
@@ -143,6 +178,11 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *         name: autoSeo
  *         required: false
  *         schema: { type: boolean, default: true }
+ *       - in: query
+ *         name: domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional domain (alternative to X-Tenant-Domain)
  *     requestBody:
  *       required: true
  *       content:
@@ -921,6 +961,27 @@ router.post('/templates/:id/lock', auth, lockBlockTemplate);
  *     description: Returns page dimensions, headers, footers, printer info, and generation config.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
  *     responses:
  *       200:
  *         description: ePaper settings
@@ -937,6 +998,27 @@ router.get('/settings', auth, getEpaperSettings);
  *     description: Update page dimensions, headers, footers, printer info, etc.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
  *     requestBody:
  *       required: true
  *       content:
@@ -980,6 +1062,27 @@ router.put('/settings', auth, updateEpaperSettings);
  *     description: Creates default ePaper settings for a tenant. Called automatically on first access.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
  *     responses:
  *       201:
  *         description: Settings initialized
@@ -1002,6 +1105,21 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
@@ -1021,6 +1139,21 @@ router.get('/public-config', auth, getEpaperPublicConfig);
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
@@ -1049,6 +1182,21 @@ router.put('/public-config/type', auth, putEpaperPublicConfigType);
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
@@ -1086,6 +1234,21 @@ router.put('/public-config/multi-edition', auth, putEpaperPublicConfigMultiEditi
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: includeSubEditions
  *         schema: { type: boolean, default: false }
@@ -1129,6 +1292,21 @@ router.get('/publication-editions', auth, listPublicationEditions);
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
@@ -1581,16 +1759,42 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *     summary: Find PDF issues by date (optionally filter by edition/sub-edition)
  *     description: |
  *       Admin-only.
+ *       Tenant resolution precedence (best practice):
+ *       1) `tenantId` in query/body
+ *       2) `X-Tenant-Id` header
+ *       3) `X-Tenant-Slug` or `X-Tenant-Domain` header (or `?domain=`)
+ *       4) Reporter→tenant mapping for admin users
+ *       - SUPER_ADMIN may target any tenant; admin roles may only target their mapped tenant.
  *       - `issueDate` is required.
  *       - If you provide `editionId` OR `subEditionId`, returns the single matching issue (with pages).
  *       - If you provide neither, returns all issues for that date as `{ items: [...] }`.
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
  *         description: SUPER_ADMIN only (find issue for any tenant)
+ *       - in: query
+ *         name: domain
+ *         schema: { type: string }
+ *         required: false
+ *         description: Optional domain (alternative to X-Tenant-Domain)
  *       - in: query
  *         name: issueDate
  *         required: true
@@ -1608,6 +1812,7 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *             examples:
  *               singleIssue:
  *                 value:
+ *                   tenantId: "t_abc"
  *                   id: "iss_1"
  *                   issueDate: "2026-01-12T00:00:00.000Z"
  *                   editionId: "ed_1"
@@ -1618,6 +1823,10 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *                   pages:
  *                     - pageNumber: 1
  *                       imageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
+ *                   canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-12"
+ *                   metaTitle: "Telangana | 12 January 2026"
+ *                   metaDescription: "Read Telangana ePaper edition for 12 January 2026. 12 pages available."
+ *                   ogImage: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
  *               listByDate:
  *                 value:
  *                   items:
@@ -1628,6 +1837,11 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *                       pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
  *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
  *                       pageCount: 12
+ *                       tenantId: "t_abc"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-12"
+ *                       metaTitle: "Telangana | 12 January 2026"
+ *                       metaDescription: "Read Telangana ePaper edition for 12 January 2026. 12 pages available."
+ *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
  *       400:
  *         description: Validation error (missing/invalid query params)
  */
@@ -1641,6 +1855,21 @@ router.get('/pdf-issues', auth, findPdfIssue);
  *     tags: [EPF ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
  *       - in: path
  *         name: id
  *         required: true
@@ -1648,6 +1877,26 @@ router.get('/pdf-issues', auth, findPdfIssue);
  *     responses:
  *       200:
  *         description: Issue with pages
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   tenantId: "t_abc"
+ *                   id: "iss_1"
+ *                   issueDate: "2026-01-20T00:00:00.000Z"
+ *                   edition: { id: "ed_main", name: "Main Edition", slug: "main-edition" }
+ *                   subEdition: null
+ *                   pdfUrl: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../issue.pdf"
+ *                   coverImageUrl: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
+ *                   pageCount: 12
+ *                   pages:
+ *                     - pageNumber: 1
+ *                       imageUrl: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
+ *                   canonicalUrl: "https://epaper.kaburlutoday.com/main-edition/2026-01-20"
+ *                   metaTitle: "Main Edition | 20 January 2026"
+ *                   metaDescription: "Main Editions – Latest Breaking News, Politics, Business & Local Updates"
+ *                   ogImage: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
  */
 router.get('/pdf-issues/:id', auth, getPdfIssue);
 
@@ -1755,6 +2004,7 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                     totalPages: 3
  *                   issues:
  *                     - id: "iss_1"
+ *                       tenantId: "t_abc"
  *                       issueDate: "2026-01-18T00:00:00.000Z"
  *                       tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu News" }
  *                       edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
@@ -1765,7 +2015,12 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                       createdAt: "2026-01-18T06:00:00.000Z"
  *                       updatedAt: "2026-01-18T06:00:00.000Z"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                       metaTitle: "Telangana Edition | 18 January 2026"
+ *                       metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
+ *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
  *                     - id: "iss_2"
+ *                       tenantId: "t_xyz"
  *                       issueDate: "2026-01-18T00:00:00.000Z"
  *                       tenant: { id: "t_xyz", slug: "newsportal", name: "News Portal" }
  *                       edition: { id: "ed_5", name: "Karnataka Edition", slug: "karnataka" }
@@ -1776,6 +2031,10 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
  *                       createdAt: "2026-01-18T05:30:00.000Z"
  *                       updatedAt: "2026-01-18T05:30:00.000Z"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/karnataka/2026-01-18"
+ *                       metaTitle: "Karnataka Edition | 18 January 2026"
+ *                       metaDescription: "Read Karnataka Edition ePaper for 18 January 2026. 16 pages available."
+ *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/karnataka/p1.png"
  *               deskEditor:
  *                 summary: DESK_EDITOR viewing their tenant only
  *                 value:
@@ -1787,6 +2046,7 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                     totalPages: 1
  *                   issues:
  *                     - id: "iss_1"
+ *                       tenantId: "t_abc"
  *                       issueDate: "2026-01-18T00:00:00.000Z"
  *                       tenant: { id: "t_abc", slug: "kaburlu", name: "Kaburlu News" }
  *                       edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
@@ -1797,6 +2057,10 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                       createdAt: "2026-01-18T06:00:00.000Z"
  *                       updatedAt: "2026-01-18T06:00:00.000Z"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                       metaTitle: "Telangana Edition | 18 January 2026"
+ *                       metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
+ *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
  *       403:
  *         description: Unauthorized - Only SUPER_ADMIN and DESK_EDITOR can access
  */
@@ -1861,6 +2125,7 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                   issuesByDate:
  *                     "2026-01-18":
  *                       - id: "iss_1"
+ *                         tenantId: "t_abc"
  *                         edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
  *                         subEdition: null
  *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/telangana.pdf"
@@ -1869,7 +2134,12 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                         createdAt: "2026-01-18T06:00:00.000Z"
  *                         updatedAt: "2026-01-18T06:00:00.000Z"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                         metaTitle: "Telangana Edition | 18 January 2026"
+ *                         metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
+ *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
  *                       - id: "iss_2"
+ *                         tenantId: "t_abc"
  *                         edition: { id: "ed_2", name: "Andhra Pradesh Edition", slug: "andhra" }
  *                         subEdition: null
  *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/18/andhra.pdf"
@@ -1878,8 +2148,13 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                         createdAt: "2026-01-18T06:15:00.000Z"
  *                         updatedAt: "2026-01-18T06:15:00.000Z"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/andhra/2026-01-18"
+ *                         metaTitle: "Andhra Pradesh Edition | 18 January 2026"
+ *                         metaDescription: "Read Andhra Pradesh Edition ePaper for 18 January 2026. 10 pages available."
+ *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/andhra/p1.png"
  *                     "2026-01-17":
  *                       - id: "iss_3"
+ *                         tenantId: "t_abc"
  *                         edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
  *                         subEdition: null
  *                         pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/17/telangana.pdf"
@@ -1888,6 +2163,10 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
  *                         createdAt: "2026-01-17T06:00:00.000Z"
  *                         updatedAt: "2026-01-17T06:00:00.000Z"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-17"
+ *                         metaTitle: "Telangana Edition | 17 January 2026"
+ *                         metaDescription: "Read Telangana Edition ePaper for 17 January 2026. 14 pages available."
+ *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/17/telangana/p1.png"
  *       403:
  *         description: Unauthorized
  */
@@ -1945,6 +2224,7 @@ router.get('/issues/tenant', auth, getTenantIssues);
  *                   exists: true
  *                   message: "Issue already exists for this date and edition/sub-edition"
  *                   issue:
+ *                     tenantId: "t_abc"
  *                     id: "iss_1"
  *                     issueDate: "2026-01-18T00:00:00.000Z"
  *                     edition: { id: "ed_1", name: "Telangana Edition", slug: "telangana" }
@@ -1955,6 +2235,10 @@ router.get('/issues/tenant', auth, getTenantIssues);
  *                     uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                     createdAt: "2026-01-18T06:00:00.000Z"
  *                     updatedAt: "2026-01-18T06:00:00.000Z"
+ *                     canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                     metaTitle: "Telangana Edition | 18 January 2026"
+ *                     metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
+ *                     ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
  *                   action:
  *                     canReplace: true
  *                     canDelete: true

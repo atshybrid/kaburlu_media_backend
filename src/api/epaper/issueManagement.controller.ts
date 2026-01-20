@@ -10,6 +10,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { deletePublicObject } from '../../lib/objectStorage';
+import { resolveAdminTenantContext } from './adminTenantContext';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const p: any = prisma;
@@ -44,6 +45,7 @@ function parseIsoDateOnly(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+// Use shared admin tenant resolver for consistent overrides
 async function getTenantContext(req: Request): Promise<{
   tenantId: string | null;
   isAdmin: boolean;
@@ -51,30 +53,10 @@ async function getTenantContext(req: Request): Promise<{
   isDeskEditor: boolean;
   userId: string;
 }> {
-  const user = (req as any).user;
-  const userId = asString(user?.id || '');
-  const roleName = asString(user?.role?.name || '').toUpperCase();
-
-  const isSuperAdmin = roleName === 'SUPER_ADMIN';
+  const base = await resolveAdminTenantContext(req);
+  const roleName = asString(((req as any).user?.role?.name) || '').toUpperCase();
   const isDeskEditor = roleName === 'DESK_EDITOR';
-  const isAdmin = isSuperAdmin || isDeskEditor || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR';
-
-  let tenantId: string | null = null;
-  if (!isSuperAdmin && userId) {
-    const reporter = await prisma.reporter.findFirst({ where: { userId }, select: { tenantId: true } });
-    tenantId = reporter?.tenantId || null;
-  }
-
-  const requestedTenantId = (req.query as any)?.tenantId || (req.body as any)?.tenantId;
-  if (requestedTenantId) {
-    if (isSuperAdmin) {
-      tenantId = asString(requestedTenantId);
-    } else {
-      throw new HttpError(403, 'Only SUPER_ADMIN can override tenantId', 'TENANT_OVERRIDE_FORBIDDEN');
-    }
-  }
-
-  return { tenantId, isAdmin, isSuperAdmin, isDeskEditor, userId };
+  return { ...base, isDeskEditor };
 }
 
 /**
@@ -132,6 +114,15 @@ export const getAllIssuesByDate = async (req: Request, res: Response) => {
       p.epaperPdfIssue.count({ where: whereClause }),
     ]);
 
+    // Resolve EPAPER domains for tenants (cache for speed)
+    const tenantIds = Array.from(new Set(issues.map((it: any) => String(it.tenantId)))).filter(Boolean);
+    const domains = await p.domain.findMany({
+      where: { tenantId: { in: tenantIds }, kind: 'EPAPER', status: 'ACTIVE', verifiedAt: { not: null } },
+      select: { tenantId: true, domain: true }
+    }).catch(() => [] as any[]);
+    const domainByTenant: Record<string, string> = {};
+    domains.forEach((d: any) => { if (d?.tenantId && d?.domain) domainByTenant[String(d.tenantId)] = String(d.domain); });
+
     return res.json({
       success: true,
       pagination: {
@@ -140,20 +131,34 @@ export const getAllIssuesByDate = async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
-      issues: issues.map((issue: any) => ({
-        id: issue.id,
-        issueDate: issue.issueDate,
-        tenant: issue.tenant,
-        edition: issue.edition,
-        subEdition: issue.subEdition,
-        pdfUrl: issue.pdfUrl,
-        coverImageUrl: issue.coverImageUrl,
-        pageCount: issue.pageCount,
-        pages: includePages ? issue.pages : undefined,
-        uploadedByUserId: issue.uploadedByUserId,
-        createdAt: issue.createdAt,
-        updatedAt: issue.updatedAt,
-      })),
+      issues: issues.map((issue: any) => {
+        const baseUrl = `https://${domainByTenant[String(issue.tenantId)] || 'epaper.kaburlutoday.com'}`;
+        const dateStr = new Date(issue.issueDate).toISOString().split('T')[0];
+        const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+        const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
+        const canonicalUrl = issue.subEdition
+          ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
+          : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+        return {
+          tenantId: issue.tenant?.id || issue.tenantId,
+          id: issue.id,
+          issueDate: issue.issueDate,
+          tenant: issue.tenant,
+          edition: issue.edition,
+          subEdition: issue.subEdition,
+          pdfUrl: issue.pdfUrl,
+          coverImageUrl: issue.coverImageUrl,
+          pageCount: issue.pageCount,
+          pages: includePages ? issue.pages : undefined,
+          uploadedByUserId: issue.uploadedByUserId,
+          createdAt: issue.createdAt,
+          updatedAt: issue.updatedAt,
+          canonicalUrl,
+          metaTitle: `${targetName} | ${displayDate}`,
+          metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
+          ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
+        };
+      }),
     });
   } catch (e: any) {
     return sendHttpError(res, e, 'Failed to fetch issues by date');
@@ -220,6 +225,13 @@ export const getTenantIssues = async (req: Request, res: Response) => {
       },
     });
 
+    // Resolve base EPAPER domain for this tenant (for canonical URLs)
+    const epaperDomain = await p.domain.findFirst({
+      where: { tenantId: targetTenantId, kind: 'EPAPER', status: 'ACTIVE', verifiedAt: { not: null } },
+      select: { domain: true }
+    }).catch(() => null);
+    const baseUrl = `https://${(epaperDomain?.domain || 'epaper.kaburlutoday.com')}`;
+
     // Group by date for easier management
     const groupedByDate: Record<string, any[]> = {};
     issues.forEach((issue: any) => {
@@ -227,7 +239,14 @@ export const getTenantIssues = async (req: Request, res: Response) => {
       if (!groupedByDate[dateKey]) {
         groupedByDate[dateKey] = [];
       }
+      const dateStr = dateKey;
+      const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+      const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
+      const canonicalUrl = issue.subEdition
+        ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
+        : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
       groupedByDate[dateKey].push({
+        tenantId: targetTenantId,
         id: issue.id,
         edition: issue.edition,
         subEdition: issue.subEdition,
@@ -238,6 +257,10 @@ export const getTenantIssues = async (req: Request, res: Response) => {
         uploadedByUserId: issue.uploadedByUserId,
         createdAt: issue.createdAt,
         updatedAt: issue.updatedAt,
+        canonicalUrl,
+        metaTitle: `${targetName} | ${displayDate}`,
+        metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
+        ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
       });
     });
 
@@ -390,10 +413,22 @@ export const checkIssueExists = async (req: Request, res: Response) => {
     });
 
     if (existingIssue) {
+      const epaperDomain = await p.domain.findFirst({
+        where: { tenantId: ctx.tenantId, kind: 'EPAPER', status: 'ACTIVE', verifiedAt: { not: null } },
+        select: { domain: true }
+      }).catch(() => null);
+      const baseUrl = `https://${(epaperDomain?.domain || 'epaper.kaburlutoday.com')}`;
+      const dateStr = new Date(existingIssue.issueDate).toISOString().split('T')[0];
+      const displayDate = new Date(existingIssue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+      const targetName = existingIssue.subEdition ? `${existingIssue.subEdition.name} - ${existingIssue.edition?.name || ''}`.trim() : (existingIssue.edition?.name || 'Edition');
+      const canonicalUrl = existingIssue.subEdition
+        ? `${baseUrl}/${existingIssue.edition?.slug}/${existingIssue.subEdition.slug}/${dateStr}`
+        : `${baseUrl}/${existingIssue.edition?.slug}/${dateStr}`;
       return res.json({
         exists: true,
         message: 'Issue already exists for this date and edition/sub-edition',
         issue: {
+          tenantId: ctx.tenantId,
           id: existingIssue.id,
           issueDate: existingIssue.issueDate,
           edition: existingIssue.edition,
@@ -404,6 +439,10 @@ export const checkIssueExists = async (req: Request, res: Response) => {
           uploadedByUserId: existingIssue.uploadedByUserId,
           createdAt: existingIssue.createdAt,
           updatedAt: existingIssue.updatedAt,
+          canonicalUrl,
+          metaTitle: `${targetName} | ${displayDate}`,
+          metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${existingIssue.pageCount} pages available.`,
+          ogImage: existingIssue.coverImageUrlWebp || existingIssue.coverImageUrl,
         },
         action: {
           canReplace: true,

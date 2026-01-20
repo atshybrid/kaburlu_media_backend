@@ -307,6 +307,9 @@ router.get('/epaper/verify-domain', async (req, res) => {
  *                       baseUrl: "https://epaper.kaburlu.com"
  *                       robotsTxt: "https://epaper.kaburlu.com/robots.txt"
  *                       sitemapXml: "https://epaper.kaburlu.com/sitemap.xml"
+ *                   tenantAdmin:
+ *                     name: "Prashna Admin"
+ *                     mobile: "9876543210"
  *                   domainSettings:
  *                     updatedAt: "2026-01-12T20:07:20.515Z"
  *                     data:
@@ -571,6 +574,36 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     supportedLanguages: Array.from(new Set((domainLanguages as any[]).map(dl => dl?.language?.code).filter(Boolean))),
   };
 
+  // Tenant admin contact (name + mobile)
+  // Prefer TENANT_ADMIN user mapped via Reporter → User.role. Fallback to entity publisher/editor name.
+  let tenantAdmin: { name: string | null; mobile: string | null } = { name: null, mobile: null };
+  try {
+    const adminReporter = await p.reporter.findFirst({
+      where: { tenantId: tenant.id, user: { role: { name: 'TENANT_ADMIN' } } },
+      include: {
+        user: {
+          select: {
+            mobileNumber: true,
+            role: { select: { name: true } },
+            profile: { select: { fullName: true } },
+          },
+        },
+      },
+    });
+    if ((adminReporter as any)?.user) {
+      const u: any = (adminReporter as any).user;
+      tenantAdmin = {
+        name: u?.profile?.fullName || (tenantEntity as any)?.publisherName || (tenantEntity as any)?.editorName || null,
+        mobile: u?.mobileNumber || null,
+      };
+    } else {
+      tenantAdmin = {
+        name: (tenantEntity as any)?.publisherName || (tenantEntity as any)?.editorName || null,
+        mobile: null,
+      };
+    }
+  } catch {}
+
   return res.json({
     verified: true,
     tenant: { 
@@ -605,6 +638,7 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       },
     },
     content: contentConfig,
+    tenantAdmin,
     domainSettings: domainSettings
       ? {
           updatedAt: (domainSettings as any).updatedAt,

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { resolveAdminTenantContext } from './adminTenantContext';
 import { slugFromAnyLanguage } from '../../lib/sanitize';
 
 type TenantCtx = {
@@ -10,35 +11,7 @@ type TenantCtx = {
 };
 
 async function getTenantContext(req: Request): Promise<TenantCtx> {
-  const user = (req as any).user;
-  const userId = String(user?.id || '');
-  const roleName = String(user?.role?.name || '').toUpperCase();
-
-  const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
-
-  let tenantId: string | null = null;
-
-  // Non-super admins infer tenant from reporter profile.
-  if (!isSuperAdmin && userId) {
-    const reporter = await prisma.reporter.findFirst({
-      where: { userId },
-      select: { tenantId: true },
-    });
-    tenantId = reporter?.tenantId || null;
-  }
-
-  // Allow explicit tenantId: SUPER_ADMIN always; admin roles when reporter mapping is missing
-  const requestedTenantId = (req.query as any).tenantId ? String((req.query as any).tenantId).trim() : '';
-  if (requestedTenantId) {
-    if (isSuperAdmin) {
-      tenantId = requestedTenantId;
-    } else if (isAdmin && !tenantId) {
-      tenantId = requestedTenantId;
-    }
-  }
-
-  return { tenantId, isAdmin, isSuperAdmin, userId };
+  return resolveAdminTenantContext(req);
 }
 
 function requireTenantOr400(res: Response, tenantId: string | null) {

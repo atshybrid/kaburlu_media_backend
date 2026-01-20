@@ -117,7 +117,7 @@ const corsOptions: CorsOptions = {
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   credentials: true,
   // Allow custom tenant header for cross-origin calls
-  allowedHeaders: 'Content-Type, Authorization, X-Tenant-Domain'
+  allowedHeaders: 'Content-Type, Authorization, X-Tenant-Domain, X-Tenant-Id, X-Tenant-Slug'
 };
 
 // Middlewares

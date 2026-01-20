@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { resolveAdminTenantContext } from './adminTenantContext';
 import { convertPdfToPngPages } from '../../lib/pdfToPng';
 import { convertPngToWebp } from '../../lib/pngToWebp';
 import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
@@ -287,35 +288,8 @@ async function upsertPdfIssueFromBuffer(params: {
   };
 }
 
-async function getTenantContext(req: Request): Promise<{ tenantId: string | null; isAdmin: boolean; isSuperAdmin: boolean; userId: string }> {
-  const user = (req as any).user;
-  const userId = asString(user?.id || '');
-  const roleName = asString(user?.role?.name || '').toUpperCase();
-
-  const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
-
-  let tenantId: string | null = null;
-  if (!isSuperAdmin && userId) {
-    const reporter = await prisma.reporter.findFirst({ where: { userId }, select: { tenantId: true } });
-    tenantId = reporter?.tenantId || null;
-  }
-
-  const requestedTenantId = (req.query as any)?.tenantId || (req.body as any)?.tenantId;
-  if (requestedTenantId) {
-    if (isSuperAdmin) {
-      tenantId = asString(requestedTenantId);
-    } else if (isAdmin && !tenantId) {
-      // Allow admin roles to specify tenantId if reporter mapping is missing
-      tenantId = asString(requestedTenantId);
-    } else if (!isSuperAdmin && tenantId && asString(requestedTenantId) !== tenantId) {
-      // Prevent overriding to a different tenant
-      throw new HttpError(403, 'You cannot override tenantId', 'TENANT_OVERRIDE_NOT_ALLOWED');
-    }
-  }
-
-  return { tenantId, isAdmin, isSuperAdmin, userId };
-}
+// Use shared admin tenant resolver for consistent overrides
+const getTenantContext = resolveAdminTenantContext;
 
 function buildIssueKey(params: { tenantId: string; targetType: 'edition' | 'sub-edition'; targetId: string; date: string }): { pdfKey: string; pagePrefix: string } {
   const safeDate = params.date;
@@ -447,7 +421,32 @@ export const getPdfIssue = async (req: Request, res: Response) => {
       },
     });
     if (!issue) return res.status(404).json({ error: 'Not found' });
-    return res.json(issue);
+    // Build SEO/sharing metadata
+    const epaperDomain = await p.domain.findFirst({
+      where: {
+        tenantId: ctx.tenantId,
+        kind: 'EPAPER',
+        status: 'ACTIVE',
+        verifiedAt: { not: null },
+      },
+      select: { domain: true }
+    }).catch(() => null);
+    const baseUrl = `https://${(epaperDomain?.domain || 'epaper.kaburlutoday.com')}`;
+    const dateStr = new Date(issue.issueDate).toISOString().split('T')[0];
+    const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
+    const canonicalUrl = issue.subEdition
+      ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
+      : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+
+    return res.json({
+      tenantId: ctx.tenantId,
+      ...issue,
+      canonicalUrl,
+      metaTitle: `${targetName} | ${displayDate}`,
+      metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
+      ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
+    });
   } catch (e: any) {
     return sendHttpError(res, e, 'Failed to get PDF issue');
   }
@@ -485,7 +484,30 @@ export const findPdfIssue = async (req: Request, res: Response) => {
         orderBy: [{ createdAt: 'desc' }],
       });
 
-      return res.json({ items });
+      const epaperDomain = await p.domain.findFirst({
+        where: { tenantId: ctx.tenantId, kind: 'EPAPER', status: 'ACTIVE', verifiedAt: { not: null } },
+        select: { domain: true }
+      }).catch(() => null);
+      const baseUrl = `https://${(epaperDomain?.domain || 'epaper.kaburlutoday.com')}`;
+
+      const shaped = items.map((it: any) => {
+        const dateStr = new Date(it.issueDate).toISOString().split('T')[0];
+        const displayDate = new Date(it.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+        const targetName = it.subEdition ? `${it.subEdition.name} - ${it.edition?.name || ''}`.trim() : (it.edition?.name || 'Edition');
+        const canonicalUrl = it.subEdition
+          ? `${baseUrl}/${it.edition?.slug}/${it.subEdition.slug}/${dateStr}`
+          : `${baseUrl}/${it.edition?.slug}/${dateStr}`;
+        return {
+          tenantId: ctx.tenantId,
+          ...it,
+          canonicalUrl,
+          metaTitle: `${targetName} | ${displayDate}`,
+          metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${it.pageCount} pages available.`,
+          ogImage: it.coverImageUrlWebp || it.coverImageUrl,
+        };
+      });
+
+      return res.json({ items: shaped });
     }
 
     const issue = await p.epaperPdfIssue.findFirst({
@@ -503,7 +525,26 @@ export const findPdfIssue = async (req: Request, res: Response) => {
     });
 
     if (!issue) return res.status(404).json({ error: 'Not found' });
-    return res.json(issue);
+    const epaperDomain = await p.domain.findFirst({
+      where: { tenantId: ctx.tenantId, kind: 'EPAPER', status: 'ACTIVE', verifiedAt: { not: null } },
+      select: { domain: true }
+    }).catch(() => null);
+    const baseUrl = `https://${(epaperDomain?.domain || 'epaper.kaburlutoday.com')}`;
+    const dateStr = new Date(issue.issueDate).toISOString().split('T')[0];
+    const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
+    const canonicalUrl = issue.subEdition
+      ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
+      : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+
+    return res.json({
+      tenantId: ctx.tenantId,
+      ...issue,
+      canonicalUrl,
+      metaTitle: `${targetName} | ${displayDate}`,
+      metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
+      ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
+    });
   } catch (e: any) {
     return sendHttpError(res, e, 'Failed to find PDF issue');
   }

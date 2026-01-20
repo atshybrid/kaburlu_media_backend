@@ -5,6 +5,7 @@
 
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { resolveAdminTenantContext } from './adminTenantContext';
 import { EpaperBlockCategory, EpaperBlockSubCategory, EpaperBlockStatus } from '@prisma/client';
 
 // ============================================================================
@@ -14,36 +15,7 @@ import { EpaperBlockCategory, EpaperBlockSubCategory, EpaperBlockStatus } from '
 /**
  * Extract tenant context from authenticated user
  */
-async function getTenantContext(req: Request): Promise<{ tenantId: string | null; isAdmin: boolean; isSuperAdmin: boolean; userId: string }> {
-  const user = (req as any).user;
-  const userId = String(user?.id || '');
-  const roleName = String(user?.role?.name || '').toUpperCase();
-  
-  const isSuperAdmin = roleName === 'SUPER_ADMIN';
-  const isAdmin = isSuperAdmin || roleName === 'TENANT_ADMIN' || roleName === 'ADMIN_EDITOR' || roleName === 'DESK_EDITOR';
-  
-  // Get tenant from reporter profile
-  let tenantId: string | null = null;
-  if (!isSuperAdmin && userId) {
-    const reporter = await prisma.reporter.findFirst({
-      where: { userId },
-      select: { tenantId: true },
-    });
-    tenantId = reporter?.tenantId || null;
-  }
-  
-  // Allow tenantId from query: SUPER_ADMIN always; admin roles if reporter mapping missing
-  if ((req.query as any).tenantId) {
-    const requestedTenantId = String((req.query as any).tenantId).trim();
-    if (isSuperAdmin) {
-      tenantId = requestedTenantId;
-    } else if (isAdmin && !tenantId) {
-      tenantId = requestedTenantId;
-    }
-  }
-  
-  return { tenantId, isAdmin, isSuperAdmin, userId };
-}
+const getTenantContext = resolveAdminTenantContext;
 
 // ============================================================================
 // LIST TEMPLATES

@@ -468,3 +468,144 @@ curl "$BASE/public/navigation" -H "X-Tenant-Domain: news.example.com"
 ```
 
 If any public preview returns `Domain context missing`, the domain isn’t resolved (verify domain status/host/header), or the tenant resolver can’t map it.
+
+---
+
+# API Use Cases Quickstart (Frontend)
+
+This section gives copy-paste examples for common frontend screens, including tenant headers, request/response shapes, and error patterns. Use Option A (rewrite) when possible so Host resolves tenant automatically.
+
+## 1) Public Homepage (Style1/Style2)
+
+Unified endpoint with shape selector:
+
+```bash
+# Style1 homepage blocks
+curl "$BASE/public/homepage?shape=style1" -H "X-Tenant-Domain: news.example.com"
+
+# Style2 homepage config + blocks
+curl "$BASE/public/homepage?shape=style2&v=2" -H "X-Tenant-Domain: news.example.com"
+```
+
+Notes:
+- `shape=style1|style2` controls layout/sections.
+- Response includes curated sections with category slugs and article lists. Prefer rendering by section key and fallbacks.
+
+## 2) Categories for Post Screen (Reporter/Admin)
+
+Endpoint adds Telangana/Andhra rules and merges general + state-specific categories:
+
+```bash
+curl "$BASE/api/v1/categories/tenant?stateName=Telangana" \
+  -H "Authorization: Bearer $JWT_TENANT_ADMIN_OR_SUPER" \
+  -H "X-Tenant-Domain: news.example.com"
+```
+
+Behavior:
+- If `stateName` is Telangana → includes Telangana + General.
+- If `stateName` is Andhra Pradesh → includes Andhra + General.
+- Otherwise → returns General + any state-agnostic categories.
+
+Frontend tip: Persist the chosen `stateName` in the post form and feed the result into your category picker.
+
+## 3) Public ePaper Settings + Ticker
+
+Settings provide site name, SEO config, and languages for public ePaper pages:
+
+```bash
+curl "$BASE/public/epaper/settings" -H "X-Tenant-Domain: epaper.news.example.com"
+```
+
+Ticker (latest 15 entries for the public marquee):
+
+```bash
+curl "$BASE/public/epaper/ticker" -H "X-Tenant-Domain: epaper.news.example.com"
+```
+
+Expect fields like `siteName`, `seo.config`, `languages`, and for SEO: `canonicalUrl`, `metaTitle`, `metaDescription`, `ogImage`.
+
+## 4) Admin ePaper — PDF Issues Flow
+
+All routes are available under `/api/v1/epaper/...`. Roles allowed: `SUPER_ADMIN` and `DESK_EDITOR` (plus tenant admins mapped to tenant). Tenant targeting precedence for admin routes:
+1) `tenantId` in query/body
+2) `X-Tenant-Id` header
+3) `X-Tenant-Slug` or `X-Tenant-Domain` header
+
+Common operations:
+
+Check if a PDF issue exists by id:
+```bash
+curl "$BASE/api/v1/epaper/pdf-issues/$ISSUE_ID" \
+  -H "Authorization: Bearer $JWT_ADMIN" \
+  -H "X-Tenant-Id: $TENANT_ID"
+```
+
+List issues by date/edition:
+```bash
+curl "$BASE/api/v1/epaper/pdf-issues?date=2025-12-31&editionId=$EDITION_ID&page=1&pageSize=20" \
+  -H "Authorization: Bearer $JWT_ADMIN" -H "X-Tenant-Id: $TENANT_ID"
+```
+
+Upload by URL (server fetches and stores):
+```bash
+curl -X POST "$BASE/api/v1/epaper/pdf-issues/upload-by-url" \
+  -H "Authorization: Bearer $JWT_ADMIN" -H "Content-Type: application/json" -H "X-Tenant-Id: $TENANT_ID" \
+  -d '{
+    "editionId":"$EDITION_ID",
+    "date":"2025-12-31",
+    "sourceUrl":"https://cdn.example.com/pdfs/2025-12-31.pdf"
+  }'
+```
+
+Delete issue:
+```bash
+curl -X DELETE "$BASE/api/v1/epaper/pdf-issues/$ISSUE_ID" \
+  -H "Authorization: Bearer $JWT_ADMIN" -H "X-Tenant-Id: $TENANT_ID"
+```
+
+Responses on admin GETs include `tenantId` and SEO fields so the admin UI can preview exactly what the public page will render.
+
+## 5) AI Rewrite (Article/EPaper)
+
+Provider auto-selects: OpenAI if `OPENAI_API_KEY` set; otherwise Gemini if `GEMINI_API_KEY`/`GOOGLE_GENAI_API_KEY` set.
+
+Endpoint (messages + temperature support):
+```bash
+curl -X POST "$BASE/api/v1/ainewspaper_rewrite" \
+  -H "Authorization: Bearer $JWT_ADMIN" -H "Content-Type: application/json" \
+  -d '{
+    "messages":[{"role":"user","content":"Rewrite this headline professionally: ..."}],
+    "temperature":0.7,
+    "context": { "language":"te" }
+  }'
+```
+
+Troubleshooting:
+- 400/500 errors usually mean: missing prompt template, invalid API keys, or provider quota. Use diagnostics/health endpoints and ensure env keys are set.
+
+## 6) Auth + Roles (Quick Reference)
+
+- Public: no auth; rely on tenant resolution via Host or `X-Tenant-Domain`.
+- Admin: `Authorization: Bearer <JWT>`.
+- Roles: `SUPER_ADMIN`, `TENANT_ADMIN`, `DESK_EDITOR`, `REPORTER`.
+- ePaper admin routes allow `SUPER_ADMIN` and `DESK_EDITOR` (and tenant admins for their tenant).
+
+## 7) Headers Cheat Sheet
+
+- `X-Tenant-Domain`: Website or ePaper domain (public + admin fallback).
+- `X-Tenant-Id`: Direct tenant targeting (admin preferred).
+- `X-Tenant-Slug`: Alternative to domain (admin fallback).
+- Precedence (admin): `tenantId` (query/body) → `X-Tenant-Id` → `X-Tenant-Slug`/`X-Tenant-Domain` → reporter mapping.
+- CORS: Backend allows these headers; if calling from browser to global URL, add your site origins to `CORS_ORIGINS`.
+
+## 8) Common Error Patterns
+
+- 400 `Tenant context required`: Send one of the tenant identifiers as above.
+- 403 `Forbidden`: Role not allowed for the route.
+- 404 `Not found`: Wrong ids or domain not mapped to a tenant.
+- 422 `Validation error`: Missing fields or invalid combinations.
+- 500 `AI provider failure` or `Storage failure`: Check provider keys, bucket permissions, or retry.
+
+---
+
+Tip: The full, up-to-date API docs with examples are available at `/api/docs` and `/api/v1/docs`. Use those to explore schemas while building UI components.
