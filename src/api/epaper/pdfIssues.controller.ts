@@ -436,8 +436,8 @@ export const getPdfIssue = async (req: Request, res: Response) => {
     const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
     const canonicalUrl = issue.subEdition
-      ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
-      : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+      ? `${baseUrl}/epaper/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}/1`
+      : `${baseUrl}/epaper/${issue.edition?.slug}/${dateStr}/1`;
 
     return res.json({
       tenantId: ctx.tenantId,
@@ -495,8 +495,8 @@ export const findPdfIssue = async (req: Request, res: Response) => {
         const displayDate = new Date(it.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
         const targetName = it.subEdition ? `${it.subEdition.name} - ${it.edition?.name || ''}`.trim() : (it.edition?.name || 'Edition');
         const canonicalUrl = it.subEdition
-          ? `${baseUrl}/${it.edition?.slug}/${it.subEdition.slug}/${dateStr}`
-          : `${baseUrl}/${it.edition?.slug}/${dateStr}`;
+          ? `${baseUrl}/epaper/${it.edition?.slug}/${it.subEdition.slug}/${dateStr}/1`
+          : `${baseUrl}/epaper/${it.edition?.slug}/${dateStr}/1`;
         return {
           tenantId: ctx.tenantId,
           ...it,
@@ -534,8 +534,8 @@ export const findPdfIssue = async (req: Request, res: Response) => {
     const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
     const canonicalUrl = issue.subEdition
-      ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
-      : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+      ? `${baseUrl}/epaper/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}/1`
+      : `${baseUrl}/epaper/${issue.edition?.slug}/${dateStr}/1`;
 
     return res.json({
       tenantId: ctx.tenantId,

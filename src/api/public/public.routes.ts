@@ -1015,7 +1015,7 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
                 : undefined,
               updatedAt: subIssue.updatedAt,
               // SEO / Sharing metadata
-              canonicalUrl: `${baseUrl}/${ed.slug}/${sub.slug}/${dateStr}`,
+              canonicalUrl: `${baseUrl}/epaper/${ed.slug}/${sub.slug}/${dateStr}/1`,
               metaTitle: `${sub.name} - ${ed.name} | ${displayDate}`,
               metaDescription: `Read ${sub.name} (${ed.name}) ePaper edition for ${displayDate}. ${subIssue.pageCount} pages available.`,
               ogImage: subIssue.coverImageUrlWebp || subIssue.coverImageUrl,
@@ -1051,7 +1051,7 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
             : undefined,
           updatedAt: edIssue.updatedAt,
           // SEO / Sharing metadata
-          canonicalUrl: `${baseUrl}/${ed.slug}/${dateStr}`,
+          canonicalUrl: `${baseUrl}/epaper/${ed.slug}/${dateStr}/1`,
           metaTitle: `${ed.name} | ${displayDate}`,
           metaDescription: ed.seoDescription || `Read ${ed.name} ePaper edition for ${displayDate}. ${edIssue.pageCount} pages available.`,
           ogImage: edIssue.coverImageUrlWebp || edIssue.coverImageUrl,
@@ -1184,8 +1184,8 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
 
   const targetName = subEdition ? `${subEdition.name} - ${edition.name}` : edition.name;
   const canonicalUrl = subEdition
-    ? `${baseUrl}/${edition.slug}/${subEdition.slug}/${dateStr}`
-    : `${baseUrl}/${edition.slug}/${dateStr}`;
+    ? `${baseUrl}/epaper/${edition.slug}/${subEdition.slug}/${dateStr}/1`
+    : `${baseUrl}/epaper/${edition.slug}/${dateStr}/1`;
 
   return res.json({
     tenant: { id: tenant.id, slug: tenant.slug },

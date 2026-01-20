@@ -137,8 +137,8 @@ export const getAllIssuesByDate = async (req: Request, res: Response) => {
         const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
         const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
         const canonicalUrl = issue.subEdition
-          ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
-          : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+          ? `${baseUrl}/epaper/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}/1`
+          : `${baseUrl}/epaper/${issue.edition?.slug}/${dateStr}/1`;
         return {
           tenantId: issue.tenant?.id || issue.tenantId,
           id: issue.id,
@@ -243,8 +243,8 @@ export const getTenantIssues = async (req: Request, res: Response) => {
       const displayDate = new Date(issue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
       const targetName = issue.subEdition ? `${issue.subEdition.name} - ${issue.edition?.name || ''}`.trim() : (issue.edition?.name || 'Edition');
       const canonicalUrl = issue.subEdition
-        ? `${baseUrl}/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}`
-        : `${baseUrl}/${issue.edition?.slug}/${dateStr}`;
+        ? `${baseUrl}/epaper/${issue.edition?.slug}/${issue.subEdition.slug}/${dateStr}/1`
+        : `${baseUrl}/epaper/${issue.edition?.slug}/${dateStr}/1`;
       groupedByDate[dateKey].push({
         tenantId: targetTenantId,
         id: issue.id,
@@ -422,8 +422,8 @@ export const checkIssueExists = async (req: Request, res: Response) => {
       const displayDate = new Date(existingIssue.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
       const targetName = existingIssue.subEdition ? `${existingIssue.subEdition.name} - ${existingIssue.edition?.name || ''}`.trim() : (existingIssue.edition?.name || 'Edition');
       const canonicalUrl = existingIssue.subEdition
-        ? `${baseUrl}/${existingIssue.edition?.slug}/${existingIssue.subEdition.slug}/${dateStr}`
-        : `${baseUrl}/${existingIssue.edition?.slug}/${dateStr}`;
+        ? `${baseUrl}/epaper/${existingIssue.edition?.slug}/${existingIssue.subEdition.slug}/${dateStr}/1`
+        : `${baseUrl}/epaper/${existingIssue.edition?.slug}/${dateStr}/1`;
       return res.json({
         exists: true,
         message: 'Issue already exists for this date and edition/sub-edition',

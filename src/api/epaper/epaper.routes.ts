@@ -1823,7 +1823,7 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *                   pages:
  *                     - pageNumber: 1
  *                       imageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
- *                   canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-12"
+ *                   canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-12/1"
  *                   metaTitle: "Telangana | 12 January 2026"
  *                   metaDescription: "Read Telangana ePaper edition for 12 January 2026. 12 pages available."
  *                   ogImage: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
@@ -1838,7 +1838,7 @@ router.post('/pdf-issues/upload-by-url', auth, uploadPdfIssueByUrl);
  *                       coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
  *                       pageCount: 12
  *                       tenantId: "t_abc"
- *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-12"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-12/1"
  *                       metaTitle: "Telangana | 12 January 2026"
  *                       metaDescription: "Read Telangana ePaper edition for 12 January 2026. 12 pages available."
  *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
@@ -1893,7 +1893,7 @@ router.get('/pdf-issues', auth, findPdfIssue);
  *                   pages:
  *                     - pageNumber: 1
  *                       imageUrl: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
- *                   canonicalUrl: "https://epaper.kaburlutoday.com/main-edition/2026-01-20"
+ *                   canonicalUrl: "https://epaper.kaburlutoday.com/epaper/main-edition/2026-01-20/1"
  *                   metaTitle: "Main Edition | 20 January 2026"
  *                   metaDescription: "Main Editions – Latest Breaking News, Politics, Business & Local Updates"
  *                   ogImage: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
@@ -2015,7 +2015,7 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                       createdAt: "2026-01-18T06:00:00.000Z"
  *                       updatedAt: "2026-01-18T06:00:00.000Z"
- *                       canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-18/1"
  *                       metaTitle: "Telangana Edition | 18 January 2026"
  *                       metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
  *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
@@ -2031,7 +2031,7 @@ router.post('/suggest-block', auth, suggestBlockTemplate);
  *                       uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
  *                       createdAt: "2026-01-18T05:30:00.000Z"
  *                       updatedAt: "2026-01-18T05:30:00.000Z"
- *                       canonicalUrl: "https://epaper.kaburlutoday.com/karnataka/2026-01-18"
+ *                       canonicalUrl: "https://epaper.kaburlutoday.com/epaper/karnataka/2026-01-18/1"
  *                       metaTitle: "Karnataka Edition | 18 January 2026"
  *                       metaDescription: "Read Karnataka Edition ePaper for 18 January 2026. 16 pages available."
  *                       ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/karnataka/p1.png"
@@ -2134,7 +2134,7 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                         createdAt: "2026-01-18T06:00:00.000Z"
  *                         updatedAt: "2026-01-18T06:00:00.000Z"
- *                         canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-18"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-18/1"
  *                         metaTitle: "Telangana Edition | 18 January 2026"
  *                         metaDescription: "Read Telangana Edition ePaper for 18 January 2026. 12 pages available."
  *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/telangana/p1.png"
@@ -2148,7 +2148,7 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_123", name: "Admin User", email: "admin@example.com" }
  *                         createdAt: "2026-01-18T06:15:00.000Z"
  *                         updatedAt: "2026-01-18T06:15:00.000Z"
- *                         canonicalUrl: "https://epaper.kaburlutoday.com/andhra/2026-01-18"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/epaper/andhra/2026-01-18/1"
  *                         metaTitle: "Andhra Pradesh Edition | 18 January 2026"
  *                         metaDescription: "Read Andhra Pradesh Edition ePaper for 18 January 2026. 10 pages available."
  *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/18/andhra/p1.png"
@@ -2163,7 +2163,7 @@ router.get('/issues/all-by-date', auth, getAllIssuesByDate);
  *                         uploadedBy: { id: "u_456", name: "Desk Editor", email: "desk@example.com" }
  *                         createdAt: "2026-01-17T06:00:00.000Z"
  *                         updatedAt: "2026-01-17T06:00:00.000Z"
- *                         canonicalUrl: "https://epaper.kaburlutoday.com/telangana/2026-01-17"
+ *                         canonicalUrl: "https://epaper.kaburlutoday.com/epaper/telangana/2026-01-17/1"
  *                         metaTitle: "Telangana Edition | 17 January 2026"
  *                         metaDescription: "Read Telangana Edition ePaper for 17 January 2026. 14 pages available."
  *                         ogImage: "https://cdn.example.com/epaper/pages/2026/01/17/telangana/p1.png"
