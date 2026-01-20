@@ -16,6 +16,20 @@ function nowIsoIST(): string {
     return ist.toISOString().replace('Z', '+05:30');
 }
 
+function buildSimpleHtmlFromPlainText(plain: string): string {
+    const text = String(plain || '').trim();
+    if (!text) return '';
+    const parts = text.split(/\n\s*\n/g).map(p => p.trim()).filter(Boolean);
+    const html = parts.map(p => {
+        // Heuristic heading: short line, no sentence-ending punctuation
+        if (p.length <= 80 && !/[.!?]$/.test(p) && !/[,;:]$/.test(p) && !/\n/.test(p)) {
+            return `<h2>${p}</h2>`;
+        }
+        return `<p>${p.split(/\n+/).map(x => x.trim()).filter(Boolean).join('<br/>')}</p>`;
+    }).join('');
+    return sanitizeHtmlAllowlist(html);
+}
+
 function monthNameByLang(monthIndex: number, languageCode?: string): string {
     const lc = String(languageCode || '').trim().toLowerCase();
     // Full month names (requested: "డిసెంబర్" not "డిసెం").
@@ -642,6 +656,173 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 status: newspaperStatus
             }
         });
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // UNIFIED FLOW: If webData and shortNewsData are provided, create them directly
+        // This bypasses the AI queue for instant article creation (best practice flow)
+        // Supports BOTH old format (webData/shortNewsData) AND new format (web_article/short_mobile_article)
+        // ─────────────────────────────────────────────────────────────────────────────
+        
+        // Normalize inputs: Support both old and new AI output formats
+        let webData = body.webData || body.web_article;
+        let shortNewsData = body.shortNewsData || body.short_mobile_article;
+        
+        // If new format (web_article), convert to old format
+        if (body.web_article && !body.webData) {
+            const wa = body.web_article;
+            webData = {
+                title: wa.headline || '',
+                subTitle: wa.lead || '',
+                summary: wa.lead || '',
+                content: Array.isArray(wa.body) ? wa.body.join('\n\n') : (wa.body || ''),
+                seoTitle: wa.seo?.meta_title || wa.headline || '',
+                metaDescription: wa.seo?.meta_description || '',
+                slug: wa.seo?.url_slug || '',
+                keywords: wa.seo?.keywords || [],
+                locationKeywords: [],
+            };
+        }
+        
+        // If new format (short_mobile_article), convert to old format
+        if (body.short_mobile_article && !body.shortNewsData) {
+            const sma = body.short_mobile_article;
+            shortNewsData = {
+                title: sma.h1 || '',
+                subTitle: sma.h2 || '',
+                content: sma.body || '',
+            };
+        }
+        
+        const isUnifiedFlow = webData && shortNewsData;
+
+        let webArticleId: string | null = null;
+        let shortNewsId: string | null = null;
+
+        if (isUnifiedFlow) {
+            // Create TenantWebArticle directly from pre-generated AI data
+            try {
+                const webTitle = String(webData.title || title).trim();
+                const webSlug = String(webData.slug || slugFromAnyLanguage(webTitle, 120)).trim();
+                const webContent = String(webData.content || contentText || '').trim();
+                const webContentHtml = webData.contentHtml || buildSimpleHtmlFromPlainText(webContent);
+                
+                const webArticle = await prisma.tenantWebArticle.create({
+                    data: {
+                        tenantId,
+                        domainId: domainId || undefined,
+                        authorId,
+                        languageId,
+                        title: webTitle,
+                        slug: webSlug,
+                        status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                        categoryId: categoryIds?.[0] ? String(categoryIds[0]) : undefined,
+                        contentJson: {
+                            title: webTitle,
+                            subTitle: String(webData.subTitle || subTitle || '').trim(),
+                            summary: String(webData.summary || '').trim(),
+                            content: webContent,
+                            contentHtml: webContentHtml,
+                            seo: {
+                                seoTitle: String(webData.seoTitle || webTitle).slice(0, 60),
+                                metaDescription: String(webData.metaDescription || '').slice(0, 160),
+                            },
+                            keywords: Array.isArray(webData.keywords) ? webData.keywords : [],
+                            locationKeywords: Array.isArray(webData.locationKeywords) ? webData.locationKeywords : [],
+                        },
+                        seoTitle: String(webData.seoTitle || webTitle).slice(0, 60),
+                        metaDescription: String(webData.metaDescription || '').slice(0, 160),
+                        jsonLd: buildNewsArticleJsonLd({
+                            headline: webTitle,
+                            description: String(webData.metaDescription || ''),
+                            canonicalUrl: `https://${domainName || 'example.com'}/${webSlug}`,
+                            imageUrls: normalizedMedia.coverImageUrl ? [normalizedMedia.coverImageUrl] : [],
+                            datePublished: shouldPublish ? nowIsoIST() : undefined,
+                        }),
+                        tags: Array.isArray(webData.keywords) ? webData.keywords.slice(0, 10) : [],
+                        coverImageUrl: normalizedMedia.coverImageUrl || undefined,
+                        isBreaking,
+                        publishedAt: shouldPublish ? new Date() : null,
+                    } as any
+                });
+                webArticleId = webArticle.id;
+            } catch (e) {
+                console.error('Failed to create TenantWebArticle in unified flow:', e);
+            }
+
+            // Create ShortNews directly from pre-generated AI data
+            try {
+                const shortTitle = String(shortNewsData.title || '').trim().slice(0, 50);
+                const shortContent = trimWords(String(shortNewsData.content || '').trim(), 60);
+                
+                const shortNewsCreateData: any = {
+                    title: shortTitle,
+                    slug: slugFromAnyLanguage(shortTitle, 80),
+                    content: shortContent,
+                    language: languageCode || 'te',
+                    authorId,
+                    tags: Array.isArray(webData?.keywords) ? webData.keywords.slice(0, 7) : [],
+                    featuredImage: normalizedMedia.coverImageUrl || null,
+                    status: shouldPublish ? 'APPROVED' : 'PENDING',
+                    seo: webData?.seoTitle ? {
+                        seoTitle: String(webData.seoTitle).slice(0, 60),
+                        metaDescription: String(webData.metaDescription || '').slice(0, 160),
+                    } : undefined,
+                    headings: shortNewsData.subTitle ? { subTitle: String(shortNewsData.subTitle).trim() } : undefined,
+                    mediaUrls: images,
+                };
+                if (categoryIds?.[0]) {
+                    shortNewsCreateData.categoryId = String(categoryIds[0]);
+                }
+                
+                const shortNews = await prisma.shortNews.create({
+                    data: shortNewsCreateData
+                });
+                shortNewsId = shortNews.id;
+            } catch (e) {
+                console.error('Failed to create ShortNews in unified flow:', e);
+            }
+
+            // Update base article with output IDs and mark as DONE
+            try {
+                await prisma.article.update({
+                    where: { id: baseArticle.id },
+                    data: {
+                        status: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                        contentJson: {
+                            ...(baseArticle as any).contentJson,
+                            webArticleId,
+                            shortNewsId,
+                            newspaperArticleId: created.id,
+                            aiStatus: 'DONE',
+                            aiQueue: { web: false, short: false, newspaper: false },
+                            unifiedFlow: true,
+                            aiFinishedAt: nowIsoIST(),
+                        }
+                    }
+                });
+            } catch {
+                // best-effort
+            }
+
+            // Return immediate success with all IDs
+            return res.status(201).json({
+                success: true,
+                message: 'All articles created successfully (unified flow)',
+                externalArticleId,
+                articleId: baseArticle.id,
+                baseArticleId: baseArticle.id,
+                newspaperArticleId: created.id,
+                webArticleId,
+                shortNewsId,
+                effectiveStatus: shouldPublish ? 'PUBLISHED' : 'DRAFT',
+                unifiedFlow: true,
+                reporterAutoPublishApplied: roleName === 'REPORTER' ? reporterAutoPublish : undefined,
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // QUEUE FLOW: Traditional flow - queue for AI processing
+        // ─────────────────────────────────────────────────────────────────────────────
 
         // Postgres-only queue: aiQueue.worker / aiQueue.cron will pick this up.
         return res.status(202).json({

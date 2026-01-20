@@ -58,6 +58,7 @@ import reporterDesignationsPublicRoutes from './api/reporters/reporterDesignatio
 import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
 import aiTestRoutes from './api/ai/ai.routes';
+import aiUnifiedRoutes from './api/ai/ai.unified.routes';
 import dashboardRoutes from './api/dashboard/dashboard.routes';
 import aiNewspaperRewriteRoutes from './api/ainewspaper/ainewspaper.routes';
 import locationAiRoutes from './api/locationAi/locationAi.routes';
@@ -67,6 +68,7 @@ import familyRoutes from './api/family/family.routes';
 import epaperRoutes from './api/epaper/epaper.routes';
 import proofsRoutes from './api/proofs/proofs.routes';
 import aiHealthRoutes from './api/health/ai.routes';
+import articlesUnifiedRoutes from './api/articles/unified.routes';
 
 const app = express();
 
@@ -234,6 +236,7 @@ app.use('/health', aiHealthRoutes);
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
 apiV1.use('/articles', articlesRoutes);
+apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creation
 apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/shortnews', shortNewsRoutes);
 apiV1.use('/shortnews/read', shortNewsReadRoutes);
@@ -266,7 +269,8 @@ apiV1.use('/devices', devicesRoutes);
 apiV1.use('/notifications', notificationsRoutes);
 apiV1.use('/prompts', promptsRoutes);
 apiV1.use('/ai', aiTestRoutes);
-apiV1.use('/', aiNewspaperRewriteRoutes);
+apiV1.use('/ai', aiUnifiedRoutes);  // NEW: Unified Newsroom AI Agent
+apiV1.use('/', aiNewspaperRewriteRoutes);  // DEPRECATED: Use /ai/rewrite/unified instead
 apiV1.use('/location', locationAiRoutes);
 apiV1.use('/location', locationStatusRoutes);
 apiV1.use('/preferences', preferencesRoutes);

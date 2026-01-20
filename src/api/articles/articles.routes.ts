@@ -1039,21 +1039,34 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *   post:
  *     summary: Create newspaper article (Tenant Reporter)
  *     description: |
- *       Stores a print-ready NewspaperArticle linked to a base Article, and queues AI processing.
+ *       Stores a print-ready NewspaperArticle linked to a base Article.
+ *
+ *       **Two flows supported:**
+ *
+ *       **1. UNIFIED FLOW (Best Practice - Instant):**
+ *       - First call `POST /ainewspaper_rewrite/unified` with raw text → get { newspaper, web, shortNews }
+ *       - Reporter reviews/edits the newspaper data in app
+ *       - Then call this endpoint with the edited newspaper + original webData + shortNewsData
+ *       - All 3 articles (NewspaperArticle, TenantWebArticle, ShortNews) are created immediately
+ *       - Returns 201 with all IDs
+ *
+ *       **2. QUEUE FLOW (Legacy):**
+ *       - Call this endpoint without webData/shortNewsData
+ *       - NewspaperArticle is created immediately
+ *       - TenantWebArticle and ShortNews are queued for background AI processing
+ *       - Returns 202 with statusUrl to poll for completion
  *
  *       Location best-practice:
  *       - Provide any ONE id in `location`: `villageId` OR `mandalId` OR `districtId` OR `stateId`
  *       - Server derives the rest of the hierarchy and stores it on NewspaperArticle for easy filtering.
  *
- *       AI behavior is controlled only by tenant feature flag `TenantFeatureFlags.aiArticleRewriteEnabled`:
- *       - When enabled (default): `aiMode=FULL` and the worker generates Newspaper + Web + ShortNews using prompt key `ai_rewrite_prompt_true`.
- *       - When disabled: `aiMode=LIMITED` and the worker generates SEO + ShortNews using prompt key `ai_rewrite_prompt_false` (no newspaper rewrite).
+ *       AI behavior (queue flow only) is controlled by tenant feature flag `TenantFeatureFlags.aiArticleRewriteEnabled`:
+ *       - When enabled (default): `aiMode=FULL` and the worker generates Newspaper + Web + ShortNews.
+ *       - When disabled: `aiMode=LIMITED` and the worker generates SEO + ShortNews.
  *
  *       SUPER_ADMIN testing override (does not persist):
  *       - Add query `forceAiRewriteEnabled=true` to force FULL (SUPER_ADMIN only)
  *       - Add query `forceAiRewriteEnabled=false` to force LIMITED (allowed for Reporter/Admin too)
- *
- *       This endpoint always returns `202 Accepted` after storing the records.
  *
  *       Publishing rule (best practice):
  *       - For role REPORTER, `status` from request is ignored. Server auto-derives status using Reporter.kycData.autoPublish.
@@ -1207,9 +1220,68 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *               # - REPORTER: autoPublish=true => PUBLISHED, else => PENDING
  *               # - All other roles: PUBLISHED
  *
+ *               # ─── UNIFIED FLOW (best practice) ───
+ *               # If both webData and shortNewsData are provided, all 3 articles are created immediately (no queue).
+ *               # Get these from POST /ainewspaper_rewrite/unified first, let reporter review, then submit here.
+ *               webData:
+ *                 type: object
+ *                 description: |
+ *                   Pre-generated web article data from /ainewspaper_rewrite/unified.
+ *                   If provided along with shortNewsData, creates TenantWebArticle directly (no AI queue).
+ *                 properties:
+ *                   title: { type: string, description: "Web article title" }
+ *                   subTitle: { type: string, description: "Subtitle" }
+ *                   summary: { type: string, description: "1-2 sentence summary" }
+ *                   content: { type: string, description: "Full article body" }
+ *                   contentHtml: { type: string, description: "HTML formatted content (optional)" }
+ *                   seoTitle: { type: string, description: "SEO meta title (≤60 chars)" }
+ *                   metaDescription: { type: string, description: "SEO meta description (120-155 chars)" }
+ *                   slug: { type: string, description: "URL-friendly slug" }
+ *                   keywords: { type: array, items: { type: string }, description: "SEO keywords" }
+ *                   locationKeywords: { type: array, items: { type: string }, description: "Location-based keywords" }
+ *               shortNewsData:
+ *                 type: object
+ *                 description: |
+ *                   Pre-generated short news data from /ainewspaper_rewrite/unified.
+ *                   If provided along with webData, creates ShortNews directly (no AI queue).
+ *                 properties:
+ *                   title: { type: string, description: "Short news title (≤35 chars)" }
+ *                   subTitle: { type: string, description: "Optional subtitle (≤50 chars)" }
+ *                   content: { type: string, description: "Short news content (≤60 words)" }
+ *
  *           examples:
+ *             unified:
+ *               summary: Unified Flow (best practice - instant creation, no queue)
+ *               value:
+ *                 languageCode: "te"
+ *                 categoryId: "cmcat123"
+ *                 title: "Budget Highlights"
+ *                 subTitle: "Key takeaways"
+ *                 lead: "Today the finance minister announced..."
+ *                 media:
+ *                   images:
+ *                     - url: "https://cdn.example.com/cover.webp"
+ *                       caption: "Cover"
+ *                 content:
+ *                   - type: "paragraph"
+ *                     text: "Paragraph 1..."
+ *                 bulletPoints: ["Point one", "Point two"]
+ *                 location:
+ *                   districtId: "cmdistrict"
+ *                 webData:
+ *                   title: "Budget Highlights 2026"
+ *                   subTitle: "Key takeaways from FM speech"
+ *                   summary: "Finance Minister announced major tax reforms..."
+ *                   content: "The finance minister today announced..."
+ *                   seoTitle: "Budget 2026 Highlights"
+ *                   metaDescription: "Complete analysis of Budget 2026."
+ *                   slug: "budget-2026-highlights"
+ *                   keywords: ["budget 2026", "tax reforms"]
+ *                 shortNewsData:
+ *                   title: "బడ్జెట్ హైలైట్స్"
+ *                   content: "ఆర్థిక మంత్రి పన్ను సంస్కరణలు ప్రకటించారు."
  *             modern:
- *               summary: Recommended (structured media)
+ *               summary: Queue Flow (structured media, AI processes later)
  *               value:
  *                 languageCode: "te"
  *                 categoryId: "cmcat123"
@@ -1285,8 +1357,23 @@ router.get('/newspaper', passport.authenticate('jwt', { session: false }), requi
  *                     text: "Paragraph 1..."
  *                 bulletPoints: ["Point one", "Point two"]
  *     responses:
+ *       201:
+ *         description: Created (unified flow - all 3 articles created immediately)
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: "All articles created successfully (unified flow)"
+ *               externalArticleId: "ART202512210001"
+ *               articleId: "cmarticle"
+ *               baseArticleId: "cmarticle"
+ *               newspaperArticleId: "cmnp"
+ *               webArticleId: "cmweb"
+ *               shortNewsId: "cmsn"
+ *               effectiveStatus: "PUBLISHED"
+ *               unifiedFlow: true
  *       202:
- *         description: Accepted (stored and queued for background AI processing)
+ *         description: Accepted (queue flow - stored and queued for background AI processing)
  *         content:
  *           application/json:
  *             example:

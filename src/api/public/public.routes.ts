@@ -1000,6 +1000,9 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
           if (subIssue) {
             const dateStr = formatDateForUrl(subIssue.issueDate);
             const displayDate = formatIssueDate(subIssue.issueDate);
+            // Build ogImage with both WebP and JPEG formats
+            const ogImageWebp = subIssue.coverImageUrlWebp || subIssue.coverImageUrl;
+            const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : subIssue.coverImageUrl;
             issueMeta = {
               id: subIssue.id,
               issueDate: subIssue.issueDate,
@@ -1011,6 +1014,7 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
                 ? (subIssue.pages || []).map((pg: any) => ({
                     ...pg,
                     imageUrlWebp: pg.imageUrlWebp || null,
+                    imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
                   }))
                 : undefined,
               updatedAt: subIssue.updatedAt,
@@ -1018,7 +1022,8 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
               canonicalUrl: `${baseUrl}/epaper/${ed.slug}/${sub.slug}/${dateStr}/1`,
               metaTitle: `${sub.name} - ${ed.name} | ${displayDate}`,
               metaDescription: `Read ${sub.name} (${ed.name}) ePaper edition for ${displayDate}. ${subIssue.pageCount} pages available.`,
-              ogImage: subIssue.coverImageUrlWebp || subIssue.coverImageUrl,
+              ogImage: ogImageWebp,
+              ogImageJpeg: ogImageJpeg,
             };
           }
 
@@ -1036,6 +1041,9 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
       if (edIssue) {
         const dateStr = formatDateForUrl(edIssue.issueDate);
         const displayDate = formatIssueDate(edIssue.issueDate);
+        // Build ogImage with both WebP and JPEG formats
+        const ogImageWebp = edIssue.coverImageUrlWebp || edIssue.coverImageUrl;
+        const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : edIssue.coverImageUrl;
         editionIssueMeta = {
           id: edIssue.id,
           issueDate: edIssue.issueDate,
@@ -1047,6 +1055,7 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
             ? (edIssue.pages || []).map((pg: any) => ({
                 ...pg,
                 imageUrlWebp: pg.imageUrlWebp || null,
+                imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
               }))
             : undefined,
           updatedAt: edIssue.updatedAt,
@@ -1054,7 +1063,8 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
           canonicalUrl: `${baseUrl}/epaper/${ed.slug}/${dateStr}/1`,
           metaTitle: `${ed.name} | ${displayDate}`,
           metaDescription: ed.seoDescription || `Read ${ed.name} ePaper edition for ${displayDate}. ${edIssue.pageCount} pages available.`,
-          ogImage: edIssue.coverImageUrlWebp || edIssue.coverImageUrl,
+          ogImage: ogImageWebp,
+          ogImageJpeg: ogImageJpeg,
         };
       }
 
@@ -1187,6 +1197,10 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
     ? `${baseUrl}/epaper/${edition.slug}/${subEdition.slug}/${dateStr}/1`
     : `${baseUrl}/epaper/${edition.slug}/${dateStr}/1`;
 
+  // Build ogImage with both WebP and JPEG formats
+  const ogImageWebp = issue.coverImageUrlWebp || issue.coverImageUrl;
+  const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : issue.coverImageUrl;
+
   return res.json({
     tenant: { id: tenant.id, slug: tenant.slug },
     edition,
@@ -1201,12 +1215,14 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
       pages: (issue.pages || []).map((pg: any) => ({
         ...pg,
         imageUrlWebp: pg.imageUrlWebp || null,
+        imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
       })),
       // SEO / Sharing metadata
       canonicalUrl,
       metaTitle: `${targetName} | ${displayDate}`,
       metaDescription: `Read ${targetName} ePaper edition for ${displayDate}. ${issue.pageCount} pages available.`,
-      ogImage: issue.coverImageUrlWebp || issue.coverImageUrl,
+      ogImage: ogImageWebp,
+      ogImageJpeg: ogImageJpeg,
     },
   });
 });

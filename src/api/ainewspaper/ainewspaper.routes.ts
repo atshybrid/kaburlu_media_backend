@@ -105,14 +105,22 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  * @swagger
  * /ainewspaper_rewrite:
  *   post:
- *     summary: AI newspaper rewrite (system prompt from DB)
+ *     summary: "[DEPRECATED] AI newspaper rewrite - Use /api/v1/ai/rewrite/unified instead"
+ *     deprecated: true
  *     description: |
+ *       ⚠️ **DEPRECATED**: This endpoint is deprecated. Use `POST /api/v1/ai/rewrite/unified` instead.
+ *       
+ *       The new unified endpoint returns all three article formats (print, web, short) in a single call.
+ *       
+ *       ---
+ *       
+ *       Legacy behavior:
  *       Loads prompt content from Prompt table key `daily_newspaper_ai_article_dynamic_language`.
  *       Sends it as the **system** message, and sends the raw reporter post as the **user** message.
  *       Returns the AI JSON output parsed as an object.
  *
  *       Allowed roles: SUPER_ADMIN, TENANT_ADMIN, TENANT_EDITOR, ADMIN_EDITOR, NEWS_MODERATOR, REPORTER.
- *     tags: [AI Rewrite]
+ *     tags: [AI Rewrite (Deprecated)]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: query
@@ -329,6 +337,218 @@ router.post(
     } catch (e: any) {
       console.error('ainewspaper_rewrite error', e);
       return res.status(500).json({ error: 'Failed to generate newspaper rewrite' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /ainewspaper_rewrite/unified:
+ *   post:
+ *     summary: AI unified rewrite - returns newspaper + web + shortNews in one call
+ *     description: |
+ *       Single AI call that returns all 3 article formats:
+ *       - **newspaper**: Print-ready newspaper article (title, subtitle, lead, highlights, body)
+ *       - **web**: SEO-optimized web article (title, content, seoTitle, metaDescription, slug, keywords)
+ *       - **shortNews**: Mobile app short news (title ≤35 chars, content ≤60 words)
+ *
+ *       Best practice flow:
+ *       1. Call this endpoint with raw reporter text
+ *       2. Show newspaper data to reporter for review/edit
+ *       3. POST /articles/newspaper with edited newspaper + original web + shortNews
+ *
+ *       Uses prompt key `unified_article_rewrite` from Prompt table.
+ *     tags: [AI Rewrite]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: query
+ *         name: debug
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: When true, includes prompt and provider info in response.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rawText]
+ *             properties:
+ *               rawText:
+ *                 type: string
+ *                 description: Raw reporter post text
+ *                 example: "నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు..."
+ *               allowedCategories:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Optional list of allowed categories for AI to pick from
+ *               temperature:
+ *                 type: number
+ *                 default: 0.2
+ *                 description: AI temperature (0-1)
+ *               model:
+ *                 type: string
+ *                 description: Optional OpenAI model override
+ *     responses:
+ *       200:
+ *         description: Unified AI rewrite with all 3 article types
+ *         content:
+ *           application/json:
+ *             example:
+ *               newspaper:
+ *                 category: "Crime"
+ *                 title: "రోడ్డు ప్రమాదంలో ఇద్దరికి గాయాలు"
+ *                 subtitle: "శుక్రవారం రాత్రి నగరంలో జరిగిన సంఘటన"
+ *                 lead: "నగరంలో శుక్రవారం రాత్రి..."
+ *                 highlights: ["ఇద్దరు గాయపడ్డారు", "పోలీసులు కేసు నమోదు"]
+ *                 article:
+ *                   location_date: "హైదరాబాద్, జనవరి 20"
+ *                   body: "..."
+ *               web:
+ *                 title: "రోడ్డు ప్రమాదంలో ఇద్దరికి గాయాలు"
+ *                 subTitle: "శుక్రవారం రాత్రి నగరంలో జరిగిన సంఘటన"
+ *                 summary: "..."
+ *                 content: "..."
+ *                 seoTitle: "Road Accident Hyderabad Today"
+ *                 metaDescription: "Two injured in road accident..."
+ *                 slug: "road-accident-hyderabad-two-injured"
+ *                 keywords: ["road accident", "hyderabad", "crime news"]
+ *                 locationKeywords: ["hyderabad", "telangana"]
+ *               shortNews:
+ *                 title: "రోడ్డు ప్రమాదం - ఇద్దరికి గాయాలు"
+ *                 subTitle: ""
+ *                 content: "నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు."
+ *       400:
+ *         description: Bad input or missing prompt key in DB
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: AI failure or invalid JSON output
+ */
+router.post(
+  '/ainewspaper_rewrite/unified',
+  passport.authenticate('jwt', { session: false }),
+  requireReporterOrAdmin,
+  async (req, res) => {
+    try {
+      const rawText = String(req.body?.rawText ?? req.body?.raw ?? req.body?.text ?? req.body?.content ?? '').trim();
+      const allowedCategoriesInput = req.body?.allowedCategories;
+      const allowedCategories: string[] = Array.isArray(allowedCategoriesInput)
+        ? allowedCategoriesInput.map((c: any) => String(c)).filter(Boolean)
+        : [];
+      const temperature = Number(req.body?.temperature ?? 0.2);
+      if (!rawText) return res.status(400).json({ error: 'rawText is required' });
+
+      const debug = String((req.query as any)?.debug || '').toLowerCase() === 'true';
+
+      const promptKey = 'unified_article_rewrite';
+      
+      // Load prompt from DB
+      const p = await (prisma as any).prompt.findUnique({ where: { key: promptKey } }).catch(() => null);
+      let systemPrompt = String(p?.content || '').trim();
+      
+      // Fallback to default if not in DB
+      if (!systemPrompt) {
+        const { DEFAULT_PROMPTS } = await import('../../lib/defaultPrompts');
+        const defaultPrompt = DEFAULT_PROMPTS.find(dp => dp.key === promptKey);
+        systemPrompt = defaultPrompt?.content || '';
+      }
+      
+      if (!systemPrompt) {
+        return res.status(400).json({ error: `Prompt not found for key: ${promptKey}` });
+      }
+
+      const userContent = allowedCategories.length
+        ? `RAW_REPORTER_POST:\n${rawText}\n\nALLOWED_CATEGORIES:\n${allowedCategories.join(', ')}`
+        : rawText;
+
+      const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ];
+
+      let aiText = '';
+      let usage: any = undefined;
+      let providerUsed: 'openai' | 'gemini' | 'auto' = 'auto';
+
+      const outgoingChatGptPayload = {
+        model: String(req.body?.model || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL,
+        temperature,
+        messages,
+      };
+
+      if (OPENAI_KEY) {
+        const model = outgoingChatGptPayload.model;
+        try {
+          const r = await openaiChatMessages(messages, model, temperature);
+          aiText = String(r?.content || '');
+          providerUsed = 'openai';
+          usage = r?.raw?.usage;
+        } catch (e: any) {
+          const status = e?.response?.status;
+          const errMsg = e?.response?.data?.error?.message || e?.message || '';
+          const looksLikeModelOrFormatIssue = status === 400 && /(model|response_format)/i.test(String(errMsg));
+          if (!looksLikeModelOrFormatIssue) throw e;
+
+          // Fallback to Gemini
+          const combined = `${systemPrompt}\n\n<<< RAW REPORTER POST >>>\n${rawText}\n\n${allowedCategories.length ? `ALLOWED_CATEGORIES: ${allowedCategories.join(', ')}` : ''}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
+          const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
+          aiText = String(r?.text || '');
+          usage = r?.usage;
+          providerUsed = 'gemini';
+        }
+      } else {
+        // Fallback: Gemini
+        const combined = `${systemPrompt}\n\n<<< RAW REPORTER POST >>>\n${rawText}\n\n${allowedCategories.length ? `ALLOWED_CATEGORIES: ${allowedCategories.join(', ')}` : ''}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
+        const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
+        aiText = String(r?.text || '');
+        usage = r?.usage;
+        providerUsed = 'gemini';
+      }
+
+      if (!aiText.trim()) {
+        return res.status(500).json({ error: 'AI returned empty response', provider: providerUsed });
+      }
+
+      const parsed = tryParseJsonObject(aiText);
+      if (!parsed) {
+        return res.status(500).json({
+          error: 'AI returned invalid JSON',
+          provider: providerUsed,
+          text: aiText,
+          ...(debug ? { debug: { promptKey, systemPrompt, outgoingChatGptPayload } } : {})
+        });
+      }
+
+      // Validate structure has required keys
+      if (!parsed.newspaper || !parsed.web || !parsed.shortNews) {
+        return res.status(500).json({
+          error: 'AI response missing required sections (newspaper, web, shortNews)',
+          provider: providerUsed,
+          data: parsed,
+          ...(debug ? { debug: { promptKey, systemPrompt, outgoingChatGptPayload } } : {})
+        });
+      }
+
+      if (debug) {
+        return res.json({
+          ...parsed,
+          debug: {
+            promptKey,
+            systemPrompt,
+            provider: providerUsed,
+            outgoingChatGptPayload,
+            usage,
+          }
+        });
+      }
+
+      return res.json(parsed);
+    } catch (e: any) {
+      console.error('ainewspaper_rewrite/unified error', e);
+      return res.status(500).json({ error: 'Failed to generate unified rewrite' });
     }
   }
 );
