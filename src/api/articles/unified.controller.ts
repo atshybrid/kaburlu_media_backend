@@ -314,14 +314,15 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     const payloadDomainId = payload.domainId || payload.baseArticle?.publisher?.domainId;
     const { domainId, domainName } = await resolveDomainId(tenantId, payloadDomainId);
 
-    // ========== GET NEXT SEQUENCE ==========
-    const todayCount = await (prisma as any).newspaperArticle.count({
-      where: {
-        tenantId,
-        createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-      }
-    });
-    const externalId = generateExternalArticleId(todayCount + 1);
+    // ========== RESOLVE LANGUAGE ID ==========
+    let languageId: string | null = null;
+    if (languageCode) {
+      const lang = await prisma.language.findFirst({
+        where: { code: languageCode },
+        select: { id: true }
+      });
+      languageId = lang?.id || null;
+    }
 
     // ========== TRANSACTION: CREATE ALL 3 ARTICLES ==========
     const result = await prisma.$transaction(async (tx: any) => {
@@ -329,14 +330,14 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       // 1. Create NewspaperArticle
       const newspaperArticle = await tx.newspaperArticle.create({
         data: {
-          externalId,
           tenantId,
           authorId,
           title: headline,
           heading: headline,
           subTitle: subtitle,
-          dateLine: datelineFormatted,
-          languageCode,
+          lead: bodyParagraphs[0] || null,
+          dateline: datelineFormatted,
+          languageId,
           categoryId,
           stateId,
           districtId,
@@ -344,15 +345,12 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           villageId,
           placeName,
           status: effectiveStatus,
-          coverImageUrl,
-          images: images.map((img: any) => img.url).filter(isHttpUrl),
-          videos: [],
-          content: bodyParagraphs.map((p: string) => ({ type: 'paragraph', text: String(p || '').trim() })),
-          bulletPoints: highlights,
+          featuredImageUrl: coverImageUrl,
+          mediaUrls: images.map((img: any) => img.url).filter(isHttpUrl),
+          content: bodyParagraphs.join('\n\n'),
+          points: highlights,
           wordCount: wordCount(bodyParagraphs.join(' ')),
-          publishedAt: effectiveStatus === 'PUBLISHED' ? new Date() : null,
-          createdAt: new Date(),
-          updatedAt: new Date()
+          charCount: bodyParagraphs.join(' ').length
         }
       });
 
@@ -377,27 +375,34 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           keywords: seoKeywords.slice(0, 10)
         });
 
+        // Build contentJson structure for TenantWebArticle
+        const contentJson = {
+          contentHtml,
+          plainText,
+          blocks: webArticle.sections || [],
+          meta: {
+            languageCode,
+            canonicalUrl
+          }
+        };
+
         tenantWebArticle = await tx.tenantWebArticle.create({
           data: {
             tenantId,
             domainId,
             authorId,
-            newspaperArticleId: newspaperArticle.id,
+            languageId,
+            categoryId,
             title: webArticle.headline || headline,
             slug: seoSlug,
-            contentHtml,
-            plainText,
-            languageCode,
-            categoryIds: categoryId ? [categoryId] : [],
+            contentJson,
             tags: seoKeywords.slice(0, 10),
             seoTitle: seoMetaTitle,
             metaDescription: seoMetaDescription,
             coverImageUrl,
             status: effectiveStatus,
             jsonLd,
-            publishedAt: effectiveStatus === 'PUBLISHED' ? new Date() : null,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            publishedAt: effectiveStatus === 'PUBLISHED' ? new Date() : null
           }
         });
       }
@@ -407,24 +412,18 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       if (shortNews.h1 || shortNews.content) {
         shortNewsRecord = await tx.shortNews.create({
           data: {
-            tenantId,
             authorId,
-            newspaperArticleId: newspaperArticle.id,
-            heading: shortNews.h1 || headline,
-            subHeading: shortNews.h2 || null,
+            title: shortNews.h1 || headline,
+            content: shortNews.content || trimWords(bodyParagraphs.join(' '), 60),
             summary: shortNews.content || trimWords(bodyParagraphs.join(' '), 60),
-            languageCode,
+            language: languageCode,
             categoryId,
-            stateId,
-            districtId,
-            mandalId,
-            villageId,
             placeName,
-            coverImageUrl,
+            featuredImage: coverImageUrl,
+            mediaUrls: images.map((img: any) => img.url).filter(isHttpUrl),
+            tags: seoKeywords.slice(0, 5),
             status: effectiveStatus,
-            publishedAt: effectiveStatus === 'PUBLISHED' ? new Date() : null,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            publishDate: effectiveStatus === 'PUBLISHED' ? new Date() : null
           }
         });
       }
@@ -444,7 +443,6 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       data: {
         newspaperArticle: {
           id: result.newspaperArticle.id,
-          externalId: result.newspaperArticle.externalId,
           title: result.newspaperArticle.title,
           status: result.newspaperArticle.status
         },
@@ -456,7 +454,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         } : null,
         shortNews: result.shortNewsRecord ? {
           id: result.shortNewsRecord.id,
-          heading: result.shortNewsRecord.heading,
+          title: result.shortNewsRecord.title,
           status: result.shortNewsRecord.status
         } : null
       }
@@ -525,6 +523,12 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Could not determine tenant' });
     }
 
+    // Role-based access control:
+    // REPORTER: only see their own articles
+    // SUPER_ADMIN, TENANT_ADMIN, DESK_EDITOR, EDITOR: see all articles for the tenant
+    const isReporter = roleName === 'REPORTER';
+    const authorFilter = isReporter ? user.id : null;
+
     // Pagination
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 20));
@@ -541,11 +545,13 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
       dateFilter.lte = to;
     }
 
-    // Build where clause
+    // Build where clause (base: tenantId, status, date, author)
+    // NOTE: domainId only applies to TenantWebArticle (not NewspaperArticle or ShortNews)
     const baseWhere: any = { tenantId };
-    if (domainId) baseWhere.domainId = String(domainId);
     if (status) baseWhere.status = String(status).toUpperCase();
     if (Object.keys(dateFilter).length > 0) baseWhere.createdAt = dateFilter;
+    // If reporter, filter by authorId
+    if (authorFilter) baseWhere.authorId = authorFilter;
 
     // Determine article type
     const articleType = String(type || 'all').toLowerCase();
@@ -558,33 +564,33 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
 
     // Fetch based on type
     if (articleType === 'all' || articleType === 'newspaper') {
+      // NewspaperArticle does NOT have domainId or publishedAt fields
+      const newspaperWhere = { ...baseWhere };
       const [items, total] = await Promise.all([
         (prisma as any).newspaperArticle.findMany({
-          where: baseWhere,
+          where: newspaperWhere,
           orderBy: { [String(sortBy)]: sortOrder === 'asc' ? 'asc' : 'desc' },
           skip: articleType === 'newspaper' ? skip : 0,
           take: articleType === 'newspaper' ? limitNum : 5,
           select: {
             id: true,
-            externalId: true,
             title: true,
             heading: true,
             status: true,
-            languageCode: true,
-            coverImageUrl: true,
+            languageId: true,
+            featuredImageUrl: true,
             createdAt: true,
-            publishedAt: true,
+            updatedAt: true,
             author: { select: { id: true, mobileNumber: true } }
           }
         }),
-        (prisma as any).newspaperArticle.count({ where: baseWhere })
+        (prisma as any).newspaperArticle.count({ where: newspaperWhere })
       ]);
       results.newspaper = { items, total, page: pageNum, limit: limitNum };
     }
 
     if (articleType === 'all' || articleType === 'web') {
       const webWhere = { ...baseWhere };
-      delete webWhere.domainId;
       if (domainId) webWhere.domainId = String(domainId);
 
       const [items, total] = await Promise.all([
@@ -598,11 +604,11 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
             title: true,
             slug: true,
             status: true,
-            languageCode: true,
+            languageId: true,
             coverImageUrl: true,
             createdAt: true,
             publishedAt: true,
-            newspaperArticleId: true
+            author: { select: { id: true, mobileNumber: true } }
           }
         }),
         (prisma as any).tenantWebArticle.count({ where: webWhere })
@@ -611,9 +617,18 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
     }
 
     if (articleType === 'all' || articleType === 'shortnews') {
-      const snWhere: any = { tenantId };
+      // ShortNews does NOT have tenantId field - filter via author.reporterProfile.tenantId
+      const snWhere: any = {
+        author: {
+          reporterProfile: {
+            tenantId
+          }
+        }
+      };
       if (status) snWhere.status = String(status).toUpperCase();
       if (Object.keys(dateFilter).length > 0) snWhere.createdAt = dateFilter;
+      // If reporter, filter by authorId directly
+      if (authorFilter) snWhere.authorId = authorFilter;
 
       const [items, total] = await Promise.all([
         (prisma as any).shortNews.findMany({
@@ -623,15 +638,14 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
           take: articleType === 'shortnews' ? limitNum : 5,
           select: {
             id: true,
-            heading: true,
-            subHeading: true,
+            title: true,
             summary: true,
             status: true,
-            languageCode: true,
-            coverImageUrl: true,
+            language: true,
+            featuredImage: true,
             createdAt: true,
-            publishedAt: true,
-            newspaperArticleId: true
+            publishDate: true,
+            author: { select: { id: true, mobileNumber: true } }
           }
         }),
         (prisma as any).shortNews.count({ where: snWhere })
@@ -772,9 +786,10 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
       });
 
     } else if (articleType === 'shortnews') {
+      // ShortNews does NOT have tenantId - only authorId
       const existing = await (prisma as any).shortNews.findUnique({
         where: { id },
-        select: { tenantId: true, authorId: true }
+        select: { authorId: true, publishDate: true }
       });
 
       if (!existing) {
@@ -787,16 +802,21 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
 
       const updateData: any = { updatedAt: new Date() };
       
-      if (payload.heading !== undefined) updateData.heading = String(payload.heading).trim();
-      if (payload.subHeading !== undefined) updateData.subHeading = String(payload.subHeading).trim();
+      // ShortNews uses 'title' not 'heading'
+      if (payload.title !== undefined) updateData.title = String(payload.title).trim();
+      if (payload.heading !== undefined) updateData.title = String(payload.heading).trim();
       if (payload.summary !== undefined) updateData.summary = trimWords(String(payload.summary).trim(), 60);
+      if (payload.content !== undefined) updateData.content = trimWords(String(payload.content).trim(), 60);
       if (payload.status !== undefined) updateData.status = String(payload.status).toUpperCase();
-      if (payload.coverImageUrl !== undefined) updateData.coverImageUrl = payload.coverImageUrl;
+      // ShortNews uses 'featuredImage' not 'coverImageUrl'
+      if (payload.coverImageUrl !== undefined) updateData.featuredImage = payload.coverImageUrl;
+      if (payload.featuredImage !== undefined) updateData.featuredImage = payload.featuredImage;
       if (payload.categoryId !== undefined) updateData.categoryId = payload.categoryId;
 
+      // ShortNews uses 'publishDate' not 'publishedAt'
       if (updateData.status === 'PUBLISHED' || updateData.status === 'APPROVED') {
-        if (!existing.publishedAt) {
-          updateData.publishedAt = new Date();
+        if (!existing.publishDate) {
+          updateData.publishDate = new Date();
         }
       }
 
@@ -805,7 +825,7 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
         data: updateData,
         select: {
           id: true,
-          heading: true,
+          title: true,
           status: true,
           updatedAt: true
         }

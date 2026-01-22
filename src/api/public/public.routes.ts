@@ -4,6 +4,13 @@ import { config } from '../../config/env';
 import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+// NEW: Public crop session imports
+import {
+  getPublicIssueWithClips,
+  createCropSession,
+  updateClipViaCropSession,
+  createClipViaCropSession,
+} from '../epaper/publicCropSession.controller';
 
 // transient any-cast for newly added delegates
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2395,40 +2402,343 @@ router.get('/entity', async (_req, res) => {
   });
 });
 
-export default router;
+// ============================================================================
+// PUBLIC CROP SESSION APIs (NEW PDF-ONLY CLIP SYSTEM)
+// ============================================================================
+
 /**
  * @swagger
- * /public/tenant:
+ * /public/epaper/issue-with-clips:
  *   get:
- *     summary: Resolve current tenant by Host/X-Tenant-Domain
- *     tags: [Public - Website, Public - Tenant]
+ *     summary: Get ePaper issue with article clips (public read-only)
+ *     description: |
+ *       Returns a PDF issue with all its article clip coordinates.
+ *       This is the primary endpoint for the new PDF-only clip system.
+ *       
+ *       **Clip coordinates are in PDF points** (1/72 inch, origin bottom-left).
+ *       Frontend should use pdf.js or similar to render clips on the PDF.
+ *       
+ *       **Lookup options**:
+ *       - By `issueId` directly
+ *       - By `editionSlug` + `date`
+ *       - By `editionSlug` + `subEditionSlug` + `date`
+ *       
+ *       **Note**: Only active clips are returned. Public-created suggestions
+ *       (source='public', isActive=false) are NOT included.
+ *       
+ *       EPAPER domain verification applies.
+ *     tags: [EPF ePaper - Public]
  *     parameters:
- *       - in: header
- *         name: X-Tenant-Domain
- *         required: false
- *         description: Optional override to resolve tenant when testing locally.
- *         schema:
- *           type: string
- *           example: manachourasta.com
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: query
+ *         name: issueId
+ *         schema: { type: string }
+ *         description: Direct issue ID lookup
+ *       - in: query
+ *         name: editionSlug
+ *         schema: { type: string }
+ *         description: Edition slug (requires date)
+ *       - in: query
+ *         name: subEditionSlug
+ *         schema: { type: string }
+ *         description: Sub-edition slug (optional, with editionSlug)
+ *       - in: query
+ *         name: date
+ *         schema: { type: string, example: "2026-01-21" }
+ *         description: Issue date YYYY-MM-DD (required with editionSlug)
+ *       - in: query
+ *         name: pageNumber
+ *         schema: { type: integer }
+ *         description: Filter clips by page number (1-based)
  *     responses:
  *       200:
- *         description: Current tenant basic info
+ *         description: Issue with clips
  *         content:
  *           application/json:
- *             examples:
- *               sample:
- *                 value:
- *                   id: "tenant1"
- *                   slug: "manachourasta"
- *                   name: "Mana Chourasta"
- *                   domain: "manachourasta.com"
- *       500:
- *         description: Domain context missing
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 issue:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string, example: "clz123abc" }
+ *                     issueDate: { type: string, format: date-time }
+ *                     dateDisplay: { type: string, example: "2026-01-21" }
+ *                     pdfUrl: { type: string, example: "https://r2.example.com/.../issue.pdf" }
+ *                     pageCount: { type: integer, example: 12 }
+ *                     pdfOnlyMode: { type: boolean, example: true }
+ *                     edition: { type: object }
+ *                     subEdition: { type: object, nullable: true }
+ *                     coverImageUrl: { type: string, nullable: true }
+ *                     coverImageUrlWebp: { type: string, nullable: true }
+ *                 clips:
+ *                   type: object
+ *                   properties:
+ *                     count: { type: integer, example: 24 }
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string }
+ *                           pageNumber: { type: integer }
+ *                           x: { type: number, description: "PDF points" }
+ *                           y: { type: number, description: "PDF points" }
+ *                           width: { type: number }
+ *                           height: { type: number }
+ *                           column: { type: string, enum: [left, right, full], nullable: true }
+ *                           title: { type: string, nullable: true }
+ *                           source: { type: string, enum: [manual, auto] }
+ *                           confidence: { type: number, nullable: true }
+ *                           assets: { type: array }
+ *       400:
+ *         description: Missing required params (issueId or editionSlug+date)
+ *       404:
+ *         description: Issue not found
  */
-router.get('/tenant', async (_req, res) => {
-  const tenant = (res.locals as any).tenant;
-  const domain = (res.locals as any).domain;
-  if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
-  const { id, slug, name } = tenant;
-  res.json({ id, slug, name, domain: domain.domain });
-});
+router.get('/epaper/issue-with-clips', requireVerifiedEpaperDomain, getPublicIssueWithClips);
+
+/**
+ * @swagger
+ * /public/epaper/crop-session:
+ *   post:
+ *     summary: Create a crop session for clip updates (public)
+ *     description: |
+ *       Creates a temporary session key that allows public users to update clip coordinates.
+ *       
+ *       **Security**:
+ *       - Session expires in **5 minutes**
+ *       - Rate limited to **max 3 operations** per session
+ *       - Can be scoped to specific clipId or issue-wide
+ *       - IP is hashed for audit (not blocking)
+ *       
+ *       **Use case**: Public reader adjusts article boundaries for better sharing,
+ *       or suggests a new article region.
+ *       
+ *       EPAPER domain verification applies.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueId]
+ *             properties:
+ *               issueId:
+ *                 type: string
+ *                 description: PDF issue ID
+ *               clipId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: "Optional: scope session to specific clip only"
+ *     responses:
+ *       201:
+ *         description: Crop session created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 cropSessionKey: { type: string, example: "abc123xyz789..." }
+ *                 expiresAt: { type: string, format: date-time, example: "2026-01-21T10:05:00.000Z" }
+ *                 expiresIn: { type: integer, example: 300, description: "Seconds until expiry" }
+ *                 issueId: { type: string }
+ *                 clipId: { type: string, nullable: true }
+ *       404:
+ *         description: Issue or clip not found
+ */
+router.post('/epaper/crop-session', requireVerifiedEpaperDomain, createCropSession);
+
+/**
+ * @swagger
+ * /public/epaper/clips/{clipId}/update:
+ *   put:
+ *     summary: Update clip via crop session (public)
+ *     description: |
+ *       Update a clip's coordinates using a valid crop session key.
+ *       
+ *       **Required header**: `X-Crop-Session: <sessionKey>`
+ *       
+ *       **Security checks**:
+ *       - Session must be valid and not expired (5-min TTL)
+ *       - Session must not exceed rate limit (max 3 operations)
+ *       - Session must match clipId (if scoped) or issue
+ *       
+ *       **Validation**:
+ *       - x, y >= 0
+ *       - width, height > 0
+ *       - x + width <= 2000, y + height <= 3000
+ *       
+ *       **Auditing**:
+ *       - Sets `updatedBy='public'`, `confidence=null`
+ *       - Previous coordinates saved to `EpaperClipHistory` table
+ *       - IP hash recorded for audit
+ *       
+ *       If coordinates change, cached clip assets are invalidated.
+ *       
+ *       EPAPER domain verification applies.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: path
+ *         name: clipId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Crop-Session
+ *         required: true
+ *         schema: { type: string }
+ *         description: Session key from POST /crop-session
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               x: { type: number, minimum: 0, description: "X coordinate (PDF points)" }
+ *               y: { type: number, minimum: 0, description: "Y coordinate (PDF points)" }
+ *               width: { type: number, minimum: 1 }
+ *               height: { type: number, minimum: 1 }
+ *               column: { type: string, enum: [left, right, full] }
+ *               title: { type: string }
+ *     responses:
+ *       200:
+ *         description: Clip updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 message: { type: string, example: "Clip updated successfully" }
+ *                 clip: { type: object }
+ *                 sessionUpdatesRemaining: { type: integer, example: 2 }
+ *       400:
+ *         description: Invalid coordinates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: "INVALID_COORDINATES" }
+ *       401:
+ *         description: Invalid, expired session
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, enum: [SESSION_REQUIRED, INVALID_SESSION, SESSION_EXPIRED] }
+ *       403:
+ *         description: Session not authorized for this clip
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: "CLIP_MISMATCH" }
+ *       429:
+ *         description: Rate limit exceeded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string, example: "Session rate limit exceeded (max 3 updates)" }
+ *                 code: { type: string, example: "RATE_LIMIT_EXCEEDED" }
+ *                 maxUpdates: { type: integer, example: 3 }
+ *                 currentCount: { type: integer }
+ */
+router.put('/epaper/clips/:clipId/update', requireVerifiedEpaperDomain, updateClipViaCropSession);
+
+/**
+ * @swagger
+ * /public/epaper/clips/create:
+ *   post:
+ *     summary: Create new clip via crop session (public suggestion)
+ *     description: |
+ *       Create a new article clip using a valid crop session key.
+ *       Session must NOT be scoped to a specific clipId.
+ *       
+ *       **Required header**: `X-Crop-Session: <sessionKey>`
+ *       
+ *       **IMPORTANT - PUBLIC CLIP POLICY**:
+ *       - Public-created clips are **SUGGESTIONS ONLY**
+ *       - `source = 'public'`, `isActive = false`
+ *       - **NOT visible** in public responses until admin activates
+ *       - Counts toward session rate limit (max 3 operations)
+ *       
+ *       **Validation**:
+ *       - x, y >= 0
+ *       - width, height > 0
+ *       - x + width <= 2000, y + height <= 3000
+ *       - pageNumber must be within issue page count
+ *       
+ *       EPAPER domain verification applies.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - in: header
+ *         name: X-Crop-Session
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pageNumber, x, y, width, height]
+ *             properties:
+ *               pageNumber: { type: integer, example: 1, minimum: 1 }
+ *               x: { type: number, example: 100, minimum: 0 }
+ *               y: { type: number, example: 200, minimum: 0 }
+ *               width: { type: number, example: 400, minimum: 1 }
+ *               height: { type: number, example: 300, minimum: 1 }
+ *               column: { type: string, enum: [left, right, full] }
+ *               title: { type: string, example: "Article I found" }
+ *     responses:
+ *       201:
+ *         description: Clip suggestion created (pending admin review)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 message: { type: string, example: "Clip suggestion created successfully (pending admin review)" }
+ *                 clip:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string }
+ *                     source: { type: string, example: "public" }
+ *                     isActive: { type: boolean, example: false }
+ *                 isPendingReview: { type: boolean, example: true }
+ *                 sessionUpdatesRemaining: { type: integer, example: 2 }
+ *       400:
+ *         description: Invalid coordinates or page number
+ *       401:
+ *         description: Invalid or expired session
+ *       403:
+ *         description: Session is scoped to existing clip (cannot create new)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: "SCOPED_SESSION" }
+ *       429:
+ *         description: Rate limit exceeded (max 3 operations per session)
+ */
+router.post('/epaper/clips/create', requireVerifiedEpaperDomain, createClipViaCropSession);
+
+export default router;

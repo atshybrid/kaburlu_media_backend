@@ -1070,7 +1070,8 @@ router.get('/homepage', async (_req, res) => {
   };
 
   // Helper to fetch extra sections (trending, most read, etc.)
-  async function fetchExtraSection(section: any) {
+  // Uses global `seen` set for deduplication to avoid repeating articles across sections
+  async function fetchExtraSection(section: any, globalSeen: Set<string>) {
     const out: any = {
       key: section.key,
       title: section.title,
@@ -1084,10 +1085,19 @@ router.get('/homepage', async (_req, res) => {
       const rows = await p.tenantWebArticle.findMany({
         where: baseWhere,
         orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
-        take: Math.min(section.limit, 50),
+        take: Math.min(section.limit * 2, 100), // Fetch extra to allow for deduplication
         include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
       });
-      out.items = rows.map(toCard);
+      // Apply deduplication: skip articles already in feeds/sections
+      const dedupedItems: any[] = [];
+      for (const r of rows) {
+        if (!r?.id) continue;
+        if (globalSeen.has(String(r.id))) continue; // Skip if already shown elsewhere
+        globalSeen.add(String(r.id)); // Mark as seen
+        dedupedItems.push(toCard(r));
+        if (dedupedItems.length >= section.limit) break;
+      }
+      out.items = dedupedItems;
     }
 
     return out;
@@ -1120,6 +1130,7 @@ router.get('/homepage', async (_req, res) => {
   // Best practice:
   // - Always include shared domain content (domainId=null)
   // - When a language is requested, also include rows with languageId=null (legacy/unknown language)
+  // - Include articles where aiApprovalStatus is null (not reviewed), AI_APPROVED, or author is admin/superadmin
   const baseAnd: any[] = [];
   if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) baseAnd.push(domainScope);
   if (languageId) baseAnd.push({ OR: [{ languageId }, { languageId: null }] });
@@ -1128,6 +1139,17 @@ router.get('/homepage', async (_req, res) => {
   if (allowedCategoryIds.size) {
     baseAnd.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
   }
+  // AI Approval filter: include articles that are:
+  // 1. Not yet reviewed (aiApprovalStatus = null) - superadmin/editor manual posts
+  // 2. Approved by AI (aiApprovalStatus = 'AI_APPROVED')
+  // 3. Posted by SUPERADMIN/ADMIN/EDITOR (auto-approve their posts)
+  baseAnd.push({
+    OR: [
+      { aiApprovalStatus: null },
+      { aiApprovalStatus: 'AI_APPROVED' },
+      { author: { role: { name: { in: ['SUPERADMIN', 'ADMIN', 'EDITOR'] } } } }
+    ]
+  });
   const baseWhere: any = { tenantId: tenant.id, status: 'PUBLISHED' };
   if (baseAnd.length) baseWhere.AND = baseAnd;
 
@@ -1605,9 +1627,14 @@ router.get('/homepage', async (_req, res) => {
     const configuredKeys = new Set(sections.map(s => (s as any).key || (s as any).id));
     const additionalSections = [];
 
+    // Also add articles from feeds to the global 'seen' set to avoid duplication in extra sections
+    for (const item of feeds.latest.items) if (item?.id) seen.add(String(item.id));
+    for (const item of feeds.mostRead.items) if (item?.id) seen.add(String(item.id));
+    for (const item of feeds.ticker.items) if (item?.id) seen.add(String(item.id));
+
     for (const extraSection of extraSections) {
       if (!configuredKeys.has(extraSection.key)) {
-        const sectionData = await fetchExtraSection(extraSection);
+        const sectionData = await fetchExtraSection(extraSection, seen);
         sections.push(sectionData);
         data[extraSection.key] = sectionData.items;
         additionalSections.push(sectionData);
@@ -2680,7 +2707,7 @@ router.get('/homepage', async (_req, res) => {
 
   for (const extraSection of extraSections) {
     if (!configuredKeys.has(extraSection.key)) {
-      const sectionData = await fetchExtraSection(extraSection);
+      const sectionData = await fetchExtraSection(extraSection, usedArticleIds);
       sectionRows.push({
         key: sectionData.key,
         title: sectionData.title,

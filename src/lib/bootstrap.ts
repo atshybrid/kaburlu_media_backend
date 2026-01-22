@@ -430,19 +430,31 @@ export async function ensureCoreSeeds() {
   }
   console.log('[Bootstrap] 7. Reporter designations done');
 
-  // 8. Default AI Prompts (create missing only)
-  // Ensures critical prompt keys exist after DB reset/new DB.
-  // Non-destructive: never overwrite existing prompt content.
+  // 8. Default AI Prompts (create missing + update existing)
+  // Ensures critical prompt keys exist and are up-to-date after DB reset/new DB.
+  // This now UPDATES existing prompts to sync with code changes.
   try {
     const keys = DEFAULT_PROMPTS.map(p => p.key);
-    const existing = await (prisma as any).prompt?.findMany?.({ where: { key: { in: keys } }, select: { key: true } }).catch(() => [] as any);
-    const existingKeys = new Set((existing as any[]).map(r => String(r?.key)));
-    const missing = DEFAULT_PROMPTS.filter(p => !existingKeys.has(p.key));
+    const existing = await (prisma as any).prompt?.findMany?.({ where: { key: { in: keys } }, select: { key: true, content: true } }).catch(() => [] as any);
+    const existingByKey = new Map((existing as any[]).map(r => [String(r?.key), r] as const));
+    
+    const missing = DEFAULT_PROMPTS.filter(p => !existingByKey.has(p.key));
     if (missing.length) {
       await (prisma as any).prompt?.createMany?.({
         data: missing.map(p => ({ key: p.key, content: p.content, description: p.description || null })),
         skipDuplicates: true,
       });
+    }
+    
+    // Update existing prompts if content has changed
+    for (const p of DEFAULT_PROMPTS) {
+      const existingPrompt = existingByKey.get(p.key);
+      if (existingPrompt && existingPrompt.content !== p.content) {
+        await (prisma as any).prompt?.update?.({
+          where: { key: p.key },
+          data: { content: p.content, description: p.description || null }
+        }).catch(() => { /* ignore */ });
+      }
     }
   } catch {
     // best-effort

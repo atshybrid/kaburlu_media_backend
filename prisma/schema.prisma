@@ -662,7 +662,14 @@ model EpaperPdfIssue {
   coverImageUrlWebp String?
   pageCount     Int @default(0)
 
+  /// Whether this issue uses the new PDF-only mode (no pre-generated page images)
+  pdfOnlyMode Boolean @default(false)
+
   pages EpaperPdfPage[]
+  /// Article clips defined on this issue (new clip-based system)
+  clips EpaperArticleClip[]
+  /// Public crop sessions for this issue
+  cropSessions PublicCropSession[]
 
   uploadedByUserId String?
 
@@ -691,6 +698,151 @@ model EpaperPdfPage {
 
   @@unique([issueId, pageNumber])
   @@index([issueId])
+}
+
+/// Article clip coordinates within a PDF page (PDF coordinate system).
+/// This is the HEART of the new clip-based ePaper system.
+/// Coordinates are stored in PDF points (1/72 inch), NOT pixels.
+model EpaperArticleClip {
+  id      String @id @default(cuid())
+  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId String
+
+  pageNumber Int
+
+  /// PDF coordinates (in points, origin at bottom-left of page)
+  x      Float
+  y      Float
+  width  Float
+  height Float
+
+  /// Optional column hint for layout: 'left', 'right', 'full', or null
+  column String?
+
+  /// Detection source: 'auto' (AI/algorithm) or 'manual' (editor)
+  source String @default("manual")
+
+  /// Confidence score for auto-detected clips (0.0 - 1.0)
+  confidence Float?
+
+  /// Whether this clip is active/visible
+  isActive Boolean @default(true)
+
+  /// Who created/updated: 'system', 'editor', 'public'
+  createdBy String @default("editor")
+  updatedBy String @default("editor")
+
+  /// Optional title/label for the clip
+  title String?
+
+  /// Optional article link or reference
+  articleRef String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Soft delete timestamp (null = active)
+  deletedAt DateTime?
+
+  assets EpaperClipAsset[]
+  cropSessions PublicCropSession[]
+  history EpaperClipHistory[]
+
+  @@index([issueId])
+  @@index([issueId, pageNumber])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+/// Cached clip image assets (generated on-demand, not at upload time).
+/// These are derived from PDF + clip coordinates when needed for sharing.
+model EpaperClipAsset {
+  id     String @id @default(cuid())
+  clip   EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clipId String
+
+  /// Asset type: 'webp', 'jpeg', 'png'
+  type String
+
+  /// Public URL of the cached image
+  url String
+
+  /// File size in bytes (for analytics)
+  sizeBytes Int?
+
+  generatedAt DateTime @default(now())
+
+  @@unique([clipId, type])
+  @@index([clipId])
+}
+
+/// Temporary session for public users to update clip coordinates.
+/// Provides secure, time-limited access without full auth.
+/// TTL = 5 minutes by default.
+model PublicCropSession {
+  id         String @id @default(cuid())
+  sessionKey String @unique @default(cuid())
+
+  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId String
+
+  clip   EpaperArticleClip? @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clipId String?
+
+  /// Session expiry time (default: createdAt + 5 minutes)
+  expiresAt DateTime
+
+  /// Whether session has been used (one-time use)
+  used Boolean @default(false)
+
+  /// Number of updates made via this session (rate limiting: max 3)
+  updateCount Int @default(0)
+
+  /// Security: hashed IP for audit
+  ipHash String?
+
+  /// Security: user agent for audit
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionKey])
+  @@index([issueId])
+  @@index([expiresAt])
+}
+
+/// Audit history for clip coordinate changes (especially public updates).
+/// Used to track who changed what and when.
+model EpaperClipHistory {
+  id     String @id @default(cuid())
+  clip   EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clipId String
+
+  /// Previous coordinates before the change
+  previousX      Float
+  previousY      Float
+  previousWidth  Float
+  previousHeight Float
+
+  /// New coordinates after the change
+  newX      Float
+  newY      Float
+  newWidth  Float
+  newHeight Float
+
+  /// Who made the change: 'editor', 'public', 'system'
+  changedBy String
+
+  /// Optional crop session ID for public updates
+  cropSessionId String?
+
+  /// IP hash for public updates (audit)
+  ipHash String?
+
+  createdAt DateTime @default(now())
+
+  @@index([clipId])
+  @@index([changedBy])
+  @@index([createdAt])
 }
 
 /// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)

@@ -57,6 +57,16 @@ import {
   deleteIssue,
   checkIssueExists,
 } from './issueManagement.controller';
+// NEW: Clip management imports
+import {
+  listClipsForIssue,
+  getClip,
+  createClip,
+  updateClip,
+  deleteClip,
+  bulkCreateClips,
+  detectClips,
+} from './clips.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -1601,19 +1611,23 @@ router.delete('/publication-sub-editions/:id', auth, deletePublicationSubEdition
  *   post:
  *     summary: Upload/replace a PDF-based ePaper issue
  *     description: |
- *       Admin-only.
+ *       Admin-only. **PDF-only mode is now the default** (no image generation).
  *
  *       Rules:
  *       - Provide exactly one: editionId OR subEditionId
- *       - One PDF per (tenant + date + target). Re-upload replaces existing and regenerates PNG pages.
- *       - Page 1 becomes coverImageUrl.
+ *       - One PDF per (tenant + date + target). Re-upload replaces existing.
+ *       - PDF is stored, page count is extracted from PDF header.
+ *       - Use `generateImages=true` for legacy mode (generates PNG/WebP per page).
+ *
+ *       **Coordinate System** (for clips):
+ *       - PDF points (1 pt = 1/72 inch)
+ *       - Origin: bottom-left of page
+ *       - Letter page: 612 x 792 points
  *
  *       Validation:
  *       - `issueDate` must be YYYY-MM-DD
- *       - Uploaded file must be a PDF
- *
- *       Requires Poppler `pdftoppm` available on the server (or set PDFTOPPM_PATH).
- *     tags: [EPF ePaper - Admin]
+ *       - Uploaded file must be a PDF (max 30MB)
+ *     tags: [EPF ePaper PDF Issues - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -1631,36 +1645,71 @@ router.delete('/publication-sub-editions/:id', auth, deletePublicationSubEdition
  *               pdf:
  *                 type: string
  *                 format: binary
+ *                 description: PDF file (max 30MB)
  *               issueDate:
  *                 type: string
- *                 example: "2026-01-12"
+ *                 example: "2026-01-21"
+ *                 description: Issue date in YYYY-MM-DD format
  *               editionId:
  *                 type: string
+ *                 description: Edition ID (provide one of editionId or subEditionId)
  *               subEditionId:
  *                 type: string
+ *                 description: Sub-edition ID (provide one of editionId or subEditionId)
+ *               generateImages:
+ *                 type: boolean
+ *                 default: false
+ *                 example: true
+ *                 description: |
+ *                   **Legacy image generation mode:**
+ *                   - `false` (default): PDF-only mode, no images generated, uses clip coordinates
+ *                   - `true`: Generates PNG/WebP images for each page (imageUrl, imageUrlWebp, thumbnailUrl, thumbnailUrlWebp)
+ *                   
+ *                   Use `true` for OLD flow (PDF → PNG/WebP per page for flipbook-style viewers).
  *     responses:
  *       201:
- *         description: Uploaded/replaced
+ *         description: Uploaded/replaced successfully
  *         content:
  *           application/json:
- *             examples:
- *               sample:
- *                 value:
- *                   ok: true
- *                   issue:
- *                     id: "iss_1"
- *                     tenantId: "t_abc"
- *                     issueDate: "2026-01-12T00:00:00.000Z"
- *                     editionId: "ed_1"
- *                     subEditionId: null
- *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
- *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
- *                     pageCount: 12
- *                     pages: []
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 issue:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string, example: "clz123abc" }
+ *                     tenantId: { type: string, example: "tenant_xyz" }
+ *                     issueDate: { type: string, example: "2026-01-21T00:00:00.000Z" }
+ *                     pdfUrl: { type: string, example: "https://r2.example.com/epaper/.../issue.pdf" }
+ *                     pageCount: { type: integer, example: 12 }
+ *                     pdfOnlyMode: { type: boolean, example: true, description: "false when generateImages=true" }
+ *                     edition: { type: object }
+ *                     subEdition: { type: object, nullable: true }
+ *                     clips: { type: array, items: { type: object }, description: "Article clips (PDF-only mode)" }
+ *                     pages:
+ *                       type: array
+ *                       description: "Only present when generateImages=true (OLD flow)"
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           pageNumber: { type: integer, example: 1 }
+ *                           imageUrl: { type: string, example: "https://r2.../page-1.png" }
+ *                           imageUrlWebp: { type: string, example: "https://r2.../page-1.webp" }
+ *                           thumbnailUrl: { type: string, example: "https://r2.../page-1-thumb.png" }
+ *                           thumbnailUrlWebp: { type: string, example: "https://r2.../page-1-thumb.webp" }
+ *                 uploaded:
+ *                   type: object
+ *                   properties:
+ *                     pdfUrl: { type: string }
+ *                     pageCount: { type: integer }
+ *                     pdfOnlyMode: { type: boolean, description: "false = images generated, true = PDF only" }
  *       400:
  *         description: Validation error (missing target / invalid date / not a PDF)
  *       403:
  *         description: Tenant override not allowed (non-superadmin)
+ *       413:
+ *         description: PDF too large (max 30MB)
  */
 router.post('/pdf-issues/upload', auth, upload.single('pdf'), uploadPdfIssue);
 
@@ -1670,24 +1719,20 @@ router.post('/pdf-issues/upload', auth, upload.single('pdf'), uploadPdfIssue);
  *   post:
  *     summary: Upload/replace a PDF-based ePaper issue by URL
  *     description: |
- *       Admin-only.
+ *       Admin-only. **PDF-only mode is now the default** (no image generation).
  *
- *       Use this when your frontend already uploaded the PDF to Bunny (or any public URL)
- *       and you want the backend to fetch it, convert to PNG pages, and upsert the daily issue.
+ *       Use this when your frontend already uploaded the PDF to CDN/storage
+ *       and you want the backend to fetch it and upsert the daily issue.
  *
  *       Rules:
  *       - Provide exactly one: editionId OR subEditionId
- *       - One PDF per (tenant + date + target). Re-run replaces existing and regenerates PNG pages.
- *       - Page 1 becomes coverImageUrl.
- *
- *       Validation:
- *       - `issueDate` must be YYYY-MM-DD
- *       - `pdfUrl` must be a public http/https URL that returns a real PDF
+ *       - One PDF per (tenant + date + target). Re-run replaces existing.
+ *       - Use `generateImages=true` for legacy mode (generates PNG/WebP per page).
  *
  *       Security:
  *       - Only http/https URLs allowed
  *       - Local/private hosts are rejected
- *     tags: [EPF ePaper - Admin]
+ *     tags: [EPF ePaper PDF Issues - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -1702,51 +1747,65 @@ router.post('/pdf-issues/upload', auth, upload.single('pdf'), uploadPdfIssue);
  *             type: object
  *             required: [pdfUrl, issueDate]
  *             properties:
- *               tenantId:
- *                 type: string
- *                 description: SUPER_ADMIN only (alternative to query tenantId)
  *               pdfUrl:
  *                 type: string
- *                 example: "https://kaburlu-news.b-cdn.net/epaper/pdfs/2026/01/12/telangana.pdf"
+ *                 example: "https://cdn.example.com/newspaper-2026-01-21.pdf"
+ *                 description: Public URL of the PDF file
  *               issueDate:
  *                 type: string
- *                 example: "2026-01-12"
+ *                 example: "2026-01-21"
+ *                 description: Issue date in YYYY-MM-DD format
  *               editionId:
  *                 type: string
+ *                 description: Edition ID (provide one of editionId or subEditionId)
  *               subEditionId:
  *                 type: string
+ *                 description: Sub-edition ID
+ *               generateImages:
+ *                 type: boolean
+ *                 default: false
+ *                 example: true
+ *                 description: |
+ *                   **Legacy image generation mode:**
+ *                   - `false` (default): PDF-only mode, no images generated
+ *                   - `true`: Generates PNG/WebP images for each page
+ *                   
+ *                   Use `true` for OLD flow (PDF → PNG/WebP per page).
  *     responses:
  *       201:
- *         description: Uploaded/replaced
+ *         description: Uploaded/replaced successfully
  *         content:
  *           application/json:
- *             examples:
- *               editionTarget:
- *                 summary: Create/replace an edition-level issue
- *                 value:
- *                   ok: true
- *                   issue:
- *                     id: "iss_1"
- *                     issueDate: "2026-01-12T00:00:00.000Z"
- *                     editionId: "ed_1"
- *                     subEditionId: null
- *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/telangana.pdf"
- *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/p1.png"
- *                     pageCount: 12
- *               subEditionTarget:
- *                 summary: Create/replace a sub-edition issue
- *                 value:
- *                   ok: true
- *                   issue:
- *                     id: "iss_2"
- *                     issueDate: "2026-01-12T00:00:00.000Z"
- *                     editionId: null
- *                     subEditionId: "sub_1"
- *                     pdfUrl: "https://cdn.example.com/epaper/pdfs/2026/01/12/adilabad.pdf"
- *                     coverImageUrl: "https://cdn.example.com/epaper/pages/2026/01/12/telangana/adilabad/p1.png"
- *                     pageCount: 8
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 issue:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string }
+ *                     issueDate: { type: string }
+ *                     pdfUrl: { type: string }
+ *                     pageCount: { type: integer }
+ *                     pdfOnlyMode: { type: boolean, description: "false when generateImages=true" }
+ *                     pages:
+ *                       type: array
+ *                       description: "Only present when generateImages=true"
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           pageNumber: { type: integer }
+ *                           imageUrl: { type: string }
+ *                           imageUrlWebp: { type: string }
+ *                           thumbnailUrl: { type: string }
+ *                           thumbnailUrlWebp: { type: string }
+ *                 uploaded: { type: object }
+ *                 source:
+ *                   type: object
+ *                   properties:
+ *                     pdfUrl: { type: string }
  *       400:
- *         description: Validation error (missing target / invalid URL / invalid date)
+ *         description: Validation error (invalid URL / invalid date)
  *       403:
  *         description: Tenant override not allowed (non-superadmin)
  */
@@ -2313,5 +2372,395 @@ router.get('/issues/check-exists', auth, checkIssueExists);
  *         description: Issue not found
  */
 router.delete('/issues/:id', auth, deleteIssue);
+
+// ============================================================================
+// ARTICLE CLIP MANAGEMENT (NEW PDF-ONLY SYSTEM)
+// ============================================================================
+
+/**
+ * @swagger
+ * /epaper/issues/{issueId}/clips:
+ *   get:
+ *     summary: List all clips for an issue
+ *     description: |
+ *       Get all article clips defined on a PDF issue.
+ *       Clips contain PDF coordinates (x, y, width, height in points).
+ *       
+ *       **PDF Coordinate System**:
+ *       - Origin: bottom-left of page
+ *       - Units: points (1 pt = 1/72 inch)
+ *       - Letter page: 612 × 792 points
+ *       - A4 page: 595 × 842 points
+ *       
+ *       **Clip Sources**:
+ *       - `manual` = editor-created
+ *       - `auto` = AI/algorithm detected
+ *       - `public` = user suggestion (pending review)
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema: { type: string }
+ *         description: PDF issue ID
+ *       - in: query
+ *         name: pageNumber
+ *         schema: { type: integer }
+ *         description: Filter by page number (1-based)
+ *       - in: query
+ *         name: includeInactive
+ *         schema: { type: boolean, default: false }
+ *         description: Include soft-deleted/inactive clips
+ *     responses:
+ *       200:
+ *         description: List of clips
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 issueId: { type: string }
+ *                 pdfUrl: { type: string }
+ *                 pageCount: { type: integer }
+ *                 pdfOnlyMode: { type: boolean }
+ *                 count: { type: integer }
+ *                 clips:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       pageNumber: { type: integer }
+ *                       x: { type: number, description: "X coordinate (PDF points)" }
+ *                       y: { type: number, description: "Y coordinate (PDF points)" }
+ *                       width: { type: number }
+ *                       height: { type: number }
+ *                       column: { type: string, enum: [left, right, full], nullable: true }
+ *                       title: { type: string, nullable: true }
+ *                       source: { type: string, enum: [manual, auto, public] }
+ *                       confidence: { type: number, nullable: true }
+ *                       isActive: { type: boolean }
+ *                       createdBy: { type: string }
+ *                       assets: { type: array, items: { type: object } }
+ *       404:
+ *         description: Issue not found
+ */
+router.get('/issues/:issueId/clips', auth, listClipsForIssue);
+
+/**
+ * @swagger
+ * /epaper/issues/{issueId}/clips/bulk:
+ *   post:
+ *     summary: Bulk create clips for an issue
+ *     description: |
+ *       Create multiple clips at once (from auto-detection or import).
+ *       
+ *       **Validation**:
+ *       - x, y >= 0
+ *       - width, height > 0
+ *       - x + width <= 2000 (max page width)
+ *       - y + height <= 3000 (max page height)
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [clips]
+ *             properties:
+ *               source:
+ *                 type: string
+ *                 enum: [manual, auto, import]
+ *                 default: manual
+ *                 description: Source of clips
+ *               createdBy:
+ *                 type: string
+ *                 enum: [editor, system]
+ *                 default: editor
+ *               clips:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [pageNumber, x, y, width, height]
+ *                   properties:
+ *                     pageNumber: { type: integer, example: 1 }
+ *                     x: { type: number, example: 0, description: "X (PDF points)" }
+ *                     y: { type: number, example: 396, description: "Y (PDF points)" }
+ *                     width: { type: number, example: 306 }
+ *                     height: { type: number, example: 396 }
+ *                     column: { type: string, enum: [left, right, full] }
+ *                     title: { type: string }
+ *                     confidence: { type: number, example: 0.85 }
+ *           examples:
+ *             twoColumns:
+ *               summary: Two-column layout
+ *               value:
+ *                 source: "import"
+ *                 clips:
+ *                   - { pageNumber: 1, x: 0, y: 0, width: 306, height: 792, column: "left" }
+ *                   - { pageNumber: 1, x: 306, y: 0, width: 306, height: 792, column: "right" }
+ *     responses:
+ *       201:
+ *         description: Clips created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 count: { type: integer }
+ *                 clips: { type: array, items: { type: object } }
+ *       400:
+ *         description: Validation error (invalid coordinates)
+ */
+router.post('/issues/:issueId/clips/bulk', auth, bulkCreateClips);
+
+/**
+ * @swagger
+ * /epaper/clips:
+ *   post:
+ *     summary: Create a new clip (manual)
+ *     description: |
+ *       Create a single article clip with PDF coordinates.
+ *       
+ *       **Coordinate Validation**:
+ *       - x, y >= 0
+ *       - width, height > 0  
+ *       - x + width <= 2000, y + height <= 3000
+ *       
+ *       **Example coordinates** (Letter page 612×792):
+ *       - Left half: x=0, y=0, width=306, height=792
+ *       - Top-right quadrant: x=306, y=396, width=306, height=396
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueId, pageNumber, x, y, width, height]
+ *             properties:
+ *               issueId: { type: string, description: "PDF issue ID" }
+ *               pageNumber: { type: integer, example: 1, minimum: 1 }
+ *               x: { type: number, example: 0, minimum: 0, description: "X coordinate (PDF points)" }
+ *               y: { type: number, example: 396, minimum: 0, description: "Y coordinate (PDF points)" }
+ *               width: { type: number, example: 306, minimum: 1, description: "Width (PDF points)" }
+ *               height: { type: number, example: 396, minimum: 1, description: "Height (PDF points)" }
+ *               column: { type: string, enum: [left, right, full], nullable: true }
+ *               title: { type: string, nullable: true, example: "Breaking News" }
+ *               articleRef: { type: string, nullable: true, description: "Reference to linked article" }
+ *           examples:
+ *             leftHalf:
+ *               summary: Left half of page
+ *               value:
+ *                 issueId: "clz123abc"
+ *                 pageNumber: 1
+ *                 x: 0
+ *                 y: 0
+ *                 width: 306
+ *                 height: 792
+ *                 column: "left"
+ *                 title: "Main Headline"
+ *     responses:
+ *       201:
+ *         description: Clip created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 clip: { type: object }
+ *       400:
+ *         description: Invalid coordinates or missing fields
+ *       404:
+ *         description: Issue not found
+ */
+router.post('/clips', auth, createClip);
+
+/**
+ * @swagger
+ * /epaper/clips/{clipId}:
+ *   get:
+ *     summary: Get single clip by ID
+ *     description: Returns full clip details including cached assets.
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: clipId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Clip details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 clip:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string }
+ *                     issueId: { type: string }
+ *                     pageNumber: { type: integer }
+ *                     x: { type: number }
+ *                     y: { type: number }
+ *                     width: { type: number }
+ *                     height: { type: number }
+ *                     column: { type: string, nullable: true }
+ *                     title: { type: string, nullable: true }
+ *                     source: { type: string }
+ *                     confidence: { type: number, nullable: true }
+ *                     isActive: { type: boolean }
+ *                     deletedAt: { type: string, nullable: true }
+ *                     issue: { type: object }
+ *                     assets: { type: array }
+ *       404:
+ *         description: Clip not found
+ */
+router.get('/clips/:clipId', auth, getClip);
+
+/**
+ * @swagger
+ * /epaper/clips/{clipId}:
+ *   put:
+ *     summary: Update a clip (Admin)
+ *     description: |
+ *       Update clip coordinates or metadata.
+ *       If coordinates change, cached clip assets are automatically invalidated.
+ *       
+ *       **Partial update**: Only provided fields are updated.
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: clipId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               pageNumber: { type: integer, minimum: 1 }
+ *               x: { type: number, minimum: 0 }
+ *               y: { type: number, minimum: 0 }
+ *               width: { type: number, minimum: 1 }
+ *               height: { type: number, minimum: 1 }
+ *               column: { type: string, enum: [left, right, full], nullable: true }
+ *               title: { type: string, nullable: true }
+ *               articleRef: { type: string, nullable: true }
+ *               isActive: { type: boolean, description: "Set false to hide clip" }
+ *     responses:
+ *       200:
+ *         description: Clip updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 clip: { type: object }
+ *       400:
+ *         description: Invalid coordinates
+ *       404:
+ *         description: Clip not found
+ */
+router.put('/clips/:clipId', auth, updateClip);
+
+/**
+ * @swagger
+ * /epaper/clips/{clipId}:
+ *   delete:
+ *     summary: Delete a clip (Soft Delete)
+ *     description: |
+ *       Soft-deletes a clip by setting `isActive=false` and `deletedAt` timestamp.
+ *       Data is preserved for audit/recovery.
+ *       
+ *       **Note**: This is NOT a hard delete. Use for reversible removal.
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: clipId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Clip soft-deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 softDeleted:
+ *                   type: object
+ *                   properties:
+ *                     clipId: { type: string }
+ *                     deletedAt: { type: string, format: date-time }
+ *       404:
+ *         description: Clip not found
+ */
+router.delete('/clips/:clipId', auth, deleteClip);
+
+/**
+ * @swagger
+ * /epaper/clips/detect:
+ *   post:
+ *     summary: Auto-detect article clips from PDF
+ *     description: |
+ *       Analyze a PDF issue and automatically detect article regions.
+ *       Creates `EpaperArticleClip` records with `source='auto'`.
+ *       
+ *       **Safety**: Before creating new auto-detected clips, existing auto clips
+ *       for this issue are soft-deactivated to prevent duplicates.
+ *       
+ *       **Note**: Current implementation is a placeholder that creates
+ *       simple two-column clips. Production version requires PDF analysis library.
+ *     tags: [EPF ePaper Clips - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueId]
+ *             properties:
+ *               issueId: { type: string, description: "PDF issue to analyze" }
+ *     responses:
+ *       200:
+ *         description: Detection results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 message: { type: string }
+ *                 issueId: { type: string }
+ *                 pdfUrl: { type: string }
+ *                 pageCount: { type: integer }
+ *                 clipsCreated: { type: integer }
+ *                 clips: { type: array, items: { type: object } }
+ *                 note: { type: string }
+ *       404:
+ *         description: Issue not found
+ */
+router.post('/clips/detect', auth, detectClips);
 
 export default router;

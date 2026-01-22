@@ -73,7 +73,10 @@ const swaggerDefinition = {
     { name: 'Webhooks' },
     { name: 'Health', description: 'System and provider readiness checks' },
     // ePaper Module tags
-    { name: 'EPF ePaper - Admin', description: 'ePaper management endpoints - Settings, Editions, Sub-editions, PDF Issues, Domain Settings, and Issue Management (SUPER_ADMIN & DESK_EDITOR)' },
+    { name: 'ePaper Domain Settings - Admin', description: 'ePaper domain configuration and settings management (SUPER_ADMIN & DESK_EDITOR)' },
+    { name: 'EPF ePaper - Admin', description: 'ePaper editions and sub-editions management (SUPER_ADMIN & DESK_EDITOR)' },
+    { name: 'EPF ePaper PDF Issues - Admin', description: 'PDF-based ePaper issue upload and management - Upload PDFs, manage issues by date/edition (SUPER_ADMIN & DESK_EDITOR)' },
+    { name: 'EPF ePaper Clips - Admin', description: 'Article clip management for PDF issues - Create, update, delete article regions with coordinates (SUPER_ADMIN & DESK_EDITOR)' },
     { name: 'EPF ePaper - Public', description: 'Public ePaper endpoints - Latest issues, editions list, and PDF page delivery' },
     { name: 'Block ePaper - Admin', description: 'Block-based ePaper templates and layout generation (Admin only)' }
   ],

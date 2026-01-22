@@ -69,6 +69,7 @@ import epaperRoutes from './api/epaper/epaper.routes';
 import proofsRoutes from './api/proofs/proofs.routes';
 import aiHealthRoutes from './api/health/ai.routes';
 import articlesUnifiedRoutes from './api/articles/unified.routes';
+import reporterArticlesRoutes from './api/articles/reporter.routes';
 
 const app = express();
 
@@ -235,9 +236,10 @@ app.use('/health', aiHealthRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
+apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creation (MUST be before articlesRoutes to avoid /:id catching /unified)
 apiV1.use('/articles', articlesRoutes);
-apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creation
 apiV1.use('/articles/read', articleReadRoutes);
+apiV1.use('/reporter', reporterArticlesRoutes);  // Reporter dashboard - own articles only (authorId from JWT)
 apiV1.use('/shortnews', shortNewsRoutes);
 apiV1.use('/shortnews/read', shortNewsReadRoutes);
 apiV1.use('/likes', (_req, res) => {

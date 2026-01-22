@@ -288,6 +288,151 @@ async function upsertPdfIssueFromBuffer(params: {
   };
 }
 
+/**
+ * NEW: PDF-Only mode upload - stores PDF without generating page images.
+ * This is the recommended approach for the new clip-based system.
+ * Page images are generated on-demand when clips are shared.
+ */
+async function upsertPdfIssueFromBufferPdfOnly(params: {
+  tenantId: string;
+  userId: string;
+  issueDateStr: string;
+  issueDate: Date;
+  editionId: string | null;
+  subEditionId: string | null;
+  pdfBuffer: Buffer;
+  sourcePdfUrl?: string;
+}) {
+  const { tenantId, userId, issueDateStr, issueDate, editionId, subEditionId, pdfBuffer } = params;
+
+  let targetType: 'edition' | 'sub-edition' = 'edition';
+  let targetId = editionId || '';
+
+  if (subEditionId) {
+    targetType = 'sub-edition';
+    targetId = subEditionId;
+    const sub = await p.epaperPublicationSubEdition.findFirst({
+      where: { id: subEditionId, tenantId, isDeleted: false },
+      select: { id: true },
+    });
+    if (!sub) throw new HttpError(404, 'Sub-edition not found', 'SUB_EDITION_NOT_FOUND');
+  } else if (editionId) {
+    const ed = await p.epaperPublicationEdition.findFirst({
+      where: { id: editionId, tenantId, isDeleted: false },
+      select: { id: true },
+    });
+    if (!ed) throw new HttpError(404, 'Edition not found', 'EDITION_NOT_FOUND');
+  }
+
+  const keys = buildIssueKey({ tenantId, targetType, targetId, date: issueDateStr });
+
+  // 1) Upload PDF only - NO image conversion
+  const pdfUpload = await putPublicObject({
+    key: keys.pdfKey,
+    body: pdfBuffer,
+    contentType: 'application/pdf',
+  });
+
+  // 2) Get page count from PDF without converting (using pdf-lib or similar)
+  let pageCount = 0;
+  try {
+    // Simple page count extraction from PDF header/structure
+    // For accurate count, use pdf-lib or pdfjs-dist
+    const pdfStr = pdfBuffer.toString('latin1');
+    const countMatch = pdfStr.match(/\/Count\s+(\d+)/g);
+    if (countMatch && countMatch.length > 0) {
+      const counts = countMatch.map(m => parseInt(m.replace('/Count ', ''), 10)).filter(n => !isNaN(n));
+      pageCount = Math.max(...counts, 0);
+    }
+    // Fallback: try another pattern
+    if (pageCount === 0) {
+      const typeMatch = pdfStr.match(/\/Type\s*\/Page[^s]/g);
+      if (typeMatch) pageCount = typeMatch.length;
+    }
+  } catch (e) {
+    console.warn('Could not extract page count from PDF:', e);
+    pageCount = 0; // Will be updated when clips are created or PDF is analyzed
+  }
+
+  console.log(`✓ PDF-only mode: Uploading PDF with ${pageCount} pages (no image generation)`);
+
+  // 3) Upsert DB record (PDF-only mode)
+  const existing = await p.epaperPdfIssue.findFirst({
+    where: {
+      tenantId,
+      issueDate,
+      editionId: editionId ? editionId : null,
+      subEditionId: subEditionId ? subEditionId : null,
+    },
+    select: { id: true, pageCount: true, pdfOnlyMode: true },
+  });
+
+  if (existing) {
+    console.log(`⚠️  Replacing existing issue: ${existing.id} for date ${issueDateStr} (PDF-only mode)`);
+  } else {
+    console.log(`✓ Creating new issue for date ${issueDateStr} (PDF-only mode)`);
+  }
+
+  const issue = await prisma.$transaction(async (tx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t: any = tx;
+    if (existing?.id) {
+      // For PDF-only mode, don't delete old pages (legacy support)
+      // Just update the issue record
+      const updated = await t.epaperPdfIssue.update({
+        where: { id: existing.id },
+        data: {
+          pdfUrl: pdfUpload.publicUrl,
+          pageCount: pageCount || existing.pageCount,
+          uploadedByUserId: userId || null,
+          editionId: editionId || null,
+          subEditionId: subEditionId || null,
+          pdfOnlyMode: true,
+          // Clear cover images - they'll be generated on-demand
+          coverImageUrl: null,
+          coverImageUrlWebp: null,
+        },
+      });
+      return updated;
+    }
+
+    const created = await t.epaperPdfIssue.create({
+      data: {
+        tenantId,
+        issueDate,
+        editionId: editionId || null,
+        subEditionId: subEditionId || null,
+        pdfUrl: pdfUpload.publicUrl,
+        pageCount,
+        uploadedByUserId: userId || null,
+        pdfOnlyMode: true,
+        coverImageUrl: null,
+        coverImageUrlWebp: null,
+      },
+    });
+
+    return created;
+  });
+
+  const full = await p.epaperPdfIssue.findUnique({
+    where: { id: issue.id },
+    include: {
+      edition: { select: { id: true, name: true, slug: true } },
+      subEdition: { select: { id: true, name: true, slug: true } },
+      clips: { where: { isActive: true }, orderBy: { pageNumber: 'asc' } },
+    },
+  });
+
+  return {
+    issue: full,
+    uploaded: {
+      pdfUrl: pdfUpload.publicUrl,
+      pageCount,
+      pdfOnlyMode: true,
+    },
+  };
+}
+
 // Use shared admin tenant resolver for consistent overrides
 const getTenantContext = resolveAdminTenantContext;
 
@@ -341,6 +486,8 @@ export const uploadPdfIssue = async (req: Request, res: Response) => {
     const issueDateStr = asString((req.body as any).issueDate);
     const editionId = (req.body as any).editionId ? asString((req.body as any).editionId) : null;
     const subEditionId = (req.body as any).subEditionId ? asString((req.body as any).subEditionId) : null;
+    // LEGACY MODE: generateImages=true explicitly requests old image generation (admin-only fallback)
+    const generateImages = String((req.body as any).generateImages || (req.query as any).generateImages || '').toLowerCase() === 'true';
 
     if ((editionId ? 1 : 0) + (subEditionId ? 1 : 0) !== 1) {
       return res.status(400).json({ error: 'Provide exactly one: editionId or subEditionId' });
@@ -349,7 +496,9 @@ export const uploadPdfIssue = async (req: Request, res: Response) => {
     const issueDate = parseIsoDateOnly(issueDateStr);
     const tenantId = ctx.tenantId;
 
-    const result = await upsertPdfIssueFromBuffer({
+    // Default: PDF-only mode. Legacy image generation only via explicit generateImages=true
+    const uploadFn = generateImages ? upsertPdfIssueFromBuffer : upsertPdfIssueFromBufferPdfOnly;
+    const result = await uploadFn({
       tenantId,
       userId: ctx.userId,
       issueDateStr,
@@ -375,6 +524,8 @@ export const uploadPdfIssueByUrl = async (req: Request, res: Response) => {
     const issueDateStr = asString((req.body as any).issueDate);
     const editionId = (req.body as any).editionId ? asString((req.body as any).editionId) : null;
     const subEditionId = (req.body as any).subEditionId ? asString((req.body as any).subEditionId) : null;
+    // LEGACY MODE: generateImages=true explicitly requests old image generation (admin-only fallback)
+    const generateImages = String((req.body as any).generateImages || (req.query as any).generateImages || '').toLowerCase() === 'true';
 
     if (!pdfUrl) return res.status(400).json({ error: 'pdfUrl is required' });
     if ((editionId ? 1 : 0) + (subEditionId ? 1 : 0) !== 1) {
@@ -388,7 +539,9 @@ export const uploadPdfIssueByUrl = async (req: Request, res: Response) => {
     const pdfBuffer = await downloadPdfToBuffer(pdfUrl, maxBytes);
 
     const tenantId = ctx.tenantId;
-    const result = await upsertPdfIssueFromBuffer({
+    // Default: PDF-only mode. Legacy image generation only via explicit generateImages=true
+    const uploadFn = generateImages ? upsertPdfIssueFromBuffer : upsertPdfIssueFromBufferPdfOnly;
+    const result = await uploadFn({
       tenantId,
       userId: ctx.userId,
       issueDateStr,
