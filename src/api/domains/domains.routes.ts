@@ -217,12 +217,6 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
       } catch (e) {
         console.warn('auto-bootstrap failed', e);
       }
-        })).catch((err: any) => {
-          console.error('[DomainVerify] Bootstrap content failed:', err);
-        });
-      } catch {
-        // Ignore if module not available
-      }
     }
 
     res.json({ ok: true, domain: updated });
