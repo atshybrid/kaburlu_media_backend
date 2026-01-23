@@ -206,6 +206,23 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
       } catch (e: any) {
         console.warn('auto-link default categories failed', e?.message || e);
       }
+
+      // Auto-bootstrap sample content for new tenant (fire-and-forget)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { bootstrapTenantContent } = require('../../lib/tenantBootstrap');
+        Promise.resolve(bootstrapTenantContent(updated.tenantId, id, {
+          // Simple bootstrap - no external APIs, just create sample articles
+        })).catch(() => null);
+      } catch (e) {
+        console.warn('auto-bootstrap failed', e);
+      }
+        })).catch((err: any) => {
+          console.error('[DomainVerify] Bootstrap content failed:', err);
+        });
+      } catch {
+        // Ignore if module not available
+      }
     }
 
     res.json({ ok: true, domain: updated });
@@ -410,6 +427,147 @@ router.put('/:id/categories', auth, requireSuperAdmin, async (req, res) => {
   } catch (e: any) {
     console.error('set domain categories error', e);
     res.status(500).json({ error: 'Failed to set domain categories', detail: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /domains/{domainId}/backfill-content:
+ *   post:
+ *     summary: Backfill sample content for existing domain
+ *     description: Generate sample content for an existing verified domain if not already generated. Useful for backfilling existing domains with the new auto-bootstrap feature.
+ *     tags: [Domains]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: domainId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Domain ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               force:
+ *                 type: boolean
+ *                 description: Force regeneration even if sample data already exists
+ *               articlesPerCategory:
+ *                 type: number
+ *                 description: Number of articles to generate per category (default 15)
+ *               useAI:
+ *                 type: boolean
+ *                 description: Use AI to generate content (default false)
+ *               useNewsAPI:
+ *                 type: boolean
+ *                 description: Use NewsData.io for real news (default true, recommended)
+ *               aiRewriteNews:
+ *                 type: boolean
+ *                 description: Fetch real news and AI-rewrite to match publication style (default true, best option!)
+ *               uploadImagesToR2:
+ *                 type: boolean
+ *                 description: Upload images to R2 storage instead of using external URLs (default false, recommended for production)
+ *               addImages:
+ *                 type: boolean
+ *                 description: Add images to articles (default true)
+ *               imageSource:
+ *                 type: string
+ *                 enum: [placeholder, unsplash]
+ *                 description: Image source (default placeholder)
+ *     responses:
+ *       200:
+ *         description: Backfill started or already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 created:
+ *                   type: object
+ *       400:
+ *         description: Domain not verified or invalid
+ *       500:
+ *         description: Internal error
+ */
+router.post('/:domainId/backfill-content', auth, async (req, res) => {
+  try {
+    const { domainId } = req.params;
+    const { 
+      force = false, 
+      articlesPerCategory = 15, 
+      useAI = false,
+      useNewsAPI = true,
+      aiRewriteNews = true,
+      uploadImagesToR2 = false,
+      addImages = true, 
+      imageSource = 'placeholder' 
+    } = req.body;
+
+    const domain = await (prisma as any).domain.findUnique({
+      where: { id: domainId },
+      include: { tenant: true }
+    });
+
+    if (!domain) {
+      return res.status(404).json({ error: 'Domain not found' });
+    }
+
+    // Check if domain is verified
+    if (domain.status !== 'ACTIVE') {
+      return res.status(400).json({ 
+        error: 'Domain not verified', 
+        message: 'Domain must be verified (ACTIVE status) before backfilling content' 
+      });
+    }
+
+    // Check if sample data already exists (unless force=true)
+    if (!force && domain.sampleDataStatus === 'COMPLETED') {
+      const articleCount = await (prisma as any).article.count({
+        where: { tenantId: domain.tenantId, tags: { hasSome: ['sample', 'bootstrap'] } }
+      });
+
+      return res.json({
+        message: 'Sample content already exists. Use force=true to regenerate.',
+        status: domain.sampleDataStatus,
+        sampleDataMessage: domain.sampleDataMessage,
+        sampleDataGeneratedAt: domain.sampleDataGeneratedAt,
+        existingArticles: articleCount
+      });
+    }
+
+    // Import bootstrap function
+    const { bootstrapTenantContent } = await import('../../lib/tenantBootstrap');
+
+    // Start bootstrap process (fire-and-forget for async processing)
+    bootstrapTenantContent(domain.tenantId, domainId, {
+      articlesPerCategory,
+      useAI,
+      useNewsAPI,
+      aiRewriteNews,
+      uploadImagesToR2,
+      addImages,
+      imageSource
+    }).catch(err => {
+      console.error('[BackfillContent] Bootstrap failed:', err);
+    });
+
+    res.json({
+      message: 'Sample content generation started',
+      status: 'IN_PROGRESS',
+      domainId,
+      tenantId: domain.tenantId,
+      options: { articlesPerCategory, useAI, useNewsAPI, aiRewriteNews, uploadImagesToR2, addImages, imageSource }
+    });
+  } catch (e: any) {
+    console.error('backfill content error', e);
+    res.status(500).json({ error: 'Failed to backfill content', detail: e.message });
   }
 });
 

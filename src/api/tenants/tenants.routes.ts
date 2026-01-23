@@ -1834,6 +1834,159 @@ router.put('/:tenantId/id-card-settings', auth, requireSuperOrTenantAdminScoped,
 
 /**
  * @swagger
+ * /tenants/{tenantId}/bootstrap-content:
+ *   post:
+ *     summary: Generate sample content for tenant (articles + ePaper)
+ *     description: |
+ *       Creates sample articles and ePaper issue for a tenant domain.
+ *       Useful for testing or giving new tenants starter content.
+ *       - Automatically detects domain languages and categories
+ *       - Supports two modes: total count OR per-category count
+ *       - Creates 1 sample ePaper issue if EPAPER domain exists
+ *       - Optional AI-generated diverse content
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               domainId: { type: string, description: 'Optional domain ID (uses primary if omitted)' }
+ *               skipArticles: { type: boolean, default: false }
+ *               skipEpaper: { type: boolean, default: false }
+ *               articleCount: { type: integer, description: 'Total articles (1-50, ignores articlesPerCategory if set)' }
+ *               articlesPerCategory: { type: integer, description: 'Articles PER category (1-20, e.g., 15)', minimum: 1, maximum: 20 }
+ *               useAI: { type: boolean, default: false, description: 'Use AI to generate diverse content' }
+ *               addImages: { type: boolean, default: true, description: 'Add images to articles' }
+ *               imageSource: { type: string, enum: [placeholder, unsplash], default: placeholder, description: 'Image source: placeholder or Unsplash stock photos' }
+ *           examples:
+ *             default:
+ *               value: {}
+ *             perCategory:
+ *               summary: 15 articles per category
+ *               value: { articlesPerCategory: 15 }
+ *             perCategoryWithAI:
+ *               summary: 15 AI-generated articles per category
+ *               value: { articlesPerCategory: 15, useAI: true }
+ *             withUnsplashImages:
+ *               summary: 15 articles per category with Unsplash images
+ *               value: { articlesPerCategory: 15, imageSource: 'unsplash' }
+ *             fullFeatures:
+ *               summary: 15 AI articles with Unsplash images
+ *               value: { articlesPerCategory: 15, useAI: true, imageSource: 'unsplash' }
+ *             totalCount:
+ *               value: { articleCount: 20 }
+ *             epaperOnly:
+ *               value: { skipArticles: true }
+ *     responses:
+ *       200:
+ *         description: Bootstrap result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 created:
+ *                   type: object
+ *                   properties:
+ *                     articles: { type: integer }
+ *                     epaper: { type: integer }
+ */
+router.post('/:tenantId/bootstrap-content', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const { domainId, skipArticles, skipEpaper, articleCount, articlesPerCategory, useAI, addImages, imageSource } = req.body || {};
+
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    // Resolve domain (use provided domainId or find primary active domain)
+    let targetDomainId = domainId;
+    if (!targetDomainId) {
+      const primaryDomain = await (prisma as any).domain.findFirst({
+        where: { tenantId, status: 'ACTIVE' },
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }]
+      });
+      if (!primaryDomain) {
+        return res.status(400).json({ error: 'No active domain found for tenant' });
+      }
+      targetDomainId = primaryDomain.id;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { bootstrapTenantContent } = require('../../lib/tenantBootstrap');
+    const result = await bootstrapTenantContent(tenantId, targetDomainId, {
+      skipArticles,
+      skipEpaper,
+      articleCount: articleCount ? Math.min(Math.max(1, articleCount), 50) : undefined,
+      articlesPerCategory: articlesPerCategory ? Math.min(Math.max(1, articlesPerCategory), 20) : undefined,
+      useAI: Boolean(useAI),
+      addImages: addImages !== false, // Default true
+      imageSource: (imageSource === 'unsplash' ? 'unsplash' : 'placeholder') as 'placeholder' | 'unsplash'
+    });
+
+    res.json(result);
+  } catch (e: any) {
+    console.error('tenant bootstrap-content error', e);
+    res.status(500).json({ error: 'Failed to bootstrap content' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/clear-bootstrap-content:
+ *   delete:
+ *     summary: Delete all sample/bootstrap content for tenant
+ *     description: Removes all articles and ePaper issues tagged as sample/bootstrap content
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deletion result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 deleted:
+ *                   type: object
+ *                   properties:
+ *                     articles: { type: integer }
+ *                     epaper: { type: integer }
+ */
+router.delete('/:tenantId/clear-bootstrap-content', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { clearBootstrapContent } = require('../../lib/tenantBootstrap');
+    const result = await clearBootstrapContent(tenantId);
+
+    res.json(result);
+  } catch (e: any) {
+    console.error('tenant clear-bootstrap-content error', e);
+    res.status(500).json({ error: 'Failed to clear bootstrap content' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/id-card-settings:
  *   get:
  *     summary: List ID card settings for all tenants
@@ -1846,7 +1999,7 @@ router.put('/:tenantId/id-card-settings', auth, requireSuperOrTenantAdminScoped,
  *         required: false
  *         description: Page number (default 1)
  *       - in: query
- *         name: pageSize
+ *         name: page Size
  *         schema: { type: integer, minimum: 1, maximum: 200 }
  *         required: false
  *         description: Items per page (default 50, max 200)

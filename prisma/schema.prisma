@@ -876,26 +876,31 @@ model TenantTranslation {
 }
 
 model Domain {
-  id                 String             @id @default(cuid())
-  domain             String             @unique
-  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId           String
-  isPrimary          Boolean            @default(false)
-  kind               DomainKind         @default(NEWS)
-  status             DomainStatus       @default(PENDING)
-  verificationToken  String?
-  verificationMethod String? // DNS_TXT | HTTPS_FILE | MANUAL
-  verifiedAt         DateTime?
-  lastCheckAt        DateTime?
-  lastCheckStatus    String?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  categories         DomainCategory[]
-  languages          DomainLanguage[]
-  checkLogs          DomainCheckLog[]
-  settings           DomainSettings?    @relation("Domain_DomainSettings")
-  webArticles        TenantWebArticle[] @relation("Domain_WebArticles")
+  id                    String             @id @default(cuid())
+  domain                String             @unique
+  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId              String
+  isPrimary             Boolean            @default(false)
+  kind                  DomainKind         @default(NEWS)
+  status                DomainStatus       @default(PENDING)
+  verificationToken     String?
+  verificationMethod    String? // DNS_TXT | HTTPS_FILE | MANUAL
+  verifiedAt            DateTime?
+  lastCheckAt           DateTime?
+  lastCheckStatus       String?
+  sampleDataStatus      String? // PENDING | IN_PROGRESS | COMPLETED | FAILED
+  sampleDataMessage     String? // Human-readable status message
+  sampleDataGeneratedAt DateTime? // When sample data was generated
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  categories            DomainCategory[]
+  languages             DomainLanguage[]
+  checkLogs             DomainCheckLog[]
+  settings              DomainSettings?    @relation("Domain_DomainSettings")
+  webArticles           TenantWebArticle[] @relation("Domain_WebArticles")
   homepageSectionConfigs HomepageSectionConfig[]
+
+  @@index([sampleDataStatus])
 }
 
 /// ---------------- Tenant Billing / Subscription Models ----------------
