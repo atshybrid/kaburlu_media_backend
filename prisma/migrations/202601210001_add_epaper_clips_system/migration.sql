@@ -36,11 +36,19 @@ CREATE INDEX IF NOT EXISTS "EpaperArticleClip_issueId_idx" ON "public"."EpaperAr
 CREATE INDEX IF NOT EXISTS "EpaperArticleClip_issueId_pageNumber_idx" ON "public"."EpaperArticleClip"("issueId", "pageNumber");
 CREATE INDEX IF NOT EXISTS "EpaperArticleClip_isActive_idx" ON "public"."EpaperArticleClip"("isActive");
 
--- Foreign key
-ALTER TABLE "public"."EpaperArticleClip" 
-ADD CONSTRAINT "EpaperArticleClip_issueId_fkey" 
-FOREIGN KEY ("issueId") REFERENCES "public"."EpaperPdfIssue"("id") 
-ON DELETE CASCADE ON UPDATE CASCADE;
+-- Foreign key (only add if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'EpaperArticleClip_issueId_fkey'
+    ) THEN
+        ALTER TABLE "public"."EpaperArticleClip" 
+        ADD CONSTRAINT "EpaperArticleClip_issueId_fkey" 
+        FOREIGN KEY ("issueId") REFERENCES "public"."EpaperPdfIssue"("id") 
+        ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- EpaperClipAsset: Cached clip images (generated on-demand)
@@ -60,11 +68,19 @@ CREATE TABLE IF NOT EXISTS "public"."EpaperClipAsset" (
 CREATE INDEX IF NOT EXISTS "EpaperClipAsset_clipId_idx" ON "public"."EpaperClipAsset"("clipId");
 CREATE UNIQUE INDEX IF NOT EXISTS "EpaperClipAsset_clipId_type_key" ON "public"."EpaperClipAsset"("clipId", "type");
 
--- Foreign key
-ALTER TABLE "public"."EpaperClipAsset" 
-ADD CONSTRAINT "EpaperClipAsset_clipId_fkey" 
-FOREIGN KEY ("clipId") REFERENCES "public"."EpaperArticleClip"("id") 
-ON DELETE CASCADE ON UPDATE CASCADE;
+-- Foreign key (only add if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'EpaperClipAsset_clipId_fkey'
+    ) THEN
+        ALTER TABLE "public"."EpaperClipAsset" 
+        ADD CONSTRAINT "EpaperClipAsset_clipId_fkey" 
+        FOREIGN KEY ("clipId") REFERENCES "public"."EpaperArticleClip"("id") 
+        ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- PublicCropSession: Temporary secure sessions for public clip updates
@@ -90,16 +106,32 @@ CREATE INDEX IF NOT EXISTS "PublicCropSession_sessionKey_idx" ON "public"."Publi
 CREATE INDEX IF NOT EXISTS "PublicCropSession_issueId_idx" ON "public"."PublicCropSession"("issueId");
 CREATE INDEX IF NOT EXISTS "PublicCropSession_expiresAt_idx" ON "public"."PublicCropSession"("expiresAt");
 
--- Foreign keys
-ALTER TABLE "public"."PublicCropSession" 
-ADD CONSTRAINT "PublicCropSession_issueId_fkey" 
-FOREIGN KEY ("issueId") REFERENCES "public"."EpaperPdfIssue"("id") 
-ON DELETE CASCADE ON UPDATE CASCADE;
+-- Foreign keys (only add if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PublicCropSession_issueId_fkey'
+    ) THEN
+        ALTER TABLE "public"."PublicCropSession" 
+        ADD CONSTRAINT "PublicCropSession_issueId_fkey" 
+        FOREIGN KEY ("issueId") REFERENCES "public"."EpaperPdfIssue"("id") 
+        ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "public"."PublicCropSession" 
-ADD CONSTRAINT "PublicCropSession_clipId_fkey" 
-FOREIGN KEY ("clipId") REFERENCES "public"."EpaperArticleClip"("id") 
-ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PublicCropSession_clipId_fkey'
+    ) THEN
+        ALTER TABLE "public"."PublicCropSession" 
+        ADD CONSTRAINT "PublicCropSession_clipId_fkey" 
+        FOREIGN KEY ("clipId") REFERENCES "public"."EpaperArticleClip"("id") 
+        ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- CLEANUP: Create a scheduled job to delete expired sessions
