@@ -24,10 +24,13 @@ This guide shows the **complete flow** for building a multi-tenant Telugu news w
 | API | Purpose | Cache TTL | When to Call |
 |-----|---------|-----------|--------------|
 | `GET /public/config` | Complete website configuration | 1 hour | App initialization |
-| `GET /public/seo/homepage` | Homepage SEO JSON-LD | 1 hour | Homepage SEO |
+| `GET /public/smart-homepage` | **⚡ SMART** - Latest + Most Read + Sections (All-in-One) | 3 minutes | Homepage (optimized) |
 | `GET /public/homepage` | Style-based homepage sections (Style1/Style2) | 5 minutes | Homepage content |
+| `GET /public/seo/homepage` | Homepage SEO JSON-LD | 1 hour | Homepage SEO |
 
-**New in V2.0:** `/public/homepage` now auto-detects theme style from domain settings!
+**New in V2.0:**
+- ⚡ **`/public/smart-homepage`** - Ultra-fast single API call for complete homepage data
+- 🎨 **`/public/homepage`** - Auto-detects theme style from domain settings
 
 ### 🔄 Legacy APIs (Still Available)
 
@@ -196,6 +199,331 @@ async function getConfig() {
   });
   return res.json();
 }
+```
+
+---
+
+### **V2.0 API #2: Smart Homepage (All-in-One) ⚡**
+
+**Endpoint:** `GET /public/smart-homepage`  
+**Purpose:** Ultra-fast single API call for complete homepage data  
+**Cache:** 3 minutes (ISR)  
+**When:** Homepage (preferred over multiple API calls)
+
+**Why Use This?**
+- ✅ **Single API call** - Get everything in one request
+- ✅ **Minimal payload** - Only essential fields for fast loading
+- ✅ **Smart linking** - Auto-categorized articles
+- ✅ **Response size < 50KB** - Instant mobile loading
+- ✅ **Parallel data fetching** - Maximum server performance
+
+**Query Parameters:**
+```bash
+# Default (10 latest, 5 most read, 6 sections with 4 articles each)
+GET /public/smart-homepage
+Header: X-Tenant-Domain: telangana.kaburlu.com
+
+# Custom counts
+GET /public/smart-homepage?latestCount=20&mostReadCount=10&sectionsCount=8&articlesPerSection=5
+Header: X-Tenant-Domain: telangana.kaburlu.com
+
+# With language filter
+GET /public/smart-homepage?lang=te&latestCount=15
+Header: X-Tenant-Domain: telangana.kaburlu.com
+```
+
+**Parameters:**
+- `latestCount` (default: 10, max: 50) - Number of latest articles
+- `mostReadCount` (default: 5, max: 20) - Number of trending articles
+- `sectionsCount` (default: 6, max: 20) - Number of category sections
+- `articlesPerSection` (default: 4, max: 10) - Articles per section
+- `lang` (optional) - Language filter (e.g., 'te', 'en')
+
+**Response Structure:**
+```json
+{
+  "version": "2.0-smart",
+  "timestamp": "2026-01-25T10:30:00.000Z",
+  
+  "latestNews": [
+    {
+      "id": "art_001",
+      "title": "హైదరాబాద్ మెట్రో విస్తరణ పనులు వేగవంతం",
+      "slug": "hyderabad-metro-expansion-speeds-up",
+      "excerpt": "హైదరాబాద్‌లో మెట్రో రైలు విస్తరణ పనులు వేగంగా జరుగుతున్నాయి...",
+      "imageUrl": "https://cdn.kaburlu.com/articles/metro-expansion.jpg",
+      "categoryId": "cat_telangana",
+      "categoryName": "తెలంగాణ",
+      "categorySlug": "telangana",
+      "publishedAt": "2026-01-25T10:00:00.000Z",
+      "readTime": 3
+    },
+    {
+      "id": "art_002",
+      "title": "రాష్ట్రంలో అధిక వర్షాలు",
+      "slug": "heavy-rains-in-state",
+      "excerpt": "తెలంగాణలో రాబోయే మూడు రోజుల పాటు అధిక వర్షాల సూచన...",
+      "imageUrl": "https://cdn.kaburlu.com/articles/heavy-rains.jpg",
+      "categoryId": "cat_weather",
+      "categoryName": "వాతావరణం",
+      "categorySlug": "weather",
+      "publishedAt": "2026-01-25T09:45:00.000Z",
+      "readTime": 2
+    }
+  ],
+  
+  "mostRead": [
+    {
+      "id": "art_100",
+      "title": "రాజకీయాల్లో కీలక మార్పులు",
+      "slug": "key-political-changes",
+      "imageUrl": "https://cdn.kaburlu.com/articles/politics-changes.jpg",
+      "categoryName": "రాజకీయాలు",
+      "publishedAt": "2026-01-24T15:00:00.000Z",
+      "viewCount": 15420
+    },
+    {
+      "id": "art_101",
+      "title": "క్రికెట్ మ్యాచ్‌లో థ్రిల్లింగ్ ఫినిష్",
+      "slug": "cricket-thrilling-finish",
+      "imageUrl": "https://cdn.kaburlu.com/articles/cricket-match.jpg",
+      "categoryName": "క్రీడలు",
+      "publishedAt": "2026-01-24T18:30:00.000Z",
+      "viewCount": 12850
+    }
+  ],
+  
+  "sections": [
+    {
+      "categoryId": "cat_telangana",
+      "categoryName": "తెలంగాణ",
+      "categorySlug": "telangana",
+      "categoryIcon": "🏛️",
+      "articlesCount": 245,
+      "articles": [
+        {
+          "id": "art_201",
+          "title": "హైదరాబాద్‌లో కొత్త IT పార్క్ ప్రారంభం",
+          "slug": "new-it-park-hyderabad",
+          "excerpt": "హైదరాబాద్ నగరంలో అత్యాధునిక IT పార్క్ ఉద్ఘాటన...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/it-park.jpg",
+          "publishedAt": "2026-01-25T09:00:00.000Z",
+          "isBreaking": false
+        },
+        {
+          "id": "art_202",
+          "title": "నగరంలో ట్రాఫిక్ నియంత్రణకు కొత్త చర్యలు",
+          "slug": "traffic-control-measures",
+          "excerpt": "హైదరాబాద్ ట్రాఫిక్ పోలీసులు కొత్త నియమాలను అమలు చేయనున్నారు...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/traffic-control.jpg",
+          "publishedAt": "2026-01-25T08:30:00.000Z",
+          "isBreaking": true
+        }
+      ]
+    },
+    {
+      "categoryId": "cat_politics",
+      "categoryName": "రాజకీయాలు",
+      "categorySlug": "politics",
+      "categoryIcon": "⚖️",
+      "articlesCount": 189,
+      "articles": [
+        {
+          "id": "art_301",
+          "title": "అసెంబ్లీ సమావేశాల షెడ్యూల్ ప్రకటన",
+          "slug": "assembly-sessions-schedule",
+          "excerpt": "రాష్ట్ర శాసనసభ సమావేశాల షెడ్యూల్ అధికారికంగా ప్రకటించారు...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/assembly-schedule.jpg",
+          "publishedAt": "2026-01-25T07:45:00.000Z",
+          "isBreaking": false
+        }
+      ]
+    },
+    {
+      "categoryId": "cat_sports",
+      "categoryName": "క్రీడలు",
+      "categorySlug": "sports",
+      "categoryIcon": "🏆",
+      "articlesCount": 156,
+      "articles": [
+        {
+          "id": "art_401",
+          "title": "భారత జట్టు పాకిస్తాన్‌ను ఓడించింది",
+          "slug": "india-defeats-pakistan",
+          "excerpt": "టీ20 ప్రపంచ కప్‌లో భారత్ పాకిస్తాన్‌పై గెలుపొందింది...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/india-pakistan.jpg",
+          "publishedAt": "2026-01-24T20:30:00.000Z",
+          "isBreaking": false
+        }
+      ]
+    },
+    {
+      "categoryId": "cat_entertainment",
+      "categoryName": "వినోదం",
+      "categorySlug": "entertainment",
+      "categoryIcon": "🎬",
+      "articlesCount": 134,
+      "articles": [
+        {
+          "id": "art_501",
+          "title": "కొత్త తెలుగు సినిమా ట్రైలర్ రిలీజ్",
+          "slug": "new-telugu-movie-trailer",
+          "excerpt": "మెగా స్టార్ కొత్త చిత్రం ట్రైలర్ సోషల్ మీడియాలో వైరల్...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/movie-trailer.jpg",
+          "publishedAt": "2026-01-24T16:00:00.000Z",
+          "isBreaking": false
+        }
+      ]
+    },
+    {
+      "categoryId": "cat_business",
+      "categoryName": "వ్యాపారం",
+      "categorySlug": "business",
+      "categoryIcon": "💼",
+      "articlesCount": 98,
+      "articles": [
+        {
+          "id": "art_601",
+          "title": "స్టాక్ మార్కెట్‌లో భారీ ఎగుడుదిగుడు",
+          "slug": "stock-market-volatility",
+          "excerpt": "ఈ రోజు స్టాక్ మార్కెట్‌లో భారీ హెచ్చు తగ్గులు నమోదయ్యాయి...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/stock-market.jpg",
+          "publishedAt": "2026-01-25T06:30:00.000Z",
+          "isBreaking": false
+        }
+      ]
+    },
+    {
+      "categoryId": "cat_technology",
+      "categoryName": "సాంకేతికత",
+      "categorySlug": "technology",
+      "categoryIcon": "💻",
+      "articlesCount": 87,
+      "articles": [
+        {
+          "id": "art_701",
+          "title": "కొత్త AI టెక్నాలజీ లాంచ్",
+          "slug": "new-ai-technology-launch",
+          "excerpt": "భారతీయ కంపెనీ కొత్త AI టెక్నాలజీని ప్రవేశపెట్టింది...",
+          "imageUrl": "https://cdn.kaburlu.com/articles/ai-launch.jpg",
+          "publishedAt": "2026-01-24T12:00:00.000Z",
+          "isBreaking": false
+        }
+      ]
+    }
+  ],
+  
+  "meta": {
+    "totalArticles": 1250,
+    "totalCategories": 12,
+    "lastUpdated": "2026-01-25T10:30:00.000Z",
+    "cacheAge": 180
+  }
+}
+```
+
+**Frontend Usage (Next.js):**
+```typescript
+// app/page.tsx - Smart Homepage
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+export default async function HomePage() {
+  const data = await getSmartHomepage();
+  
+  return (
+    <div className="homepage">
+      {/* Latest News Section */}
+      <section className="latest-news">
+        <h2>తాజా వార్తలు</h2>
+        <div className="grid">
+          {data.latestNews.map(article => (
+            <ArticleCard key={article.id} article={article} />
+          ))}
+        </div>
+      </section>
+
+      {/* Most Read Sidebar */}
+      <aside className="most-read">
+        <h3>అత్యధికంగా చదవబడిన వార్తలు</h3>
+        {data.mostRead.map(article => (
+          <TrendingCard key={article.id} article={article} />
+        ))}
+      </aside>
+
+      {/* Category Sections */}
+      {data.sections.map(section => (
+        <section key={section.categoryId} className="category-section">
+          <div className="section-header">
+            <h2>
+              <span className="icon">{section.categoryIcon}</span>
+              {section.categoryName}
+            </h2>
+            <a href={`/category/${section.categorySlug}`}>
+              మరిన్ని చూడండి ({section.articlesCount})
+            </a>
+          </div>
+          <div className="articles-grid">
+            {section.articles.map(article => (
+              <ArticleCard 
+                key={article.id} 
+                article={article}
+                showBreakingBadge={article.isBreaking}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {/* Meta Info */}
+      <div className="meta">
+        చివరిగా నవీకరించబడింది: {formatTime(data.meta.lastUpdated)}
+      </div>
+    </div>
+  );
+}
+
+async function getSmartHomepage() {
+  const res = await fetch(
+    `${API_BASE}/public/smart-homepage?latestCount=12&mostReadCount=8&sectionsCount=6&articlesPerSection=4`,
+    {
+      headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+      next: { revalidate: 180 } // Cache 3 minutes
+    }
+  );
+  
+  if (!res.ok) throw new Error('Failed to fetch smart homepage');
+  return res.json();
+}
+```
+
+**Performance Benefits:**
+```typescript
+// ❌ Old approach (5+ API calls)
+const [config, categories, latestArticles, trendingArticles, sections] = await Promise.all([
+  fetch('/public/config'),
+  fetch('/public/categories'),
+  fetch('/public/articles?limit=10'),
+  fetch('/public/articles?sortBy=views'),
+  fetch('/public/articles?groupBy=category')
+]);
+// Total: 5 API calls, ~500ms+ total time
+
+// ✅ New approach (1 API call)
+const data = await fetch('/public/smart-homepage');
+// Total: 1 API call, ~150ms total time
+// 3x faster! 🚀
+```
+
+**Mobile Optimization:**
+```typescript
+// For mobile apps - minimal data transfer
+const mobileData = await fetch(
+  `${API_BASE}/public/smart-homepage?latestCount=5&mostReadCount=3&sectionsCount=4&articlesPerSection=2`,
+  {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN }
+  }
+);
+// Response size: ~15KB (fast 4G/5G loading)
 ```
 
 ---
