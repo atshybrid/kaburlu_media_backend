@@ -4,6 +4,7 @@ import { config } from '../../config/env';
 import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+import newsWebsiteRouter from './newsWebsite.routes';
 // NEW: Public crop session imports
 import {
   getPublicIssueWithClips,
@@ -20,6 +21,9 @@ const router = Router();
 
 // Apply resolver only to this public router
 router.use(tenantResolver);
+
+// Mount News Website API 2.0 routes
+router.use(newsWebsiteRouter);
 
 function requireVerifiedEpaperDomain(req: any, res: any, next: any) {
   // In non-multi-tenancy mode, tenantResolver is disabled; keep behavior flexible.

@@ -331,7 +331,7 @@ router.get('/domain/settings', auth, getEpaperDomainSettingsForAdmin);
  *                     - "https://facebook.com/kaburlu"
  *                     - "https://twitter.com/kaburlu"
  *                     - "https://instagram.com/kaburlu"
- *                     - "https://youtube.com/@kaburlu"
+ *                     - "https://youtube.com/kaburlu"
  *                 layout:
  *                   header: "centered"
  *                   footer: "full-width"
@@ -572,7 +572,7 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *                     - "https://facebook.com/kaburlu"
  *                     - "https://twitter.com/kaburlu"
  *                     - "https://instagram.com/kaburlu"
- *                     - "https://youtube.com/@kaburlu"
+ *                     - "https://youtube.com/kaburlu"
  *                 layout:
  *                   header: "centered"
  *                   footer: "full-width"
@@ -636,7 +636,7 @@ router.put('/domain/settings', auth, putEpaperDomainSettingsForAdmin);
  *                     - "https://facebook.com/kaburlu"
  *                     - "https://twitter.com/kaburlu"
  *                     - "https://instagram.com/kaburlu"
- *                     - "https://youtube.com/@kaburlu"
+ *                     - "https://youtube.com/kaburlu"
  *             patchCompleteSeo:
  *               summary: Update complete SEO configuration with all fields
  *               value:
