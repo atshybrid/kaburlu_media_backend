@@ -32,36 +32,42 @@ const router = Router();
  * @swagger
  * /public/config:
  *   get:
- *     summary: 🎨 Get complete website configuration (Theme, Branding, SEO, Languages)
+ *     summary: 🎨 Get complete website configuration (Multi-tenant optimized)
  *     description: |
- *       **✨ NEW CONSOLIDATED ENDPOINT** - Replaces /theme, /languages, and settings from /epaper/verify-domain
+ *       **✨ BEST PRACTICE MULTI-TENANT NEWS WEBSITE CONFIG**
  *       
- *       Returns everything needed for website initialization in ONE call:
- *       - Branding (logo, colors, fonts)
- *       - SEO defaults (meta tags, OG, Twitter)
- *       - Languages (domain-allowed list)
- *       - Integrations (GA, GTM, AdSense public keys)
- *       - Layout settings (header, footer, ticker)
- *       - Tenant admin contact
+ *       Single endpoint that returns everything needed for frontend initialization:
+ *       - Tenant & Domain context
+ *       - Branding & Theme (colors, typography, assets)
+ *       - SEO settings (meta, OG, Twitter, JSON-LD)
+ *       - Content settings (languages, formats)
+ *       - Integrations (Analytics, Ads, Push)
+ *       - Features flags (PWA, commenting, bookmarking)
+ *       - Navigation (header, footer, mobile)
+ *       - Social media links
+ *       - Contact information
+ *       - Cache control hints
  *       
  *       **Cache:** ISR 3600s (1 hour), Stale-While-Revalidate
  *       
- *       **Use case:** Call once on app initialization or page load
+ *       **Version:** 2.0 - Enhanced multi-tenant structure
  *     tags: [News Website API 2.0]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
  *         required: false
  *         description: Optional domain override for local testing
- *         schema: { type: string, example: "news.kaburlu.com" }
+ *         schema: { type: string, example: "telangana.kaburlu.com" }
  *     responses:
  *       200:
- *         description: Complete website configuration
+ *         description: Complete website configuration (Multi-tenant optimized)
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 version: { type: string, example: "2.0" }
+ *                 timestamp: { type: string, format: date-time }
  *                 tenant:
  *                   type: object
  *                   properties:
@@ -69,22 +75,55 @@ const router = Router();
  *                     slug: { type: string }
  *                     name: { type: string }
  *                     displayName: { type: string }
+ *                     timezone: { type: string, example: "Asia/Kolkata" }
+ *                     locale: { type: string, example: "te" }
  *                 domain:
  *                   type: object
  *                   properties:
  *                     id: { type: string }
  *                     domain: { type: string }
+ *                     baseUrl: { type: string }
  *                     kind: { type: string, enum: [WEBSITE, EPAPER] }
  *                     status: { type: string }
+ *                     environment: { type: string, enum: [development, production] }
  *                 branding:
  *                   type: object
  *                   properties:
- *                     logoUrl: { type: string, nullable: true }
- *                     faviconUrl: { type: string, nullable: true }
- *                     primaryColor: { type: string, example: "#e91e63" }
- *                     secondaryColor: { type: string, nullable: true }
  *                     siteName: { type: string }
- *                     fontFamily: { type: string, nullable: true }
+ *                     siteTagline: { type: string, nullable: true }
+ *                     logo: { type: string, nullable: true }
+ *                     favicon: { type: string, nullable: true }
+ *                     appleTouchIcon: { type: string, nullable: true }
+ *                 theme:
+ *                   type: object
+ *                   properties:
+ *                     colors:
+ *                       type: object
+ *                       properties:
+ *                         primary: { type: string, example: "#1976d2" }
+ *                         secondary: { type: string, example: "#dc004e" }
+ *                         headerBg: { type: string }
+ *                         footerBg: { type: string }
+ *                     typography:
+ *                       type: object
+ *                       properties:
+ *                         fontFamily: { type: string }
+ *                         fontFamilyHeadings: { type: string, nullable: true }
+ *                     assets:
+ *                       type: object
+ *                       properties:
+ *                         logo: { type: string, nullable: true }
+ *                         favicon: { type: string, nullable: true }
+ *                         headerHtml: { type: string, nullable: true }
+ *                         footerHtml: { type: string, nullable: true }
+ *                     layout:
+ *                       type: object
+ *                       properties:
+ *                         style: { type: string, example: "style1" }
+ *                         headerStyle: { type: string }
+ *                         footerStyle: { type: string }
+ *                         containerWidth: { type: number, example: 1280 }
+ *                         homepageConfig: { type: object, nullable: true }
  *                 seo:
  *                   type: object
  *                   properties:
@@ -105,17 +144,29 @@ const router = Router();
  *                     twitter:
  *                       type: object
  *                       properties:
- *                         card: { type: string, example: "summary_large_image" }
+ *                         card: { type: string }
  *                         handle: { type: string, nullable: true }
+ *                         title: { type: string }
+ *                         description: { type: string }
+ *                         imageUrl: { type: string, nullable: true }
+ *                     jsonLd:
+ *                       type: object
+ *                       properties:
+ *                         organizationUrl: { type: string }
+ *                         websiteUrl: { type: string }
  *                     urls:
  *                       type: object
  *                       properties:
  *                         robotsTxt: { type: string }
  *                         sitemapXml: { type: string }
+ *                         rssFeed: { type: string }
  *                 content:
  *                   type: object
  *                   properties:
  *                     defaultLanguage: { type: string, example: "te" }
+ *                     supportedLanguages:
+ *                       type: array
+ *                       items: { type: string }
  *                     languages:
  *                       type: array
  *                       items:
@@ -124,34 +175,130 @@ const router = Router();
  *                           code: { type: string }
  *                           name: { type: string }
  *                           nativeName: { type: string }
- *                           direction: { type: string, enum: [ltr, rtl] }
+ *                           direction: { type: string }
  *                           defaultForTenant: { type: boolean }
+ *                     dateFormat: { type: string, example: "DD/MM/YYYY" }
+ *                     timeFormat: { type: string, example: "12h" }
  *                 integrations:
  *                   type: object
  *                   properties:
  *                     analytics:
  *                       type: object
  *                       properties:
- *                         googleAnalyticsId: { type: string, nullable: true }
- *                         gtmId: { type: string, nullable: true }
+ *                         googleAnalytics: { type: string, nullable: true }
+ *                         googleTagManager: { type: string, nullable: true }
+ *                         enabled: { type: boolean }
  *                     ads:
  *                       type: object
  *                       properties:
- *                         adsenseClientId: { type: string, nullable: true }
+ *                         adsense: { type: string, nullable: true }
+ *                         enabled: { type: boolean }
  *                     push:
  *                       type: object
  *                       properties:
  *                         vapidPublicKey: { type: string, nullable: true }
+ *                         enabled: { type: boolean }
+ *                     social:
+ *                       type: object
+ *                       properties:
+ *                         facebookAppId: { type: string, nullable: true }
+ *                         twitterHandle: { type: string, nullable: true }
+ *                 features:
+ *                   type: object
+ *                   properties:
+ *                     darkMode: { type: boolean }
+ *                     pwaPushNotifications: { type: boolean }
+ *                     commenting: { type: boolean }
+ *                     bookmarking: { type: boolean }
+ *                     sharing: { type: boolean }
+ *                     liveUpdates: { type: boolean }
+ *                     newsletter: { type: boolean }
+ *                     ePaper: { type: boolean }
+ *                     mobileApp: { type: boolean }
+ *                 navigation:
+ *                   type: object
+ *                   properties:
+ *                     header:
+ *                       type: object
+ *                       properties:
+ *                         primaryMenu:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               label: { type: string }
+ *                               href: { type: string }
+ *                               icon: { type: string, nullable: true }
+ *                         utilityMenu: { type: array }
+ *                         showSearch: { type: boolean }
+ *                         showLanguageSwitcher: { type: boolean }
+ *                         sticky:
+ *                           type: object
+ *                           properties:
+ *                             enabled: { type: boolean }
+ *                             offsetPx: { type: number }
+ *                     footer:
+ *                       type: object
+ *                       properties:
+ *                         sections:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               title: { type: string }
+ *                               links: { type: array }
+ *                         copyrightText: { type: string }
+ *                         showSocialLinks: { type: boolean }
+ *                     mobile:
+ *                       type: object
+ *                       properties:
+ *                         bottomNav: { type: array }
+ *                         quickActions: { type: array }
+ *                 social:
+ *                   type: object
+ *                   properties:
+ *                     facebook: { type: string, nullable: true }
+ *                     twitter: { type: string, nullable: true }
+ *                     instagram: { type: string, nullable: true }
+ *                     youtube: { type: string, nullable: true }
+ *                     telegram: { type: string, nullable: true }
+ *                     linkedin: { type: string, nullable: true }
+ *                     whatsapp: { type: string, nullable: true }
+ *                 contact:
+ *                   type: object
+ *                   properties:
+ *                     email: { type: string, nullable: true }
+ *                     phone: { type: string, nullable: true }
+ *                     address:
+ *                       type: object
+ *                       properties:
+ *                         street: { type: string, nullable: true }
+ *                         city: { type: string, nullable: true }
+ *                         state: { type: string, nullable: true }
+ *                         country: { type: string }
+ *                         postalCode: { type: string, nullable: true }
  *                 layout:
  *                   type: object
  *                   properties:
- *                     showTicker: { type: boolean, nullable: true }
- *                     showTopBar: { type: boolean, nullable: true }
- *                 tenantAdmin:
+ *                     showTicker: { type: boolean }
+ *                     showTopBar: { type: boolean }
+ *                     showBreadcrumbs: { type: boolean }
+ *                     showReadingProgress: { type: boolean }
+ *                     articlesPerPage: { type: number, example: 20 }
+ *                 admin:
  *                   type: object
  *                   properties:
  *                     name: { type: string, nullable: true }
  *                     mobile: { type: string, nullable: true }
+ *                 cacheControl:
+ *                   type: object
+ *                   description: Recommended cache TTL in seconds for different resource types
+ *                   properties:
+ *                     config: { type: number, example: 3600 }
+ *                     homepage: { type: number, example: 300 }
+ *                     article: { type: number, example: 600 }
+ *                     category: { type: number, example: 300 }
+ *                     staticPages: { type: number, example: 86400 }
  *       500:
  *         description: Domain context missing
  */
@@ -161,7 +308,7 @@ router.get('/config', async (_req, res) => {
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
 
   try {
-    const [tenantTheme, tenantEntity, domainLanguages, domainSettings] = await Promise.all([
+    const [tenantTheme, tenantEntity, domainLanguages, domainSettings, tenantNavigation] = await Promise.all([
       p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
       p.tenantEntity.findUnique({ 
         where: { tenantId: tenant.id }, 
@@ -171,7 +318,8 @@ router.get('/config', async (_req, res) => {
         where: { domainId: domain.id }, 
         include: { language: true } 
       }).catch(() => []),
-      p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null)
+      p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null),
+      p.tenantNavigation?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
     ]);
 
     const baseUrl = `https://${domain.domain}`;
@@ -269,36 +417,208 @@ router.get('/config', async (_req, res) => {
       }
     } catch {}
 
+    // Theme details from TenantTheme
+    const theme = {
+      colors: {
+        primary: (tenantTheme as any)?.primaryColor ?? branding.primaryColor ?? '#1976d2',
+        secondary: (tenantTheme as any)?.secondaryColor ?? branding.secondaryColor ?? '#dc004e',
+        headerBg: (tenantTheme as any)?.headerBgColor ?? '#ffffff',
+        footerBg: (tenantTheme as any)?.footerBgColor ?? '#f5f5f5'
+      },
+      typography: {
+        fontFamily: (tenantTheme as any)?.fontFamily ?? branding.fontFamily ?? 'Inter, system-ui, sans-serif',
+        fontFamilyHeadings: effectiveDomainSettings?.theme?.typography?.fontFamilyHeadings ?? null
+      },
+      assets: {
+        logo: (tenantTheme as any)?.logoUrl ?? branding.logoUrl,
+        favicon: (tenantTheme as any)?.faviconUrl ?? branding.faviconUrl,
+        headerHtml: (tenantTheme as any)?.headerHtml ?? null,
+        footerHtml: (tenantTheme as any)?.footerHtml ?? null
+      },
+      layout: {
+        style: effectiveDomainSettings?.themeStyle ?? 'style1',
+        headerStyle: effectiveDomainSettings?.layout?.headerStyle ?? 'default',
+        footerStyle: effectiveDomainSettings?.layout?.footerStyle ?? 'default',
+        containerWidth: effectiveDomainSettings?.layout?.containerWidth ?? 1280,
+        homepageConfig: (tenantTheme as any)?.homepageConfig ?? null
+      }
+    };
+
+    // Navigation from TenantNavigation with fallback structure
+    const navigationConfig = tenantNavigation ? (tenantNavigation as any).config : null;
+    const navigation = {
+      header: {
+        primaryMenu: navigationConfig?.primaryLinks ?? [
+          { label: 'Home', href: '/', icon: null },
+          { label: 'Latest', href: '/latest', icon: null }
+        ],
+        utilityMenu: navigationConfig?.utilityLinks ?? [],
+        showSearch: effectiveDomainSettings?.navigation?.showSearch ?? true,
+        showLanguageSwitcher: (domainLanguages?.length ?? 0) > 1,
+        sticky: navigationConfig?.sticky ?? { enabled: true, offsetPx: 0 }
+      },
+      footer: {
+        sections: effectiveDomainSettings?.footer?.sections ?? [
+          {
+            title: 'Quick Links',
+            links: [
+              { label: 'About Us', href: '/about-us' },
+              { label: 'Contact', href: '/contact-us' },
+              { label: 'Advertise', href: '/advertise' }
+            ]
+          },
+          {
+            title: 'Legal',
+            links: [
+              { label: 'Privacy Policy', href: '/privacy-policy' },
+              { label: 'Terms & Conditions', href: '/terms' },
+              { label: 'Disclaimer', href: '/disclaimer' }
+            ]
+          }
+        ],
+        copyrightText: effectiveDomainSettings?.footer?.copyrightText ?? `© ${new Date().getFullYear()} ${branding.siteName}. All rights reserved.`,
+        showSocialLinks: effectiveDomainSettings?.footer?.showSocialLinks ?? true
+      },
+      mobile: {
+        bottomNav: navigationConfig?.mobile?.bottomNavLinks ?? [
+          { label: 'Home', href: '/', icon: 'home' },
+          { label: 'Categories', href: '/categories', icon: 'grid' },
+          { label: 'Saved', href: '/saved', icon: 'bookmark' },
+          { label: 'Menu', href: '/menu', icon: 'menu' }
+        ],
+        quickActions: navigationConfig?.mobile?.quickActions ?? []
+      }
+    };
+
+    // Social media links
+    const social = {
+      facebook: effectiveDomainSettings?.social?.facebook ?? null,
+      twitter: effectiveDomainSettings?.social?.x ?? effectiveDomainSettings?.social?.twitter ?? null,
+      instagram: effectiveDomainSettings?.social?.instagram ?? null,
+      youtube: effectiveDomainSettings?.social?.youtube ?? null,
+      telegram: effectiveDomainSettings?.social?.telegram ?? null,
+      linkedin: effectiveDomainSettings?.social?.linkedin ?? null,
+      whatsapp: effectiveDomainSettings?.social?.whatsapp ?? null
+    };
+
+    // Feature flags
+    const features = {
+      darkMode: effectiveDomainSettings?.features?.darkMode ?? false,
+      pwaPushNotifications: !!integrations.push.vapidPublicKey,
+      commenting: effectiveDomainSettings?.features?.commenting ?? false,
+      bookmarking: effectiveDomainSettings?.features?.bookmarking ?? true,
+      sharing: effectiveDomainSettings?.features?.sharing ?? true,
+      liveUpdates: effectiveDomainSettings?.features?.liveUpdates ?? false,
+      newsletter: effectiveDomainSettings?.features?.newsletter ?? false,
+      ePaper: (domain.kind === 'EPAPER') || (effectiveDomainSettings?.features?.ePaper ?? false),
+      mobileApp: effectiveDomainSettings?.features?.mobileApp ?? false
+    };
+
+    // Contact information
+    const contact = {
+      email: effectiveDomainSettings?.contact?.email ?? null,
+      phone: effectiveDomainSettings?.contact?.phone ?? null,
+      address: {
+        street: effectiveDomainSettings?.contact?.address ?? null,
+        city: effectiveDomainSettings?.contact?.city ?? null,
+        state: effectiveDomainSettings?.contact?.region ?? null,
+        country: effectiveDomainSettings?.contact?.country ?? 'India',
+        postalCode: effectiveDomainSettings?.contact?.postalCode ?? null
+      }
+    };
+
+    // Cache control hints for frontend
+    const cacheControl = {
+      config: 3600, // 1 hour
+      homepage: 300, // 5 minutes
+      article: 600, // 10 minutes
+      category: 300, // 5 minutes
+      staticPages: 86400 // 24 hours
+    };
+
     return res.json({
+      version: '2.0',
+      timestamp: new Date().toISOString(),
       tenant: {
         id: tenant.id,
         slug: tenant.slug,
         name: tenant.name,
-        displayName: (tenant as any)?.displayName || tenant.name
+        displayName: (tenant as any)?.displayName || tenant.name,
+        timezone: 'Asia/Kolkata',
+        locale: tenantDefaultCode || 'te'
       },
       domain: {
         id: domain.id,
         domain: domain.domain,
+        baseUrl,
         kind: domain.kind,
-        status: domain.status
+        status: domain.status,
+        environment: process.env.NODE_ENV || 'production'
       },
-      branding,
+      branding: {
+        siteName: branding.siteName,
+        siteTagline: effectiveDomainSettings?.branding?.tagline ?? null,
+        logo: branding.logoUrl,
+        favicon: branding.faviconUrl,
+        appleTouchIcon: effectiveDomainSettings?.branding?.appleTouchIcon ?? branding.logoUrl
+      },
+      theme,
       seo: {
         meta: seoMeta,
         openGraph: seoOpenGraph,
         twitter: seoTwitter,
+        jsonLd: {
+          organizationUrl: `${baseUrl}/#organization`,
+          websiteUrl: `${baseUrl}/#website`
+        },
         urls: {
           robotsTxt: `${baseUrl}/robots.txt`,
-          sitemapXml: `${baseUrl}/sitemap.xml`
+          sitemapXml: `${baseUrl}/sitemap.xml`,
+          rssFeed: `${baseUrl}/rss.xml`
         }
       },
       content: {
-        defaultLanguage: tenantDefaultCode || null,
-        languages
+        defaultLanguage: tenantDefaultCode || 'te',
+        supportedLanguages: languages.map((l: any) => l.code),
+        languages,
+        dateFormat: 'DD/MM/YYYY',
+        timeFormat: '12h'
       },
-      integrations,
-      layout,
-      tenantAdmin
+      integrations: {
+        analytics: {
+          googleAnalytics: integrations.analytics.googleAnalyticsId,
+          googleTagManager: integrations.analytics.gtmId,
+          enabled: !!(integrations.analytics.googleAnalyticsId || integrations.analytics.gtmId)
+        },
+        ads: {
+          adsense: integrations.ads.adsenseClientId,
+          enabled: !!integrations.ads.adsenseClientId
+        },
+        push: {
+          vapidPublicKey: integrations.push.vapidPublicKey,
+          enabled: !!integrations.push.vapidPublicKey
+        },
+        social: {
+          facebookAppId: effectiveDomainSettings?.integrations?.social?.facebookAppId ?? null,
+          twitterHandle: seoTwitter.handle
+        }
+      },
+      features,
+      navigation,
+      social,
+      contact,
+      layout: {
+        showTicker: layout.showTicker ?? true,
+        showTopBar: layout.showTopBar ?? true,
+        showBreadcrumbs: effectiveDomainSettings?.layout?.showBreadcrumbs ?? true,
+        showReadingProgress: effectiveDomainSettings?.layout?.showReadingProgress ?? true,
+        articlesPerPage: effectiveDomainSettings?.layout?.articlesPerPage ?? 20
+      },
+      admin: {
+        name: tenantAdmin.name,
+        mobile: tenantAdmin.mobile
+      },
+      cacheControl
     });
   } catch (error) {
     console.error('Error in /config:', error);
