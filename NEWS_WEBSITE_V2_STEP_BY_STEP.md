@@ -1,8 +1,15 @@
-# News Website V2.0 APIs - Complete Step by Step Guide
+# News Website APIs - Complete Step by Step Guide
 
 ## 🎯 Overview
 
-This guide shows the **complete flow** for building a multi-tenant Telugu news website frontend using News Website API v2.0.
+This guide shows the **complete flow** for building a multi-tenant Telugu news website frontend.
+
+**Base URL:** `https://app.kaburlumedia.com/api/v1`  
+**Header:** `X-Tenant-Domain: telangana.kaburlu.com`
+
+---
+
+## 📦 Version 2.0 APIs (Recommended)
 
 ### Key Benefits of V2.0
 - ✅ **Single config endpoint** - All settings in one call
@@ -12,32 +19,39 @@ This guide shows the **complete flow** for building a multi-tenant Telugu news w
 - ✅ **Cache hints** - Optimal caching recommendations
 - ✅ **SEO optimized** - JSON-LD, sitemaps, robots.txt
 
+### 📋 V2.0 Endpoints Summary
+
+| API | Purpose | Cache TTL | When to Call |
+|-----|---------|-----------|--------------|
+| `GET /public/config` | Complete website configuration | 1 hour | App initialization |
+| `GET /public/seo/homepage` | Homepage SEO JSON-LD | 1 hour | Homepage SEO |
+
+### 🔄 Legacy APIs (Still Available)
+
+| API | Purpose | Cache TTL | When to Call |
+|-----|---------|-----------|--------------|
+| `GET /public/categories` | Categories list | 1 hour | Navigation, filters |
+| `GET /public/articles` | Articles listing | 5 minutes | Homepage, category pages |
+| `GET /public/articles/:slug` | Single article | 10 minutes | Article detail page |
+| `GET /public/homepage` | Homepage sections | 5 minutes | Homepage (style-based) |
+| `GET /public/sitemap.xml` | XML sitemap | 24 hours | SEO crawlers |
+| `GET /public/robots.txt` | Robots file | 24 hours | SEO crawlers |
+
 ---
 
-## 📋 API Endpoints Summary
-
-| API | Purpose | When to Call |
-|-----|---------|--------------|
-| `GET /api/v1/public/config` | Complete website configuration | App initialization (once) |
-| `GET /api/v1/public/categories` | Categories list | Navigation, filters |
-| `GET /api/v1/public/articles` | Articles listing | Homepage, category pages |
-| `GET /api/v1/public/articles/:slug` | Single article | Article detail page |
-| `GET /api/v1/public/homepage` | Homepage sections | Homepage (style-based) |
-| `GET /api/v1/public/seo/homepage` | Homepage SEO | Homepage JSON-LD |
-| `GET /api/v1/public/sitemap.xml` | XML sitemap | SEO crawlers |
-| `GET /api/v1/public/robots.txt` | Robots file | SEO crawlers |
+## 🚀 Version 2.0 Implementation
 
 ---
 
-## 🚀 Step-by-Step Implementation
+### **V2.0 API #1: Website Configuration**
 
-### **Step 1: App Initialization - Get Config**
-
-**When:** Once during app load or SSR page build  
-**Cache:** 1 hour (ISR)
+**Endpoint:** `GET /public/config`  
+**Purpose:** Get complete website configuration in single call  
+**Cache:** 1 hour (ISR)  
+**When:** App initialization, layout rendering
 
 ```bash
-GET /api/v1/public/config
+GET /public/config
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -161,6 +175,8 @@ Header: X-Tenant-Domain: telangana.kaburlu.com
 **Frontend Usage:**
 ```typescript
 // Next.js App Router - app/layout.tsx
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 export async function generateMetadata() {
   const config = await getConfig();
   return {
@@ -171,7 +187,7 @@ export async function generateMetadata() {
 }
 
 async function getConfig() {
-  const res = await fetch(`${API_URL}/api/v1/public/config`, {
+  const res = await fetch(`${API_BASE}/public/config`, {
     headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
     next: { revalidate: 3600 } // Cache 1 hour
   });
@@ -181,13 +197,99 @@ async function getConfig() {
 
 ---
 
-### **Step 2: Get Categories**
+### **V2.0 API #2: Homepage SEO**
 
-**When:** Navigation menu, category pages, filters  
-**Cache:** 1 hour
+**Endpoint:** `GET /public/seo/homepage`  
+**Purpose:** Get Organization + WebSite JSON-LD schema  
+**Cache:** 1 hour  
+**When:** Homepage SEO optimization
 
 ```bash
-GET /api/v1/public/categories?languageCode=te
+GET /public/seo/homepage
+Header: X-Tenant-Domain: telangana.kaburlu.com
+```
+
+**Response:**
+```json
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://telangana.kaburlu.com/#website",
+      "url": "https://telangana.kaburlu.com",
+      "name": "తెలంగాణ కబుర్లు",
+      "description": "తెలంగాణ రాష్ట్రం నుండి తాజా వార్తలు",
+      "inLanguage": "te",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://telangana.kaburlu.com/search?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://telangana.kaburlu.com/#organization",
+      "name": "తెలంగాణ కబుర్లు",
+      "url": "https://telangana.kaburlu.com",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://cdn.kaburlu.com/logos/telangana.png",
+        "width": 512,
+        "height": 512
+      },
+      "sameAs": [
+        "https://facebook.com/telanganakaburlu",
+        "https://twitter.com/telanganakaburlu"
+      ]
+    }
+  ]
+}
+```
+
+**Frontend Usage:**
+```typescript
+// app/layout.tsx
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+export default async function RootLayout({ children }) {
+  const seo = await fetch(`${API_BASE}/public/seo/homepage`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 3600 }
+  }).then(r => r.json());
+  
+  return (
+    <html>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(seo) }}
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+---
+
+## 📚 Legacy APIs (Existing Endpoints)
+
+---
+
+### **Legacy API #1: Categories**
+
+**Endpoint:** `GET /public/categories`  
+**Purpose:** Get categories list with translations  
+**Cache:** 1 hour  
+**When:** Navigation menu, category pages, filters
+
+```bash
+GET /public/categories?languageCode=te
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -220,6 +322,8 @@ Header: X-Tenant-Domain: telangana.kaburlu.com
 **Frontend Usage:**
 ```typescript
 // components/Navigation.tsx
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 export async function Navigation() {
   const categories = await getCategories();
   
@@ -237,13 +341,15 @@ export async function Navigation() {
 
 ---
 
-### **Step 3: Homepage - Get Articles**
+### **Legacy API #2: Articles Listing**
 
-**When:** Homepage, category pages, latest articles  
-**Cache:** 5 minutes
+**Endpoint:** `GET /public/articles`  
+**Purpose:** Get paginated articles list with filtering  
+**Cache:** 5 minutes  
+**When:** Homepage, category pages, latest articles
 
 ```bash
-GET /api/v1/public/articles?page=1&pageSize=20&languageCode=te
+GET /public/articles?page=1&pageSize=20&languageCode=te
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -324,10 +430,14 @@ function ArticleCard({ article }) {
 
 ---
 
-### **Step 4: Category Page - Filter by Category**
+### **Legacy API #3: Category Filtering**
+
+**Endpoint:** `GET /public/articles?categorySlug=politics`  
+**Purpose:** Filter articles by category  
+**Cache:** 5 minutes
 
 ```bash
-GET /api/v1/public/articles?categorySlug=politics&page=1&pageSize=20&languageCode=te
+GET /public/articles?categorySlug=politics&page=1&pageSize=20&languageCode=te
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -349,13 +459,15 @@ export default async function CategoryPage({ params }) {
 
 ---
 
-### **Step 5: Article Detail Page**
+### **Legacy API #4: Article Detail**
 
-**When:** Single article view  
-**Cache:** 10 minutes
+**Endpoint:** `GET /public/articles/:slug`  
+**Purpose:** Get single article with full content  
+**Cache:** 10 minutes  
+**When:** Article detail page
 
 ```bash
-GET /api/v1/public/articles/hyderabad-metro-extension-approved
+GET /public/articles/hyderabad-metro-extension-approved
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -461,13 +573,15 @@ export default async function ArticlePage({ params }) {
 
 ---
 
-### **Step 6: Homepage Sections (Style-based)**
+### **Legacy API #5: Homepage Sections**
 
-**When:** Homepage with styled sections  
-**Cache:** 5 minutes
+**Endpoint:** `GET /public/homepage`  
+**Purpose:** Get style-based homepage sections  
+**Cache:** 5 minutes  
+**When:** Homepage with configured sections
 
 ```bash
-GET /api/v1/public/homepage
+GET /public/homepage
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
@@ -559,62 +673,57 @@ function Section({ data }) {
 
 ---
 
-### **Step 7: SEO - Homepage JSON-LD**
+### **Legacy API #6: Sitemap & Robots**
 
-**When:** Homepage SEO  
-**Cache:** 1 hour
+**Endpoint:** `GET /public/sitemap.xml`  
+**Purpose:** XML sitemap for SEO  
+**Cache:** 24 hours
 
 ```bash
-GET /api/v1/public/seo/homepage
+GET /public/sitemap.xml
+Header: X-Tenant-Domain: telangana.kaburlu.com
+```
+
+**Response:** XML sitemap with all published articles
+
+**Endpoint:** `GET /public/robots.txt`  
+**Purpose:** Robots.txt file  
+**Cache:** 24 hours
+
+```bash
+GET /public/robots.txt
 Header: X-Tenant-Domain: telangana.kaburlu.com
 ```
 
 **Response:**
-```json
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebSite",
-      "@id": "https://telangana.kaburlu.com/#website",
-      "url": "https://telangana.kaburlu.com",
-      "name": "తెలంగాణ కబుర్లు",
-      "description": "తెలంగాణ రాష్ట్రం నుండి తాజా వార్తలు",
-      "inLanguage": "te",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": {
-          "@type": "EntryPoint",
-          "urlTemplate": "https://telangana.kaburlu.com/search?q={search_term_string}"
-        },
-        "query-input": "required name=search_term_string"
-      }
-    },
-    {
-      "@type": "Organization",
-      "@id": "https://telangana.kaburlu.com/#organization",
-      "name": "తెలంగాణ కబుర్లు",
-      "url": "https://telangana.kaburlu.com",
-      "logo": {
-        "@type": "ImageObject",
-        "url": "https://cdn.kaburlu.com/logos/telangana.png",
-        "width": 512,
-        "height": 512
-      },
-      "sameAs": [
-        "https://facebook.com/telanganakaburlu",
-        "https://twitter.com/telanganakaburlu"
-      ]
-    }
-  ]
-}
+```
+User-agent: *
+Allow: /
+Sitemap: https://telangana.kaburlu.com/sitemap.xml
 ```
 
-**Frontend Usage:**
+---
+
+## 🔄 Complete Implementation Examples
+
+---
+
+### **Example 1: App Layout with V2.0 Config**
+
 ```typescript
 // app/layout.tsx
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 export default async function RootLayout({ children }) {
-  const seo = await getHomepageSEO();
+  const config = await fetch(`${API_BASE}/public/config`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 3600 }
+  }).then(r => r.json());
+  
+  const seo = await fetch(`${API_BASE}/public/seo/homepage`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 3600 }
+  }).then(r => r.json());
   
   return (
     <html>
@@ -632,45 +741,30 @@ export default async function RootLayout({ children }) {
 
 ---
 
-### **Step 8: Sitemap & Robots**
-
-```bash
-# XML Sitemap
-GET /api/v1/public/sitemap.xml
-Header: X-Tenant-Domain: telangana.kaburlu.com
-
-# Response: XML sitemap with all published articles
-```
-
-```bash
-# Robots.txt
-GET /api/v1/public/robots.txt
-Header: X-Tenant-Domain: telangana.kaburlu.com
-
-# Response:
-User-agent: *
-Allow: /
-Sitemap: https://telangana.kaburlu.com/sitemap.xml
-```
-
----
-
-## 🔄 Complete Homepage Flow
+### **Example 2: Complete Homepage Flow**
 
 ```typescript
 // app/page.tsx - Complete Homepage Example
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 export default async function HomePage() {
-  // 1. Get config (cached 1 hour)
-  const config = await getConfig();
+  // 1. Get config (cached 1 hour) - V2.0
+  const config = await fetch(`${API_BASE}/public/config`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 3600 }
+  }).then(r => r.json());
   
-  // 2. Get homepage sections (cached 5 minutes)
-  const homepage = await getHomepage();
+  // 2. Get homepage sections (cached 5 minutes) - Legacy
+  const homepage = await fetch(`${API_BASE}/public/homepage`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 300 }
+  }).then(r => r.json());
   
-  // 3. Get trending articles separately if needed
-  const trending = await getArticles({ 
-    tags: 'trending', 
-    pageSize: 10 
-  });
+  // 3. Get trending articles - Legacy
+  const trending = await fetch(`${API_BASE}/public/articles?tags=trending&pageSize=10`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 300 }
+  }).then(r => r.json());
   
   return (
     <div style={{ 
@@ -705,11 +799,15 @@ export default async function HomePage() {
 
 ## 📱 Mobile App Integration
 
-### Push Notifications Setup
+### Push Notifications Setup (V2.0)
 
 ```typescript
-// Use VAPID public key from config
-const config = await getConfig();
+// Use VAPID public key from V2.0 config
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+const config = await fetch(`${API_BASE}/public/config`, {
+  headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN }
+}).then(r => r.json());
 
 if (config.features.pwaPushNotifications && config.integrations.push.enabled) {
   const registration = await navigator.serviceWorker.register('/sw.js');
@@ -748,9 +846,13 @@ export const revalidate = 600; // Article detail
 ### 2. Incremental Static Regeneration (ISR)
 
 ```typescript
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 // pages/article/[slug].tsx
 export async function getStaticProps({ params }) {
-  const article = await getArticle(params.slug);
+  const article = await fetch(`${API_BASE}/public/articles/${params.slug}`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN }
+  }).then(r => r.json());
   return {
     props: { article },
     revalidate: 600 // 10 minutes
@@ -759,7 +861,9 @@ export async function getStaticProps({ params }) {
 
 export async function getStaticPaths() {
   // Generate top 100 articles at build time
-  const articles = await getArticles({ pageSize: 100 });
+  const articles = await fetch(`${API_BASE}/public/articles?pageSize=100`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN }
+  }).then(r => r.json());
   return {
     paths: articles.items.map(a => ({ params: { slug: a.slug } })),
     fallback: 'blocking' // Generate others on-demand
@@ -770,11 +874,14 @@ export async function getStaticPaths() {
 ### 3. Parallel Data Fetching
 
 ```typescript
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+const headers = { 'X-Tenant-Domain': process.env.TENANT_DOMAIN };
+
 // Fetch multiple APIs in parallel
 const [config, categories, articles] = await Promise.all([
-  getConfig(),
-  getCategories(),
-  getArticles({ page: 1 })
+  fetch(`${API_BASE}/public/config`, { headers, next: { revalidate: 3600 } }).then(r => r.json()),
+  fetch(`${API_BASE}/public/categories`, { headers, next: { revalidate: 3600 } }).then(r => r.json()),
+  fetch(`${API_BASE}/public/articles?page=1`, { headers, next: { revalidate: 300 } }).then(r => r.json())
 ]);
 ```
 
@@ -783,8 +890,15 @@ const [config, categories, articles] = await Promise.all([
 ## 🌐 Multi-Language Support
 
 ```typescript
-// Language switcher
-const config = await getConfig();
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+const headers = { 'X-Tenant-Domain': process.env.TENANT_DOMAIN };
+
+// Language switcher from V2.0 config
+const config = await fetch(`${API_BASE}/public/config`, { 
+  headers, 
+  next: { revalidate: 3600 } 
+}).then(r => r.json());
+
 const currentLang = config.content.defaultLanguage;
 
 <select onChange={handleLanguageChange} value={currentLang}>
@@ -796,19 +910,24 @@ const currentLang = config.content.defaultLanguage;
 </select>
 
 // Fetch articles in selected language
-const articles = await getArticles({ 
-  languageCode: selectedLanguage,
-  page: 1 
-});
+const articles = await fetch(
+  `${API_BASE}/public/articles?languageCode=${selectedLanguage}&page=1`,
+  { headers, next: { revalidate: 300 } }
+).then(r => r.json());
 ```
 
 ---
 
-## 🎨 Theme Application
+## 🎨 Theme Application (V2.0)
 
 ```typescript
-// Apply theme from config
-const config = await getConfig();
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+// Apply theme from V2.0 config
+const config = await fetch(`${API_BASE}/public/config`, {
+  headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+  next: { revalidate: 3600 }
+}).then(r => r.json());
 
 <html>
   <head>
@@ -834,9 +953,13 @@ const config = await getConfig();
 ## 🔐 Error Handling
 
 ```typescript
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+const TENANT_DOMAIN = process.env.TENANT_DOMAIN;
+
 async function getArticles(params) {
   try {
-    const res = await fetch(`${API_URL}/api/v1/public/articles`, {
+    const queryString = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/public/articles?${queryString}`, {
       headers: { 'X-Tenant-Domain': TENANT_DOMAIN },
       next: { revalidate: 300 }
     });
@@ -855,11 +978,16 @@ async function getArticles(params) {
 
 ---
 
-## 📊 Analytics Integration
+## 📊 Analytics Integration (V2.0)
 
 ```typescript
-// Google Analytics from config
-const config = await getConfig();
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+// Google Analytics from V2.0 config
+const config = await fetch(`${API_BASE}/public/config`, {
+  headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+  next: { revalidate: 3600 }
+}).then(r => r.json());
 
 if (config.integrations.analytics.enabled) {
   const gaId = config.integrations.analytics.googleAnalytics;
@@ -876,16 +1004,23 @@ if (config.integrations.analytics.enabled) {
 
 ---
 
-## 🎯 Complete Example: Article Page
+---
+
+### **Example 3: Complete Article Page**
 
 ```typescript
 // app/article/[slug]/page.tsx
 import { Metadata } from 'next';
 
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
 export const revalidate = 600; // 10 minutes
 
 export async function generateMetadata({ params }): Promise<Metadata> {
-  const article = await getArticle(params.slug);
+  const article = await fetch(`${API_BASE}/public/articles/${params.slug}`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 600 }
+  }).then(r => r.json());
   
   return {
     title: article.seo.title,
@@ -910,8 +1045,14 @@ export async function generateMetadata({ params }): Promise<Metadata> {
 
 export default async function ArticlePage({ params }) {
   const [config, article] = await Promise.all([
-    getConfig(),
-    getArticle(params.slug)
+    fetch(`${API_BASE}/public/config`, {
+      headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+      next: { revalidate: 3600 }
+    }).then(r => r.json()),
+    fetch(`${API_BASE}/public/articles/${params.slug}`, {
+      headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+      next: { revalidate: 600 }
+    }).then(r => r.json())
   ]);
   
   return (
@@ -998,19 +1139,39 @@ export default async function ArticlePage({ params }) {
 
 ## 📝 Summary
 
+### **V2.0 APIs (Recommended - Use These First!)**
+
+| API | Purpose | Cache | Base URL |
+|-----|---------|-------|----------|
+| `GET /public/config` | Complete configuration | 1 hour | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/seo/homepage` | Homepage JSON-LD | 1 hour | `https://app.kaburlumedia.com/api/v1` |
+
+### **Legacy APIs (Still Supported)**
+
+| API | Purpose | Cache | Base URL |
+|-----|---------|-------|----------|
+| `GET /public/categories` | Categories list | 1 hour | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/articles` | Articles listing | 5 min | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/articles/:slug` | Article detail | 10 min | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/homepage` | Homepage sections | 5 min | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/sitemap.xml` | XML sitemap | 24 hours | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/robots.txt` | Robots file | 24 hours | `https://app.kaburlumedia.com/api/v1` |
+
 ### API Call Sequence for Homepage:
-1. **GET /config** → Get all configuration (cache 1 hour)
-2. **GET /categories** → Get navigation categories (cache 1 hour)
-3. **GET /homepage** OR **GET /articles** → Get content (cache 5 min)
-4. **GET /seo/homepage** → Get JSON-LD (cache 1 hour)
+1. **V2.0:** `/public/config` → All configuration
+2. **V2.0:** `/public/seo/homepage` → SEO JSON-LD  
+3. **Legacy:** `/public/categories` → Navigation (optional)
+4. **Legacy:** `/public/homepage` OR `/public/articles` → Content
 
 ### API Call Sequence for Article Page:
-1. **GET /config** → Get configuration (cache 1 hour)
-2. **GET /articles/:slug** → Get article details (cache 10 min)
+1. **V2.0:** `/public/config` → Configuration
+2. **Legacy:** `/public/articles/:slug` → Article details
 
 ### API Call Sequence for Category Page:
-1. **GET /config** → Get configuration (cache 1 hour)
-2. **GET /articles?categorySlug=politics** → Get filtered articles (cache 5 min)
+1. **V2.0:** `/public/config` → Configuration
+2. **Legacy:** `/public/articles?categorySlug=politics` → Filtered articles
+
+**Note:** All API endpoints require `X-Tenant-Domain` header. Base URL already includes `/api/v1`, so just use the endpoint path directly.
 
 ---
 
