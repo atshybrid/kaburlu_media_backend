@@ -25,6 +25,9 @@ This guide shows the **complete flow** for building a multi-tenant Telugu news w
 |-----|---------|-----------|--------------|
 | `GET /public/config` | Complete website configuration | 1 hour | App initialization |
 | `GET /public/seo/homepage` | Homepage SEO JSON-LD | 1 hour | Homepage SEO |
+| `GET /public/homepage` | Style-based homepage sections (Style1/Style2) | 5 minutes | Homepage content |
+
+**New in V2.0:** `/public/homepage` now auto-detects theme style from domain settings!
 
 ### 🔄 Legacy APIs (Still Available)
 
@@ -197,7 +200,344 @@ async function getConfig() {
 
 ---
 
-### **V2.0 API #2: Homepage SEO**
+### **V2.0 API #3: Homepage Sections (Style1 & Style2)**
+
+**Endpoint:** `GET /public/homepage`  
+**Purpose:** Get homepage sections with auto-style detection  
+**Cache:** 5 minutes  
+**When:** Homepage content rendering
+
+**Auto-Detection:** Automatically uses style from domain settings (`themeStyle: 'style1'` or `'style2'`)
+
+**Manual Override:**
+- `?shape=style1` - Force Style1 layout
+- `?shape=style2` - Force Style2 layout
+- `?v=1` - Style1 (legacy parameter)
+- `?v=2` - Style2 default
+- `?v=3` - Style2 with HomepageSectionConfig table
+- `?v=4` - Style2 with theme configuration
+
+```bash
+# Auto-detect from domain settings (Recommended)
+GET /public/homepage
+Header: X-Tenant-Domain: telangana.kaburlu.com
+
+# Force Style1
+GET /public/homepage?shape=style1
+Header: X-Tenant-Domain: telangana.kaburlu.com
+
+# Force Style2
+GET /public/homepage?shape=style2
+Header: X-Tenant-Domain: telangana.kaburlu.com
+
+# Style2 with language filter
+GET /public/homepage?shape=style2&lang=te
+Header: X-Tenant-Domain: telangana.kaburlu.com
+```
+
+**Response (Style2):**
+```json
+{
+  "style": "style2",
+  "sections": [
+    {
+      "id": 1,
+      "position": 1,
+      "type": "hero_sidebar",
+      "sectionType": "hero_sidebar",
+      "categorySlug": "breaking",
+      "heroArticles": [
+        {
+          "id": "art_001",
+          "slug": "hyderabad-metro-extension",
+          "title": "హైదరాబాద్ మెట్రో విస్తరణకు ఆమోదం",
+          "image": "https://cdn.kaburlu.com/articles/metro-001.jpg",
+          "excerpt": "హైదరాబాద్ మెట్రో రైలు కొత్త మార్గాలకు...",
+          "category": {
+            "slug": "politics",
+            "name": "రాజకీయాలు"
+          },
+          "publishedAt": "2026-01-25T08:30:00.000Z"
+        }
+      ],
+      "sidebarArticles": [
+        {
+          "id": "art_002",
+          "title": "మరో ముఖ్య వార్త",
+          "slug": "another-news"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "position": 2,
+      "type": "category_boxes_3col",
+      "sectionType": "category_boxes_3col",
+      "categories": [
+        {
+          "slug": "politics",
+          "name": "రాజకీయాలు",
+          "articles": [
+            {
+              "id": "art_010",
+              "title": "రాజకీయ వార్త",
+              "image": "https://cdn.kaburlu.com/articles/pol-001.jpg",
+              "slug": "political-news"
+            }
+          ]
+        },
+        {
+          "slug": "sports",
+          "name": "క్రీడలు",
+          "articles": [
+            {
+              "id": "art_011",
+              "title": "క్రీడా వార్త",
+              "image": "https://cdn.kaburlu.com/articles/sports-001.jpg",
+              "slug": "sports-news"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "position": 3,
+      "type": "horizontal_scroll",
+      "sectionType": "horizontal_scroll",
+      "categorySlug": "entertainment",
+      "title": "వినోదం",
+      "articles": [
+        {
+          "id": "art_020",
+          "title": "వినోదం వార్త",
+          "image": "https://cdn.kaburlu.com/articles/ent-001.jpg",
+          "slug": "entertainment-news"
+        }
+      ]
+    }
+  ],
+  "extras": {
+    "trending": [
+      {
+        "id": "art_050",
+        "title": "ట్రెండింగ్ వార్త",
+        "slug": "trending-news",
+        "views": 5000,
+        "image": "https://cdn.kaburlu.com/articles/trend-001.jpg"
+      }
+    ],
+    "mustRead": [
+      {
+        "id": "art_051",
+        "title": "తప్పకుండా చదవండి",
+        "slug": "must-read-news"
+      }
+    ],
+    "mostRead": [
+      {
+        "id": "art_052",
+        "title": "అత్యధికంగా చదవబడిన వార్త",
+        "slug": "most-read-news"
+      }
+    ]
+  }
+}
+```
+
+**Response (Style1):**
+```json
+{
+  "version": "1.0",
+  "tenant": {
+    "id": "cm123",
+    "name": "Telangana Kaburlu",
+    "slug": "telangana-kaburlu"
+  },
+  "theme": {
+    "primaryColor": "#d32f2f",
+    "secondaryColor": "#1976d2",
+    "logoUrl": "https://cdn.kaburlu.com/logos/telangana.png"
+  },
+  "sections": [
+    {
+      "key": "hero",
+      "title": "Breaking News",
+      "position": 1,
+      "style": "hero",
+      "items": [
+        {
+          "id": "art_001",
+          "slug": "breaking-news-today",
+          "title": "Breaking News",
+          "excerpt": "Latest breaking news...",
+          "coverImage": {
+            "url": "https://cdn.kaburlu.com/articles/breaking-001.jpg",
+            "w": 1200,
+            "h": 675
+          },
+          "publishedAt": "2026-01-25T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "key": "politics",
+      "title": "రాజకీయాలు",
+      "position": 10,
+      "style": "grid",
+      "items": [
+        {
+          "id": "art_010",
+          "slug": "political-news",
+          "title": "రాజకీయ వార్త",
+          "excerpt": "రాజకీయాలపై వివరాలు..."
+        }
+      ]
+    }
+  ],
+  "data": {
+    "heroCount": 1,
+    "topStoriesCount": 5
+  }
+}
+```
+
+**Available Section Types (Style2):**
+- `hero_sidebar` - Hero article with sidebar
+- `category_boxes_3col` - 3-column category boxes
+- `horizontal_scroll` - Horizontal scrolling articles
+- `magazine_grid` - Magazine-style grid layout
+- `video_section` - Video articles section
+- `photo_gallery` - Photo gallery section
+- `live_blog` - Live updates section
+- `opinion_section` - Opinion/editorial articles
+
+**Frontend Usage:**
+```typescript
+// Auto-detect style from domain config
+const API_BASE = 'https://app.kaburlumedia.com/api/v1';
+
+export default async function HomePage() {
+  // Get config first to know the style
+  const config = await fetch(`${API_BASE}/public/config`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 3600 }
+  }).then(r => r.json());
+  
+  const style = config.theme.layout.style; // 'style1' or 'style2'
+  
+  // Homepage auto-detects from domain settings
+  const homepage = await fetch(`${API_BASE}/public/homepage`, {
+    headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+    next: { revalidate: 300 } // 5 minutes
+  }).then(r => r.json());
+  
+  // Or explicitly specify style
+  const homepageExplicit = await fetch(
+    `${API_BASE}/public/homepage?shape=${style}`,
+    {
+      headers: { 'X-Tenant-Domain': process.env.TENANT_DOMAIN },
+      next: { revalidate: 300 }
+    }
+  ).then(r => r.json());
+  
+  return (
+    <div>
+      {homepage.sections.map(section => (
+        <DynamicSection key={section.id} section={section} />
+      ))}
+      
+      {/* Trending Sidebar */}
+      <aside>
+        <h3>ట్రెండింగ్</h3>
+        {homepage.extras.trending.map(article => (
+          <TrendingCard key={article.id} article={article} />
+        ))}
+      </aside>
+    </div>
+  );
+}
+
+// Dynamic section renderer
+function DynamicSection({ section }) {
+  switch (section.sectionType) {
+    case 'hero_sidebar':
+      return <HeroSidebar {...section} />;
+    case 'category_boxes_3col':
+      return <CategoryBoxes3Col {...section} />;
+    case 'horizontal_scroll':
+      return <HorizontalScroll {...section} />;
+    case 'magazine_grid':
+      return <MagazineGrid {...section} />;
+    default:
+      return <GenericSection {...section} />;
+  }
+}
+```
+
+**Admin Configuration:**
+
+**Style1 Setup:**
+```bash
+# Apply default Style1 configuration
+POST /api/v1/tenant-theme/{tenantId}/homepage/style1/apply-default
+Authorization: Bearer {JWT_TOKEN}
+
+# Customize sections
+PATCH /api/v1/tenant-theme/{tenantId}/homepage/style1/sections
+Authorization: Bearer {JWT_TOKEN}
+Content-Type: application/json
+
+{
+  "sections": [
+    {
+      "key": "politics",
+      "title": "రాజకీయాలు",
+      "position": 10,
+      "categorySlug": "politics",
+      "limit": 8
+    }
+  ]
+}
+```
+
+**Style2 Setup:**
+```bash
+# Apply default Style2 configuration
+POST /api/v1/tenant-theme/{tenantId}/style2-config/apply-default
+Authorization: Bearer {JWT_TOKEN}
+
+# Customize sections
+PUT /api/v1/tenant-theme/{tenantId}/style2-config
+Authorization: Bearer {JWT_TOKEN}
+Content-Type: application/json
+
+{
+  "sections": [
+    {
+      "id": 1,
+      "position": 1,
+      "section_type": "hero_sidebar",
+      "hero_category": "breaking",
+      "sidebar_category": "trending"
+    },
+    {
+      "id": 2,
+      "position": 2,
+      "section_type": "category_boxes_3col",
+      "categories": ["politics", "sports", "entertainment"]
+    }
+  ]
+}
+
+# Get available section types
+GET /api/v1/tenant-theme/{tenantId}/style2-config/section-types
+Authorization: Bearer {JWT_TOKEN}
+```
+
+---
+
+### **V2.0 API #4: Homepage SEO**
 
 **Endpoint:** `GET /public/seo/homepage`  
 **Purpose:** Get Organization + WebSite JSON-LD schema  
@@ -1144,7 +1484,14 @@ export default async function ArticlePage({ params }) {
 | API | Purpose | Cache | Base URL |
 |-----|---------|-------|----------|
 | `GET /public/config` | Complete configuration | 1 hour | `https://app.kaburlumedia.com/api/v1` |
+| `GET /public/homepage` | **NEW!** Style1/Style2 homepage (auto-detect) | 5 min | `https://app.kaburlumedia.com/api/v1` |
 | `GET /public/seo/homepage` | Homepage JSON-LD | 1 hour | `https://app.kaburlumedia.com/api/v1` |
+
+**🆕 What's New in V2.0:**
+- `/public/homepage` now **auto-detects** theme style from domain settings
+- Supports both **Style1** and **Style2** layouts in single endpoint
+- No need to specify `?shape=` - automatically uses configured style
+- Optional manual override with `?shape=style1` or `?shape=style2`
 
 ### **Legacy APIs (Still Supported)**
 
@@ -1158,10 +1505,12 @@ export default async function ArticlePage({ params }) {
 | `GET /public/robots.txt` | Robots file | 24 hours | `https://app.kaburlumedia.com/api/v1` |
 
 ### API Call Sequence for Homepage:
-1. **V2.0:** `/public/config` → All configuration
-2. **V2.0:** `/public/seo/homepage` → SEO JSON-LD  
-3. **Legacy:** `/public/categories` → Navigation (optional)
-4. **Legacy:** `/public/homepage` OR `/public/articles` → Content
+1. **V2.0:** `/public/config` → All configuration (1 hour cache)
+2. **V2.0:** `/public/homepage` → **Auto-detect Style1/Style2 content** (5 min cache) ⭐ NEW!
+3. **V2.0:** `/public/seo/homepage` → SEO JSON-LD (1 hour cache)
+4. **Legacy (Optional):** `/public/categories` → Navigation if needed
+
+**Note:** `/public/homepage` automatically detects theme from domain settings. No need to call separate endpoints for Style1 vs Style2!
 
 ### API Call Sequence for Article Page:
 1. **V2.0:** `/public/config` → Configuration
