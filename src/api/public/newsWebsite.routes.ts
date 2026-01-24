@@ -75,6 +75,7 @@ const router = Router();
  *                     slug: { type: string }
  *                     name: { type: string }
  *                     displayName: { type: string }
+ *                     nativeName: { type: string, description: "Native language name from TenantEntity" }
  *                     timezone: { type: string, example: "Asia/Kolkata" }
  *                     locale: { type: string, example: "te" }
  *                 domain:
@@ -544,6 +545,7 @@ router.get('/config', async (_req, res) => {
         slug: tenant.slug,
         name: tenant.name,
         displayName: (tenant as any)?.displayName || tenant.name,
+        nativeName: tenantEntity?.nativeName || (tenant as any)?.displayName || tenant.name,
         timezone: 'Asia/Kolkata',
         locale: tenantDefaultCode || 'te'
       },
