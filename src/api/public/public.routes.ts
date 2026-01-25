@@ -2845,32 +2845,64 @@ router.get('/articles/:slug', async (req, res) => {
     logoUrl: publisherLogoUrl
   };
 
-  // Fetch previous and next articles for navigation
+  // Auto-calculate previous and next articles based on publishedAt (chronological order)
   let previousArticle = null;
   let nextArticle = null;
 
-  if ((a as any).previousArticleId) {
-    previousArticle = await p.tenantWebArticle.findUnique({
-      where: { id: (a as any).previousArticleId },
+  try {
+    // Previous article (older, published before current article)
+    const prevArt = await p.tenantWebArticle.findFirst({
+      where: {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        publishedAt: { lt: (a as any).publishedAt },
+        ...domainScope
+      },
+      orderBy: { publishedAt: 'desc' },
       select: {
         id: true,
         slug: true,
         title: true,
         coverImageUrl: true
       }
-    }).catch(() => null);
-  }
+    });
 
-  if ((a as any).nextArticleId) {
-    nextArticle = await p.tenantWebArticle.findUnique({
-      where: { id: (a as any).nextArticleId },
+    if (prevArt) {
+      previousArticle = {
+        id: prevArt.id,
+        slug: prevArt.slug,
+        title: prevArt.title,
+        coverImageUrl: prevArt.coverImageUrl
+      };
+    }
+
+    // Next article (newer, published after current article)
+    const nextArt = await p.tenantWebArticle.findFirst({
+      where: {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        publishedAt: { gt: (a as any).publishedAt },
+        ...domainScope
+      },
+      orderBy: { publishedAt: 'asc' },
       select: {
         id: true,
         slug: true,
         title: true,
         coverImageUrl: true
       }
-    }).catch(() => null);
+    });
+
+    if (nextArt) {
+      nextArticle = {
+        id: nextArt.id,
+        slug: nextArt.slug,
+        title: nextArt.title,
+        coverImageUrl: nextArt.coverImageUrl
+      };
+    }
+  } catch (err) {
+    console.error('Error fetching previous/next articles:', err);
   }
 
   // Add all enhanced fields to response
