@@ -379,6 +379,8 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         const contentJson = {
           contentHtml,
           plainText,
+          excerpt: webArticle.lead || null,
+          highlights: printArticle.highlights || [],
           blocks: webArticle.sections || [],
           meta: {
             languageCode,

@@ -2131,7 +2131,24 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  * @swagger
  * /public/articles/{slug}:
  *   get:
- *     summary: Get a single published website article by slug for this domain
+ *     summary: 🚀 Get complete article details with reporter info, trending & related articles
+ *     description: |
+ *       **ENHANCED ARTICLE DETAIL API** - Everything needed for article page in ONE call
+ *       
+ *       **Returns:**
+ *       - ✅ Full article content (title, excerpt, highlights, blocks, HTML)
+ *       - ✅ Publisher/Tenant details (name, logo, nativeName)
+ *       - ✅ Reporter profile (name, photo, designation, location, total articles, last 10 articles)
+ *       - ✅ Trending articles (top 15 by viewCount)
+ *       - ✅ Related/Also-read articles (6 from same category)
+ *       - ✅ SEO metadata (meta tags, JSON-LD)
+ *       
+ *       **Use Cases:**
+ *       - Article detail page (complete data in 1 API call)
+ *       - Reporter profile section
+ *       - Trending/Related articles sidebar
+ *       
+ *       **Performance:** Single optimized query with parallel fetches
  *     tags: [Public - Website, Public - Tenant]
  *     parameters:
  *       - in: header
@@ -2145,6 +2162,7 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *         name: slug
  *         required: true
  *         schema: { type: string }
+ *         description: Article slug (URL-friendly identifier)
  *       - in: query
  *         name: languageCode
  *         required: false
@@ -2152,31 +2170,246 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *         schema: { type: string, example: te }
  *     responses:
  *       200:
- *         description: Website article detail
+ *         description: Complete article details with enhanced data
  *         content:
  *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 tenantId: { type: string }
+ *                 slug: { type: string }
+ *                 title: { type: string }
+ *                 subtitle: { type: string }
+ *                 excerpt: { type: string, description: "Lead paragraph / summary" }
+ *                 highlights: { type: array, items: { type: string }, description: "Key bullet points" }
+ *                 tags: { type: array, items: { type: string } }
+ *                 status: { type: string, enum: [published, draft, archived] }
+ *                 publishedAt: { type: string, format: date-time, nullable: true }
+ *                 coverImage:
+ *                   type: object
+ *                   properties:
+ *                     url: { type: string }
+ *                     alt: { type: string }
+ *                     caption: { type: string }
+ *                 categories:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       slug: { type: string }
+ *                       name: { type: string }
+ *                 blocks: { type: array, description: "Structured content sections" }
+ *                 contentHtml: { type: string, description: "Full HTML content" }
+ *                 plainText: { type: string, description: "Plain text version" }
+ *                 readingTimeMin: { type: number }
+ *                 languageCode: { type: string }
+ *                 authors: { type: array }
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     seoTitle: { type: string }
+ *                     metaDescription: { type: string }
+ *                 jsonLd: { type: object, description: "Schema.org NewsArticle JSON-LD" }
+ *                 audit:
+ *                   type: object
+ *                   properties:
+ *                     createdAt: { type: string, format: date-time }
+ *                     updatedAt: { type: string, format: date-time }
+ *                     createdBy: { type: string }
+ *                     updatedBy: { type: string }
+ *                 media:
+ *                   type: object
+ *                   properties:
+ *                     images: { type: array }
+ *                     videos: { type: array }
+ *                 publisher:
+ *                   type: object
+ *                   description: "Tenant/Publisher details"
+ *                   properties:
+ *                     id: { type: string }
+ *                     name: { type: string }
+ *                     nativeName: { type: string, nullable: true }
+ *                     publisherName: { type: string, nullable: true }
+ *                     logoUrl: { type: string, nullable: true }
+ *                 reporter:
+ *                   type: object
+ *                   nullable: true
+ *                   description: "Reporter/Author profile details"
+ *                   properties:
+ *                     id: { type: string }
+ *                     name: { type: string, nullable: true }
+ *                     photoUrl: { type: string, nullable: true }
+ *                     designation: { type: string, nullable: true }
+ *                     location:
+ *                       type: object
+ *                       properties:
+ *                         state: { type: string, nullable: true }
+ *                         district: { type: string, nullable: true }
+ *                         mandal: { type: string, nullable: true }
+ *                     totalArticles: { type: number, description: "Total published articles by this reporter" }
+ *                     recentArticles:
+ *                       type: array
+ *                       description: "Last 10 articles by this reporter (excluding current)"
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string }
+ *                           slug: { type: string }
+ *                           title: { type: string }
+ *                           coverImageUrl: { type: string, nullable: true }
+ *                           publishedAt: { type: string, format: date-time }
+ *                           viewCount: { type: number }
+ *                           category:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               slug: { type: string }
+ *                               name: { type: string }
+ *                 mustRead:
+ *                   type: object
+ *                   nullable: true
+ *                   description: "Top 1 must-read article (highest viewCount)"
+ *                   properties:
+ *                     id: { type: string }
+ *                     slug: { type: string }
+ *                     title: { type: string }
+ *                     coverImageUrl: { type: string, nullable: true }
+ *                     publishedAt: { type: string, format: date-time }
+ *                     viewCount: { type: number }
+ *                     category:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         slug: { type: string }
+ *                         name: { type: string }
+ *                 trending:
+ *                   type: array
+ *                   description: "Top 15 trending articles (by viewCount)"
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       slug: { type: string }
+ *                       title: { type: string }
+ *                       coverImageUrl: { type: string, nullable: true }
+ *                       publishedAt: { type: string, format: date-time }
+ *                       viewCount: { type: number }
+ *                       category:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           slug: { type: string }
+ *                           name: { type: string }
+ *                 related:
+ *                   type: array
+ *                   description: "Related articles (same category, up to 6)"
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       slug: { type: string }
+ *                       title: { type: string }
+ *                       coverImageUrl: { type: string, nullable: true }
+ *                       publishedAt: { type: string, format: date-time }
+ *                       viewCount: { type: number }
  *             examples:
- *               sample:
+ *               complete:
+ *                 summary: Complete article with all enhanced fields
  *                 value:
- *                   id: "wa_1"
- *                   tenantId: "t_abc"
- *                   slug: "sangareddy-patancheru-december-27"
- *                   title: "Headline"
+ *                   id: "cmkr68za101fnli1e8wd8sk0d"
+ *                   tenantId: "cmk7e7tg401ezlp22wkz5rxky"
+ *                   slug: "tech-skills-development-program"
+ *                   title: "సాంకేతిక నైపుణ్యాల అభివృద్ధికి రాష్ట్ర ప్రభుత్వ చర్యలు"
  *                   subtitle: ""
- *                   excerpt: "Short summary..."
- *                   tags: ["telangana"]
+ *                   excerpt: "సాంకేతిక నైపుణ్యాలను మెరుగుపర్చుకోవడం ద్వారా యువతకు ఉన్నత అవకాశాలు దక్కుతాయి"
+ *                   highlights:
+ *                     - "నిజామాబాద్ లో స్కిల్ డెవలప్‌మెంట్ ప్రోగ్రాం"
+ *                     - "రాష్ట్ర సలహాదారులు పాల్గొన్నారు"
+ *                     - "యువతకు ఉద్యోగ అవకాశాలు పెంపొందింపు"
+ *                   tags: ["సాంకేతిక నైపుణ్యాలు", "రాష్ట్ర ప్రభుత్వం"]
  *                   status: "published"
- *                   publishedAt: "2025-12-27T10:00:00.000Z"
- *                   coverImage: { alt: "", url: "https://cdn.example.com/cover.webp", caption: "" }
- *                   categories: []
+ *                   publishedAt: "2026-01-23T17:45:40.247Z"
+ *                   coverImage:
+ *                     url: "https://kaburlu-news.b-cdn.net/example.webp"
+ *                     alt: ""
+ *                     caption: ""
+ *                   categories:
+ *                     - id: "cat123"
+ *                       slug: "education"
+ *                       name: "Education"
  *                   blocks: []
- *                   contentHtml: ""
- *                   plainText: ""
+ *                   contentHtml: "<h1>Title</h1><p class=\"lead\">Lead...</p>"
+ *                   plainText: "Title\nLead..."
  *                   readingTimeMin: 2
  *                   languageCode: "te"
  *                   authors: []
- *                   meta: { seoTitle: "Headline", metaDescription: "Short summary..." }
+ *                   meta:
+ *                     seoTitle: "Tech Skills Development"
+ *                     metaDescription: "State government initiatives..."
  *                   jsonLd: {}
+ *                   audit:
+ *                     createdAt: "2026-01-23T17:45:40.250Z"
+ *                     updatedAt: "2026-01-25T05:46:50.779Z"
+ *                   media:
+ *                     images: []
+ *                     videos: []
+ *                   publisher:
+ *                     id: "cmk7e7tg401ezlp22wkz5rxky"
+ *                     name: "Kaburlu Today"
+ *                     nativeName: "కబుర్లు టుడే"
+ *                     publisherName: "Kaburlu Media Pvt Ltd"
+ *                     logoUrl: "https://kaburlu-news.b-cdn.net/logo.png"
+ *                   mustRead:
+ *                     id: "mustread1"
+ *                     slug: "must-read-article"
+ *                     title: "Top Trending Article"
+ *                     coverImageUrl: "https://kaburlu-news.b-cdn.net/mustread.jpg"
+ *                     publishedAt: "2026-01-25T08:00:00.000Z"
+ *                     viewCount: 8542
+ *                     category:
+ *                       slug: "breaking"
+ *                       name: "Breaking News"
+ *                   reporter:
+ *                     id: "cmk74muz0007jugy4h1t9xllm"
+ *                     name: "రాజేష్ కుమార్"
+ *                     photoUrl: "https://kaburlu-news.b-cdn.net/reporter.jpg"
+ *                     designation: "Senior Reporter"
+ *                     location:
+ *                       state: "Telangana"
+ *                       district: "Nizamabad"
+ *                       mandal: "Nizamabad Urban"
+ *                     totalArticles: 247
+ *                     recentArticles:
+ *                       - id: "abc123"
+ *                         slug: "previous-article-1"
+ *                         title: "Previous Article"
+ *                         coverImageUrl: "https://..."
+ *                         publishedAt: "2026-01-22T10:30:00.000Z"
+ *                         viewCount: 1523
+ *                         category:
+ *                           slug: "politics"
+ *                           name: "Politics"
+ *                   trending:
+ *                     - id: "trend1"
+ *                       slug: "trending-1"
+ *                       title: "Trending Article"
+ *                       coverImageUrl: "https://..."
+ *                       publishedAt: "2026-01-24T15:00:00.000Z"
+ *                       viewCount: 5234
+ *                       category:
+ *                         slug: "news"
+ *                         name: "News"
+ *                   related:
+ *                     - id: "rel1"
+ *                       slug: "related-1"
+ *                       title: "Related Article"
+ *                       coverImageUrl: "https://..."
+ *                       publishedAt: "2026-01-23T12:00:00.000Z"
+ *                       viewCount: 823
+ *       404:
+ *         description: Article not found
  */
 router.get('/articles/:slug', async (req, res) => {
   const domain = (res.locals as any).domain;
@@ -2235,7 +2468,7 @@ router.get('/articles/:slug', async (req, res) => {
     OR: [{ slug }, { id: slug }]
   };
 
-  const [a, tenantTheme] = await Promise.all([
+  const [a, tenantTheme, tenantEntity] = await Promise.all([
     p.tenantWebArticle.findFirst({
     where,
     orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -2258,10 +2491,24 @@ router.get('/articles/:slug', async (req, res) => {
       authorId: true,
       createdAt: true,
       updatedAt: true,
-      category: { select: { slug: true, name: true } }
+      viewCount: true,
+      category: { select: { id: true, slug: true, name: true } },
+      author: {
+        select: {
+          id: true,
+          mobileNumber: true,
+          profile: {
+            select: {
+              fullName: true,
+              profilePhotoUrl: true
+            }
+          }
+        }
+      }
     }
   }),
-    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
   ]);
 
   if (!a) return res.status(404).json({ error: 'Not found' });
@@ -2339,6 +2586,229 @@ router.get('/articles/:slug', async (req, res) => {
   }
 
   detail.jsonLd = merged;
+
+  // Fetch additional details for enhanced response
+  const authorId = (a as any)?.authorId;
+  let reporterDetails = null;
+  let reporterArticles = [];
+  let reporterTotalCount = 0;
+
+  if (authorId) {
+    try {
+      // Get reporter details with designation and location
+      const reporter = await p.reporter.findFirst({
+        where: { userId: authorId, tenantId: tenant.id },
+        select: {
+          id: true,
+          designation: true,
+          stateId: true,
+          districtId: true,
+          mandalId: true,
+          state: { select: { name: true } },
+          district: { select: { name: true } },
+          mandal: { select: { name: true } },
+          user: {
+            select: {
+              id: true,
+              mobileNumber: true,
+              profile: {
+                select: {
+                  fullName: true,
+                  profilePhotoUrl: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (reporter) {
+        // Get reporter's total article count
+        reporterTotalCount = await p.tenantWebArticle.count({
+          where: {
+            tenantId: tenant.id,
+            authorId,
+            status: 'PUBLISHED'
+          }
+        });
+
+        // Get reporter's last 10 articles
+        const lastArticles = await p.tenantWebArticle.findMany({
+          where: {
+            tenantId: tenant.id,
+            authorId,
+            status: 'PUBLISHED',
+            id: { not: a.id } // Exclude current article
+          },
+          orderBy: { publishedAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            slug: true,
+            title: true,
+            coverImageUrl: true,
+            publishedAt: true,
+            viewCount: true,
+            category: { select: { slug: true, name: true } }
+          }
+        });
+
+        reporterArticles = lastArticles.map((art: any) => ({
+          id: art.id,
+          slug: art.slug,
+          title: art.title,
+          coverImageUrl: art.coverImageUrl,
+          publishedAt: art.publishedAt,
+          viewCount: art.viewCount || 0,
+          category: art.category ? { slug: art.category.slug, name: art.category.name } : null
+        }));
+
+        reporterDetails = {
+          id: reporter.user.id,
+          name: reporter.user.profile?.fullName || null,
+          photoUrl: reporter.user.profile?.profilePhotoUrl || null,
+          designation: reporter.designation || null,
+          location: {
+            state: reporter.state?.name || null,
+            district: reporter.district?.name || null,
+            mandal: reporter.mandal?.name || null
+          },
+          totalArticles: reporterTotalCount,
+          recentArticles: reporterArticles
+        };
+      }
+    } catch (err) {
+      console.error('Error fetching reporter details:', err);
+    }
+  }
+
+  // Fetch must read article (top 1 by viewCount)
+  let mustReadArticle = null;
+  try {
+    const topArticle = await p.tenantWebArticle.findFirst({
+      where: {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        id: { not: a.id },
+        ...domainScope
+      },
+      orderBy: { viewCount: 'desc' },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        coverImageUrl: true,
+        publishedAt: true,
+        viewCount: true,
+        category: { select: { slug: true, name: true } }
+      }
+    });
+
+    if (topArticle) {
+      mustReadArticle = {
+        id: topArticle.id,
+        slug: topArticle.slug,
+        title: topArticle.title,
+        coverImageUrl: topArticle.coverImageUrl,
+        publishedAt: topArticle.publishedAt,
+        viewCount: topArticle.viewCount || 0,
+        category: topArticle.category ? { slug: topArticle.category.slug, name: topArticle.category.name } : null
+      };
+    }
+  } catch (err) {
+    console.error('Error fetching must read article:', err);
+  }
+
+  // Fetch trending articles (top 15 by viewCount)
+  let trendingArticles = [];
+  try {
+    const trending = await p.tenantWebArticle.findMany({
+      where: {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        id: { not: a.id },
+        ...domainScope
+      },
+      orderBy: { viewCount: 'desc' },
+      take: 15,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        coverImageUrl: true,
+        publishedAt: true,
+        viewCount: true,
+        category: { select: { slug: true, name: true } }
+      }
+    });
+
+    trendingArticles = trending.map((art: any) => ({
+      id: art.id,
+      slug: art.slug,
+      title: art.title,
+      coverImageUrl: art.coverImageUrl,
+      publishedAt: art.publishedAt,
+      viewCount: art.viewCount || 0,
+      category: art.category ? { slug: art.category.slug, name: art.category.name } : null
+    }));
+  } catch (err) {
+    console.error('Error fetching trending articles:', err);
+  }
+
+  // Fetch related/also-read articles (same category, recent)
+  let relatedArticles = [];
+  const categoryId = (a as any)?.category?.id;
+  if (categoryId) {
+    try {
+      const related = await p.tenantWebArticle.findMany({
+        where: {
+          tenantId: tenant.id,
+          categoryId,
+          status: 'PUBLISHED',
+          id: { not: a.id },
+          ...domainScope
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 6,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          coverImageUrl: true,
+          publishedAt: true,
+          viewCount: true
+        }
+      });
+
+      relatedArticles = related.map((art: any) => ({
+        id: art.id,
+        slug: art.slug,
+        title: art.title,
+        coverImageUrl: art.coverImageUrl,
+        publishedAt: art.publishedAt,
+        viewCount: art.viewCount || 0
+      }));
+    } catch (err) {
+      console.error('Error fetching related articles:', err);
+    }
+  }
+
+  // Publisher/Tenant details
+  const publisher = {
+    id: tenant.id,
+    name: tenantDisplayName,
+    nativeName: (tenantEntity as any)?.nativeName || null,
+    publisherName: (tenantEntity as any)?.publisherName || null,
+    logoUrl: publisherLogoUrl
+  };
+
+  // Add all enhanced fields to response
+  detail.publisher = publisher;
+  detail.reporter = reporterDetails;
+  detail.mustRead = mustReadArticle;
+  detail.trending = trendingArticles;
+  detail.related = relatedArticles;
+
   res.json(detail);
 });
 

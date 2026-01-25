@@ -19,6 +19,7 @@ export type WebArticleDetail = {
   title: string;
   subtitle: string;
   excerpt: string;
+  highlights: string[];
   tags: string[];
   status: string;
   publishedAt: string | null;
@@ -48,6 +49,7 @@ export function toWebArticleDetailDto(a: any): WebArticleDetail {
     title: a.title || cj?.title || '',
     subtitle: cj?.subtitle || '',
     excerpt: cj?.excerpt || '',
+    highlights: cj?.highlights || [],
     tags: (a.tags || cj?.tags || []) as string[],
     status: String(a.status || cj?.status || 'draft').toLowerCase(),
     publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
