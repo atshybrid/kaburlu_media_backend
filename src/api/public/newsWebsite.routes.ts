@@ -562,7 +562,14 @@ router.get('/config', async (_req, res) => {
         siteTagline: effectiveDomainSettings?.branding?.tagline ?? null,
         logo: branding.logoUrl,
         favicon: branding.faviconUrl,
-        appleTouchIcon: effectiveDomainSettings?.branding?.appleTouchIcon ?? branding.logoUrl
+        appleTouchIcon: effectiveDomainSettings?.branding?.appleTouchIcon ?? branding.logoUrl,
+
+        // Legacy fields (kept for older clients)
+        logoUrl: branding.logoUrl,
+        faviconUrl: branding.faviconUrl,
+        primaryColor: theme.colors.primary,
+        secondaryColor: theme.colors.secondary,
+        fontFamily: theme.typography.fontFamily
       },
       theme,
       seo: {
@@ -590,11 +597,18 @@ router.get('/config', async (_req, res) => {
         analytics: {
           googleAnalytics: integrations.analytics.googleAnalyticsId,
           googleTagManager: integrations.analytics.gtmId,
-          enabled: !!(integrations.analytics.googleAnalyticsId || integrations.analytics.gtmId)
+          enabled: !!(integrations.analytics.googleAnalyticsId || integrations.analytics.gtmId),
+
+          // Legacy fields
+          googleAnalyticsId: integrations.analytics.googleAnalyticsId,
+          gtmId: integrations.analytics.gtmId
         },
         ads: {
           adsense: integrations.ads.adsenseClientId,
-          enabled: !!integrations.ads.adsenseClientId
+          enabled: !!integrations.ads.adsenseClientId,
+
+          // Legacy fields
+          adsenseClientId: integrations.ads.adsenseClientId
         },
         push: {
           vapidPublicKey: integrations.push.vapidPublicKey,
@@ -617,6 +631,12 @@ router.get('/config', async (_req, res) => {
         articlesPerPage: effectiveDomainSettings?.layout?.articlesPerPage ?? 20
       },
       admin: {
+        name: tenantAdmin.name,
+        mobile: tenantAdmin.mobile
+      },
+
+      // Legacy field name
+      tenantAdmin: {
         name: tenantAdmin.name,
         mobile: tenantAdmin.mobile
       },
@@ -918,16 +938,16 @@ router.get('/smart-homepage', async (req, res) => {
     ]);
 
     // Get category icons
-    const categoryIds = topCategories.map(c => c.categoryId).filter(Boolean) as string[];
+    const categoryIds = topCategories.map((c: any) => c.categoryId).filter(Boolean) as string[];
     const categoryDetails = await p.category.findMany({
       where: { id: { in: categoryIds } },
       select: { id: true, iconUrl: true }
     });
-    const categoryIconMap = new Map(categoryDetails.map(c => [c.id, c.iconUrl]));
+    const categoryIconMap = new Map(categoryDetails.map((c: any) => [c.id, c.iconUrl]));
 
     // Fetch articles for each section in parallel
     const sectionsWithArticles = await Promise.all(
-      topCategories.map(async (cat) => {
+      topCategories.map(async (cat: any) => {
         const articles = await p.tenantWebArticleView.findMany({
           where: {
             tenantId: tenant.id,
@@ -956,7 +976,7 @@ router.get('/smart-homepage', async (req, res) => {
           categorySlug: cat.categorySlug,
           categoryIcon: categoryIconMap.get(cat.categoryId!) || null,
           articlesCount: cat._count.id,
-          articles: articles.map(a => ({
+          articles: articles.map((a: any) => ({
             id: a.id,
             title: a.title,
             slug: a.slug,
@@ -980,7 +1000,7 @@ router.get('/smart-homepage', async (req, res) => {
     const response = {
       version: '2.0-smart',
       timestamp: new Date().toISOString(),
-      latestNews: latestArticles.map(a => ({
+      latestNews: latestArticles.map((a: any) => ({
         id: a.id,
         title: a.title,
         slug: a.slug,
@@ -992,7 +1012,7 @@ router.get('/smart-homepage', async (req, res) => {
         publishedAt: a.publishedAt,
         readTime: calculateReadTime(a.content)
       })),
-      mostRead: mostReadArticles.map(a => ({
+      mostRead: mostReadArticles.map((a: any) => ({
         id: a.id,
         title: a.title,
         slug: a.slug,
