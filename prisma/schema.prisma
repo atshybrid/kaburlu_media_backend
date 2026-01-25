@@ -1,3 +1,14 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_DIRECT")
+}
+
 model OtpLog {
   id           String   @id @default(cuid())
   mobileNumber String
@@ -7,283 +18,261 @@ model OtpLog {
 }
 
 model ShortNews {
-  id             String            @id @default(cuid())
-  title          String
-  slug           String?
-  summary        String?
-  content        String // ≤60 words
-  language       String?
-  isBreaking     Boolean           @default(false)
-  author         User              @relation(fields: [authorId], references: [id])
-  authorId       String
-  categoryId     String
-  tags           String[]
-  featuredImage  String?
-  publishDate    DateTime?
-  status         String            @default("PENDING") // PENDING, AI_APPROVED, DESK_PENDING, DESK_APPROVED, REJECTED
-  aiApprovalStatus String?
-  aiViolationCount Int             @default(0)
-  aiValidationIssues Json?
-  seo            Json?
-  // Optional extra headings styling payload, e.g. { h2: { text, color?, size? }, h3: { text, color?, size? } }
-  headings       Json?
-  // Optional template id for client-side rendering style
-  templateId     String?
-  allowComments  Boolean           @default(true)
-  mediaUrls      String[] // array of image/video URLs
-  latitude       Float?
-  longitude      Float?
-  address        String?
-  accuracyMeters Float?
-  provider       String?
-  timestampUtc   DateTime?
-  placeId        String?
-  placeName      String?
-  source         String?
-  aiRemark       String?
-  aiPlagiarism   Json?
-  aiSensitive    Json?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  reads          ShortNewsRead[]
-  comments       Comment[]
-  options        ShortNewsOption[]
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  // IMPORTANT: Use a non-pooled connection for migrations (advisory locks can time out via Neon pooler/pgbouncer).
-  // Set this in production to your Neon *direct* connection string (no -pooler host, no pgbouncer=true).
-  directUrl = env("DATABASE_URL_DIRECT")
-}
-
-generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  categoryId             String
+  aiRemark               String?
+  id                     String            @id @default(cuid())
+  title                  String
+  content                String
+  mediaUrls              String[]
+  latitude               Float?
+  longitude              Float?
+  address                String?
+  authorId               String
+  status                 String            @default("PENDING")
+  aiPlagiarism           Json?
+  aiSensitive            Json?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  allowComments          Boolean           @default(true)
+  featuredImage          String?
+  language               String?
+  publishDate            DateTime?
+  seo                    Json?
+  slug                   String?
+  summary                String?
+  tags                   String[]
+  accuracyMeters         Float?
+  placeId                String?
+  placeName              String?
+  provider               String?
+  source                 String?
+  timestampUtc           DateTime?
+  headings               Json?
+  templateId             String?
+  isBreaking             Boolean           @default(false)
+  aiApprovalStatus       String?
+  aiViolationCount       Int               @default(0)
+  aiValidationIssues     Json?
+  pushNotificationSent   Boolean           @default(false)
+  pushNotificationSentAt DateTime?
+  comments               Comment[]
+  author                 User              @relation(fields: [authorId], references: [id])
+  options                ShortNewsOption[]
+  reads                  ShortNewsRead[]
 }
 
 model User {
-  id                     String             @id @default(cuid())
-  mobileNumber           String?            @unique
-  mpin                   String?
-  firebaseUid            String?
-  email                  String?            @unique
-  role                   Role               @relation(fields: [roleId], references: [id])
+  mobileNumber           String?                @unique
   roleId                 String
-  language               Language           @relation(fields: [languageId], references: [id])
   languageId             String
-  status                 String             @default("PENDING") // PENDING, ACTIVE, INACTIVE, SUSPENDED
-  upgradedAt             DateTime? // Set when guest is upgraded
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  devices                Device[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  mpin                   String?
+  email                  String?                @unique
+  id                     String                 @id @default(cuid())
+  status                 String                 @default("PENDING")
+  upgradedAt             DateTime?
+  firebaseUid            String?
   articles               Article[]
-  tenantWebArticles      TenantWebArticle[] @relation("User_WebArticles")
-  likes                  Like[]
+  proofEvidenceUploaded  ArticleProofEvidence[] @relation("ProofEvidence_UploadedBy")
+  proofRequestsAssigned  ArticleProofRequest[]  @relation("ProofRequest_AssignedTo")
+  proofRequestsCreated   ArticleProofRequest[]  @relation("ProofRequest_RequestedBy")
+  proofRequestsReviewed  ArticleProofRequest[]  @relation("ProofRequest_ReviewedBy")
+  articleReads           ArticleRead[]
+  articleViews           ArticleView[]
   comments               Comment[]
+  contentReactions       ContentReaction[]
+  contentReads           ContentRead[]
+  devices                Device[]
+  dislikes               Dislike[]
+  familyMemberships      FamilyMember[]
+  relatedFamilyRelations FamilyRelation[]       @relation("FamilyRelation_relatedUser")
+  familyRelations        FamilyRelation[]       @relation("FamilyRelation_user")
+  createdFamilyTrees     FamilyTree[]
+  familyTreeMemberships  FamilyTreeMember[]
+  likes                  Like[]
+  media                  Media[]
+  newspaperArticles      NewspaperArticle[]
+  reporterProfile        Reporter?
+  shortNews              ShortNews[]
+  shortNewsOptions       ShortNewsOption[]
+  shortNewsReads         ShortNewsRead[]
+  createdSurnames        Surname[]
+  tenantWebArticles      TenantWebArticle[]     @relation("User_WebArticles")
+  language               Language               @relation(fields: [languageId], references: [id])
+  role                   Role                   @relation(fields: [roleId], references: [id])
+  userEncryptionKey      UserEncryptionKey?
   location               UserLocation?
   profile                UserProfile?
-  articleViews           ArticleView[]
-  shortNews              ShortNews[]
-  shortNewsReads         ShortNewsRead[]
-  dislikes               Dislike[]
-  articleReads           ArticleRead[]
-  media                  Media[]
-  contentReads           ContentRead[]
-  contentReactions       ContentReaction[]
-  shortNewsOptions       ShortNewsOption[]
-  // Optional back-relations for family graph (even if API deprecated)
-  familyRelations        FamilyRelation[]   @relation("FamilyRelation_user")
-  relatedFamilyRelations FamilyRelation[]   @relation("FamilyRelation_relatedUser")
-  familyMemberships      FamilyMember[]
-  // New simplified family tree (placeholders + per-side trees)
-  createdFamilyTrees      FamilyTree[]
-  familyTreeMemberships   FamilyTreeMember[]
-  createdSurnames         Surname[]
-  // Reporter profile (if user is a reporter/admin editor etc.)
-  reporterProfile        Reporter?
-  // Family graph back-relations
-  // Family graph removed
-  // E2EE public key bundle (1:1). Added inverse relation for UserEncryptionKey.user
-  userEncryptionKey      UserEncryptionKey?
-  newspaperArticles      NewspaperArticle[]
-  
-  // Proof/Evidence System relations
-  proofRequestsCreated   ArticleProofRequest[] @relation("ProofRequest_RequestedBy")
-  proofRequestsAssigned  ArticleProofRequest[] @relation("ProofRequest_AssignedTo")
-  proofRequestsReviewed  ArticleProofRequest[] @relation("ProofRequest_ReviewedBy")
-  proofEvidenceUploaded  ArticleProofEvidence[] @relation("ProofEvidence_UploadedBy")
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.
 model Prompt {
   id          String   @id @default(cuid())
-  key         String   @unique // e.g., SEO_GENERATION, MODERATION, CATEGORY_TRANSLATION
-  content     String // the prompt template content; supports {{placeholders}}
-  description String? // optional human-friendly description
+  key         String   @unique
+  content     String
+  description String?
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  permissions Json
-  users       User[]
   createdAt   DateTime @default(now())
+  id          String   @id @default(cuid())
   updatedAt   DateTime @updatedAt
+  permissions Json
+  name        String   @unique
+  users       User[]
 }
 
 model Country {
   id             String         @id @default(cuid())
   name           String         @unique
   code           String?        @unique
-  states         State[]
-  tenantEntities TenantEntity[] @relation("TenantEntity_publicationCountry")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  states         State[]
+  tenantEntities TenantEntity[] @relation("TenantEntity_publicationCountry")
 }
 
 model Language {
-  id                String             @id @default(cuid())
   name              String             @unique
-  code              String             @unique
-  nativeName        String?
-  direction         String?            @default("ltr")
-  isDeleted         Boolean            @default(false)
-  users             User[]
-  domainLangs       DomainLanguage[]
-  articles          Article[]          @relation("Article_language")
-  tenantEntities    TenantEntity[]     @relation("TenantEntity_language")
-  webArticles       TenantWebArticle[] @relation("Language_WebArticles")
-  newspaperArticles NewspaperArticle[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+  code              String             @unique
+  id                String             @id @default(cuid())
+  direction         String?            @default("ltr")
+  isDeleted         Boolean            @default(false)
+  nativeName        String?
+  articles          Article[]          @relation("Article_language")
+  domainLangs       DomainLanguage[]
+  newspaperArticles NewspaperArticle[]
+  tenantEntities    TenantEntity[]     @relation("TenantEntity_language")
+  webArticles       TenantWebArticle[] @relation("Language_WebArticles")
+  users             User[]
 }
 
 model State {
-  id             String         @id @default(cuid())
-  name           String         @unique
-  country        Country        @relation(fields: [countryId], references: [id])
-  countryId      String
-  isDeleted      Boolean        @default(false)
-  translations   StateTranslation[]
-  districts      District[]
-  surnames       Surname[]
-  userProfiles   UserProfile[]  @relation("UserProfile_state")
-  contentReads   ContentRead[]  @relation("ContentRead_state")
-  tenants        Tenant[]
-  reporters      Reporter[]
-  tenantEntities TenantEntity[] @relation("TenantEntity_publicationState")
+  name                      String                     @unique
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  id                        String                     @id @default(cuid())
+  isDeleted                 Boolean                    @default(false)
+  countryId                 String
+  contentReads              ContentRead[]              @relation("ContentRead_state")
+  districts                 District[]
   epaperPublicationEditions EpaperPublicationEdition[] @relation("State_EpaperPublicationEditions")
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  reporters                 Reporter[]
+  country                   Country                    @relation(fields: [countryId], references: [id])
+  translations              StateTranslation[]
+  surnames                  Surname[]
+  tenants                   Tenant[]
+  tenantEntities            TenantEntity[]             @relation("TenantEntity_publicationState")
+  userProfiles              UserProfile[]              @relation("UserProfile_state")
 }
 
 model StateTranslation {
-  id        String @id @default(cuid())
-  state     State  @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
   stateId   String
   language  String
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  state     State    @relation(fields: [stateId], references: [id], onDelete: Cascade)
 
   @@unique([stateId, language])
 }
 
 model District {
-  id                        String                 @id @default(cuid())
-  name                      String
-  state                     State                  @relation(fields: [stateId], references: [id])
-  stateId                   String
-  isDeleted                 Boolean                @default(false)
-  translations              DistrictTranslation[]
-  mandals                   Mandal[]
-  userProfiles              UserProfile[]          @relation("UserProfile_district")
-  contentReads              ContentRead[]          @relation("ContentRead_district")
-  reporters                 Reporter[]
-  assemblyConstituencies    AssemblyConstituency[] @relation("DistrictAssemblyConstituencies")
-  tenantEntitiesPublication TenantEntity[]         @relation("TenantEntity_publicationDistrict")
-  tenantEntitiesPrinting    TenantEntity[]         @relation("TenantEntity_printingDistrict")
+  id                           String                        @id @default(cuid())
+  name                         String
+  stateId                      String
+  isDeleted                    Boolean                       @default(false)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  assemblyConstituencies       AssemblyConstituency[]        @relation("DistrictAssemblyConstituencies")
+  contentReads                 ContentRead[]                 @relation("ContentRead_district")
+  state                        State                         @relation(fields: [stateId], references: [id])
+  translations                 DistrictTranslation[]
   epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("District_EpaperPublicationSubEditions")
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
+  mandals                      Mandal[]
+  reporters                    Reporter[]
+  tenantEntitiesPrinting       TenantEntity[]                @relation("TenantEntity_printingDistrict")
+  tenantEntitiesPublication    TenantEntity[]                @relation("TenantEntity_publicationDistrict")
+  userProfiles                 UserProfile[]                 @relation("UserProfile_district")
 }
 
 model DistrictTranslation {
   id         String   @id @default(cuid())
-  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
   districtId String
   language   String
   name       String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
 
   @@unique([districtId, language])
 }
 
 model Mandal {
-  id                        String         @id @default(cuid())
+  id                        String              @id @default(cuid())
   name                      String
-  district                  District       @relation(fields: [districtId], references: [id])
   districtId                String
-  isDeleted                 Boolean        @default(false)
+  isDeleted                 Boolean             @default(false)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  isAssemblyConstituency    Boolean             @default(false)
+  contentReads              ContentRead[]       @relation("ContentRead_mandal")
+  district                  District            @relation(fields: [districtId], references: [id])
   translations              MandalTranslation[]
-  // True if this mandal name matches an Assembly Constituency center
-  isAssemblyConstituency    Boolean        @default(false)
-  userProfiles              UserProfile[]  @relation("UserProfile_mandal")
-  contentReads              ContentRead[]  @relation("ContentRead_mandal")
   reporters                 Reporter[]
+  tenantEntitiesPrinting    TenantEntity[]      @relation("TenantEntity_printingMandal")
+  tenantEntitiesPublication TenantEntity[]      @relation("TenantEntity_publicationMandal")
+  userProfiles              UserProfile[]       @relation("UserProfile_mandal")
   villages                  Village[]
-  tenantEntitiesPublication TenantEntity[] @relation("TenantEntity_publicationMandal")
-  tenantEntitiesPrinting    TenantEntity[] @relation("TenantEntity_printingMandal")
-  createdAt                 DateTime       @default(now())
-  updatedAt                 DateTime       @updatedAt
 }
 
 model MandalTranslation {
-  id        String @id @default(cuid())
-  mandal    Mandal @relation(fields: [mandalId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
   mandalId  String
   language  String
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  mandal    Mandal   @relation(fields: [mandalId], references: [id], onDelete: Cascade)
 
   @@unique([mandalId, language])
 }
 
 model Category {
-  id               String                @id @default(cuid())
-  name             String
-  slug             String                @unique
-  iconUrl          String?
-  isDeleted        Boolean               @default(false)
-  parent           Category?             @relation("SubCategories", fields: [parentId], references: [id])
-  parentId         String?
-  children         Category[]            @relation("SubCategories")
-  translations     CategoryTranslation[]
-  articles         Article[]
-  webArticles      TenantWebArticle[]
-  newspaperArticles NewspaperArticle[]
-  domainCategories DomainCategory[]
+  createdAt                       DateTime                @default(now())
+  updatedAt                       DateTime                @updatedAt
+  id                              String                  @id @default(cuid())
+  name                            String
+  slug                            String                  @unique
+  parentId                        String?
+  isDeleted                       Boolean                 @default(false)
+  iconUrl                         String?
+  parent                          Category?               @relation("SubCategories", fields: [parentId], references: [id])
+  children                        Category[]              @relation("SubCategories")
+  translations                    CategoryTranslation[]
+  domainCategories                DomainCategory[]
   homepageSectionConfigs          HomepageSectionConfig[] @relation("HomepageSectionConfig_category")
   homepageSectionSecondaryConfigs HomepageSectionConfig[] @relation("HomepageSectionConfig_secondaryCategory")
   homepageSectionTertiaryConfigs  HomepageSectionConfig[] @relation("HomepageSectionConfig_tertiaryCategory")
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  newspaperArticles               NewspaperArticle[]
+  webArticles                     TenantWebArticle[]
+  articles                        Article[]               @relation("ArticleToCategory")
 }
 
 model CategoryTranslation {
   id         String   @id @default(cuid())
-  category   Category @relation(fields: [categoryId], references: [id])
   categoryId String
-  language   String
-  name       String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  name       String
+  language   String
+  category   Category @relation(fields: [categoryId], references: [id])
 
   @@unique([categoryId, language])
 }
@@ -292,97 +281,71 @@ model Article {
   id                String             @id @default(cuid())
   title             String
   content           String
-  shortNews         String?
-  longNews          String?
-  headlines         String?
-  type              String // "citizen" or "reporter"
-  author            User               @relation(fields: [authorId], references: [id])
   authorId          String
-  // Article language (from author's language at creation time)
-  language          Language?          @relation("Article_language", fields: [languageId], references: [id])
-  languageId        String?
-  // Optional tenant scoping. Null => global article
-  tenant            Tenant?            @relation(fields: [tenantId], references: [id])
-  tenantId          String?
-  status            String             @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
-  categories        Category[]
-  tags              String[]
-  images            String[]
   scheduledAt       DateTime?
-  isBreakingNews    Boolean            @default(false)
-  isTrending        Boolean            @default(false)
-  viewCount         Int                @default(0)
-  likes             Like[]
-  comments          Comment[]
-  dislikes          Dislike[]
-  relatedArticles   Article[]          @relation("RelatedArticles")
-  relatedTo         Article[]          @relation("RelatedArticles")
-  newspaperArticles NewspaperArticle[] @relation("ArticleToNewspaper") // Back-relation
-  aiUsageEvents     AiUsageEvent[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-  articleViews      ArticleView[]
+  images            String[]
+  isBreakingNews    Boolean            @default(false)
+  isTrending        Boolean            @default(false)
+  tags              String[]
+  viewCount         Int                @default(0)
+  status            String             @default("DRAFT")
+  headlines         String?
+  longNews          String?
+  shortNews         String?
+  type              String
   contentJson       Json?
+  languageId        String?
+  tenantId          String?
+  aiUsageEvents     AiUsageEvent[]
+  author            User               @relation(fields: [authorId], references: [id])
+  language          Language?          @relation("Article_language", fields: [languageId], references: [id])
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id])
   articleReads      ArticleRead[]
+  articleViews      ArticleView[]
+  comments          Comment[]
+  dislikes          Dislike[]
+  likes             Like[]
+  newspaperArticles NewspaperArticle[] @relation("ArticleToNewspaper")
+  categories        Category[]         @relation("ArticleToCategory")
+  Article_A         Article[]          @relation("RelatedArticles")
+  Article_B         Article[]          @relation("RelatedArticles")
 
   @@index([tenantId, createdAt])
 }
 
 /// Website-focused, tenant-scoped article with SEO-friendly JSON payload
 model TenantWebArticle {
-  id         String    @id @default(cuid())
-  // Multi-tenant scoping
-  tenant     Tenant    @relation("Tenant_WebArticles", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId   String
-  // Optional domain scoping (for multi-domain tenants)
-  domain     Domain?   @relation("Domain_WebArticles", fields: [domainId], references: [id], onDelete: SetNull)
-  domainId   String?
-  // Language of the article (nullable when inferred by client)
-  language   Language? @relation("Language_WebArticles", fields: [languageId], references: [id])
-  languageId String?
-  // Optional author (user) attribution
-  author     User?     @relation("User_WebArticles", fields: [authorId], references: [id])
-  authorId   String?
-
-  // Editorial fields
-  title         String
-  slug          String
-  status        String  @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
-  coverImageUrl String?
-  isBreaking   Boolean @default(false)
-  isLive       Boolean @default(false)
-
-  // AI validation/approval metadata (separate from editorial publish status)
+  id                 String    @id @default(cuid())
+  tenantId           String
+  domainId           String?
+  languageId         String?
+  authorId           String?
+  title              String
+  slug               String
+  status             String    @default("DRAFT")
+  coverImageUrl      String?
+  contentJson        Json
+  seoTitle           String?
+  metaDescription    String?
+  jsonLd             Json?
+  tags               String[]
+  publishedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  categoryId         String?
+  viewCount          Int       @default(0)
+  isBreaking         Boolean   @default(false)
   aiApprovalStatus   String?
-  aiViolationCount   Int     @default(0)
+  aiViolationCount   Int       @default(0)
   aiValidationIssues Json?
+  author             User?     @relation("User_WebArticles", fields: [authorId], references: [id])
+  category           Category? @relation(fields: [categoryId], references: [id])
+  domain             Domain?   @relation("Domain_WebArticles", fields: [domainId], references: [id])
+  language           Language? @relation("Language_WebArticles", fields: [languageId], references: [id])
+  tenant             Tenant    @relation("Tenant_WebArticles", fields: [tenantId], references: [id], onDelete: Cascade)
 
-  // Primary category for the web article (optional; legacy contentJson.categories may still contain an array)
-  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId String?
-
-  // Canonical content JSON (blocks, contentHtml, plainText, meta, jsonLd, audit)
-  contentJson     Json
-  // SEO fields
-  seoTitle        String?
-  metaDescription String?
-  jsonLd          Json?
-  tags            String[]
-
-  // Simple website analytics (incremented when /public/articles/:slug is fetched)
-  viewCount       Int       @default(0)
-  shareCount      Int       @default(0)
-
-  // Article navigation (for previous/next article links)
-  previousArticleId String?
-  nextArticleId     String?
-
-  // Timestamps
-  publishedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  // Ensure unique slug per tenant+domain+language to avoid collisions across locales
   @@unique([tenantId, domainId, languageId, slug])
   @@index([tenantId, createdAt])
   @@index([categoryId])
@@ -401,7 +364,7 @@ model RawArticle {
   coverImageUrl String?
   media         Json?
   aiProvider    String   @default("openai")
-  status        String   @default("NEW") // NEW | QUEUED | PROCESSED | PENDING_REVIEW | APPROVED | REJECTED
+  status        String   @default("NEW")
   errorCode     String?
   usage         Json?
   webArticleId  String?
@@ -410,7 +373,1590 @@ model RawArticle {
   updatedAt     DateTime @updatedAt
 }
 
-/// ---------------- Multi-Tenancy & Reporter Enums ----------------
+model Tenant {
+  id                           String                        @id @default(cuid())
+  name                         String
+  slug                         String                        @unique
+  stateId                      String?
+  prgiNumber                   String                        @unique
+  prgiStatus                   PrgiStatus                    @default(PENDING)
+  prgiSubmittedAt              DateTime?
+  prgiVerifiedAt               DateTime?
+  prgiRejectedAt               DateTime?
+  prgiRejectionReason          String?
+  prgiDocuments                Json?
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  aiUsageEvents                AiUsageEvent[]
+  articles                     Article[]
+  proofRequests                ArticleProofRequest[]         @relation("Tenant_ProofRequests")
+  billingCreditBalances        BillingCreditBalance[]
+  billingInvoices              BillingInvoice[]
+  billingUsageEvents           BillingUsageEvent[]
+  domains                      Domain[]
+  domainSettings               DomainSettings[]              @relation("Tenant_DomainSettings")
+  epaperBlockTemplates         EpaperBlockTemplate[]         @relation("Tenant_EpaperBlockTemplates")
+  epaperEditions               EpaperEdition[]               @relation("Tenant_EpaperEditions")
+  epaperPdfIssues              EpaperPdfIssue[]
+  epaperPublicationEditions    EpaperPublicationEdition[]    @relation("Tenant_EpaperPublicationEditions")
+  epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("Tenant_EpaperPublicationSubEditions")
+  epaperSettings               EpaperSettings?               @relation("Tenant_EpaperSettings")
+  homepageSectionConfigs       HomepageSectionConfig[]
+  newsletterSubscriptions      NewsletterSubscription[]
+  newspaperArticles            NewspaperArticle[]
+  razorpayConfig               RazorpayConfig?
+  reporters                    Reporter[]
+  reporterDesignations         ReporterDesignation[]
+  reporterOnboardingOrders     ReporterOnboardingOrder[]
+  reporterPayments             ReporterPayment[]
+  state                        State?                        @relation(fields: [stateId], references: [id])
+  entity                       TenantEntity?                 @relation("Tenant_TenantEntity")
+  featureFlags                 TenantFeatureFlags?
+  homepageSections             TenantHomepageSection[]
+  idCardSettings               TenantIdCardSettings?
+  navigation                   TenantNavigation?
+  settings                     TenantSettings?               @relation("Tenant_TenantSettings")
+  staticPages                  TenantStaticPage[]
+  subscriptions                TenantSubscription[]
+  theme                        TenantTheme?
+  translations                 TenantTranslation[]
+  webArticles                  TenantWebArticle[]            @relation("Tenant_WebArticles")
+  villages                     Village[]
+}
+
+/// Tenant ePaper publication edition definition (State-level or umbrella edition).
+/// This is NOT the daily generated EpaperEdition used by the block-layout generator.
+model EpaperPublicationEdition {
+  id             String                        @id @default(cuid())
+  tenantId       String
+  name           String
+  slug           String
+  stateId        String?
+  coverImageUrl  String?
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  isActive       Boolean                       @default(true)
+  isDeleted      Boolean                       @default(false)
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  pdfIssues      EpaperPdfIssue[]
+  state          State?                        @relation("State_EpaperPublicationEditions", fields: [stateId], references: [id])
+  tenant         Tenant                        @relation("Tenant_EpaperPublicationEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  subEditions    EpaperPublicationSubEdition[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([stateId])
+  @@index([isActive, isDeleted])
+}
+
+/// Tenant ePaper publication sub-edition definition (District-level).
+model EpaperPublicationSubEdition {
+  id             String                   @id @default(cuid())
+  tenantId       String
+  editionId      String
+  name           String
+  slug           String
+  districtId     String?
+  coverImageUrl  String?
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  isActive       Boolean                  @default(true)
+  isDeleted      Boolean                  @default(false)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  pdfIssues      EpaperPdfIssue[]
+  district       District?                @relation("District_EpaperPublicationSubEditions", fields: [districtId], references: [id])
+  edition        EpaperPublicationEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  tenant         Tenant                   @relation("Tenant_EpaperPublicationSubEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([editionId, slug])
+  @@index([tenantId])
+  @@index([editionId])
+  @@index([districtId])
+  @@index([isActive, isDeleted])
+}
+
+/// PDF-based daily issue for a tenant's publication edition/sub-edition.
+/// Exactly one of (editionId, subEditionId) must be set.
+/// Uploading the same (tenantId + issueDate + target) should replace existing.
+model EpaperPdfIssue {
+  id                String                       @id @default(cuid())
+  tenantId          String
+  issueDate         DateTime                     @db.Date
+  editionId         String?
+  subEditionId      String?
+  pdfUrl            String
+  coverImageUrl     String?
+  pageCount         Int                          @default(0)
+  uploadedByUserId  String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  /// WebP version of cover image for optimized delivery (frontend prefers this)
+  coverImageUrlWebp String?
+  /// Whether this issue uses the new PDF-only mode (no pre-generated page images)
+  pdfOnlyMode       Boolean                      @default(false)
+  clips             EpaperArticleClip[]
+  edition           EpaperPublicationEdition?    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  subEdition        EpaperPublicationSubEdition? @relation(fields: [subEditionId], references: [id], onDelete: Cascade)
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pages             EpaperPdfPage[]
+  cropSessions      PublicCropSession[]
+
+  @@unique([tenantId, issueDate, editionId])
+  @@unique([tenantId, issueDate, subEditionId])
+  @@index([tenantId, issueDate])
+  @@index([editionId])
+  @@index([subEditionId])
+}
+
+model EpaperPdfPage {
+  id           String         @id @default(cuid())
+  issueId      String
+  pageNumber   Int
+  /// PNG master image URL (lossless, archive quality)
+  imageUrl     String
+  createdAt    DateTime       @default(now())
+  /// WebP optimized image URL for frontend delivery (~80% smaller)
+  imageUrlWebp String?
+  issue        EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, pageNumber])
+  @@index([issueId])
+}
+
+/// Article clip coordinates within a PDF page (PDF coordinate system).
+/// This is the HEART of the new clip-based ePaper system.
+/// Coordinates are stored in PDF points (1/72 inch), NOT pixels.
+model EpaperArticleClip {
+  id           String              @id @default(cuid())
+  issueId      String
+  pageNumber   Int
+  /// PDF coordinates (in points, origin at bottom-left of page)
+  x            Float
+  y            Float
+  width        Float
+  height       Float
+  /// Optional column hint for layout: 'left', 'right', 'full', or null
+  column       String?
+  /// Detection source: 'auto' (AI/algorithm) or 'manual' (editor)
+  source       String              @default("manual")
+  /// Confidence score for auto-detected clips (0.0 - 1.0)
+  confidence   Float?
+  /// Whether this clip is active/visible
+  isActive     Boolean             @default(true)
+  /// Who created/updated: 'system', 'editor', 'public'
+  createdBy    String              @default("editor")
+  updatedBy    String              @default("editor")
+  /// Optional title/label for the clip
+  title        String?
+  /// Optional article link or reference
+  articleRef   String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  /// Soft delete timestamp (null = active)
+  deletedAt    DateTime?
+  issue        EpaperPdfIssue      @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  assets       EpaperClipAsset[]
+  history      EpaperClipHistory[]
+  cropSessions PublicCropSession[]
+
+  @@index([issueId])
+  @@index([issueId, pageNumber])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+/// Cached clip image assets (generated on-demand, not at upload time).
+/// These are derived from PDF + clip coordinates when needed for sharing.
+model EpaperClipAsset {
+  id          String            @id @default(cuid())
+  clipId      String
+  /// Asset type: 'webp', 'jpeg', 'png'
+  type        String
+  /// Public URL of the cached image
+  url         String
+  /// File size in bytes (for analytics)
+  sizeBytes   Int?
+  generatedAt DateTime          @default(now())
+  clip        EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@unique([clipId, type])
+  @@index([clipId])
+}
+
+/// Temporary session for public users to update clip coordinates.
+/// Provides secure, time-limited access without full auth.
+/// TTL = 5 minutes by default.
+model PublicCropSession {
+  id          String             @id @default(cuid())
+  sessionKey  String             @unique @default(cuid())
+  issueId     String
+  clipId      String?
+  /// Session expiry time (default: createdAt + 5 minutes)
+  expiresAt   DateTime
+  /// Whether session has been used (one-time use)
+  used        Boolean            @default(false)
+  /// Security: hashed IP for audit
+  ipHash      String?
+  /// Security: user agent for audit
+  userAgent   String?
+  createdAt   DateTime           @default(now())
+  /// Number of updates made via this session (rate limiting: max 3)
+  updateCount Int                @default(0)
+  clip        EpaperArticleClip? @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  issue       EpaperPdfIssue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([sessionKey])
+  @@index([issueId])
+  @@index([expiresAt])
+}
+
+/// Audit history for clip coordinate changes (especially public updates).
+/// Used to track who changed what and when.
+model EpaperClipHistory {
+  id             String            @id @default(cuid())
+  clipId         String
+  /// Previous coordinates before the change
+  previousX      Float
+  previousY      Float
+  previousWidth  Float
+  previousHeight Float
+  /// New coordinates after the change
+  newX           Float
+  newY           Float
+  newWidth       Float
+  newHeight      Float
+  /// Who made the change: 'editor', 'public', 'system'
+  changedBy      String
+  /// Optional crop session ID for public updates
+  cropSessionId  String?
+  /// IP hash for public updates (audit)
+  ipHash         String?
+  createdAt      DateTime          @default(now())
+  clip           EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@index([clipId])
+  @@index([changedBy])
+  @@index([createdAt])
+}
+
+/// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)
+model TenantStaticPage {
+  id          String   @id @default(cuid())
+  tenantId    String
+  slug        String
+  title       String?
+  contentHtml String
+  meta        Json?
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([slug])
+}
+
+model TenantTranslation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  language  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, language])
+  @@index([language])
+}
+
+model Domain {
+  id                     String                  @id @default(cuid())
+  domain                 String                  @unique
+  tenantId               String
+  isPrimary              Boolean                 @default(false)
+  status                 DomainStatus            @default(PENDING)
+  verificationToken      String?
+  verificationMethod     String?
+  verifiedAt             DateTime?
+  lastCheckAt            DateTime?
+  lastCheckStatus        String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  kind                   DomainKind              @default(NEWS)
+  sampleDataStatus       String?
+  sampleDataMessage      String?
+  sampleDataGeneratedAt  DateTime?
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categories             DomainCategory[]
+  checkLogs              DomainCheckLog[]
+  languages              DomainLanguage[]
+  settings               DomainSettings?         @relation("Domain_DomainSettings")
+  homepageSectionConfigs HomepageSectionConfig[]
+  webArticles            TenantWebArticle[]      @relation("Domain_WebArticles")
+
+  @@index([sampleDataStatus])
+}
+
+model BillingPlan {
+  id              String                 @id @default(cuid())
+  name            String
+  currency        BillingCurrency        @default(INR)
+  cycle           BillingCycle           @default(MONTHLY)
+  baseAmountMinor Int                    @default(0)
+  isActive        Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  components      BillingPlanComponent[]
+  subscriptions   TenantSubscription[]
+
+  @@index([isActive, createdAt])
+}
+
+model BillingPlanComponent {
+  id              String           @id @default(cuid())
+  planId          String
+  component       BillingComponent
+  includedUnits   Int              @default(0)
+  unitAmountMinor Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  plan            BillingPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, component])
+  @@index([component])
+}
+
+model TenantSubscription {
+  id                 String              @id @default(cuid())
+  tenantId           String
+  planId             String
+  status             SubscriptionStatus  @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean             @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  invoices           BillingInvoice[]
+  usageEvents        BillingUsageEvent[]
+  plan               BillingPlan         @relation(fields: [planId], references: [id])
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([planId])
+}
+
+/// Usage events for metered / one-time charges.
+/// Example: newspaper design pages => component=NEWSPAPER_DESIGN_PAGE, quantity=number of pages.
+model BillingUsageEvent {
+  id             String              @id @default(cuid())
+  tenantId       String
+  subscriptionId String?
+  component      BillingComponent
+  quantity       Int                 @default(1)
+  occurredAt     DateTime            @default(now())
+  meta           Json?
+  createdAt      DateTime            @default(now())
+  subscription   TenantSubscription? @relation(fields: [subscriptionId], references: [id])
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+  @@index([subscriptionId, occurredAt])
+  @@index([component, occurredAt])
+}
+
+/// Prepaid credit balance per tenant and component.
+/// Used to enforce prepaid usage (e.g., design pages beyond includedUnits).
+model BillingCreditBalance {
+  id        String           @id @default(cuid())
+  tenantId  String
+  component BillingComponent
+  balance   Int              @default(0)
+  updatedAt DateTime         @updatedAt
+  createdAt DateTime         @default(now())
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, component])
+  @@index([tenantId])
+  @@index([component])
+}
+
+model BillingInvoice {
+  id                String                   @id @default(cuid())
+  tenantId          String
+  subscriptionId    String?
+  kind              BillingInvoiceKind       @default(SUBSCRIPTION)
+  status            InvoiceStatus            @default(DRAFT)
+  currency          BillingCurrency          @default(INR)
+  periodStart       DateTime
+  periodEnd         DateTime
+  totalAmountMinor  Int                      @default(0)
+  razorpayOrderId   String?                  @unique
+  razorpayPaymentId String?
+  paidAt            DateTime?
+  meta              Json?
+  externalRef       String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  subscription      TenantSubscription?      @relation(fields: [subscriptionId], references: [id])
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lineItems         BillingInvoiceLineItem[]
+
+  @@index([tenantId, periodStart, periodEnd])
+  @@index([status, createdAt])
+}
+
+model BillingInvoiceLineItem {
+  id              String            @id @default(cuid())
+  invoiceId       String
+  component       BillingComponent?
+  description     String
+  quantity        Int               @default(1)
+  unitAmountMinor Int               @default(0)
+  amountMinor     Int               @default(0)
+  createdAt       DateTime          @default(now())
+  invoice         BillingInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model DomainCategory {
+  id         String   @id @default(cuid())
+  domainId   String
+  categoryId String
+  createdAt  DateTime @default(now())
+  category   Category @relation(fields: [categoryId], references: [id])
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, categoryId])
+  @@index([categoryId])
+}
+
+model DomainLanguage {
+  id         String   @id @default(cuid())
+  domainId   String
+  languageId String
+  createdAt  DateTime @default(now())
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  language   Language @relation(fields: [languageId], references: [id])
+
+  @@unique([domainId, languageId])
+  @@index([languageId])
+}
+
+model DomainCheckLog {
+  id        String   @id @default(cuid())
+  domainId  String
+  checkedAt DateTime @default(now())
+  result    String
+  details   Json?
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId, checkedAt])
+}
+
+/// Global platform defaults; singleton row recommended.
+model EntitySettings {
+  id        String   @id @default(cuid())
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-tenant overrides for branding/theme/layout/etc.
+model TenantSettings {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation("Tenant_TenantSettings", fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// Per-domain branding and settings.
+model DomainSettings {
+  id        String   @id @default(cuid())
+  domainId  String   @unique
+  tenantId  String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  domain    Domain   @relation("Domain_DomainSettings", fields: [domainId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation("Tenant_DomainSettings", fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantTheme {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  logoUrl        String?
+  faviconUrl     String?
+  primaryColor   String?
+  headerHtml     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  /// Optional per-style homepage settings JSON.
+  /// Recommended shape: { "style1": { ... }, "style2": { ... } }
+  homepageConfig Json?
+  fontFamily     String?
+  footerBgColor  String?
+  footerHtml     String?
+  headerBgColor  String?
+  secondaryColor String?
+  /// SEO configuration JSON
+  /// Shape: { metaTitle, metaDescription, metaKeywords, ogTitle, ogDescription, ogImage, twitterCard, twitterHandle, googleAnalyticsId, facebookPixelId, robotsTxt, sitemapEnabled }
+  seoConfig      Json?
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// One-to-one PRGI registration and entity details for a Tenant
+model TenantEntity {
+  id                    String      @id @default(cuid())
+  tenantId              String      @unique
+  prgiNumber            String      @unique
+  registrationTitle     String?
+  periodicity           Periodicity @default(DAILY)
+  registrationDate      DateTime?
+  languageId            String?
+  ownerName             String?
+  publisherName         String?
+  editorName            String?
+  publicationCountryId  String?
+  publicationStateId    String?
+  publicationDistrictId String?
+  publicationMandalId   String?
+  printingPressName     String?
+  printingDistrictId    String?
+  printingMandalId      String?
+  printingCityName      String?
+  address               String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  nativeName            String?
+  language              Language?   @relation("TenantEntity_language", fields: [languageId], references: [id])
+  printingDistrict      District?   @relation("TenantEntity_printingDistrict", fields: [printingDistrictId], references: [id])
+  printingMandal        Mandal?     @relation("TenantEntity_printingMandal", fields: [printingMandalId], references: [id])
+  publicationCountry    Country?    @relation("TenantEntity_publicationCountry", fields: [publicationCountryId], references: [id])
+  publicationDistrict   District?   @relation("TenantEntity_publicationDistrict", fields: [publicationDistrictId], references: [id])
+  publicationMandal     Mandal?     @relation("TenantEntity_publicationMandal", fields: [publicationMandalId], references: [id])
+  publicationState      State?      @relation("TenantEntity_publicationState", fields: [publicationStateId], references: [id])
+  tenant                Tenant      @relation("Tenant_TenantEntity", fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantNavigation {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantFeatureFlags {
+  id                        String   @id @default(cuid())
+  tenantId                  String   @unique
+  enableMobileAppView       Boolean  @default(false)
+  section2Rows              Int      @default(2)
+  section2ListCount         Int      @default(4)
+  section2ForceCategoryName String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  aiArticleRewriteEnabled   Boolean  @default(true)
+  aiBillingEnabled          Boolean  @default(false)
+  aiMonthlyTokenLimit       Int?
+  enableAds                 Boolean  @default(true)
+  enableBreakingNews        Boolean  @default(false)
+  enableComments            Boolean  @default(false)
+  enableDarkMode            Boolean  @default(true)
+  enableEpaper              Boolean  @default(false)
+  enableGallery             Boolean  @default(true)
+  enableLiveTv              Boolean  @default(false)
+  enableLocationFilter      Boolean  @default(false)
+  enableMultiLang           Boolean  @default(false)
+  enableNewsletter          Boolean  @default(true)
+  enablePolls               Boolean  @default(false)
+  enablePushNotifications   Boolean  @default(false)
+  enableRelatedArticles     Boolean  @default(true)
+  enableReporterBylines     Boolean  @default(true)
+  enableSearch              Boolean  @default(true)
+  enableSocialShare         Boolean  @default(true)
+  enableTrending            Boolean  @default(true)
+  enableVideo               Boolean  @default(true)
+  tenant                    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// Token-based AI usage metering per tenant (for billing/auditing).
+/// Written by workers/controllers where tenantId is known.
+model AiUsageEvent {
+  id               String   @id @default(cuid())
+  tenantId         String
+  articleId        String?
+  provider         String
+  model            String?
+  purpose          String
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  promptChars      Int?
+  responseChars    Int?
+  rawUsage         Json?
+  createdAt        DateTime @default(now())
+  article          Article? @relation(fields: [articleId], references: [id])
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([articleId])
+}
+
+model TenantHomepageSection {
+  id          String   @id @default(cuid())
+  tenantId    String
+  sectionName String
+  items       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sectionName])
+  @@index([tenantId, sectionName])
+}
+
+/// Style2 homepage section configuration - links sections to categories with customizable labels
+/// Section Types for Style2 Layout:
+/// - hero_sidebar: Main hero with sidebar (uses category + secondaryCategory + tertiaryCategory)
+/// - category_boxes_3col: 3-column category boxes (uses categorySlugs[])
+/// - small_cards_3col: 3-column small cards (uses categorySlugs[])
+/// - magazine_grid: Magazine-style grid layout (uses category)
+/// - horizontal_scroll: Horizontal scrolling cards (uses category)
+/// - spotlight: Featured spotlight section (uses category)
+/// - newspaper_columns: Traditional newspaper columns (uses categorySlugs[])
+/// - horizontal_cards: Horizontal card layout (uses category)
+/// - photo_gallery: Photo gallery section (uses category)
+/// - timeline: Timeline-style news feed (uses category)
+/// - featured_banner: Featured banner section (uses category)
+/// - compact_lists_2col: 2-column compact lists (uses categorySlugs[])
+/// Query Kinds:
+/// - category: Fetch articles from linked category
+/// - latest: Fetch latest articles across all categories
+/// - trending: Fetch trending/popular articles
+/// - most_viewed: Fetch most viewed articles
+model HomepageSectionConfig {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  domainId              String?
+  /// Unique section key (e.g., "hero", "politics", "sports", "section1", etc.)
+  key                   String
+  /// Display label in tenant's language (e.g., "రాజకీయాలు" for Telugu Politics)
+  label                 String
+  /// English fallback label
+  labelEn               String?
+  /// Position/order on homepage (lower = higher on page)
+  position              Int       @default(0)
+  /// Section display style: "hero", "grid", "list", "cards", "ticker" (legacy)
+  style                 String    @default("cards")
+  categoryId            String?
+  /// Cached category slug for fast lookup
+  categorySlug          String?
+  /// Number of articles to show in this section
+  articleLimit          Int       @default(6)
+  /// Whether this section is visible on homepage
+  isActive              Boolean   @default(true)
+  /// Extra config JSON (for future extensions like colors, icons, etc.)
+  config                Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  /// Section type for Style2 layout (hero_sidebar, category_boxes_3col, magazine_grid, etc.)
+  sectionType           String    @default("category_cards")
+  /// Query kind: "category", "latest", "trending", "most_viewed"
+  queryKind             String    @default("category")
+  secondaryCategoryId   String?
+  secondaryCategorySlug String?
+  tertiaryCategoryId    String?
+  tertiaryCategorySlug  String?
+  /// Array of category slugs for multi-category sections (category_boxes_3col, small_cards_3col, etc.)
+  categorySlugs         Json?
+  category              Category? @relation("HomepageSectionConfig_category", fields: [categoryId], references: [id])
+  domain                Domain?   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  secondaryCategory     Category? @relation("HomepageSectionConfig_secondaryCategory", fields: [secondaryCategoryId], references: [id])
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tertiaryCategory      Category? @relation("HomepageSectionConfig_tertiaryCategory", fields: [tertiaryCategoryId], references: [id])
+
+  @@unique([tenantId, domainId, key])
+  @@index([tenantId, domainId, position])
+  @@index([categoryId])
+  @@index([sectionType])
+  @@index([queryKind])
+}
+
+model NewsletterSubscription {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  source    String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Reporter {
+  id                        String                @id @default(cuid())
+  tenantId                  String
+  level                     ReporterLevel?
+  stateId                   String?
+  districtId                String?
+  mandalId                  String?
+  active                    Boolean               @default(true)
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  userId                    String?               @unique
+  designationId             String?
+  kycData                   Json?
+  kycStatus                 KycStatus             @default(PENDING)
+  monthlySubscriptionAmount Int?
+  subscriptionActive        Boolean               @default(false)
+  assemblyConstituencyId    String?
+  idCardCharge              Int?
+  profilePhotoUrl           String?
+  manualLoginActivatedAt    DateTime?
+  manualLoginDays           Int?
+  manualLoginEnabled        Boolean               @default(false)
+  manualLoginExpiresAt      DateTime?
+  assemblyConstituency      AssemblyConstituency? @relation(fields: [assemblyConstituencyId], references: [id])
+  designation               ReporterDesignation?  @relation(fields: [designationId], references: [id])
+  district                  District?             @relation(fields: [districtId], references: [id])
+  mandal                    Mandal?               @relation(fields: [mandalId], references: [id])
+  state                     State?                @relation(fields: [stateId], references: [id])
+  tenant                    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                      User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idCard                    ReporterIDCard?
+  payments                  ReporterPayment[]
+
+  @@index([tenantId, level])
+  @@index([designationId])
+  @@index([kycStatus])
+  @@index([manualLoginEnabled, manualLoginExpiresAt])
+}
+
+model AssemblyConstituency {
+  id         String     @id @default(cuid())
+  name       String
+  districtId String
+  isDeleted  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  district   District   @relation("DistrictAssemblyConstituencies", fields: [districtId], references: [id])
+  reporters  Reporter[]
+
+  @@unique([districtId, name])
+  @@index([districtId])
+}
+
+model ReporterDesignation {
+  id               String                    @id @default(cuid())
+  tenantId         String?
+  level            ReporterLevel
+  code             String
+  name             String
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  reporters        Reporter[]
+  tenant           Tenant?                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  onboardingOrders ReporterOnboardingOrder[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, level])
+}
+
+model ReporterIDCard {
+  id         String   @id @default(cuid())
+  reporterId String   @unique
+  cardNumber String   @unique
+  issuedAt   DateTime
+  expiresAt  DateTime
+  pdfUrl     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  reporter   Reporter @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+}
+
+/// Per-tenant ID card layout & numbering settings
+model TenantIdCardSettings {
+  id              String    @id @default(cuid())
+  tenantId        String    @unique
+  templateId      String    @default("STYLE_1")
+  frontLogoUrl    String?
+  roundStampUrl   String?
+  signUrl         String?
+  primaryColor    String?
+  secondaryColor  String?
+  termsJson       Json?
+  officeAddress   String?
+  helpLine1       String?
+  helpLine2       String?
+  validityType    String    @default("PER_USER_DAYS")
+  validityDays    Int?
+  fixedValidUntil DateTime?
+  idPrefix        String?
+  idDigits        Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Village {
+  id           String               @id @default(cuid())
+  tenantId     String
+  mandalId     String
+  name         String
+  isDeleted    Boolean              @default(false)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  mandal       Mandal               @relation(fields: [mandalId], references: [id])
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  translations VillageTranslation[]
+
+  @@unique([tenantId, mandalId, name])
+  @@index([tenantId])
+  @@index([mandalId])
+  @@index([name])
+}
+
+model VillageTranslation {
+  id        String   @id @default(cuid())
+  villageId String
+  language  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  village   Village  @relation(fields: [villageId], references: [id], onDelete: Cascade)
+
+  @@unique([villageId, language])
+}
+
+model ReporterPayment {
+  id                String                @id @default(cuid())
+  reporterId        String
+  year              Int
+  amount            Int
+  status            ReporterPaymentStatus @default(PENDING)
+  expiresAt         DateTime
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  currency          String                @default("INR")
+  meta              Json?
+  month             Int
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  tenantId          String
+  type              String
+  reporter          Reporter              @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, type, year, month])
+  @@index([status])
+}
+
+/// Payment-first public onboarding order.
+/// Stores pre-registration details keyed by `razorpayOrderId` so a reporter slot
+/// isn't consumed until payment is captured.
+model ReporterOnboardingOrder {
+  id                        String              @id @default(cuid())
+  tenantId                  String
+  mobileNumber              String
+  fullName                  String
+  languageId                String?
+  designationId             String
+  level                     ReporterLevel
+  stateId                   String?
+  districtId                String?
+  mandalId                  String?
+  assemblyConstituencyId    String?
+  subscriptionEnabled       Boolean             @default(true)
+  monthlySubscriptionAmount Int?
+  idCardCharge              Int?
+  amount                    Int
+  currency                  String              @default("INR")
+  status                    String              @default("PENDING")
+  razorpayOrderId           String              @unique
+  razorpayPaymentId         String?
+  meta                      Json?
+  expiresAt                 DateTime
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  designation               ReporterDesignation @relation(fields: [designationId], references: [id])
+  tenant                    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, mobileNumber])
+  @@index([status])
+}
+
+/// Razorpay configuration per tenant (or global when tenantId is null)
+model RazorpayConfig {
+  id        String   @id @default(cuid())
+  tenantId  String?  @unique
+  keyId     String
+  keySecret String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model ArticleView {
+  id        String   @id @default(cuid())
+  articleId String
+  userId    String?
+  deviceId  String?
+  viewedAt  DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model ArticleRead {
+  id               String    @id @default(cuid())
+  userId           String
+  articleId        String
+  readAt           DateTime  @default(now())
+  totalTimeMs      Int       @default(0)
+  maxScrollPercent Float     @default(0)
+  completed        Boolean   @default(false)
+  lastEventAt      DateTime?
+  completedAt      DateTime?
+  sessionsCount    Int       @default(0)
+  article          Article   @relation(fields: [articleId], references: [id])
+  user             User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, articleId])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, articleId])
+}
+
+model Dislike {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, articleId])
+}
+
+model ShortNewsRead {
+  id               String    @id @default(cuid())
+  userId           String
+  shortNewsId      String
+  readAt           DateTime  @default(now())
+  completed        Boolean   @default(false)
+  completedAt      DateTime?
+  lastEventAt      DateTime?
+  maxScrollPercent Float     @default(0)
+  sessionsCount    Int       @default(0)
+  totalTimeMs      Int       @default(0)
+  deviceId         String?
+  shortNews        ShortNews @relation(fields: [shortNewsId], references: [id])
+  user             User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, shortNewsId])
+}
+
+model NewspaperArticle {
+  id                       String               @id @default(cuid())
+  tenantId                 String
+  authorId                 String
+  languageId               String?
+  baseArticleId            String?
+  title                    String
+  subTitle                 String?
+  heading                  String
+  points                   String[]
+  dateline                 String
+  content                  String
+  placeName                String?
+  status                   String               @default("DRAFT")
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  districtId               String?
+  mandalId                 String?
+  stateId                  String?
+  villageId                String?
+  categoryId               String?
+  lead                     String?
+  assignedBlockTemplateId  String?
+  charCount                Int?
+  featuredImageUrl         String?
+  isBreaking               Boolean              @default(false)
+  mediaUrls                String[]
+  priority                 Int                  @default(0)
+  suggestedBlockTemplateId String?
+  wordCount                Int?
+  pageLayouts              EpaperPageLayout[]
+  assignedBlockTemplate    EpaperBlockTemplate? @relation("Article_AssignedBlock", fields: [assignedBlockTemplateId], references: [id])
+  author                   User                 @relation(fields: [authorId], references: [id])
+  baseArticle              Article?             @relation("ArticleToNewspaper", fields: [baseArticleId], references: [id])
+  category                 Category?            @relation(fields: [categoryId], references: [id])
+  language                 Language?            @relation(fields: [languageId], references: [id])
+  suggestedBlockTemplate   EpaperBlockTemplate? @relation("Article_SuggestedBlock", fields: [suggestedBlockTemplateId], references: [id])
+  tenant                   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([categoryId])
+  @@index([stateId])
+  @@index([districtId])
+  @@index([mandalId])
+  @@index([villageId])
+  @@index([suggestedBlockTemplateId])
+  @@index([assignedBlockTemplateId])
+  @@index([priority])
+  @@index([status])
+}
+
+model ContentRead {
+  id               String      @id @default(cuid())
+  userId           String
+  contentId        String
+  contentType      ContentType
+  readAt           DateTime    @default(now())
+  totalTimeMs      Int         @default(0)
+  maxScrollPercent Float       @default(0)
+  completed        Boolean     @default(false)
+  lastEventAt      DateTime?
+  completedAt      DateTime?
+  sessionsCount    Int         @default(0)
+  latitude         Float?
+  longitude        Float?
+  accuracyMeters   Float?
+  placeId          String?
+  placeName        String?
+  address          String?
+  stateId          String?
+  districtId       String?
+  mandalId         String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  district         District?   @relation("ContentRead_district", fields: [districtId], references: [id])
+  mandal           Mandal?     @relation("ContentRead_mandal", fields: [mandalId], references: [id])
+  state            State?      @relation("ContentRead_state", fields: [stateId], references: [id])
+  user             User        @relation(fields: [userId], references: [id])
+
+  @@unique([userId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([stateId])
+  @@index([districtId])
+  @@index([mandalId])
+}
+
+/// Unified reactions across Article & ShortNews. Replaces legacy Like/Dislike tables going forward.
+model ContentReaction {
+  id          String        @id @default(cuid())
+  userId      String
+  contentId   String
+  contentType ContentType
+  reaction    ReactionValue
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id])
+
+  @@unique([userId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([userId])
+}
+
+model FamilyRelation {
+  id            String             @id @default(cuid())
+  userId        String
+  relatedUserId String
+  relationType  FamilyRelationType
+  meta          Json?
+  createdAt     DateTime           @default(now())
+  relatedUser   User               @relation("FamilyRelation_relatedUser", fields: [relatedUserId], references: [id], onDelete: Cascade)
+  user          User               @relation("FamilyRelation_user", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, relatedUserId, relationType])
+  @@index([userId])
+  @@index([relatedUserId])
+}
+
+/// Optional grouping of users into named families (e.g., by surname or explicit unit)
+model Family {
+  id         String         @id @default(cuid())
+  familyName String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  members    FamilyMember[]
+}
+
+model FamilyMember {
+  id       String   @id @default(cuid())
+  familyId String
+  userId   String
+  role     String?
+  addedAt  DateTime @default(now())
+  family   Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, userId])
+  @@index([userId])
+}
+
+/// Auto-suggestable surname dictionary.
+/// - Never delete.
+/// - Create if missing.
+model Surname {
+  id              String       @id @default(cuid())
+  surnameEn       String
+  surnameNative   String?
+  stateId         String?
+  createdByUserId String?
+  isVerified      Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  familyTrees     FamilyTree[]
+  createdByUser   User?        @relation(fields: [createdByUserId], references: [id])
+  state           State?       @relation(fields: [stateId], references: [id])
+
+  @@unique([stateId, surnameEn])
+  @@index([surnameEn])
+  @@index([stateId])
+}
+
+/// New simplified Family Tree (placeholder-friendly) to avoid disturbing legacy Family/FamilyMember.
+model FamilyTree {
+  id              String             @id @default(cuid())
+  side            FamilyTreeSide
+  groupName       String?
+  rootMemberId    String?
+  createdByUserId String
+  surnameId       String?
+  villageId       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  createdByUser   User               @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  surname         Surname?           @relation(fields: [surnameId], references: [id])
+  members         FamilyTreeMember[]
+
+  @@unique([createdByUserId, side])
+  @@index([createdByUserId])
+  @@index([side])
+  @@index([surnameId])
+  @@index([villageId])
+}
+
+model FamilyTreeMember {
+  id             String             @id @default(cuid())
+  familyTreeId   String
+  userId         String?
+  fullName       String
+  kinRelationId  String?
+  parentMemberId String?
+  isPlaceholder  Boolean            @default(false)
+  isVerified     Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  familyTree     FamilyTree         @relation(fields: [familyTreeId], references: [id], onDelete: Cascade)
+  kinRelation    KinRelation?       @relation(fields: [kinRelationId], references: [id])
+  parentMember   FamilyTreeMember?  @relation("FamilyTreeMember_Parent", fields: [parentMemberId], references: [id])
+  children       FamilyTreeMember[] @relation("FamilyTreeMember_Parent")
+  user           User?              @relation(fields: [userId], references: [id])
+
+  @@unique([familyTreeId, userId])
+  @@index([familyTreeId])
+  @@index([userId])
+  @@index([parentMemberId])
+  @@index([kinRelationId])
+}
+
+/// Dictionary of kinship relation labels in multiple languages
+model KinRelation {
+  id                String             @id @default(cuid())
+  code              String             @unique
+  category          String
+  gender            String?
+  side              String?
+  generationUp      Int                @default(0)
+  generationDown    Int                @default(0)
+  en                String
+  te                String
+  isCommon          Boolean            @default(true)
+  notes             Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  familyTreeMembers FamilyTreeMember[]
+  names             KinRelationName[]
+}
+
+/// Language-specific display names for KinRelation codes.
+/// Keeps language strings separate from the logical KinRelation row.
+model KinRelationName {
+  id            String      @id @default(cuid())
+  kinRelationId String
+  languageCode  String
+  displayName   String
+  altNames      String[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  kinRelation   KinRelation @relation(fields: [kinRelationId], references: [id], onDelete: Cascade)
+
+  @@unique([kinRelationId, languageCode])
+  @@index([languageCode])
+}
+
+model Comment {
+  id          String     @id @default(cuid())
+  content     String
+  userId      String
+  articleId   String?
+  parentId    String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  shortNewsId String?
+  article     Article?   @relation(fields: [articleId], references: [id])
+  parent      Comment?   @relation("Replies", fields: [parentId], references: [id])
+  replies     Comment[]  @relation("Replies")
+  shortNews   ShortNews? @relation(fields: [shortNewsId], references: [id])
+  user        User       @relation(fields: [userId], references: [id])
+
+  @@index([articleId])
+  @@index([shortNewsId])
+  @@index([parentId])
+}
+
+model Media {
+  id            String        @id @default(cuid())
+  key           String        @unique
+  url           String
+  name          String
+  contentType   String
+  size          Int
+  kind          String
+  folder        String?
+  ownerId       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  owner         User?         @relation(fields: [ownerId], references: [id])
+  profilePhotos UserProfile[] @relation("UserProfile_profilePhotoMedia")
+}
+
+/// User profile details separated from the core User
+model UserProfile {
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  fullName               String?
+  gender                 String?
+  dob                    DateTime?
+  maritalStatus          String?
+  bio                    String?
+  profilePhotoUrl        String?
+  profilePhotoMediaId    String?
+  emergencyContactNumber String?
+  address                Json?
+  stateId                String?
+  districtId             String?
+  mandalId               String?
+  assemblyId             String?
+  villageId              String?
+  occupation             String?
+  education              String?
+  socialLinks            Json?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  caste                  String?
+  casteId                String?
+  lastName               String?
+  subCaste               String?
+  subCasteId             String?
+  surname                String?
+  casteRef               Caste?    @relation("UserProfile_casteRef", fields: [casteId], references: [id])
+  district               District? @relation("UserProfile_district", fields: [districtId], references: [id])
+  mandal                 Mandal?   @relation("UserProfile_mandal", fields: [mandalId], references: [id])
+  profilePhotoMedia      Media?    @relation("UserProfile_profilePhotoMedia", fields: [profilePhotoMediaId], references: [id])
+  state                  State?    @relation("UserProfile_state", fields: [stateId], references: [id])
+  subCasteRef            SubCaste? @relation("UserProfile_subCasteRef", fields: [subCasteId], references: [id])
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Caste and SubCaste lookups (optional references from UserProfile)
+model Caste {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  subCastes SubCaste[]
+  profiles  UserProfile[] @relation("UserProfile_casteRef")
+}
+
+model SubCaste {
+  id        String        @id @default(cuid())
+  name      String
+  casteId   String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  caste     Caste         @relation(fields: [casteId], references: [id], onDelete: Cascade)
+  profiles  UserProfile[] @relation("UserProfile_subCasteRef")
+
+  @@unique([casteId, name])
+}
+
+/// Public encryption key material per user (E2EE bootstrap). No private keys stored.
+model UserEncryptionKey {
+  userId          String   @id
+  identityKey     String
+  signedPreKey    String?
+  signedPreKeySig String?
+  oneTimePreKeys  Json     @default("[]")
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One-line options/opinions posted by a user for a ShortNews.
+/// - At most one option per (user, shortNews)
+/// - content is limited to 50 characters
+model ShortNewsOption {
+  id          String    @id @default(cuid())
+  shortNewsId String
+  userId      String
+  content     String    @db.VarChar(50)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  shortNews   ShortNews @relation(fields: [shortNewsId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, shortNewsId])
+  @@index([shortNewsId])
+  @@index([userId])
+}
+
+/// Device registration and last-known location per device
+model Device {
+  id             String   @id @default(cuid())
+  userId         String?
+  deviceId       String   @unique
+  deviceModel    String?
+  pushToken      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  latitude       Float?
+  longitude      Float?
+  accuracyMeters Float?
+  placeId        String?
+  placeName      String?
+  address        String?
+  source         String?
+  user           User?    @relation(fields: [userId], references: [id])
+}
+
+/// Canonical location for a registered user (separate from device)
+model UserLocation {
+  userId         String    @id
+  latitude       Float
+  longitude      Float
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  accuracyMeters Float?
+  provider       String?
+  timestampUtc   DateTime?
+  placeId        String?
+  placeName      String?
+  address        String?
+  source         String?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Reusable block templates for ePaper newspaper design.
+/// Templates define layout rules (columns, height) and component styles (title, image, body).
+/// Can be global (platform-wide) or tenant-specific.
+model EpaperBlockTemplate {
+  id                    String                 @id @default(cuid())
+  code                  String                 @unique
+  name                  String
+  description           String?
+  category              EpaperBlockCategory
+  subCategory           EpaperBlockSubCategory
+  columns               Int
+  widthInches           Float
+  minHeightInches       Float?
+  maxHeightInches       Float
+  components            Json
+  previewImageUrl       String?
+  isLocked              Boolean                @default(false)
+  status                EpaperBlockStatus      @default(DRAFT)
+  isGlobal              Boolean                @default(true)
+  tenantId              String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  tenant                Tenant?                @relation("Tenant_EpaperBlockTemplates", fields: [tenantId], references: [id], onDelete: Cascade)
+  pageLayouts           EpaperPageLayout[]
+  settingsAsFooter      EpaperSettings[]       @relation("EpaperSettings_Footer")
+  settingsAsInnerHeader EpaperSettings[]       @relation("EpaperSettings_InnerHeader")
+  settingsAsMainHeader  EpaperSettings[]       @relation("EpaperSettings_MainHeader")
+  assignedToArticles    NewspaperArticle[]     @relation("Article_AssignedBlock")
+  suggestedForArticles  NewspaperArticle[]     @relation("Article_SuggestedBlock")
+
+  @@index([category])
+  @@index([subCategory])
+  @@index([tenantId])
+  @@index([status])
+}
+
+/// Per-tenant ePaper configuration: page size, padding, headers, footers, generation settings.
+model EpaperSettings {
+  id                        String               @id @default(cuid())
+  tenantId                  String               @unique
+  pageWidthInches           Float                @default(13)
+  pageHeightInches          Float                @default(22)
+  gridColumns               Int                  @default(12)
+  paddingTop                Float                @default(0.5)
+  paddingRight              Float                @default(0.5)
+  paddingBottom             Float                @default(0.5)
+  paddingLeft               Float                @default(0.5)
+  defaultPageCount          Int                  @default(8)
+  mainHeaderTemplateId      String?
+  mainHeaderHeightInches    Float                @default(3)
+  innerHeaderTemplateId     String?
+  innerHeaderHeightInches   Float                @default(1)
+  footerTemplateId          String?
+  footerHeightInches        Float                @default(0.5)
+  footerStyle               String               @default("dots")
+  showPrinterInfoOnLastPage Boolean              @default(true)
+  printerName               String?
+  printerAddress            String?
+  printerCity               String?
+  publisherName             String?
+  editorName                String?
+  ownerName                 String?
+  rniNumber                 String?
+  lastPageFooterTemplate    String?
+  generationConfig          Json?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  footerTemplate            EpaperBlockTemplate? @relation("EpaperSettings_Footer", fields: [footerTemplateId], references: [id])
+  innerHeaderTemplate       EpaperBlockTemplate? @relation("EpaperSettings_InnerHeader", fields: [innerHeaderTemplateId], references: [id])
+  mainHeaderTemplate        EpaperBlockTemplate? @relation("EpaperSettings_MainHeader", fields: [mainHeaderTemplateId], references: [id])
+  tenant                    Tenant               @relation("Tenant_EpaperSettings", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Daily ePaper edition for a tenant.
+model EpaperEdition {
+  id             String              @id @default(cuid())
+  tenantId       String
+  editionDate    DateTime            @db.Date
+  editionNumber  Int?
+  totalPages     Int                 @default(8)
+  status         EpaperEditionStatus @default(DRAFT)
+  pdfUrl         String?
+  pdfGeneratedAt DateTime?
+  thumbnailUrl   String?
+  generatedAt    DateTime?
+  generatedBy    String?
+  generationLog  Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  tenant         Tenant              @relation("Tenant_EpaperEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  pageLayouts    EpaperPageLayout[]
+
+  @@unique([tenantId, editionDate])
+  @@index([tenantId])
+  @@index([editionDate])
+  @@index([status])
+}
+
+/// Computed layout positions for each block in an edition page.
+/// Stores x,y coordinates, dimensions, and rendered content after layout algorithm runs.
+model EpaperPageLayout {
+  id              String              @id @default(cuid())
+  editionId       String
+  pageNumber      Int
+  articleId       String?
+  blockTemplateId String
+  x               Float
+  y               Float
+  width           Float
+  height          Float
+  renderedContent Json?
+  sortOrder       Int                 @default(0)
+  isHeader        Boolean             @default(false)
+  isFooter        Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  article         NewspaperArticle?   @relation(fields: [articleId], references: [id])
+  blockTemplate   EpaperBlockTemplate @relation(fields: [blockTemplateId], references: [id])
+  edition         EpaperEdition       @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@index([editionId])
+  @@index([pageNumber])
+  @@index([articleId])
+  @@index([blockTemplateId])
+}
+
+/// Proof request created by admin/editor for an article
+model ArticleProofRequest {
+  id             String                 @id @default(cuid())
+  articleType    String
+  webArticleId   String?
+  shortNewsId    String?
+  articleId      String?
+  tenantId       String
+  requestedById  String
+  assignedToId   String
+  reason         String
+  priority       String                 @default("NORMAL")
+  status         ProofRequestStatus     @default(PENDING)
+  previousStatus String?
+  reviewedById   String?
+  reviewNote     String?
+  dueDate        DateTime?
+  submittedAt    DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  evidence       ArticleProofEvidence[]
+  assignedTo     User                   @relation("ProofRequest_AssignedTo", fields: [assignedToId], references: [id])
+  requestedBy    User                   @relation("ProofRequest_RequestedBy", fields: [requestedById], references: [id])
+  reviewedBy     User?                  @relation("ProofRequest_ReviewedBy", fields: [reviewedById], references: [id])
+  tenant         Tenant                 @relation("Tenant_ProofRequests", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([assignedToId, status])
+  @@index([webArticleId])
+  @@index([shortNewsId])
+  @@index([articleId])
+}
+
+/// Evidence uploaded by reporter for a proof request
+model ArticleProofEvidence {
+  id             String              @id @default(cuid())
+  proofRequestId String
+  mediaType      ProofMediaType
+  mediaUrl       String
+  thumbnailUrl   String?
+  fileName       String?
+  fileSize       Int?
+  mimeType       String?
+  description    String?
+  uploadedById   String
+  createdAt      DateTime            @default(now())
+  proofRequest   ArticleProofRequest @relation(fields: [proofRequestId], references: [id], onDelete: Cascade)
+  uploadedBy     User                @relation("ProofEvidence_UploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([proofRequestId])
+}
 
 enum PrgiStatus {
   PENDING
@@ -457,7 +2003,6 @@ enum ReporterPaymentStatus {
   REFUNDED
 }
 
-// KYC lifecycle for reporter onboarding
 enum KycStatus {
   PENDING
   SUBMITTED
@@ -473,443 +2018,41 @@ enum Periodicity {
   MONTHLY
 }
 
-/// ---------------- ePaper Block Template Enums ----------------
-
 /// Category of ePaper block template
 enum EpaperBlockCategory {
-  HEADER // Page headers (main/inner)
-  CONTENT // News content blocks
-  FOOTER // Page footers
+  HEADER
+  CONTENT
+  FOOTER
 }
 
 /// Sub-category for more specific block types
 enum EpaperBlockSubCategory {
-  // Headers
-  MAIN_HEADER // Page 1 header (3in)
-  INNER_HEADER // Page 2+ header (1in)
-  // Content blocks by column width
-  COL_2 // 2-column block
-  COL_4 // 4-column block
-  COL_6 // 6-column block
-  COL_10 // 10-column block
-  COL_12 // 12-column full-width block
-  // Footers
-  STANDARD_FOOTER // Regular footer with dots
-  LAST_PAGE_FOOTER // Last page with printer info
+  MAIN_HEADER
+  INNER_HEADER
+  COL_2
+  COL_4
+  COL_6
+  COL_10
+  COL_12
+  STANDARD_FOOTER
+  LAST_PAGE_FOOTER
 }
 
 /// Status of ePaper block template
 enum EpaperBlockStatus {
-  DRAFT // Being designed, not locked
-  ACTIVE // Locked and available for use
-  ARCHIVED // Soft deleted, not shown in picker
+  DRAFT
+  ACTIVE
+  ARCHIVED
 }
 
 /// Status of ePaper edition generation
 enum EpaperEditionStatus {
-  DRAFT // Created but not generated
-  GENERATING // Layout algorithm running
-  GENERATED // Layout complete, ready for review
-  PUBLISHED // Final, PDF generated
-  FAILED // Generation failed
+  DRAFT
+  GENERATING
+  GENERATED
+  PUBLISHED
+  FAILED
 }
-
-/// ---------------- Core Tenant & Domain Models ----------------
-
-model Tenant {
-  id                      String                   @id @default(cuid())
-  name                    String
-  slug                    String                   @unique
-  state                   State?                   @relation(fields: [stateId], references: [id])
-  stateId                 String?
-  // PRGI compliance fields
-  prgiNumber              String                   @unique
-  prgiStatus              PrgiStatus               @default(PENDING)
-  prgiSubmittedAt         DateTime?
-  prgiVerifiedAt          DateTime?
-  prgiRejectedAt          DateTime?
-  prgiRejectionReason     String?
-  prgiDocuments           Json?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  domains                 Domain[]
-  articles                Article[]
-  webArticles             TenantWebArticle[]       @relation("Tenant_WebArticles")
-  theme                   TenantTheme?
-  villages                Village[]
-  navigation              TenantNavigation?
-  featureFlags            TenantFeatureFlags?
-  homepageSections        TenantHomepageSection[]
-  homepageSectionConfigs  HomepageSectionConfig[]
-  newsletterSubscriptions NewsletterSubscription[]
-  reporters               Reporter[]
-  reporterDesignations    ReporterDesignation[]
-  entity                  TenantEntity?            @relation("Tenant_TenantEntity")
-  reporterPayments        ReporterPayment[]
-  reporterOnboardingOrders ReporterOnboardingOrder[]
-  razorpayConfig          RazorpayConfig?
-  idCardSettings          TenantIdCardSettings?
-  settings                TenantSettings?          @relation("Tenant_TenantSettings")
-  domainSettings          DomainSettings[]         @relation("Tenant_DomainSettings")
-  newspaperArticles       NewspaperArticle[]
-  aiUsageEvents           AiUsageEvent[]
-
-  staticPages             TenantStaticPage[]
-
-  translations            TenantTranslation[]
-
-  // Billing
-  subscriptions           TenantSubscription[]
-  billingUsageEvents      BillingUsageEvent[]
-  billingInvoices         BillingInvoice[]
-  billingCreditBalances   BillingCreditBalance[]
-
-  // ePaper Module
-  epaperSettings       EpaperSettings?       @relation("Tenant_EpaperSettings")
-  epaperBlockTemplates EpaperBlockTemplate[] @relation("Tenant_EpaperBlockTemplates")
-  epaperEditions       EpaperEdition[]       @relation("Tenant_EpaperEditions")
-  epaperPublicationEditions    EpaperPublicationEdition[]    @relation("Tenant_EpaperPublicationEditions")
-  epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("Tenant_EpaperPublicationSubEditions")
-  epaperPdfIssues              EpaperPdfIssue[]
-
-  // Proof/Evidence System
-  proofRequests        ArticleProofRequest[] @relation("Tenant_ProofRequests")
-}
-
-/// Tenant ePaper publication edition definition (State-level or umbrella edition).
-/// This is NOT the daily generated EpaperEdition used by the block-layout generator.
-model EpaperPublicationEdition {
-  id       String @id @default(cuid())
-  tenant   Tenant @relation("Tenant_EpaperPublicationEditions", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String
-
-  name String
-  slug String
-
-  state   State?  @relation("State_EpaperPublicationEditions", fields: [stateId], references: [id])
-  stateId String?
-
-  coverImageUrl  String?
-
-  seoTitle       String?
-  seoDescription String?
-  seoKeywords    String?
-
-  isActive  Boolean @default(true)
-  isDeleted Boolean @default(false)
-
-  subEditions EpaperPublicationSubEdition[]
-  pdfIssues   EpaperPdfIssue[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, slug])
-  @@index([tenantId])
-  @@index([stateId])
-  @@index([isActive, isDeleted])
-}
-
-/// Tenant ePaper publication sub-edition definition (District-level).
-model EpaperPublicationSubEdition {
-  id       String @id @default(cuid())
-  tenant   Tenant @relation("Tenant_EpaperPublicationSubEditions", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String
-
-  edition   EpaperPublicationEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
-  editionId String
-
-  name String
-  slug String
-
-  district   District? @relation("District_EpaperPublicationSubEditions", fields: [districtId], references: [id])
-  districtId String?
-
-  coverImageUrl  String?
-
-  seoTitle       String?
-  seoDescription String?
-  seoKeywords    String?
-
-  isActive  Boolean @default(true)
-  isDeleted Boolean @default(false)
-
-  pdfIssues EpaperPdfIssue[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([editionId, slug])
-  @@index([tenantId])
-  @@index([editionId])
-  @@index([districtId])
-  @@index([isActive, isDeleted])
-}
-
-/// PDF-based daily issue for a tenant's publication edition/sub-edition.
-/// Exactly one of (editionId, subEditionId) must be set.
-/// Uploading the same (tenantId + issueDate + target) should replace existing.
-model EpaperPdfIssue {
-  id       String @id @default(cuid())
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String
-
-  issueDate DateTime @db.Date
-
-  edition   EpaperPublicationEdition?    @relation(fields: [editionId], references: [id], onDelete: Cascade)
-  editionId String?
-
-  subEdition   EpaperPublicationSubEdition? @relation(fields: [subEditionId], references: [id], onDelete: Cascade)
-  subEditionId String?
-
-  pdfUrl        String
-  coverImageUrl String?
-  /// WebP version of cover image for optimized delivery (frontend prefers this)
-  coverImageUrlWebp String?
-  pageCount     Int @default(0)
-
-  /// Whether this issue uses the new PDF-only mode (no pre-generated page images)
-  pdfOnlyMode Boolean @default(false)
-
-  pages EpaperPdfPage[]
-  /// Article clips defined on this issue (new clip-based system)
-  clips EpaperArticleClip[]
-  /// Public crop sessions for this issue
-  cropSessions PublicCropSession[]
-
-  uploadedByUserId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, issueDate, editionId])
-  @@unique([tenantId, issueDate, subEditionId])
-  @@index([tenantId, issueDate])
-  @@index([editionId])
-  @@index([subEditionId])
-}
-
-model EpaperPdfPage {
-  id      String @id @default(cuid())
-  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  issueId String
-
-  pageNumber Int
-  /// PNG master image URL (lossless, archive quality)
-  imageUrl   String
-  /// WebP optimized image URL for frontend delivery (~80% smaller)
-  imageUrlWebp String?
-
-  createdAt DateTime @default(now())
-
-  @@unique([issueId, pageNumber])
-  @@index([issueId])
-}
-
-/// Article clip coordinates within a PDF page (PDF coordinate system).
-/// This is the HEART of the new clip-based ePaper system.
-/// Coordinates are stored in PDF points (1/72 inch), NOT pixels.
-model EpaperArticleClip {
-  id      String @id @default(cuid())
-  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  issueId String
-
-  pageNumber Int
-
-  /// PDF coordinates (in points, origin at bottom-left of page)
-  x      Float
-  y      Float
-  width  Float
-  height Float
-
-  /// Optional column hint for layout: 'left', 'right', 'full', or null
-  column String?
-
-  /// Detection source: 'auto' (AI/algorithm) or 'manual' (editor)
-  source String @default("manual")
-
-  /// Confidence score for auto-detected clips (0.0 - 1.0)
-  confidence Float?
-
-  /// Whether this clip is active/visible
-  isActive Boolean @default(true)
-
-  /// Who created/updated: 'system', 'editor', 'public'
-  createdBy String @default("editor")
-  updatedBy String @default("editor")
-
-  /// Optional title/label for the clip
-  title String?
-
-  /// Optional article link or reference
-  articleRef String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  /// Soft delete timestamp (null = active)
-  deletedAt DateTime?
-
-  assets EpaperClipAsset[]
-  cropSessions PublicCropSession[]
-  history EpaperClipHistory[]
-
-  @@index([issueId])
-  @@index([issueId, pageNumber])
-  @@index([isActive])
-  @@index([deletedAt])
-}
-
-/// Cached clip image assets (generated on-demand, not at upload time).
-/// These are derived from PDF + clip coordinates when needed for sharing.
-model EpaperClipAsset {
-  id     String @id @default(cuid())
-  clip   EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
-  clipId String
-
-  /// Asset type: 'webp', 'jpeg', 'png'
-  type String
-
-  /// Public URL of the cached image
-  url String
-
-  /// File size in bytes (for analytics)
-  sizeBytes Int?
-
-  generatedAt DateTime @default(now())
-
-  @@unique([clipId, type])
-  @@index([clipId])
-}
-
-/// Temporary session for public users to update clip coordinates.
-/// Provides secure, time-limited access without full auth.
-/// TTL = 5 minutes by default.
-model PublicCropSession {
-  id         String @id @default(cuid())
-  sessionKey String @unique @default(cuid())
-
-  issue   EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  issueId String
-
-  clip   EpaperArticleClip? @relation(fields: [clipId], references: [id], onDelete: Cascade)
-  clipId String?
-
-  /// Session expiry time (default: createdAt + 5 minutes)
-  expiresAt DateTime
-
-  /// Whether session has been used (one-time use)
-  used Boolean @default(false)
-
-  /// Number of updates made via this session (rate limiting: max 3)
-  updateCount Int @default(0)
-
-  /// Security: hashed IP for audit
-  ipHash String?
-
-  /// Security: user agent for audit
-  userAgent String?
-
-  createdAt DateTime @default(now())
-
-  @@index([sessionKey])
-  @@index([issueId])
-  @@index([expiresAt])
-}
-
-/// Audit history for clip coordinate changes (especially public updates).
-/// Used to track who changed what and when.
-model EpaperClipHistory {
-  id     String @id @default(cuid())
-  clip   EpaperArticleClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
-  clipId String
-
-  /// Previous coordinates before the change
-  previousX      Float
-  previousY      Float
-  previousWidth  Float
-  previousHeight Float
-
-  /// New coordinates after the change
-  newX      Float
-  newY      Float
-  newWidth  Float
-  newHeight Float
-
-  /// Who made the change: 'editor', 'public', 'system'
-  changedBy String
-
-  /// Optional crop session ID for public updates
-  cropSessionId String?
-
-  /// IP hash for public updates (audit)
-  ipHash String?
-
-  createdAt DateTime @default(now())
-
-  @@index([clipId])
-  @@index([changedBy])
-  @@index([createdAt])
-}
-
-/// Tenant-scoped static website pages (e.g. /about-us, /privacy-policy)
-model TenantStaticPage {
-  id              String   @id @default(cuid())
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId        String
-  slug            String
-  title           String?
-  contentHtml     String
-  meta            Json?
-  published       Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([tenantId, slug])
-  @@index([slug])
-}
-
-model TenantTranslation {
-  id        String @id @default(cuid())
-  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  language  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, language])
-  @@index([language])
-}
-
-model Domain {
-  id                    String             @id @default(cuid())
-  domain                String             @unique
-  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId              String
-  isPrimary             Boolean            @default(false)
-  kind                  DomainKind         @default(NEWS)
-  status                DomainStatus       @default(PENDING)
-  verificationToken     String?
-  verificationMethod    String? // DNS_TXT | HTTPS_FILE | MANUAL
-  verifiedAt            DateTime?
-  lastCheckAt           DateTime?
-  lastCheckStatus       String?
-  sampleDataStatus      String? // PENDING | IN_PROGRESS | COMPLETED | FAILED
-  sampleDataMessage     String? // Human-readable status message
-  sampleDataGeneratedAt DateTime? // When sample data was generated
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  categories            DomainCategory[]
-  languages             DomainLanguage[]
-  checkLogs             DomainCheckLog[]
-  settings              DomainSettings?    @relation("Domain_DomainSettings")
-  webArticles           TenantWebArticle[] @relation("Domain_WebArticles")
-  homepageSectionConfigs HomepageSectionConfig[]
-
-  @@index([sampleDataStatus])
-}
-
-/// ---------------- Tenant Billing / Subscription Models ----------------
 
 enum BillingCycle {
   MONTHLY
@@ -950,794 +2093,6 @@ enum BillingInvoiceKind {
   TOPUP
 }
 
-model BillingPlan {
-  id              String               @id @default(cuid())
-  name            String
-  currency        BillingCurrency      @default(INR)
-  cycle           BillingCycle         @default(MONTHLY)
-  baseAmountMinor Int                  @default(0)
-  isActive        Boolean              @default(true)
-  components      BillingPlanComponent[]
-  subscriptions   TenantSubscription[]
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-
-  @@index([isActive, createdAt])
-}
-
-model BillingPlanComponent {
-  id              String          @id @default(cuid())
-  plan            BillingPlan     @relation(fields: [planId], references: [id], onDelete: Cascade)
-  planId          String
-  component       BillingComponent
-  includedUnits   Int             @default(0)
-  unitAmountMinor Int             @default(0)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  @@unique([planId, component])
-  @@index([component])
-}
-
-model TenantSubscription {
-  id                 String             @id @default(cuid())
-  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId           String
-  plan               BillingPlan        @relation(fields: [planId], references: [id])
-  planId             String
-  status             SubscriptionStatus @default(ACTIVE)
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  cancelAtPeriodEnd  Boolean            @default(false)
-  canceledAt         DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  usageEvents        BillingUsageEvent[]
-  invoices           BillingInvoice[]
-
-  @@index([tenantId, status])
-  @@index([planId])
-}
-
-/// Usage events for metered / one-time charges.
-/// Example: newspaper design pages => component=NEWSPAPER_DESIGN_PAGE, quantity=number of pages.
-model BillingUsageEvent {
-  id             String            @id @default(cuid())
-  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId       String
-  subscription   TenantSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  subscriptionId String?
-  component      BillingComponent
-  quantity       Int               @default(1)
-  occurredAt     DateTime          @default(now())
-  meta           Json?
-  createdAt      DateTime          @default(now())
-
-  @@index([tenantId, occurredAt])
-  @@index([subscriptionId, occurredAt])
-  @@index([component, occurredAt])
-}
-
-/// Prepaid credit balance per tenant and component.
-/// Used to enforce prepaid usage (e.g., design pages beyond includedUnits).
-model BillingCreditBalance {
-  id        String          @id @default(cuid())
-  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  component BillingComponent
-  balance   Int             @default(0)
-  updatedAt DateTime        @updatedAt
-  createdAt DateTime        @default(now())
-
-  @@unique([tenantId, component])
-  @@index([tenantId])
-  @@index([component])
-}
-
-model BillingInvoice {
-  id               String            @id @default(cuid())
-  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId         String
-  subscription     TenantSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  subscriptionId   String?
-  kind             BillingInvoiceKind @default(SUBSCRIPTION)
-  status           InvoiceStatus      @default(DRAFT)
-  currency         BillingCurrency    @default(INR)
-  periodStart      DateTime
-  periodEnd        DateTime
-  totalAmountMinor Int               @default(0)
-  lineItems        BillingInvoiceLineItem[]
-  // Razorpay identifiers (when paid via Razorpay)
-  razorpayOrderId  String?
-  razorpayPaymentId String?
-  paidAt           DateTime?
-  meta             Json?
-  externalRef      String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-
-  @@index([tenantId, periodStart, periodEnd])
-  @@index([status, createdAt])
-  @@unique([razorpayOrderId])
-}
-
-model BillingInvoiceLineItem {
-  id              String          @id @default(cuid())
-  invoice         BillingInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  invoiceId       String
-  component       BillingComponent?
-  description     String
-  quantity        Int             @default(1)
-  unitAmountMinor Int             @default(0)
-  amountMinor     Int             @default(0)
-  createdAt       DateTime        @default(now())
-
-  @@index([invoiceId])
-}
-
-model DomainCategory {
-  id         String   @id @default(cuid())
-  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  domainId   String
-  category   Category @relation(fields: [categoryId], references: [id])
-  categoryId String
-  createdAt  DateTime @default(now())
-
-  @@unique([domainId, categoryId])
-  @@index([categoryId])
-}
-
-model DomainLanguage {
-  id         String   @id @default(cuid())
-  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  domainId   String
-  language   Language @relation(fields: [languageId], references: [id])
-  languageId String
-  createdAt  DateTime @default(now())
-
-  @@unique([domainId, languageId])
-  @@index([languageId])
-}
-
-model DomainCheckLog {
-  id        String   @id @default(cuid())
-  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  domainId  String
-  checkedAt DateTime @default(now())
-  result    String // OK | DNS_FAIL | TLS_FAIL | HTTP_TIMEOUT | HOST_MISMATCH
-  details   Json?
-
-  @@index([domainId, checkedAt])
-}
-
-/// ---------------- Settings Models ----------------
-
-/// Global platform defaults; singleton row recommended.
-model EntitySettings {
-  id        String   @id @default(cuid())
-  data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-/// Per-tenant overrides for branding/theme/layout/etc.
-model TenantSettings {
-  id        String   @id @default(cuid())
-  tenant    Tenant   @relation("Tenant_TenantSettings", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String   @unique
-  data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-/// Per-domain branding and settings.
-model DomainSettings {
-  id        String   @id @default(cuid())
-  domain    Domain   @relation("Domain_DomainSettings", fields: [domainId], references: [id], onDelete: Cascade)
-  domainId  String   @unique
-  tenant    Tenant   @relation("Tenant_DomainSettings", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model TenantTheme {
-  id             String   @id @default(cuid())
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId       String   @unique
-  logoUrl        String?
-  faviconUrl     String?
-  primaryColor   String?
-  secondaryColor String?
-  headerBgColor  String?
-  footerBgColor  String?
-  headerHtml     String?
-  footerHtml     String?
-  fontFamily     String?
-  /// Optional per-style homepage settings JSON.
-  /// Recommended shape: { "style1": { ... }, "style2": { ... } }
-  homepageConfig Json?
-  /// SEO configuration JSON
-  /// Shape: { metaTitle, metaDescription, metaKeywords, ogTitle, ogDescription, ogImage, twitterCard, twitterHandle, googleAnalyticsId, facebookPixelId, robotsTxt, sitemapEnabled }
-  seoConfig      Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-/// One-to-one PRGI registration and entity details for a Tenant
-model TenantEntity {
-  id                    String      @id @default(cuid())
-  tenant                Tenant      @relation("Tenant_TenantEntity", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId              String      @unique
-  // PRGI core fields
-  prgiNumber            String      @unique
-  registrationTitle     String?
-  nativeName            String?
-  periodicity           Periodicity @default(DAILY)
-  registrationDate      DateTime?
-  // Language
-  language              Language?   @relation("TenantEntity_language", fields: [languageId], references: [id])
-  languageId            String?
-  // People
-  ownerName             String?
-  publisherName         String?
-  editorName            String?
-  // Publication place (state/district)
-  publicationCountry    Country?    @relation("TenantEntity_publicationCountry", fields: [publicationCountryId], references: [id])
-  publicationCountryId  String?
-  publicationState      State?      @relation("TenantEntity_publicationState", fields: [publicationStateId], references: [id])
-  publicationStateId    String?
-  publicationDistrict   District?   @relation("TenantEntity_publicationDistrict", fields: [publicationDistrictId], references: [id])
-  publicationDistrictId String?
-  publicationMandal     Mandal?     @relation("TenantEntity_publicationMandal", fields: [publicationMandalId], references: [id])
-  publicationMandalId   String?
-  // Printing press and place of printing
-  printingPressName     String?
-  printingDistrict      District?   @relation("TenantEntity_printingDistrict", fields: [printingDistrictId], references: [id])
-  printingDistrictId    String?
-  printingMandal        Mandal?     @relation("TenantEntity_printingMandal", fields: [printingMandalId], references: [id])
-  printingMandalId      String?
-  printingCityName      String?
-  // Address free text
-  address               String?
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
-}
-
-/// ---------------- Website Navigation & Feature Config (Multi-tenant) ----------------
-
-model TenantNavigation {
-  id        String   @id @default(cuid())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String   @unique
-  // Arbitrary JSON config matching frontend navigation contract
-  config    Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model TenantFeatureFlags {
-  id                        String   @id @default(cuid())
-  tenant                    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId                  String   @unique
-  enableMobileAppView       Boolean  @default(false)
-  // Per-tenant toggle to allow AI-based web+short generation from reporter submissions
-  aiArticleRewriteEnabled   Boolean  @default(true)
-  // Optional billing enforcement. If enabled and limit is set, workers can skip AI once tenant exceeds limit.
-  aiBillingEnabled          Boolean  @default(false)
-  aiMonthlyTokenLimit       Int?
-  section2Rows              Int      @default(2)
-  section2ListCount         Int      @default(4)
-  section2ForceCategoryName String?
-  // Website feature flags
-  enableEpaper              Boolean  @default(false)
-  enableAds                 Boolean  @default(true)
-  enableComments            Boolean  @default(false)
-  enableSocialShare         Boolean  @default(true)
-  enablePushNotifications   Boolean  @default(false)
-  enableNewsletter          Boolean  @default(true)
-  enableSearch              Boolean  @default(true)
-  enableRelatedArticles     Boolean  @default(true)
-  enableTrending            Boolean  @default(true)
-  enableBreakingNews        Boolean  @default(false)
-  enableVideo               Boolean  @default(true)
-  enableGallery             Boolean  @default(true)
-  enablePolls               Boolean  @default(false)
-  enableLiveTv              Boolean  @default(false)
-  enableDarkMode            Boolean  @default(true)
-  enableMultiLang           Boolean  @default(false)
-  enableReporterBylines     Boolean  @default(true)
-  enableLocationFilter      Boolean  @default(false)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-}
-
-/// Token-based AI usage metering per tenant (for billing/auditing).
-/// Written by workers/controllers where tenantId is known.
-model AiUsageEvent {
-  id        String   @id @default(cuid())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  article   Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  articleId String?
-
-  provider String // e.g. 'openai' | 'gemini'
-  model    String?
-  purpose  String // e.g. 'rewrite' | 'seo' | 'translation'
-
-  promptTokens     Int?
-  completionTokens Int?
-  totalTokens      Int?
-
-  promptChars   Int?
-  responseChars Int?
-
-  rawUsage  Json?
-  createdAt DateTime @default(now())
-
-  @@index([tenantId, createdAt])
-  @@index([articleId])
-}
-
-model TenantHomepageSection {
-  id          String   @id @default(cuid())
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId    String
-  sectionName String
-  // Items: array of article IDs or card objects; flexible for future editorial overrides
-  items       Json
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([tenantId, sectionName])
-  @@index([tenantId, sectionName])
-}
-
-/// Style2 homepage section configuration - links sections to categories with customizable labels
-/// Section Types for Style2 Layout:
-///   - hero_sidebar: Main hero with sidebar (uses category + secondaryCategory + tertiaryCategory)
-///   - category_boxes_3col: 3-column category boxes (uses categorySlugs[])
-///   - small_cards_3col: 3-column small cards (uses categorySlugs[])
-///   - magazine_grid: Magazine-style grid layout (uses category)
-///   - horizontal_scroll: Horizontal scrolling cards (uses category)
-///   - spotlight: Featured spotlight section (uses category)
-///   - newspaper_columns: Traditional newspaper columns (uses categorySlugs[])
-///   - horizontal_cards: Horizontal card layout (uses category)
-///   - photo_gallery: Photo gallery section (uses category)
-///   - timeline: Timeline-style news feed (uses category)
-///   - featured_banner: Featured banner section (uses category)
-///   - compact_lists_2col: 2-column compact lists (uses categorySlugs[])
-/// Query Kinds:
-///   - category: Fetch articles from linked category
-///   - latest: Fetch latest articles across all categories
-///   - trending: Fetch trending/popular articles
-///   - most_viewed: Fetch most viewed articles
-model HomepageSectionConfig {
-  id            String    @id @default(cuid())
-  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId      String
-  domain        Domain?   @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  domainId      String?
-  /// Unique section key (e.g., "hero", "politics", "sports", "section1", etc.)
-  key           String
-  /// Display label in tenant's language (e.g., "రాజకీయాలు" for Telugu Politics)
-  label         String
-  /// English fallback label
-  labelEn       String?
-  /// Position/order on homepage (lower = higher on page)
-  position      Int       @default(0)
-  /// Section display style: "hero", "grid", "list", "cards", "ticker" (legacy)
-  style         String    @default("cards")
-  /// Section type for Style2 layout (hero_sidebar, category_boxes_3col, magazine_grid, etc.)
-  sectionType   String    @default("category_cards")
-  /// Query kind: "category", "latest", "trending", "most_viewed"
-  queryKind     String    @default("category")
-  /// Primary category (optional - some sections like "hero" may use queryKind instead)
-  category      Category? @relation("HomepageSectionConfig_category", fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId    String?
-  /// Cached category slug for fast lookup
-  categorySlug  String?
-  /// Secondary category (for hero_sidebar sidebar section)
-  secondaryCategory   Category? @relation("HomepageSectionConfig_secondaryCategory", fields: [secondaryCategoryId], references: [id], onDelete: SetNull)
-  secondaryCategoryId String?
-  secondaryCategorySlug String?
-  /// Tertiary category (for hero_sidebar bottom section)
-  tertiaryCategory    Category? @relation("HomepageSectionConfig_tertiaryCategory", fields: [tertiaryCategoryId], references: [id], onDelete: SetNull)
-  tertiaryCategoryId  String?
-  tertiaryCategorySlug String?
-  /// Array of category slugs for multi-category sections (category_boxes_3col, small_cards_3col, etc.)
-  categorySlugs Json?
-  /// Number of articles to show in this section
-  articleLimit  Int       @default(6)
-  /// Whether this section is visible on homepage
-  isActive      Boolean   @default(true)
-  /// Extra config JSON (for future extensions like colors, icons, etc.)
-  config        Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@unique([tenantId, domainId, key])
-  @@index([tenantId, domainId, position])
-  @@index([categoryId])
-  @@index([sectionType])
-  @@index([queryKind])
-}
-
-model NewsletterSubscription {
-  id        String   @id @default(cuid())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  email     String
-  source    String?
-  createdAt DateTime @default(now())
-
-  @@unique([tenantId, email])
-  @@index([tenantId])
-}
-
-/// ---------------- Reporter & Compliance ----------------
-
-model Reporter {
-  id                        String                @id @default(cuid())
-  tenant                    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId                  String
-  // Link to platform user; all authentication and role-based access controlled via User.role
-  user                      User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId                    String?               @unique
-  level                     ReporterLevel?
-  designation               ReporterDesignation?  @relation(fields: [designationId], references: [id])
-  designationId             String?
-  state                     State?                @relation(fields: [stateId], references: [id])
-  stateId                   String?
-  district                  District?             @relation(fields: [districtId], references: [id])
-  districtId                String?
-  mandal                    Mandal?               @relation(fields: [mandalId], references: [id])
-  mandalId                  String?
-  assemblyConstituency      AssemblyConstituency? @relation(fields: [assemblyConstituencyId], references: [id])
-  assemblyConstituencyId    String?
-  // Subscription & compliance fields
-  subscriptionActive        Boolean               @default(false)
-  monthlySubscriptionAmount Int? // Stored in smallest currency unit (e.g. paise)
-  idCardCharge              Int? // Fee charged for ID card issuance (if any, smallest unit)
-  kycStatus                 KycStatus             @default(PENDING)
-  kycData                   Json? // Arbitrary structured KYC payload (documents, verification notes)
-  profilePhotoUrl           String? // Optional direct URL to reporter profile photo
-  // Manual time-based login access (only meaningful when subscriptionActive=false)
-  // Tenant admins can enable and grant N days; after expiry, reporter login is blocked until reactivated.
-  manualLoginEnabled         Boolean               @default(false)
-  manualLoginDays            Int?
-  manualLoginActivatedAt     DateTime?
-  manualLoginExpiresAt       DateTime?
-  active                    Boolean               @default(true)
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
-  idCard                    ReporterIDCard?
-  payments                  ReporterPayment[]
-
-  @@index([tenantId, level])
-  @@index([designationId])
-  @@index([kycStatus])
-  @@index([manualLoginEnabled, manualLoginExpiresAt])
-}
-
-model AssemblyConstituency {
-  id         String     @id @default(cuid())
-  name       String
-  district   District   @relation("DistrictAssemblyConstituencies", fields: [districtId], references: [id])
-  districtId String
-  isDeleted  Boolean    @default(false)
-  reporters  Reporter[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  @@unique([districtId, name])
-  @@index([districtId])
-}
-
-model ReporterDesignation {
-  id        String        @id @default(cuid())
-  tenant    Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String?
-  level     ReporterLevel
-  code      String // machine code e.g. STATE_BUREAU_CHIEF
-  name      String // display name e.g. "State Bureau Chief"
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  reporters Reporter[]
-  onboardingOrders ReporterOnboardingOrder[]
-
-  @@unique([tenantId, code])
-  @@index([tenantId, level])
-}
-
-model ReporterIDCard {
-  id         String   @id @default(cuid())
-  reporter   Reporter @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  reporterId String   @unique
-  cardNumber String   @unique
-  issuedAt   DateTime
-  expiresAt  DateTime
-  pdfUrl     String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-/// Per-tenant ID card layout & numbering settings
-model TenantIdCardSettings {
-  id              String    @id @default(cuid())
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId        String    @unique
-  templateId      String    @default("STYLE_1")
-  frontLogoUrl    String?
-  roundStampUrl   String?
-  signUrl         String?
-  primaryColor    String? // hex color like #004f9f
-  secondaryColor  String? // hex color like #ff0000
-  termsJson       Json? // array of strings for back-side terms
-  officeAddress   String?
-  helpLine1       String?
-  helpLine2       String?
-  // Validity configuration
-  validityType    String    @default("PER_USER_DAYS") // PER_USER_DAYS | FIXED_END_DATE
-  validityDays    Int? // used when PER_USER_DAYS
-  fixedValidUntil DateTime? // used when FIXED_END_DATE
-  // ID number format
-  idPrefix        String? // e.g. KM
-  idDigits        Int? // e.g. 6 → KM000123
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-}
-
-model Village {
-  id        String   @id @default(cuid())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String
-  mandal    Mandal   @relation(fields: [mandalId], references: [id])
-  mandalId  String
-  name      String
-  isDeleted Boolean  @default(false)
-  translations VillageTranslation[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, mandalId, name])
-  @@index([tenantId])
-  @@index([mandalId])
-  @@index([name])
-}
-
-model VillageTranslation {
-  id        String  @id @default(cuid())
-  village   Village @relation(fields: [villageId], references: [id], onDelete: Cascade)
-  villageId String
-  language  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([villageId, language])
-}
-
-model ReporterPayment {
-  id                String                @id @default(cuid())
-  reporter          Reporter              @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  reporterId        String
-  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId          String
-  type              String // ONBOARDING | MONTHLY_SUBSCRIPTION
-  year              Int // Billing year (for monthly subscriptions)
-  month             Int // 1-12 billing month (for monthly subscriptions)
-  amount            Int
-  currency          String                @default("INR")
-  status            ReporterPaymentStatus @default(PENDING)
-  razorpayOrderId   String?
-  razorpayPaymentId String?
-  meta              Json?
-  expiresAt         DateTime
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-
-  @@unique([reporterId, type, year, month])
-  @@index([status])
-}
-
-/// Payment-first public onboarding order.
-/// Stores pre-registration details keyed by `razorpayOrderId` so a reporter slot
-/// isn't consumed until payment is captured.
-model ReporterOnboardingOrder {
-  id                    String   @id @default(cuid())
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId              String
-
-  mobileNumber          String
-  fullName              String
-  languageId            String?
-
-  designation           ReporterDesignation @relation(fields: [designationId], references: [id])
-  designationId         String
-  level                 ReporterLevel
-  stateId               String?
-  districtId            String?
-  mandalId              String?
-  assemblyConstituencyId String?
-
-  subscriptionEnabled   Boolean  @default(true)
-  monthlySubscriptionAmount Int?
-  idCardCharge          Int?
-  amount                Int
-  currency              String   @default("INR")
-  status                String   @default("PENDING") // PENDING | PAID | EXPIRED | CANCELLED | PAID_NO_SLOT | DUPLICATE
-
-  razorpayOrderId       String   @unique
-  razorpayPaymentId     String?
-  meta                  Json?
-  expiresAt             DateTime
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([tenantId, mobileNumber])
-  @@index([status])
-}
-
-/// Razorpay configuration per tenant (or global when tenantId is null)
-model RazorpayConfig {
-  id        String   @id @default(cuid())
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId  String?
-  keyId     String
-  keySecret String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId])
-}
-
-/// ---------------- End Multi-Tenant Additions ----------------
-
-model ArticleView {
-  id        String   @id @default(cuid())
-  article   Article  @relation(fields: [articleId], references: [id])
-  articleId String
-  user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
-  deviceId  String?
-  viewedAt  DateTime @default(now())
-}
-
-model ArticleRead {
-  id               String    @id @default(cuid())
-  user             User      @relation(fields: [userId], references: [id])
-  userId           String
-  article          Article   @relation(fields: [articleId], references: [id])
-  articleId        String
-  readAt           DateTime  @default(now())
-  totalTimeMs      Int       @default(0)
-  maxScrollPercent Float     @default(0)
-  completed        Boolean   @default(false)
-  lastEventAt      DateTime?
-  completedAt      DateTime?
-  sessionsCount    Int       @default(0)
-
-  @@unique([userId, articleId])
-}
-
-model Like {
-  id        String   @id @default(cuid())
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  article   Article  @relation(fields: [articleId], references: [id])
-  articleId String
-  createdAt DateTime @default(now())
-
-  @@unique([userId, articleId])
-}
-
-model Dislike {
-  id        String   @id @default(cuid())
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  article   Article  @relation(fields: [articleId], references: [id])
-  articleId String
-  createdAt DateTime @default(now())
-
-  @@unique([userId, articleId])
-}
-
-model ShortNewsRead {
-  id               String    @id @default(cuid())
-  user             User      @relation(fields: [userId], references: [id])
-  userId           String
-  shortNews        ShortNews @relation(fields: [shortNewsId], references: [id])
-  shortNewsId      String
-  readAt           DateTime  @default(now())
-  // Added metrics similar to ArticleRead for unified simple tracking
-  totalTimeMs      Int       @default(0)
-  maxScrollPercent Float     @default(0)
-  completed        Boolean   @default(false)
-  lastEventAt      DateTime?
-  completedAt      DateTime?
-  sessionsCount    Int       @default(0)
-  deviceId         String?
-
-  @@unique([userId, shortNewsId])
-}
-
-model NewspaperArticle {
-  id         String    @id @default(cuid())
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId   String
-  author     User      @relation(fields: [authorId], references: [id])
-  authorId   String
-  language   Language? @relation(fields: [languageId], references: [id])
-  languageId String?
-
-  // Optional category (kept in sync with TenantWebArticle/ShortNews when possible)
-  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId String?
-
-  // Link to the central platform article (which holds the raw content)
-  baseArticle   Article? @relation("ArticleToNewspaper", fields: [baseArticleId], references: [id])
-  baseArticleId String?
-
-  title     String // Short title
-  subTitle  String? // Optional sub-title
-  lead      String? // Optional lead paragraph
-  heading   String // 1-line heading
-  points    String[] // 3-5 bullet points
-  dateline  String // e.g. "Adilabad, Dec 6"
-  content   String // Main news body
-
-  // Image/media for this article
-  featuredImageUrl String? // Primary image URL
-  mediaUrls        String[] // Additional media URLs
-
-  // Location hierarchy (derived from reporter selection)
-  // Reporter can pick ANY ONE: village/mandal/district/state; server derives the rest.
-  stateId    String?
-  districtId String?
-  mandalId   String?
-  villageId  String?
-  // Localized most-specific label used for dateline (village/mandal/district/state)
-  placeName String?
-
-  // ePaper block template assignment
-  // System suggests based on character count
-  suggestedBlockTemplate   EpaperBlockTemplate? @relation("Article_SuggestedBlock", fields: [suggestedBlockTemplateId], references: [id])
-  suggestedBlockTemplateId String?
-  // Reporter/editor can override with manual selection
-  assignedBlockTemplate   EpaperBlockTemplate? @relation("Article_AssignedBlock", fields: [assignedBlockTemplateId], references: [id])
-  assignedBlockTemplateId String?
-
-  // Priority for layout algorithm (higher = placed first/prominently)
-  priority Int @default(0)
-  // Is this a breaking/headline news? (forces larger block)
-  isBreaking Boolean @default(false)
-
-  // Character/word count cache (for block suggestion)
-  charCount Int?
-  wordCount Int?
-
-  status    String   @default("DRAFT")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Page layouts where this article appears
-  pageLayouts EpaperPageLayout[]
-
-  @@index([tenantId])
-  @@index([categoryId])
-  @@index([stateId])
-  @@index([districtId])
-  @@index([mandalId])
-  @@index([villageId])
-  @@index([suggestedBlockTemplateId])
-  @@index([assignedBlockTemplateId])
-  @@index([priority])
-  @@index([status])
-}
-
 /// Unified content read tracking (dual-write while ArticleRead / ShortNewsRead still exist).
 enum ContentType {
   ARTICLE
@@ -1750,101 +2105,12 @@ enum ReactionValue {
   DISLIKE
 }
 
-model ContentRead {
-  id               String      @id @default(cuid())
-  user             User        @relation(fields: [userId], references: [id])
-  userId           String
-  contentId        String // references Article.id or ShortNews.id depending on contentType
-  contentType      ContentType
-  readAt           DateTime    @default(now())
-  totalTimeMs      Int         @default(0)
-  maxScrollPercent Float       @default(0)
-  completed        Boolean     @default(false)
-  lastEventAt      DateTime?
-  completedAt      DateTime?
-  sessionsCount    Int         @default(0)
-  // Snapshot location & geo context at FIRST record creation
-  latitude         Float?
-  longitude        Float?
-  accuracyMeters   Float?
-  placeId          String?
-  placeName        String?
-  address          String?
-  stateId          String?
-  districtId       String?
-  mandalId         String?
-  state            State?      @relation("ContentRead_state", fields: [stateId], references: [id])
-  district         District?   @relation("ContentRead_district", fields: [districtId], references: [id])
-  mandal           Mandal?     @relation("ContentRead_mandal", fields: [mandalId], references: [id])
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-
-  @@unique([userId, contentType, contentId])
-  @@index([contentType, contentId])
-  @@index([stateId])
-  @@index([districtId])
-  @@index([mandalId])
-}
-
-/// Unified reactions across Article & ShortNews. Replaces legacy Like/Dislike tables going forward.
-model ContentReaction {
-  id          String        @id @default(cuid())
-  user        User          @relation(fields: [userId], references: [id])
-  userId      String
-  contentId   String // references Article.id or ShortNews.id depending on contentType (no FK for polymorphism)
-  contentType ContentType
-  reaction    ReactionValue
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  @@unique([userId, contentType, contentId])
-  @@index([contentType, contentId])
-  @@index([userId])
-}
-
 /// Family relationship graph (directed edges). Store both directions for convenience.
 enum FamilyRelationType {
   PARENT
   CHILD
   SPOUSE
   SIBLING
-}
-
-model FamilyRelation {
-  id            String             @id @default(cuid())
-  user          User               @relation("FamilyRelation_user", fields: [userId], references: [id], onDelete: Cascade)
-  userId        String
-  relatedUser   User               @relation("FamilyRelation_relatedUser", fields: [relatedUserId], references: [id], onDelete: Cascade)
-  relatedUserId String
-  relationType  FamilyRelationType
-  meta          Json?
-  createdAt     DateTime           @default(now())
-
-  @@unique([userId, relatedUserId, relationType])
-  @@index([userId])
-  @@index([relatedUserId])
-}
-
-/// Optional grouping of users into named families (e.g., by surname or explicit unit)
-model Family {
-  id         String         @id @default(cuid())
-  familyName String?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  members    FamilyMember[]
-}
-
-model FamilyMember {
-  id       String   @id @default(cuid())
-  family   Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  familyId String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId   String
-  role     String?
-  addedAt  DateTime @default(now())
-
-  @@unique([familyId, userId])
-  @@index([userId])
 }
 
 /// Family Tree side (one tree per side).
@@ -1854,569 +2120,15 @@ enum FamilyTreeSide {
   SPOUSE
 }
 
-/// Auto-suggestable surname dictionary.
-/// - Never delete.
-/// - Create if missing.
-model Surname {
-  id              String   @id @default(cuid())
-  surnameEn       String
-  surnameNative   String?
-  state           State?   @relation(fields: [stateId], references: [id], onDelete: SetNull)
-  stateId         String?
-  createdByUser   User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  createdByUserId String?
-  isVerified      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  familyTrees     FamilyTree[]
-
-  @@unique([stateId, surnameEn])
-  @@index([surnameEn])
-  @@index([stateId])
-}
-
-/// New simplified Family Tree (placeholder-friendly) to avoid disturbing legacy Family/FamilyMember.
-model FamilyTree {
-  id              String          @id @default(cuid())
-  side            FamilyTreeSide
-  groupName       String?
-  rootMemberId    String?
-  createdByUser   User            @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
-  createdByUserId String
-  surname         Surname?        @relation(fields: [surnameId], references: [id], onDelete: SetNull)
-  surnameId       String?
-  // Optional location hint; Village is tenant-scoped, so keep as a string without FK.
-  villageId       String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  members         FamilyTreeMember[]
-
-  @@unique([createdByUserId, side])
-  @@index([createdByUserId])
-  @@index([side])
-  @@index([surnameId])
-  @@index([villageId])
-}
-
-model FamilyTreeMember {
-  id             String        @id @default(cuid())
-  familyTree     FamilyTree    @relation(fields: [familyTreeId], references: [id], onDelete: Cascade)
-  familyTreeId   String
-  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userId         String?
-  fullName       String
-  kinRelation    KinRelation?  @relation(fields: [kinRelationId], references: [id], onDelete: SetNull)
-  kinRelationId  String?
-  parentMemberId String?
-  parentMember   FamilyTreeMember? @relation("FamilyTreeMember_Parent", fields: [parentMemberId], references: [id], onDelete: SetNull)
-  children       FamilyTreeMember[] @relation("FamilyTreeMember_Parent")
-  isPlaceholder  Boolean       @default(false)
-  isVerified     Boolean       @default(false)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  @@unique([familyTreeId, userId])
-  @@index([familyTreeId])
-  @@index([userId])
-  @@index([parentMemberId])
-  @@index([kinRelationId])
-}
-
-/// Dictionary of kinship relation labels in multiple languages
-model KinRelation {
-  id             String   @id @default(cuid())
-  code           String   @unique // e.g., FATHER, MOTHER, PATERNAL_GRANDMOTHER
-  category       String // PARENT, CHILD, SPOUSE, SIBLING, GRANDPARENT, GRANDCHILD, AUNT, UNCLE, NIECE, NEPHEW, COUSIN, SELF
-  gender         String? // MALE, FEMALE, NEUTRAL (label grammatical gender)
-  side           String? // PATERNAL, MATERNAL, BOTH, N/A
-  generationUp   Int      @default(0)
-  generationDown Int      @default(0)
-  en             String // English label
-  te             String // Telugu label
-  names          KinRelationName[]
-  familyTreeMembers FamilyTreeMember[]
-  isCommon       Boolean  @default(true)
-  notes          Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-/// Language-specific display names for KinRelation codes.
-/// Keeps language strings separate from the logical KinRelation row.
-model KinRelationName {
-  id            String      @id @default(cuid())
-  kinRelation   KinRelation @relation(fields: [kinRelationId], references: [id], onDelete: Cascade)
-  kinRelationId String
-  languageCode  String // e.g., en, te, hi, ta, kn, ml, bn, mr, ur, gu, pa, or, as
-  displayName   String
-  altNames      String[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  @@unique([kinRelationId, languageCode])
-  @@index([languageCode])
-}
-
-model Comment {
-  id          String     @id @default(cuid())
-  user        User       @relation(fields: [userId], references: [id])
-  userId      String
-  article     Article?   @relation(fields: [articleId], references: [id])
-  articleId   String?
-  shortNews   ShortNews? @relation(fields: [shortNewsId], references: [id])
-  shortNewsId String?
-  content     String
-  parent      Comment?   @relation("Replies", fields: [parentId], references: [id])
-  parentId    String?
-  replies     Comment[]  @relation("Replies")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  @@index([articleId])
-  @@index([shortNewsId])
-  @@index([parentId])
-}
-
-model Media {
-  id            String        @id @default(cuid())
-  key           String        @unique
-  url           String
-  name          String
-  contentType   String
-  size          Int
-  kind          String // image | video | other
-  folder        String?
-  owner         User?         @relation(fields: [ownerId], references: [id])
-  ownerId       String?
-  profilePhotos UserProfile[] @relation("UserProfile_profilePhotoMedia")
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-}
-
-/// User profile details separated from the core User
-model UserProfile {
-  id                     String    @id @default(cuid())
-  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId                 String    @unique
-  fullName               String?
-  surname                String?
-  lastName               String?
-  gender                 String?
-  dob                    DateTime?
-  maritalStatus          String?
-  bio                    String?
-  profilePhotoUrl        String?
-  profilePhotoMedia      Media?    @relation("UserProfile_profilePhotoMedia", fields: [profilePhotoMediaId], references: [id])
-  profilePhotoMediaId    String?
-  emergencyContactNumber String?
-  address                Json?
-  state                  State?    @relation("UserProfile_state", fields: [stateId], references: [id])
-  stateId                String?
-  district               District? @relation("UserProfile_district", fields: [districtId], references: [id])
-  districtId             String?
-  mandal                 Mandal?   @relation("UserProfile_mandal", fields: [mandalId], references: [id])
-  mandalId               String?
-  assemblyId             String?
-  villageId              String?
-  occupation             String?
-  education              String?
-  caste                  String?
-  subCaste               String?
-  casteRef               Caste?    @relation("UserProfile_casteRef", fields: [casteId], references: [id])
-  casteId                String?
-  subCasteRef            SubCaste? @relation("UserProfile_subCasteRef", fields: [subCasteId], references: [id])
-  subCasteId             String?
-  socialLinks            Json?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-}
-
-/// Caste and SubCaste lookups (optional references from UserProfile)
-model Caste {
-  id        String        @id @default(cuid())
-  name      String        @unique
-  subCastes SubCaste[]
-  profiles  UserProfile[] @relation("UserProfile_casteRef")
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-}
-
-model SubCaste {
-  id        String        @id @default(cuid())
-  name      String
-  caste     Caste         @relation(fields: [casteId], references: [id], onDelete: Cascade)
-  casteId   String
-  profiles  UserProfile[] @relation("UserProfile_subCasteRef")
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  @@unique([casteId, name])
-}
-
-/// Track which other users a user is "interested" in (follow) for family chat filtering.
-/// A record means the viewer wants to SEE messages from targetUser (unless muted).
-/// If no record exists: default = not followed, messages hidden in interest-only mode.
-/// If muted = true: hide even if followed.
-
-/// Public encryption key material per user (E2EE bootstrap). No private keys stored.
-model UserEncryptionKey {
-  userId          String   @id
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  identityKey     String // Base64 public identity key
-  signedPreKey    String? // Base64 public signed pre-key
-  signedPreKeySig String? // Signature of signedPreKey by identity key
-  oneTimePreKeys  Json     @default("[]") // Array of Base64 one-time pre-keys
-  updatedAt       DateTime @updatedAt
-  createdAt       DateTime @default(now())
-}
-
-/// One-line options/opinions posted by a user for a ShortNews.
-/// - At most one option per (user, shortNews)
-/// - content is limited to 50 characters
-model ShortNewsOption {
-  id          String    @id @default(cuid())
-  shortNews   ShortNews @relation(fields: [shortNewsId], references: [id])
-  shortNewsId String
-  user        User      @relation(fields: [userId], references: [id])
-  userId      String
-  content     String    @db.VarChar(50)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@unique([userId, shortNewsId])
-  @@index([shortNewsId])
-  @@index([userId])
-}
-
-/// Device registration and last-known location per device
-model Device {
-  id             String   @id @default(cuid())
-  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userId         String?
-  deviceId       String   @unique
-  deviceModel    String?
-  pushToken      String?
-  // Last known location snapshot for this device
-  latitude       Float?
-  longitude      Float?
-  accuracyMeters Float?
-  placeId        String?
-  placeName      String?
-  address        String?
-  source         String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-/// Canonical location for a registered user (separate from device)
-model UserLocation {
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId         String    @id
-  latitude       Float
-  longitude      Float
-  accuracyMeters Float?
-  provider       String?
-  timestampUtc   DateTime?
-  placeId        String?
-  placeName      String?
-  address        String?
-  source         String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-}
-
-/// ---------------- ePaper Newspaper Design Module ----------------
-
-/// Reusable block templates for ePaper newspaper design.
-/// Templates define layout rules (columns, height) and component styles (title, image, body).
-/// Can be global (platform-wide) or tenant-specific.
-model EpaperBlockTemplate {
-  id          String                 @id @default(cuid())
-  code        String                 @unique // e.g., "BT_2COL_COMPACT", "BT_MAIN_HEADER"
-  name        String // Human-readable name
-  description String? // Optional description of use case
-
-  // Classification
-  category    EpaperBlockCategory // HEADER, CONTENT, FOOTER
-  subCategory EpaperBlockSubCategory // COL_2, COL_4, MAIN_HEADER, etc.
-
-  // Layout dimensions (in inches)
-  columns        Int // Number of grid columns (2, 4, 6, 10, 12)
-  widthInches    Float // Actual width in inches
-  minHeightInches Float? // Minimum height
-  maxHeightInches Float // Maximum height allowed
-
-  // Component definitions and style rules (JSON)
-  // Shape: { title: {...}, image: {...}, highlight: {...}, dateline: {...}, body: {...}, borders: {...}, spacing: {...} }
-  components Json
-
-  // Preview thumbnail (generated when template is locked)
-  previewImageUrl String?
-
-  // Template state
-  isLocked Boolean            @default(false) // Once locked, cannot edit (only clone)
-  status   EpaperBlockStatus  @default(DRAFT)
-
-  // Ownership: null = global platform template, tenantId = tenant-specific
-  isGlobal Boolean @default(true)
-  tenant   Tenant? @relation("Tenant_EpaperBlockTemplates", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String?
-
-  // Used by EpaperSettings as header/footer references
-  settingsAsMainHeader  EpaperSettings[] @relation("EpaperSettings_MainHeader")
-  settingsAsInnerHeader EpaperSettings[] @relation("EpaperSettings_InnerHeader")
-  settingsAsFooter      EpaperSettings[] @relation("EpaperSettings_Footer")
-
-  // Articles using this template
-  suggestedForArticles NewspaperArticle[] @relation("Article_SuggestedBlock")
-  assignedToArticles   NewspaperArticle[] @relation("Article_AssignedBlock")
-
-  // Page layouts using this template
-  pageLayouts EpaperPageLayout[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([category])
-  @@index([subCategory])
-  @@index([tenantId])
-  @@index([status])
-}
-
-/// Per-tenant ePaper configuration: page size, padding, headers, footers, generation settings.
-model EpaperSettings {
-  id       String @id @default(cuid())
-  tenant   Tenant @relation("Tenant_EpaperSettings", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String @unique
-
-  // Page dimensions (in inches, default 13x22 broadsheet)
-  pageWidthInches  Float @default(13)
-  pageHeightInches Float @default(22)
-
-  // Grid system
-  gridColumns Int @default(12) // 12-column grid
-
-  // Padding (in inches)
-  paddingTop    Float @default(0.5)
-  paddingRight  Float @default(0.5)
-  paddingBottom Float @default(0.5)
-  paddingLeft   Float @default(0.5)
-
-  // Default page count for editions
-  defaultPageCount Int @default(8)
-
-  // Header templates
-  mainHeaderTemplateId  String? // FK to EpaperBlockTemplate (3in main page header)
-  mainHeaderTemplate    EpaperBlockTemplate? @relation("EpaperSettings_MainHeader", fields: [mainHeaderTemplateId], references: [id])
-  mainHeaderHeightInches Float @default(3)
-
-  innerHeaderTemplateId  String? // FK to EpaperBlockTemplate (1in inner page header)
-  innerHeaderTemplate    EpaperBlockTemplate? @relation("EpaperSettings_InnerHeader", fields: [innerHeaderTemplateId], references: [id])
-  innerHeaderHeightInches Float @default(1)
-
-  // Footer template
-  footerTemplateId  String? // FK to EpaperBlockTemplate
-  footerTemplate    EpaperBlockTemplate? @relation("EpaperSettings_Footer", fields: [footerTemplateId], references: [id])
-  footerHeightInches Float @default(0.5)
-
-  // Footer style for all pages
-  footerStyle String @default("dots") // "dots", "line", "none"
-
-  // Last page footer: printer/press information (required for PRGI compliance)
-  showPrinterInfoOnLastPage Boolean @default(true)
-  printerName               String? // e.g., "Sri Lakshmi Offset Printers"
-  printerAddress            String? // e.g., "Industrial Area, Adilabad"
-  printerCity               String? // e.g., "Adilabad"
-  publisherName             String? // Publisher name for last page
-  editorName                String? // Editor name for last page
-  ownerName                 String? // Owner name for last page
-  rniNumber                 String? // RNI registration number
-  // Custom footer text template (supports placeholders: {printerName}, {printerAddress}, {rniNumber}, {date})
-  lastPageFooterTemplate    String? // e.g., "Printed and published by {publisherName} at {printerName}, {printerAddress}. RNI: {rniNumber}"
-
-  // Auto-generation settings (JSON: scheduleTime, timezone, autoPublish)
-  generationConfig Json? // { "autoGenerate": true, "scheduleTime": "04:00", "timezone": "Asia/Kolkata", "autoPublish": false }
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-/// Daily ePaper edition for a tenant.
-model EpaperEdition {
-  id       String @id @default(cuid())
-  tenant   Tenant @relation("Tenant_EpaperEditions", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId String
-
-  editionDate DateTime @db.Date // The newspaper date (e.g., 2026-01-09)
-  editionNumber Int? // Optional edition number for the day
-
-  totalPages Int @default(8)
-
-  status EpaperEditionStatus @default(DRAFT)
-
-  // Generated PDF storage
-  pdfUrl       String? // URL to generated PDF (stored in R2)
-  pdfGeneratedAt DateTime?
-
-  // Preview/thumbnail
-  thumbnailUrl String?
-
-  // Generation metadata
-  generatedAt   DateTime?
-  generatedBy   String? // User ID who triggered generation
-  generationLog Json? // Debug/error log from generation
-
-  // Page layouts for this edition
-  pageLayouts EpaperPageLayout[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, editionDate])
-  @@index([tenantId])
-  @@index([editionDate])
-  @@index([status])
-}
-
-/// Computed layout positions for each block in an edition page.
-/// Stores x,y coordinates, dimensions, and rendered content after layout algorithm runs.
-model EpaperPageLayout {
-  id        String        @id @default(cuid())
-  edition   EpaperEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
-  editionId String
-
-  pageNumber Int // 1-based page number
-
-  // What content is placed here
-  article   NewspaperArticle? @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  articleId String?
-
-  // Which template defines the style
-  blockTemplate   EpaperBlockTemplate @relation(fields: [blockTemplateId], references: [id])
-  blockTemplateId String
-
-  // Position within the page (in inches, from top-left after padding)
-  x      Float // Horizontal position
-  y      Float // Vertical position
-  width  Float // Actual width used
-  height Float // Actual height used
-
-  // Rendered/processed content (JSON)
-  // Shape: { title: { lines: [...] }, body: { text, columnCount }, image: { url, width, height }, highlights: [...] }
-  renderedContent Json?
-
-  // Sort order for z-index / layering
-  sortOrder Int @default(0)
-
-  // Is this a header/footer block?
-  isHeader Boolean @default(false)
-  isFooter Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([editionId])
-  @@index([pageNumber])
-  @@index([articleId])
-  @@index([blockTemplateId])
-}
-
-/// ---------------- Article Proof/Evidence System ----------------
-
 enum ProofRequestStatus {
-  PENDING    // Waiting for reporter to upload evidence
-  SUBMITTED  // Reporter has uploaded evidence
-  APPROVED   // Admin approved the evidence
-  REJECTED   // Admin rejected the evidence
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
 }
 
 enum ProofMediaType {
   IMAGE
   VIDEO
   DOCUMENT
-}
-
-/// Proof request created by admin/editor for an article
-model ArticleProofRequest {
-  id            String             @id @default(cuid())
-  
-  // Which article needs proof
-  articleType   String             // "web" | "short" | "article"
-  webArticleId  String?
-  shortNewsId   String?
-  articleId     String?
-  
-  // Tenant scoping
-  tenant        Tenant             @relation("Tenant_ProofRequests", fields: [tenantId], references: [id], onDelete: Cascade)
-  tenantId      String
-  
-  // Who requested proof (admin/editor)
-  requestedBy   User               @relation("ProofRequest_RequestedBy", fields: [requestedById], references: [id])
-  requestedById String
-  
-  // Who should provide proof (reporter)
-  assignedTo    User               @relation("ProofRequest_AssignedTo", fields: [assignedToId], references: [id])
-  assignedToId  String
-  
-  // Why proof is needed
-  reason        String
-  priority      String             @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
-  
-  // Status tracking
-  status        ProofRequestStatus @default(PENDING)
-  
-  // Previous article status (to restore if rejected)
-  previousStatus String?
-  
-  // Admin review
-  reviewedBy    User?              @relation("ProofRequest_ReviewedBy", fields: [reviewedById], references: [id])
-  reviewedById  String?
-  reviewNote    String?
-  
-  // Timestamps
-  dueDate       DateTime?
-  submittedAt   DateTime?
-  resolvedAt    DateTime?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  
-  // Evidence uploads (one-to-many)
-  evidence      ArticleProofEvidence[]
-  
-  @@index([tenantId, status])
-  @@index([assignedToId, status])
-  @@index([webArticleId])
-  @@index([shortNewsId])
-  @@index([articleId])
-}
-
-/// Evidence uploaded by reporter for a proof request
-model ArticleProofEvidence {
-  id             String              @id @default(cuid())
-  
-  // Parent proof request
-  proofRequest   ArticleProofRequest @relation(fields: [proofRequestId], references: [id], onDelete: Cascade)
-  proofRequestId String
-  
-  // Media details
-  mediaType      ProofMediaType
-  mediaUrl       String
-  thumbnailUrl   String?
-  fileName       String?
-  fileSize       Int?                // bytes
-  mimeType       String?
-  
-  // Description/caption
-  description    String?
-  
-  // Who uploaded
-  uploadedBy     User                @relation("ProofEvidence_UploadedBy", fields: [uploadedById], references: [id])
-  uploadedById   String
-  
-  // Timestamps
-  createdAt      DateTime            @default(now())
-  
-  @@index([proofRequestId])
 }

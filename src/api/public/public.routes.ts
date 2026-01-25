@@ -2186,6 +2186,11 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *                 tags: { type: array, items: { type: string } }
  *                 status: { type: string, enum: [published, draft, archived] }
  *                 publishedAt: { type: string, format: date-time, nullable: true }
+ *                 updatedAt: { type: string, format: date-time }
+ *                 isBreaking: { type: boolean, description: "Shows red BREAKING NEWS badge" }
+ *                 isLive: { type: boolean, description: "Shows purple LIVE UPDATES badge" }
+ *                 viewCount: { type: number, description: "Total article views with animated counter" }
+ *                 shareCount: { type: number, description: "Total social media shares" }
  *                 coverImage:
  *                   type: object
  *                   properties:
@@ -2314,6 +2319,24 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *                       coverImageUrl: { type: string, nullable: true }
  *                       publishedAt: { type: string, format: date-time }
  *                       viewCount: { type: number }
+ *                 previousArticle:
+ *                   type: object
+ *                   nullable: true
+ *                   description: "Previous article for navigation"
+ *                   properties:
+ *                     id: { type: string }
+ *                     slug: { type: string }
+ *                     title: { type: string }
+ *                     coverImageUrl: { type: string, nullable: true }
+ *                 nextArticle:
+ *                   type: object
+ *                   nullable: true
+ *                   description: "Next article for navigation"
+ *                   properties:
+ *                     id: { type: string }
+ *                     slug: { type: string }
+ *                     title: { type: string }
+ *                     coverImageUrl: { type: string, nullable: true }
  *             examples:
  *               complete:
  *                 summary: Complete article with all enhanced fields
@@ -2331,6 +2354,11 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *                   tags: ["సాంకేతిక నైపుణ్యాలు", "రాష్ట్ర ప్రభుత్వం"]
  *                   status: "published"
  *                   publishedAt: "2026-01-23T17:45:40.247Z"
+ *                   updatedAt: "2026-01-25T05:46:50.779Z"
+ *                   isBreaking: false
+ *                   isLive: false
+ *                   viewCount: 5432
+ *                   shareCount: 127
  *                   coverImage:
  *                     url: "https://kaburlu-news.b-cdn.net/example.webp"
  *                     alt: ""
@@ -2408,6 +2436,16 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *                       coverImageUrl: "https://..."
  *                       publishedAt: "2026-01-23T12:00:00.000Z"
  *                       viewCount: 823
+ *                   previousArticle:
+ *                     id: "prev-art-123"
+ *                     slug: "previous-news-article"
+ *                     title: "మునుపటి వార్త టైటిల్"
+ *                     coverImageUrl: "https://cdn.example.com/prev.jpg"
+ *                   nextArticle:
+ *                     id: "next-art-456"
+ *                     slug: "next-news-article"
+ *                     title: "తరువాతి వార్త టైటిల్"
+ *                     coverImageUrl: "https://cdn.example.com/next.jpg"
  *       404:
  *         description: Article not found
  */
@@ -2492,6 +2530,11 @@ router.get('/articles/:slug', async (req, res) => {
       createdAt: true,
       updatedAt: true,
       viewCount: true,
+      isBreaking: true,
+      isLive: true,
+      shareCount: true,
+      previousArticleId: true,
+      nextArticleId: true,
       category: { select: { id: true, slug: true, name: true } },
       author: {
         select: {
@@ -2802,12 +2845,45 @@ router.get('/articles/:slug', async (req, res) => {
     logoUrl: publisherLogoUrl
   };
 
+  // Fetch previous and next articles for navigation
+  let previousArticle = null;
+  let nextArticle = null;
+
+  if ((a as any).previousArticleId) {
+    previousArticle = await p.tenantWebArticle.findUnique({
+      where: { id: (a as any).previousArticleId },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        coverImageUrl: true
+      }
+    }).catch(() => null);
+  }
+
+  if ((a as any).nextArticleId) {
+    nextArticle = await p.tenantWebArticle.findUnique({
+      where: { id: (a as any).nextArticleId },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        coverImageUrl: true
+      }
+    }).catch(() => null);
+  }
+
   // Add all enhanced fields to response
   detail.publisher = publisher;
   detail.reporter = reporterDetails;
   detail.mustRead = mustReadArticle;
   detail.trending = trendingArticles;
   detail.related = relatedArticles;
+  detail.isBreaking = (a as any).isBreaking || false;
+  detail.isLive = (a as any).isLive || false;
+  detail.shareCount = (a as any).shareCount || 0;
+  detail.previousArticle = previousArticle;
+  detail.nextArticle = nextArticle;
 
   res.json(detail);
 });
