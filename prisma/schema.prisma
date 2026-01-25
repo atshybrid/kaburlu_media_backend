@@ -340,6 +340,10 @@ model TenantWebArticle {
   aiApprovalStatus   String?
   aiViolationCount   Int       @default(0)
   aiValidationIssues Json?
+  isLive             Boolean   @default(false)
+  shareCount         Int       @default(0)
+  previousArticleId  String?
+  nextArticleId      String?
   author             User?     @relation("User_WebArticles", fields: [authorId], references: [id])
   category           Category? @relation(fields: [categoryId], references: [id])
   domain             Domain?   @relation("Domain_WebArticles", fields: [domainId], references: [id])
@@ -350,6 +354,7 @@ model TenantWebArticle {
   @@index([tenantId, createdAt])
   @@index([categoryId])
   @@index([tenantId, viewCount])
+  @@index([tenantId, shareCount], map: "TenantWebArticle_shareCount_idx")
 }
 
 model RawArticle {
