@@ -61,6 +61,7 @@ const swaggerDefinition = {
     { name: 'Tenants', description: 'Tenant CRUD & PRGI fields' },
     { name: 'Domains', description: 'Domain verification & status management' },
     { name: 'Tenant Theme', description: 'Branding assets & colors per tenant' },
+    { name: 'Settings (Admin)', description: 'Domain settings, theme, layout, SEO, legal pages configuration (SUPER_ADMIN only)' },
     { name: 'Tenant Ads', description: 'Tenant-scoped website ads (CRUD) stored in TenantSettings.data.ads' },
     { name: 'Tenant Static Pages', description: 'Tenant-scoped static website pages like /about-us and /privacy-policy' },
     { name: 'Reporters', description: 'Reporter hierarchy & roles' },

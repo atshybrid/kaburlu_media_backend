@@ -78,12 +78,11 @@ const router = Router();
  *                       categoryName: { type: string }
  *                   publisher:
  *                     type: object
- *                     description: "Alternative location for tenantId/domainId"
+ *                     deprecated: true
+ *                     description: "OPTIONAL - Not needed for REPORTER/TENANT_ADMIN. Auto-resolved from login context."
  *                     properties:
  *                       tenantId: { type: string }
  *                       domainId: { type: string }
- *                       publisherId: { type: string }
- *                       publisherName: { type: string }
  *               location:
  *                 type: object
  *                 properties:

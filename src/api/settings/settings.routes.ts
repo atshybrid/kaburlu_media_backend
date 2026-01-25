@@ -520,6 +520,7 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
  *                   layout:
  *                     type: object
  *                     properties:
+ *                       style: { type: string, enum: ["style1", "style2"], description: "Layout style theme", nullable: true }
  *                       header: { type: string, nullable: true }
  *                       footer: { type: string, nullable: true }
  *                       showTopBar: { type: boolean, nullable: true }
@@ -633,6 +634,7 @@ router.patch('/tenants/:tenantId/reporter-pricing', passport.authenticate('jwt',
 	*                     fontFamily: "Inter, Arial, sans-serif"
 	*                     baseSize: 16
 	*                   layout:
+	*                     style: "style1"
 	*                     header: "classic"
 	*                     footer: "minimal"
 	*                     showTopBar: true
