@@ -19,16 +19,18 @@ import prisma from '../../lib/prisma';
 type TenantAdminLoginContext = {
   tenantId: string;
   domainId?: string;
-  tenant?: { id: string; name: string; slug: string };
+  tenant?: { id: string; name: string; slug: string; nativeName?: string | null };
   domain?: { id: string; domain: string; isPrimary: boolean; status: string };
   domainSettings?: { id: string; data: unknown; updatedAt: string };
+  newspaperName?: string | null;
+  language?: { code: string | null; name: string | null; script: string | null; region: string | null };
 };
 
 type ReporterLoginContext = {
   reporterId: string;
   tenantId: string;
   domainId?: string;
-  tenant?: { id: string; name: string; slug: string; prgiStatus?: string | null };
+  tenant?: { id: string; name: string; slug: string; prgiStatus?: string | null; nativeName?: string | null };
   tenantEntity?: any;
   domain?: { id: string; domain: string; isPrimary: boolean; status: string; kind?: string | null; verifiedAt?: string | null };
   domainSettings?: { id: string; data: unknown; updatedAt: string };
@@ -36,6 +38,8 @@ type ReporterLoginContext = {
   payments?: any[];
   paymentSummary?: any;
   autoPublish: boolean;
+  newspaperName?: string | null;
+  language?: { code: string | null; name: string | null; script: string | null; region: string | null };
 };
 
 function getAutoPublishFromKycData(kycData: any): boolean {
@@ -66,7 +70,20 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
     where: { userId },
     select: {
       tenantId: true,
-      tenant: { select: { id: true, name: true, slug: true } },
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          entity: {
+            select: {
+              nativeName: true,
+              language: { select: { code: true, name: true } },
+              publicationState: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!reporter) return null;
@@ -83,14 +100,34 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
         .catch(() => null)
     : null;
 
+  // Build tenant object with nativeName from entity
+  const tenantEntity = (reporter.tenant as any)?.entity;
+  const tenantWithNativeName = reporter.tenant ? {
+    id: reporter.tenant.id,
+    name: reporter.tenant.name,
+    slug: reporter.tenant.slug,
+    nativeName: tenantEntity?.nativeName || null,
+  } : undefined;
+
+  // Build newspaperName and language info
+  const newspaperName = tenantEntity?.nativeName || reporter.tenant?.name || null;
+  const languageInfo = {
+    code: tenantEntity?.language?.code || null,
+    name: tenantEntity?.language?.name || null,
+    script: tenantEntity?.language?.name || null, // script defaults to language name
+    region: tenantEntity?.publicationState?.name || null,
+  };
+
   return {
     tenantId: reporter.tenantId,
     domainId: domain?.id,
-    tenant: reporter.tenant,
+    tenant: tenantWithNativeName,
     domain: domain || undefined,
     domainSettings: domainSettingsRow
       ? { id: domainSettingsRow.id, data: domainSettingsRow.data as unknown, updatedAt: domainSettingsRow.updatedAt.toISOString() }
       : undefined,
+    newspaperName,
+    language: languageInfo,
   };
 };
 
@@ -150,6 +187,8 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
               printingCityName: true,
               createdAt: true,
               updatedAt: true,
+              language: { select: { code: true, name: true } },
+              publicationState: { select: { id: true, name: true } },
             },
           },
         },
@@ -276,6 +315,16 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
       : null,
   };
 
+  // Build newspaperName and language info for reporter
+  const tenantEntity = reporter.tenant?.entity;
+  const newspaperName = tenantEntity?.nativeName || reporter.tenant?.name || null;
+  const languageInfo = {
+    code: (tenantEntity as any)?.language?.code || null,
+    name: (tenantEntity as any)?.language?.name || null,
+    script: (tenantEntity as any)?.language?.name || null, // script defaults to language name
+    region: (tenantEntity as any)?.publicationState?.name || null,
+  };
+
   return {
     reporterId: reporter.id,
     tenantId: reporter.tenantId,
@@ -286,6 +335,7 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
           name: reporter.tenant.name,
           slug: reporter.tenant.slug,
           prgiStatus: (reporter.tenant as any).prgiStatus ?? undefined,
+          nativeName: reporter.tenant?.entity?.nativeName || null,
         }
       : undefined,
     tenantEntity: reporter.tenant?.entity || undefined,
@@ -310,6 +360,8 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
     })),
     paymentSummary,
     autoPublish,
+    newspaperName,
+    language: languageInfo,
   };
 };
 
@@ -498,6 +550,8 @@ export const login = async (loginDto: MpinLoginDto) => {
         (result as any).tenant = ctx.tenant;
         (result as any).domain = ctx.domain;
         (result as any).domainSettings = ctx.domainSettings;
+        (result as any).newspaperName = ctx.newspaperName;
+        (result as any).language = ctx.language;
       }
     } catch (e) {
       console.warn('[Auth] Failed to attach tenant admin context for user', user.id, e);
@@ -519,6 +573,8 @@ export const login = async (loginDto: MpinLoginDto) => {
         (result as any).reporterPayments = ctx.payments;
         (result as any).reporterPaymentSummary = ctx.paymentSummary;
         (result as any).autoPublish = ctx.autoPublish;
+        (result as any).newspaperName = ctx.newspaperName;
+        (result as any).language = ctx.language;
       }
     } catch (e) {
       console.warn('[Auth] Failed to attach reporter context for user', user.id, e);

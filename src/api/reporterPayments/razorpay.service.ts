@@ -3,7 +3,10 @@
 const Razorpay = require('razorpay');
 import prisma from '../../lib/prisma';
 
-export async function getRazorpayClientForTenant(tenantId: string) {
+/**
+ * Get Razorpay configuration for a tenant (or global fallback)
+ */
+export async function getRazorpayConfigForTenant(tenantId: string) {
   const config = await (prisma as any).razorpayConfig.findFirst({
     where: {
       OR: [
@@ -14,6 +17,15 @@ export async function getRazorpayClientForTenant(tenantId: string) {
     },
     orderBy: { tenantId: 'desc' }, // tenant-specific preferred over global
   });
+
+  return config;
+}
+
+/**
+ * Get Razorpay client instance for a tenant
+ */
+export async function getRazorpayClientForTenant(tenantId: string) {
+  const config = await getRazorpayConfigForTenant(tenantId);
 
   if (!config) {
     throw new Error('Razorpay configuration not found for tenant or global');

@@ -448,6 +448,8 @@ export const loginWithGoogleController = async (req: Request, res: Response) => 
           result.tenant = ctx.tenant;
           result.domain = ctx.domain;
           result.domainSettings = ctx.domainSettings;
+          result.newspaperName = ctx.newspaperName;
+          result.language = ctx.language;
         }
       } catch (e) {
         console.warn('[Auth] Failed to attach tenant admin context for user', user.id, e);

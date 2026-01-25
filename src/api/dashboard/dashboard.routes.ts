@@ -1457,4 +1457,272 @@ router.get('/my/payments', auth, async (req, res) => {
   return res.json({ reporterId, tenantId, count: rows.length, items: rows });
 });
 
+/**
+ * @swagger
+ * /dashboard/admin/today-top-news:
+ *   get:
+ *     summary: Today's top news for tenant admin dashboard
+ *     description: |
+ *       Returns today's top performing web articles ordered by viewCount.
+ *       Includes reporter details for each article.
+ *     tags: [Dashboard]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+ *         description: Number of top articles to return
+ *     responses:
+ *       200:
+ *         description: Today's top news with reporter details
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   kind: admin_today_top_news
+ *                   tenant:
+ *                     id: ten_01HABC
+ *                     name: Kaburlu Adilabad
+ *                     nativeName: కబుర్లు ఆదిలాబాద్
+ *                   articles:
+ *                     - id: art_01H
+ *                       title: Breaking News Title
+ *                       coverImageUrl: https://cdn.example.com/image.webp
+ *                       viewCount: 1250
+ *                       shareCount: 45
+ *                       publishedAt: 2026-01-25T08:30:00.000Z
+ *                       reporter:
+ *                         id: rep_01HREP1
+ *                         name: John Reporter
+ *                         mobileNumber: "9876543210"
+ *                         profilePhotoUrl: https://cdn.example.com/photo.webp
+ *                         designation: { code: REPORTER, name: Reporter }
+ *                   totalTodayCount: 25
+ *                   generatedAt: 2026-01-25T10:00:00.000Z
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/admin/today-top-news', auth, async (req, res) => {
+  const scope = await requireTenantAdminSelfScope(req);
+  if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+  const { tenantId, reporter } = scope.value;
+  const now = new Date();
+  
+  // Start of today (UTC)
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+
+  const limitRaw = parseInt(String((req.query as any).limit || '10'), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+
+  const p: any = prisma;
+
+  // Fetch tenant with entity for nativeName
+  const tenantRow = await p.tenant.findUnique({
+    where: { id: tenantId },
+    select: { id: true, name: true, slug: true, entity: { select: { nativeName: true } } },
+  }).catch(() => null);
+
+  // Fetch today's top web articles by viewCount
+  const [totalTodayCount, topArticles] = await Promise.all([
+    p.tenantWebArticle.count({
+      where: { tenantId, status: 'PUBLISHED', publishedAt: { gte: todayStart } },
+    }).catch(() => 0),
+    p.tenantWebArticle.findMany({
+      where: { tenantId, status: 'PUBLISHED', publishedAt: { gte: todayStart } },
+      orderBy: [{ viewCount: 'desc' }, { shareCount: 'desc' }, { publishedAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        coverImageUrl: true,
+        viewCount: true,
+        shareCount: true,
+        publishedAt: true,
+        authorId: true,
+      },
+    }).catch(() => []),
+  ]);
+
+  // Fetch reporter details for each article's author
+  const authorIds = [...new Set((topArticles as any[]).map((a: any) => a.authorId).filter(Boolean))];
+  const reportersMap: Record<string, any> = {};
+  
+  if (authorIds.length > 0) {
+    const reporters = await p.reporter.findMany({
+      where: { userId: { in: authorIds }, tenantId },
+      select: {
+        id: true,
+        userId: true,
+        profilePhotoUrl: true,
+        designation: { select: { code: true, name: true } },
+        user: { select: { id: true, mobileNumber: true, profile: { select: { fullName: true } } } },
+      },
+    }).catch(() => []);
+
+    for (const r of reporters) {
+      reportersMap[r.userId] = {
+        id: r.id,
+        name: r.user?.profile?.fullName || null,
+        mobileNumber: r.user?.mobileNumber || null,
+        profilePhotoUrl: r.profilePhotoUrl || null,
+        designation: r.designation || null,
+      };
+    }
+  }
+
+  // Build response with reporter details
+  const articles = (topArticles as any[]).map((a: any) => ({
+    id: a.id,
+    title: a.title,
+    slug: a.slug,
+    coverImageUrl: a.coverImageUrl || null,
+    viewCount: a.viewCount || 0,
+    shareCount: a.shareCount || 0,
+    publishedAt: a.publishedAt ? new Date(a.publishedAt).toISOString() : null,
+    reporter: a.authorId ? reportersMap[a.authorId] || null : null,
+  }));
+
+  return res.json({
+    kind: 'admin_today_top_news',
+    tenant: tenantRow ? {
+      id: tenantRow.id,
+      name: tenantRow.name,
+      slug: tenantRow.slug,
+      nativeName: tenantRow.entity?.nativeName || null,
+    } : { id: tenantId },
+    articles,
+    totalTodayCount,
+    generatedAt: now.toISOString(),
+  });
+});
+
+/**
+ * @swagger
+ * /dashboard/reporter/my-top-news:
+ *   get:
+ *     summary: Reporter's own top news for reporter dashboard
+ *     description: |
+ *       Returns the logged-in reporter's top performing web articles ordered by viewCount.
+ *       Shows their personal best performing articles.
+ *     tags: [Dashboard]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+ *         description: Number of top articles to return
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+ *         description: Look back period in days (default 30)
+ *     responses:
+ *       200:
+ *         description: Reporter's top news
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   kind: reporter_my_top_news
+ *                   tenant:
+ *                     id: ten_01HABC
+ *                     name: Kaburlu Adilabad
+ *                     nativeName: కబుర్లు ఆదిలాబాద్
+ *                   reporter:
+ *                     id: rep_01HREP1
+ *                     name: John Reporter
+ *                     designation: { code: REPORTER, name: Reporter }
+ *                   articles:
+ *                     - id: art_01H
+ *                       title: My Breaking News Title
+ *                       coverImageUrl: https://cdn.example.com/image.webp
+ *                       viewCount: 850
+ *                       shareCount: 32
+ *                       publishedAt: 2026-01-25T08:30:00.000Z
+ *                   totalCount: 15
+ *                   generatedAt: 2026-01-25T10:00:00.000Z
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/reporter/my-top-news', auth, async (req, res) => {
+  const me = await requireReporterDashboardScope(req);
+  if (!me.ok) return res.status(me.status).json({ error: me.error });
+
+  const now = new Date();
+  const userId = me.value.userId;
+  const reporter = me.value.reporter;
+  const tenantId = String(reporter.tenantId);
+
+  const limitRaw = parseInt(String((req.query as any).limit || '10'), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+
+  const daysRaw = parseInt(String((req.query as any).days || '30'), 10);
+  const days = Number.isFinite(daysRaw) ? Math.min(Math.max(daysRaw, 1), 365) : 30;
+  const lookbackDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const p: any = prisma;
+
+  // Fetch tenant with entity for nativeName
+  const tenantRow = await p.tenant.findUnique({
+    where: { id: tenantId },
+    select: { id: true, name: true, slug: true, entity: { select: { nativeName: true } } },
+  }).catch(() => null);
+
+  // Fetch reporter's top web articles by viewCount
+  const [totalCount, topArticles] = await Promise.all([
+    p.tenantWebArticle.count({
+      where: { tenantId, authorId: userId, status: 'PUBLISHED', publishedAt: { gte: lookbackDate } },
+    }).catch(() => 0),
+    p.tenantWebArticle.findMany({
+      where: { tenantId, authorId: userId, status: 'PUBLISHED', publishedAt: { gte: lookbackDate } },
+      orderBy: [{ viewCount: 'desc' }, { shareCount: 'desc' }, { publishedAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        coverImageUrl: true,
+        viewCount: true,
+        shareCount: true,
+        publishedAt: true,
+      },
+    }).catch(() => []),
+  ]);
+
+  // Build response
+  const articles = (topArticles as any[]).map((a: any) => ({
+    id: a.id,
+    title: a.title,
+    slug: a.slug,
+    coverImageUrl: a.coverImageUrl || null,
+    viewCount: a.viewCount || 0,
+    shareCount: a.shareCount || 0,
+    publishedAt: a.publishedAt ? new Date(a.publishedAt).toISOString() : null,
+  }));
+
+  // Get reporter name from user profile
+  const reporterName = reporter.user?.profile?.fullName || reporter.user?.mobileNumber || null;
+
+  return res.json({
+    kind: 'reporter_my_top_news',
+    tenant: tenantRow ? {
+      id: tenantRow.id,
+      name: tenantRow.name,
+      slug: tenantRow.slug,
+      nativeName: tenantRow.entity?.nativeName || null,
+    } : { id: tenantId },
+    reporter: {
+      id: reporter.id,
+      name: reporterName,
+      designation: reporter.designation || null,
+    },
+    articles,
+    totalCount,
+    generatedAt: now.toISOString(),
+  });
+});
+
 export default router;
