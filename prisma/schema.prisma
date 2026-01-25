@@ -350,6 +350,7 @@ model TenantWebArticle {
   status        String  @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
   coverImageUrl String?
   isBreaking   Boolean @default(false)
+  isLive       Boolean @default(false)
 
   // AI validation/approval metadata (separate from editorial publish status)
   aiApprovalStatus   String?
@@ -370,6 +371,11 @@ model TenantWebArticle {
 
   // Simple website analytics (incremented when /public/articles/:slug is fetched)
   viewCount       Int       @default(0)
+  shareCount      Int       @default(0)
+
+  // Article navigation (for previous/next article links)
+  previousArticleId String?
+  nextArticleId     String?
 
   // Timestamps
   publishedAt DateTime?
