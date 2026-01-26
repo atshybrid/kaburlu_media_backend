@@ -2642,211 +2642,174 @@ router.get('/articles/:slug', async (req, res) => {
 
   detail.jsonLd = merged;
 
-  // Fetch additional details for enhanced response
+  // ============================================================
+  // OPTIMIZED: Fetch all additional data in parallel using Promise.all
+  // This replaces the sequential queries that were causing slow response
+  // ============================================================
   const authorId = (a as any)?.authorId;
-  let reporterDetails = null;
-  let reporterArticles = [];
-  let reporterTotalCount = 0;
+  const categoryId = (a as any)?.category?.id;
+  const articlePublishedAt = (a as any).publishedAt;
 
-  if (authorId) {
-    try {
-      // Get reporter details with designation and location
-      const reporter = await p.reporter.findFirst({
-        where: { userId: authorId, tenantId: tenant.id },
-        select: {
-          id: true,
-          designation: true,
-          stateId: true,
-          districtId: true,
-          mandalId: true,
-          state: { select: { name: true } },
-          district: { select: { name: true } },
-          mandal: { select: { name: true } },
-          user: {
-            select: {
-              id: true,
-              mobileNumber: true,
-              profile: {
-                select: {
-                  fullName: true,
-                  profilePhotoUrl: true
-                }
+  // Define all parallel queries
+  const parallelQueries = await Promise.all([
+    // [0] Reporter details (if authorId exists)
+    authorId
+      ? p.reporter.findFirst({
+          where: { userId: authorId, tenantId: tenant.id },
+          select: {
+            id: true,
+            designation: true,
+            state: { select: { name: true } },
+            district: { select: { name: true } },
+            mandal: { select: { name: true } },
+            user: {
+              select: {
+                id: true,
+                mobileNumber: true,
+                profile: { select: { fullName: true, profilePhotoUrl: true } }
               }
             }
           }
-        }
-      });
+        }).catch(() => null)
+      : Promise.resolve(null),
 
-      if (reporter) {
-        // Get reporter's total article count
-        reporterTotalCount = await p.tenantWebArticle.count({
-          where: {
-            tenantId: tenant.id,
-            authorId,
-            status: 'PUBLISHED'
-          }
-        });
+    // [1] Reporter's total article count
+    authorId
+      ? p.tenantWebArticle.count({
+          where: { tenantId: tenant.id, authorId, status: 'PUBLISHED' }
+        }).catch(() => 0)
+      : Promise.resolve(0),
 
-        // Get reporter's last 10 articles
-        const lastArticles = await p.tenantWebArticle.findMany({
-          where: {
-            tenantId: tenant.id,
-            authorId,
-            status: 'PUBLISHED',
-            id: { not: a.id } // Exclude current article
-          },
+    // [2] Reporter's last 10 articles
+    authorId
+      ? p.tenantWebArticle.findMany({
+          where: { tenantId: tenant.id, authorId, status: 'PUBLISHED', id: { not: a.id } },
           orderBy: { publishedAt: 'desc' },
           take: 10,
           select: {
-            id: true,
-            slug: true,
-            title: true,
-            coverImageUrl: true,
-            publishedAt: true,
-            viewCount: true,
+            id: true, slug: true, title: true, coverImageUrl: true,
+            publishedAt: true, viewCount: true,
             category: { select: { slug: true, name: true } }
           }
-        });
+        }).catch(() => [])
+      : Promise.resolve([]),
 
-        reporterArticles = lastArticles.map((art: any) => ({
-          id: art.id,
-          slug: art.slug,
-          title: art.title,
-          coverImageUrl: art.coverImageUrl,
-          publishedAt: art.publishedAt,
-          viewCount: art.viewCount || 0,
-          category: art.category ? { slug: art.category.slug, name: art.category.name } : null
-        }));
-
-        reporterDetails = {
-          id: reporter.user.id,
-          name: reporter.user.profile?.fullName || null,
-          photoUrl: reporter.user.profile?.profilePhotoUrl || null,
-          designation: reporter.designation || null,
-          location: {
-            state: reporter.state?.name || null,
-            district: reporter.district?.name || null,
-            mandal: reporter.mandal?.name || null
-          },
-          totalArticles: reporterTotalCount,
-          recentArticles: reporterArticles
-        };
-      }
-    } catch (err) {
-      console.error('Error fetching reporter details:', err);
-    }
-  }
-
-  // Fetch must read article (top 1 by viewCount)
-  let mustReadArticle = null;
-  try {
-    const topArticle = await p.tenantWebArticle.findFirst({
-      where: {
-        tenantId: tenant.id,
-        status: 'PUBLISHED',
-        id: { not: a.id },
-        ...domainScope
-      },
-      orderBy: { viewCount: 'desc' },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        coverImageUrl: true,
-        publishedAt: true,
-        viewCount: true,
-        category: { select: { slug: true, name: true } }
-      }
-    });
-
-    if (topArticle) {
-      mustReadArticle = {
-        id: topArticle.id,
-        slug: topArticle.slug,
-        title: topArticle.title,
-        coverImageUrl: topArticle.coverImageUrl,
-        publishedAt: topArticle.publishedAt,
-        viewCount: topArticle.viewCount || 0,
-        category: topArticle.category ? { slug: topArticle.category.slug, name: topArticle.category.name } : null
-      };
-    }
-  } catch (err) {
-    console.error('Error fetching must read article:', err);
-  }
-
-  // Fetch trending articles (top 15 by viewCount)
-  let trendingArticles = [];
-  try {
-    const trending = await p.tenantWebArticle.findMany({
-      where: {
-        tenantId: tenant.id,
-        status: 'PUBLISHED',
-        id: { not: a.id },
-        ...domainScope
-      },
+    // [3] Trending articles (top 15 by viewCount) - includes mustRead as first item
+    p.tenantWebArticle.findMany({
+      where: { tenantId: tenant.id, status: 'PUBLISHED', id: { not: a.id }, ...domainScope },
       orderBy: { viewCount: 'desc' },
       take: 15,
       select: {
-        id: true,
-        slug: true,
-        title: true,
-        coverImageUrl: true,
-        publishedAt: true,
-        viewCount: true,
+        id: true, slug: true, title: true, coverImageUrl: true,
+        publishedAt: true, viewCount: true,
         category: { select: { slug: true, name: true } }
       }
-    });
+    }).catch(() => []),
 
-    trendingArticles = trending.map((art: any) => ({
-      id: art.id,
-      slug: art.slug,
-      title: art.title,
-      coverImageUrl: art.coverImageUrl,
-      publishedAt: art.publishedAt,
-      viewCount: art.viewCount || 0,
-      category: art.category ? { slug: art.category.slug, name: art.category.name } : null
-    }));
-  } catch (err) {
-    console.error('Error fetching trending articles:', err);
-  }
+    // [4] Related articles (same category, recent)
+    categoryId
+      ? p.tenantWebArticle.findMany({
+          where: { tenantId: tenant.id, categoryId, status: 'PUBLISHED', id: { not: a.id }, ...domainScope },
+          orderBy: { publishedAt: 'desc' },
+          take: 6,
+          select: { id: true, slug: true, title: true, coverImageUrl: true, publishedAt: true, viewCount: true }
+        }).catch(() => [])
+      : Promise.resolve([]),
 
-  // Fetch related/also-read articles (same category, recent)
-  let relatedArticles = [];
-  const categoryId = (a as any)?.category?.id;
-  if (categoryId) {
-    try {
-      const related = await p.tenantWebArticle.findMany({
-        where: {
-          tenantId: tenant.id,
-          categoryId,
-          status: 'PUBLISHED',
-          id: { not: a.id },
-          ...domainScope
-        },
-        orderBy: { publishedAt: 'desc' },
-        take: 6,
-        select: {
-          id: true,
-          slug: true,
-          title: true,
-          coverImageUrl: true,
-          publishedAt: true,
-          viewCount: true
-        }
-      });
+    // [5] Previous article (older, published before current)
+    articlePublishedAt
+      ? p.tenantWebArticle.findFirst({
+          where: { tenantId: tenant.id, status: 'PUBLISHED', publishedAt: { lt: articlePublishedAt }, ...domainScope },
+          orderBy: { publishedAt: 'desc' },
+          select: { id: true, slug: true, title: true, coverImageUrl: true }
+        }).catch(() => null)
+      : Promise.resolve(null),
 
-      relatedArticles = related.map((art: any) => ({
+    // [6] Next article (newer, published after current)
+    articlePublishedAt
+      ? p.tenantWebArticle.findFirst({
+          where: { tenantId: tenant.id, status: 'PUBLISHED', publishedAt: { gt: articlePublishedAt }, ...domainScope },
+          orderBy: { publishedAt: 'asc' },
+          select: { id: true, slug: true, title: true, coverImageUrl: true }
+        }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  // Destructure parallel query results
+  const [
+    reporter,
+    reporterTotalCount,
+    reporterLastArticles,
+    trendingRaw,
+    relatedRaw,
+    prevArt,
+    nextArt
+  ] = parallelQueries;
+
+  // Build reporter details
+  let reporterDetails = null;
+  if (reporter) {
+    reporterDetails = {
+      id: (reporter as any).user?.id,
+      name: (reporter as any).user?.profile?.fullName || null,
+      photoUrl: (reporter as any).user?.profile?.profilePhotoUrl || null,
+      designation: (reporter as any).designation || null,
+      location: {
+        state: (reporter as any).state?.name || null,
+        district: (reporter as any).district?.name || null,
+        mandal: (reporter as any).mandal?.name || null
+      },
+      totalArticles: reporterTotalCount || 0,
+      recentArticles: ((reporterLastArticles || []) as any[]).map((art: any) => ({
         id: art.id,
         slug: art.slug,
         title: art.title,
         coverImageUrl: art.coverImageUrl,
         publishedAt: art.publishedAt,
-        viewCount: art.viewCount || 0
-      }));
-    } catch (err) {
-      console.error('Error fetching related articles:', err);
-    }
+        viewCount: art.viewCount || 0,
+        category: art.category ? { slug: art.category.slug, name: art.category.name } : null
+      }))
+    };
   }
+
+  // Format trending articles (first one is mustRead)
+  const trendingArticles = ((trendingRaw || []) as any[]).map((art: any) => ({
+    id: art.id,
+    slug: art.slug,
+    title: art.title,
+    coverImageUrl: art.coverImageUrl,
+    publishedAt: art.publishedAt,
+    viewCount: art.viewCount || 0,
+    category: art.category ? { slug: art.category.slug, name: art.category.name } : null
+  }));
+
+  // mustRead is the first trending article
+  const mustReadArticle = trendingArticles.length > 0 ? trendingArticles[0] : null;
+
+  // Format related articles
+  const relatedArticles = ((relatedRaw || []) as any[]).map((art: any) => ({
+    id: art.id,
+    slug: art.slug,
+    title: art.title,
+    coverImageUrl: art.coverImageUrl,
+    publishedAt: art.publishedAt,
+    viewCount: art.viewCount || 0
+  }));
+
+  // Format previous/next articles
+  const previousArticle = prevArt ? {
+    id: (prevArt as any).id,
+    slug: (prevArt as any).slug,
+    title: (prevArt as any).title,
+    coverImageUrl: (prevArt as any).coverImageUrl
+  } : null;
+
+  const nextArticle = nextArt ? {
+    id: (nextArt as any).id,
+    slug: (nextArt as any).slug,
+    title: (nextArt as any).title,
+    coverImageUrl: (nextArt as any).coverImageUrl
+  } : null;
 
   // Publisher/Tenant details
   const publisher = {
@@ -2856,66 +2819,6 @@ router.get('/articles/:slug', async (req, res) => {
     publisherName: (tenantEntity as any)?.publisherName || null,
     logoUrl: publisherLogoUrl
   };
-
-  // Auto-calculate previous and next articles based on publishedAt (chronological order)
-  let previousArticle = null;
-  let nextArticle = null;
-
-  try {
-    // Previous article (older, published before current article)
-    const prevArt = await p.tenantWebArticle.findFirst({
-      where: {
-        tenantId: tenant.id,
-        status: 'PUBLISHED',
-        publishedAt: { lt: (a as any).publishedAt },
-        ...domainScope
-      },
-      orderBy: { publishedAt: 'desc' },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        coverImageUrl: true
-      }
-    });
-
-    if (prevArt) {
-      previousArticle = {
-        id: prevArt.id,
-        slug: prevArt.slug,
-        title: prevArt.title,
-        coverImageUrl: prevArt.coverImageUrl
-      };
-    }
-
-    // Next article (newer, published after current article)
-    const nextArt = await p.tenantWebArticle.findFirst({
-      where: {
-        tenantId: tenant.id,
-        status: 'PUBLISHED',
-        publishedAt: { gt: (a as any).publishedAt },
-        ...domainScope
-      },
-      orderBy: { publishedAt: 'asc' },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        coverImageUrl: true
-      }
-    });
-
-    if (nextArt) {
-      nextArticle = {
-        id: nextArt.id,
-        slug: nextArt.slug,
-        title: nextArt.title,
-        coverImageUrl: nextArt.coverImageUrl
-      };
-    }
-  } catch (err) {
-    console.error('Error fetching previous/next articles:', err);
-  }
 
   // Add all enhanced fields to response
   detail.publisher = publisher;
@@ -2929,6 +2832,7 @@ router.get('/articles/:slug', async (req, res) => {
   detail.previousArticle = previousArticle;
   detail.nextArticle = nextArticle;
 
+  res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
   res.json(detail);
 });
 
