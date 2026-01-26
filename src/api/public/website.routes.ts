@@ -1674,47 +1674,14 @@ router.get('/homepage', async (_req, res) => {
 
     const timers: Record<string, number> = {};
 
-    async function fetchLatest(limit: number) {
-      const t0 = Date.now();
-      const rows = await p.tenantWebArticle.findMany({
-        where: baseWhere,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: Math.min(Math.max(limit, 1), 50),
-        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
-      });
-      timers.latest = (timers.latest || 0) + (Date.now() - t0);
-      return rows;
-    }
-
-    async function fetchCategory(categorySlug: string, limit: number) {
-      const t0 = Date.now();
-      const resolvedCategory = categoryBySlug.get(categorySlug) || null;
-      if (!resolvedCategory) {
-        timers.category = (timers.category || 0) + (Date.now() - t0);
-        return [];
-      }
-      const and: any[] = [];
-      if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
-      if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
-
-      const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: resolvedCategory.id };
-      if (and.length) where.AND = and;
-      const rows = await p.tenantWebArticle.findMany({
-        where,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: Math.min(Math.max(limit, 1), 50),
-        include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
-      });
-      timers.category = (timers.category || 0) + (Date.now() - t0);
-      return rows;
-    }
-
+    // Helper to extract category slug from navigation href
     function extractCategorySlugFromHref(href: string) {
       const h = String(href || '');
       const m = h.match(/^\/category\/([^/?#]+)/i);
       return m?.[1] ? String(m[1]) : null;
     }
 
+    // Helper to resolve category slugs from navigation menu
     function resolveNavCategorySlugs(count: number) {
       const want = Math.min(Math.max(Number(count) || 0, 0), 25);
       const navMenu: any[] = Array.isArray((effective as any)?.navigation?.menu) ? (effective as any).navigation.menu : [];
@@ -1726,7 +1693,6 @@ router.get('/homepage', async (_req, res) => {
         const slug = extractCategorySlugFromHref(String(item?.href || ''));
         if (!slug) continue;
         if (seenSlugs.has(slug)) continue;
-        // Only include categories that exist for this domain (DomainCategory)
         if (!categoryBySlug.get(slug)) continue;
         seenSlugs.add(slug);
         out.push(slug);
@@ -1756,12 +1722,90 @@ router.get('/homepage', async (_req, res) => {
       return out;
     }
 
-    async function buildSection(s: V1Section) {
-      const t0 = Date.now();
-      let rows: any[] = [];
+    // ============================================================
+    // OPTIMIZED: Pre-fetch all category data in parallel
+    // This replaces the slow sequential fetchCategory() calls
+    // ============================================================
+    const t0Prefetch = Date.now();
+    
+    // Collect all category slugs we'll need
+    const allCategorySlugsNeeded = new Set<string>();
+    
+    // From navCategories sections (categoryHub, hgBlock)
+    for (const s of sections) {
+      if (s.query?.kind === 'navCategories') {
+        const count = Math.min(Math.max(Number(s.query?.count ?? s.ui?.categoryCount ?? s.ui?.columns ?? 0) || 0, 0), 25);
+        const explicitSlugs = Array.isArray(s.query?.categorySlugs)
+          ? (s.query.categorySlugs as any[]).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+          : [];
+        const slugs = explicitSlugs.length ? explicitSlugs.slice(0, count) : resolveNavCategorySlugs(count);
+        slugs.forEach((slug: string) => allCategorySlugsNeeded.add(slug));
+      } else if (s.query?.kind === 'category' && s.query?.categorySlug) {
+        allCategorySlugsNeeded.add(String(s.query.categorySlug));
+      }
+    }
 
-      // Nav-category hub sections return an array of category blocks:
-      // [{ category: { slug, name }, items: V1Article[] }]
+    // Pre-fetch articles for all categories in parallel
+    const categoryArticlesCache = new Map<string, any[]>();
+    const categoryFetchPromises: Promise<void>[] = [];
+    
+    for (const slug of allCategorySlugsNeeded) {
+      const resolvedCategory = categoryBySlug.get(slug) || null;
+      if (!resolvedCategory) {
+        categoryArticlesCache.set(slug, []);
+        continue;
+      }
+      
+      const fetchPromise = (async () => {
+        const and: any[] = [];
+        if (domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length) and.push(domainScope);
+        if (languageId) and.push({ OR: [{ languageId }, { languageId: null }] });
+        const where: any = { tenantId: tenant.id, status: 'PUBLISHED', categoryId: resolvedCategory.id };
+        if (and.length) where.AND = and;
+        
+        const rows = await p.tenantWebArticle.findMany({
+          where,
+          orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+          take: 50, // Fetch enough for all sections
+          include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+        }).catch(() => []);
+        
+        categoryArticlesCache.set(slug, rows);
+      })();
+      
+      categoryFetchPromises.push(fetchPromise);
+    }
+
+    // Also pre-fetch latest articles pool
+    const latestPoolPromise = p.tenantWebArticle.findMany({
+      where: baseWhere,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 75,
+      include: { category: { select: { id: true, slug: true, name: true } }, language: { select: { code: true } } }
+    }).catch(() => []);
+
+    // Wait for all parallel fetches
+    const [latestPool] = await Promise.all([
+      latestPoolPromise,
+      ...categoryFetchPromises
+    ]);
+    
+    timers.prefetch = Date.now() - t0Prefetch;
+
+    // Helper functions using cached data
+    function getCachedLatest(limit: number) {
+      return (latestPool || []).slice(0, Math.min(Math.max(limit, 1), 50));
+    }
+
+    function getCachedCategory(categorySlug: string, limit: number) {
+      const rows = categoryArticlesCache.get(categorySlug) || [];
+      return rows.slice(0, Math.min(Math.max(limit, 1), 50));
+    }
+
+    function buildSectionSync(s: V1Section) {
+      const t0 = Date.now();
+
+      // Nav-category hub sections return an array of category blocks
       if (s.query?.kind === 'navCategories') {
         const count = Math.min(Math.max(Number(s.query?.count ?? s.ui?.categoryCount ?? s.ui?.columns ?? 0) || 0, 0), 25);
         const perCategoryLimit = Math.min(Math.max(Number(s.query?.perCategoryLimit ?? s.ui?.perCategoryCount ?? 5) || 5, 1), 50);
@@ -1775,8 +1819,7 @@ router.get('/homepage', async (_req, res) => {
 
         const blocks: any[] = [];
         for (const slug of slugs) {
-          // eslint-disable-next-line no-await-in-loop
-          const catRows = await fetchCategory(String(slug), perCategoryLimit);
+          const catRows = getCachedCategory(String(slug), perCategoryLimit);
           const cat = categoryBySlug.get(String(slug)) || null;
           const catName = cat?.id
             ? (translatedNameByCategoryId.get(String(cat.id)) || String(cat?.name || slug))
@@ -1793,10 +1836,12 @@ router.get('/homepage', async (_req, res) => {
         return;
       }
 
+      // Other section types
+      let rows: any[] = [];
       if (s.query?.kind === 'latest') {
-        rows = await fetchLatest(Number(s.query.limit || 10) + 25);
+        rows = getCachedLatest(Number(s.query.limit || 10) + 25);
       } else if (s.query?.kind === 'category') {
-        rows = await fetchCategory(String(s.query.categorySlug || ''), Number(s.query.limit || 10) + 25);
+        rows = getCachedCategory(String(s.query.categorySlug || ''), Number(s.query.limit || 10) + 25);
       }
 
       const targetKey = String(s.ui?.image || s.ui?.hero?.image || s.ui?.rows?.image || s.ui?.medium?.image || '') as keyof typeof uiTokens.imageTargets;
@@ -1826,28 +1871,24 @@ router.get('/homepage', async (_req, res) => {
         out.push(toV1Article(r, target || undefined));
       };
 
-      // Phase 1: fill with unseen items from the section's primary query.
+      // Phase 1: fill with unseen items from primary query
       for (const r of rows) {
         pushRow(r, { allowSeen: false });
         if (out.length >= want) break;
       }
 
-      // Phase 2: if category slug is missing/empty (or category has low volume), backfill from latest.
-      // Keep global de-dupe semantics in this phase.
-      let latestPool: any[] | null = null;
+      // Phase 2: backfill from latest if needed
       if (out.length < want && s.query?.kind !== 'latest') {
-        latestPool = await fetchLatest(Number(s.query?.limit || 10) + 25);
-        for (const r of (latestPool ?? [])) {
+        for (const r of latestPool) {
           pushRow(r, { allowSeen: false });
           if (out.length >= want) break;
         }
       }
 
-      // Phase 3 (last resort): if the tenant has too few published articles after global de-dupe,
-      // allow repeats from latest so the UI isn't empty.
+      // Phase 3: allow repeats if still short
       if (out.length < want) {
-        if (!latestPool) latestPool = s.query?.kind === 'latest' ? rows : await fetchLatest(Number(s.query?.limit || 10) + 25);
-        for (const r of (latestPool ?? [])) {
+        const pool = s.query?.kind === 'latest' ? rows : latestPool;
+        for (const r of pool) {
           pushRow(r, { allowSeen: true });
           if (out.length >= want) break;
         }
@@ -1857,8 +1898,7 @@ router.get('/homepage', async (_req, res) => {
       data[s.id] = out;
     }
 
-    // Deterministic ordering is important because we dedupe across sections.
-    // We also prioritize the main story stack before less critical rails/tickers.
+    // Build all sections synchronously using cached data
     const sectionPriority = (s: V1Section) => {
       if (s.type === 'heroStack') return 0;
       if (s.type === 'ticker') return 1;
@@ -1868,8 +1908,7 @@ router.get('/homepage', async (_req, res) => {
 
     const buildOrder = [...sections].sort((a, b) => sectionPriority(a) - sectionPriority(b));
     for (const s of buildOrder) {
-      // eslint-disable-next-line no-await-in-loop
-      await buildSection(s);
+      buildSectionSync(s);
     }
 
     // Add default extra sections if not already configured
