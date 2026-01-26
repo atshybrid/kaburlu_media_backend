@@ -144,16 +144,18 @@ app.get('/api/v1/sitemap.xml', (req, res) => {
 });
 app.use(
   express.json({
+    limit: '50mb', // Increase limit for large article payloads with images
     verify: (req: any, _res, buf) => {
       req.rawBody = buf;
     },
   })
 );
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // JSON body parse error handler (must be BEFORE other routes' logic error handling) –
 // Express's built-in json parser throws a SyntaxError for invalid JSON; we intercept
 // and convert to a 400 with a clear, consistent structure.
+// Also handles PayloadTooLargeError for oversized requests.
 app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && 'body' in err) {
     return res.status(400).json({
@@ -161,6 +163,14 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
       error: 'Invalid JSON payload',
       message: err.message,
       hint: 'Ensure request body is valid JSON: use double quotes for property names & strings, no trailing commas.'
+    });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      error: 'Payload too large',
+      message: 'Request body exceeds the maximum allowed size of 50MB',
+      hint: 'For large media uploads, use the /api/v1/media/upload endpoint with multipart/form-data.'
     });
   }
   return next(err);
