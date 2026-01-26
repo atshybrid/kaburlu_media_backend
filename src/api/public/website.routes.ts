@@ -387,30 +387,34 @@ router.get('/domain/settings', async (req, res) => {
  * @swagger
  * /public/domain/stats:
  *   get:
- *     summary: Get domain statistics (articles, views, reporters)
+ *     summary: Get domain statistics (articles, views, reporters) by domain name
  *     description: |
- *       Returns public statistics for the resolved domain including:
+ *       Returns public statistics for a specific domain including:
  *       - Total published articles count
  *       - Total views count (sum of all article viewCount)
  *       - Total reporters count
  *       - Articles by category breakdown
  *       - Top performing articles by views
+ *       
+ *       **Usage Examples:**
+ *       - `/public/domain/stats?domain=kaburlutoday.com` - Get stats for kaburlutoday.com
+ *       - `/public/domain/stats?domain=daxintimes.com` - Get stats for daxintimes.com
  *     tags: [Public - Website]
  *     parameters:
+ *       - in: query
+ *         name: domain
+ *         required: true
+ *         description: Domain name to get statistics for (e.g., kaburlutoday.com, daxintimes.com)
+ *         schema:
+ *           type: string
+ *           example: kaburlutoday.com
  *       - in: header
  *         name: X-Tenant-Domain
  *         required: false
- *         description: Optional override for tenant/domain detection when testing locally.
+ *         description: Alternative - override for tenant/domain detection when testing locally.
  *         schema:
  *           type: string
  *           example: news.kaburlu.com
- *       - in: query
- *         name: domain
- *         required: false
- *         description: Optional domain override.
- *         schema:
- *           type: string
- *           example: daxintimes.com
  *     responses:
  *       200:
  *         description: Domain statistics
@@ -419,8 +423,9 @@ router.get('/domain/settings', async (req, res) => {
  *             examples:
  *               sample:
  *                 value:
- *                   domain: "daxintimes.com"
+ *                   domain: "kaburlutoday.com"
  *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   tenantName: "Kaburlu Today"
  *                   stats:
  *                     totalArticles: 150
  *                     totalViews: 25000
@@ -441,13 +446,41 @@ router.get('/domain/settings', async (req, res) => {
  *                       title: "Top Article"
  *                       viewCount: 1500
  *                       category: { slug: "politics", name: "Politics" }
+ *       404:
+ *         description: Domain not found
  *       500:
  *         description: Domain context missing
  */
 router.get('/domain/stats', async (req, res) => {
-  const tenant = (res.locals as any).tenant;
-  const domain = (res.locals as any).domain;
-  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  // Support domain lookup by query param OR tenant resolver
+  const domainQuery = req.query.domain ? String(req.query.domain).trim().toLowerCase() : null;
+  
+  let tenant = (res.locals as any).tenant;
+  let domain = (res.locals as any).domain;
+
+  // If domain query param provided, look up that specific domain
+  if (domainQuery) {
+    const lookedUpDomain = await p.domain.findFirst({
+      where: { 
+        domain: domainQuery,
+        status: 'ACTIVE'
+      },
+      include: {
+        tenant: {
+          select: { id: true, name: true, slug: true }
+        }
+      }
+    }).catch(() => null);
+
+    if (!lookedUpDomain) {
+      return res.status(404).json({ error: `Domain '${domainQuery}' not found` });
+    }
+
+    domain = lookedUpDomain;
+    tenant = lookedUpDomain.tenant;
+  }
+
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing. Provide ?domain=example.com or X-Tenant-Domain header' });
 
   try {
     // Build domain scope filter
