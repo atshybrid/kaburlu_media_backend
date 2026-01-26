@@ -70,6 +70,8 @@ import proofsRoutes from './api/proofs/proofs.routes';
 import aiHealthRoutes from './api/health/ai.routes';
 import articlesUnifiedRoutes from './api/articles/unified.routes';
 import reporterArticlesRoutes from './api/articles/reporter.routes';
+import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
+import analyticsRoutes from './api/analytics/analytics.routes';
 
 const app = express();
 
@@ -243,6 +245,10 @@ app.use('/family', familyRoutes);
 app.use('/epaper', epaperRoutes);
 // Health endpoints
 app.use('/health', aiHealthRoutes);
+// Leaderboard endpoints
+app.use('/leaderboard', leaderboardRoutes);
+// Analytics endpoints
+app.use('/analytics', analyticsRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
