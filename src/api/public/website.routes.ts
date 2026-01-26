@@ -995,22 +995,28 @@ router.get('/dashboard/stats', async (req, res) => {
         }
       }
 
-      // Get tenant/domain info
+      // Get tenant/domain info with brand logo
       let publisherInfo = null;
       if (article.tenantId) {
-        const tenant = await p.tenant.findUnique({
-          where: { id: article.tenantId },
-          select: { id: true, name: true, slug: true }
-        }).catch(() => null);
-        
-        const domain = article.domainId
-          ? await p.domain.findUnique({ where: { id: article.domainId }, select: { domain: true } }).catch(() => null)
-          : await p.domain.findFirst({ where: { tenantId: article.tenantId, status: 'ACTIVE' }, select: { domain: true } }).catch(() => null);
+        const [tenant, domain, theme] = await Promise.all([
+          p.tenant.findUnique({
+            where: { id: article.tenantId },
+            select: { id: true, name: true, slug: true }
+          }).catch(() => null),
+          article.domainId
+            ? p.domain.findUnique({ where: { id: article.domainId }, select: { domain: true } }).catch(() => null)
+            : p.domain.findFirst({ where: { tenantId: article.tenantId, status: 'ACTIVE' }, select: { domain: true } }).catch(() => null),
+          p.tenantTheme.findUnique({
+            where: { tenantId: article.tenantId },
+            select: { logoUrl: true }
+          }).catch(() => null)
+        ]);
 
         publisherInfo = {
           tenantId: article.tenantId,
           name: (tenant as any)?.name || null,
-          domain: (domain as any)?.domain || null
+          domain: (domain as any)?.domain || null,
+          logoUrl: (theme as any)?.logoUrl || null
         };
       }
 
