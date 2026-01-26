@@ -831,6 +831,372 @@ router.get('/all-domains/stats', async (_req, res) => {
 
 /**
  * @swagger
+ * /public/dashboard/stats:
+ *   get:
+ *     summary: Comprehensive dashboard statistics with top articles and reporter leaderboards
+ *     description: |
+ *       Returns comprehensive stats for newspaper dashboard:
+ *       
+ *       **Top Article (Single Domain or All):**
+ *       - #1 top article by views with full reporter details (name, photo, designation, location)
+ *       
+ *       **Best Articles Section:**
+ *       - Today's best article (by view count)
+ *       - This week's top article
+ *       - This month's top article
+ *       - Each with cover image, title, reporter details
+ *       
+ *       **Reporter Leaderboards:**
+ *       - Top reporters by article count (today, week, month, year)
+ *       - Per domain/tenant or across all tenants
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: query
+ *         name: domain
+ *         required: false
+ *         description: Filter by specific domain (e.g., kaburlutoday.com). If omitted, shows stats across all domains.
+ *         schema:
+ *           type: string
+ *           example: kaburlutoday.com
+ *       - in: query
+ *         name: scope
+ *         required: false
+ *         description: Scope for leaderboards - 'domain' (single domain) or 'all' (all tenants)
+ *         schema:
+ *           type: string
+ *           enum: [domain, all]
+ *           default: all
+ *     responses:
+ *       200:
+ *         description: Dashboard statistics
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   scope: "all"
+ *                   topArticle:
+ *                     id: "cmkr68za101fnli1e8wd8sk0d"
+ *                     slug: "top-article-slug"
+ *                     title: "సాంకేతిక నైపుణ్యాల అభివృద్ధికి"
+ *                     viewCount: 36
+ *                     coverImageUrl: "https://cdn.example.com/image.webp"
+ *                     publishedAt: "2026-01-23T17:45:40.247Z"
+ *                     category: { slug: "education", name: "Education" }
+ *                     reporter:
+ *                       id: "user_123"
+ *                       name: "రాము రెడ్డి"
+ *                       photoUrl: "https://cdn.example.com/photo.jpg"
+ *                       designation: "Senior Reporter"
+ *                       location: { state: "Telangana", district: "Sangareddy", mandal: "Sangareddy" }
+ *                     publisher:
+ *                       tenantId: "tenant_123"
+ *                       name: "Kaburlu Today"
+ *                       domain: "kaburlutoday.com"
+ *                   bestArticles:
+ *                     today:
+ *                       id: "..."
+ *                       title: "Today's Best"
+ *                       viewCount: 50
+ *                       reporter: { name: "...", photoUrl: "..." }
+ *                     thisWeek:
+ *                       id: "..."
+ *                       title: "Week's Best"
+ *                       viewCount: 200
+ *                     thisMonth:
+ *                       id: "..."
+ *                       title: "Month's Best"
+ *                       viewCount: 500
+ *                   reporterLeaderboard:
+ *                     today:
+ *                       - reporter: { id: "...", name: "...", photoUrl: "..." }
+ *                         articleCount: 5
+ *                         totalViews: 150
+ *                         tenant: { name: "Kaburlu Today", domain: "kaburlutoday.com" }
+ *                     thisWeek: []
+ *                     thisMonth: []
+ *                     thisYear: []
+ *                     allTime: []
+ *       500:
+ *         description: Failed to fetch dashboard statistics
+ */
+router.get('/dashboard/stats', async (req, res) => {
+  try {
+    const domainQuery = req.query.domain ? String(req.query.domain).trim().toLowerCase() : null;
+    const scope = req.query.scope === 'domain' ? 'domain' : 'all';
+
+    // Date ranges
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
+    const monthStart = new Date(now); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+
+    // Build base filter
+    let tenantFilter: any = {};
+    let domainFilter: any = {};
+    let specificDomain: any = null;
+    let specificTenant: any = null;
+
+    if (domainQuery) {
+      specificDomain = await p.domain.findFirst({
+        where: { domain: domainQuery, status: 'ACTIVE' },
+        include: { tenant: { select: { id: true, name: true, slug: true } } }
+      }).catch(() => null);
+
+      if (!specificDomain) {
+        return res.status(404).json({ error: `Domain '${domainQuery}' not found` });
+      }
+      
+      specificTenant = specificDomain.tenant;
+      tenantFilter = { tenantId: specificTenant.id };
+      domainFilter = { OR: [{ domainId: specificDomain.id }, { domainId: null }] };
+    }
+
+    const baseWhere: any = { status: 'PUBLISHED', ...tenantFilter };
+    if (specificDomain) {
+      baseWhere.AND = [domainFilter];
+    }
+
+    // Helper to build article with full reporter details
+    const buildArticleWithReporter = async (article: any) => {
+      if (!article) return null;
+
+      let reporterDetails = null;
+      if (article.authorId) {
+        const reporter = await p.reporter.findFirst({
+          where: { userId: article.authorId, tenantId: article.tenantId },
+          select: {
+            designation: true,
+            state: { select: { name: true } },
+            district: { select: { name: true } },
+            mandal: { select: { name: true } },
+            user: {
+              select: {
+                id: true,
+                profile: { select: { fullName: true, profilePhotoUrl: true } }
+              }
+            }
+          }
+        }).catch(() => null);
+
+        if (reporter) {
+          reporterDetails = {
+            id: (reporter as any).user?.id || article.authorId,
+            name: (reporter as any).user?.profile?.fullName || null,
+            photoUrl: (reporter as any).user?.profile?.profilePhotoUrl || null,
+            designation: (reporter as any).designation || null,
+            location: {
+              state: (reporter as any).state?.name || null,
+              district: (reporter as any).district?.name || null,
+              mandal: (reporter as any).mandal?.name || null
+            }
+          };
+        }
+      }
+
+      // Get tenant/domain info
+      let publisherInfo = null;
+      if (article.tenantId) {
+        const tenant = await p.tenant.findUnique({
+          where: { id: article.tenantId },
+          select: { id: true, name: true, slug: true }
+        }).catch(() => null);
+        
+        const domain = article.domainId
+          ? await p.domain.findUnique({ where: { id: article.domainId }, select: { domain: true } }).catch(() => null)
+          : await p.domain.findFirst({ where: { tenantId: article.tenantId, status: 'ACTIVE' }, select: { domain: true } }).catch(() => null);
+
+        publisherInfo = {
+          tenantId: article.tenantId,
+          name: (tenant as any)?.name || null,
+          domain: (domain as any)?.domain || null
+        };
+      }
+
+      return {
+        id: article.id,
+        slug: article.slug,
+        title: article.title,
+        viewCount: article.viewCount || 0,
+        coverImageUrl: article.coverImageUrl || null,
+        publishedAt: article.publishedAt ? new Date(article.publishedAt).toISOString() : null,
+        category: article.category ? { slug: article.category.slug, name: article.category.name } : null,
+        reporter: reporterDetails,
+        publisher: publisherInfo
+      };
+    };
+
+    // Fetch top article (all time, by views)
+    const topArticleRaw = await p.tenantWebArticle.findFirst({
+      where: baseWhere,
+      orderBy: { viewCount: 'desc' },
+      select: {
+        id: true, slug: true, title: true, viewCount: true, coverImageUrl: true,
+        publishedAt: true, authorId: true, tenantId: true, domainId: true,
+        category: { select: { slug: true, name: true } }
+      }
+    }).catch(() => null);
+
+    const topArticle = await buildArticleWithReporter(topArticleRaw);
+
+    // Fetch best articles for different time periods
+    const [todayBestRaw, weekBestRaw, monthBestRaw] = await Promise.all([
+      // Today's best
+      p.tenantWebArticle.findFirst({
+        where: { ...baseWhere, publishedAt: { gte: todayStart } },
+        orderBy: { viewCount: 'desc' },
+        select: {
+          id: true, slug: true, title: true, viewCount: true, coverImageUrl: true,
+          publishedAt: true, authorId: true, tenantId: true, domainId: true,
+          category: { select: { slug: true, name: true } }
+        }
+      }).catch(() => null),
+
+      // This week's best
+      p.tenantWebArticle.findFirst({
+        where: { ...baseWhere, publishedAt: { gte: weekStart } },
+        orderBy: { viewCount: 'desc' },
+        select: {
+          id: true, slug: true, title: true, viewCount: true, coverImageUrl: true,
+          publishedAt: true, authorId: true, tenantId: true, domainId: true,
+          category: { select: { slug: true, name: true } }
+        }
+      }).catch(() => null),
+
+      // This month's best
+      p.tenantWebArticle.findFirst({
+        where: { ...baseWhere, publishedAt: { gte: monthStart } },
+        orderBy: { viewCount: 'desc' },
+        select: {
+          id: true, slug: true, title: true, viewCount: true, coverImageUrl: true,
+          publishedAt: true, authorId: true, tenantId: true, domainId: true,
+          category: { select: { slug: true, name: true } }
+        }
+      }).catch(() => null)
+    ]);
+
+    const [todayBest, weekBest, monthBest] = await Promise.all([
+      buildArticleWithReporter(todayBestRaw),
+      buildArticleWithReporter(weekBestRaw),
+      buildArticleWithReporter(monthBestRaw)
+    ]);
+
+    // Reporter leaderboards - grouped by authorId with article count and views
+    const buildReporterLeaderboard = async (dateFilter: Date | null, limit: number = 10) => {
+      const where: any = { ...baseWhere, authorId: { not: null } };
+      if (dateFilter) {
+        where.publishedAt = { gte: dateFilter };
+      }
+
+      const authorStats = await p.tenantWebArticle.groupBy({
+        by: ['authorId', 'tenantId'],
+        where,
+        _count: { id: true },
+        _sum: { viewCount: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: limit * 3 // Fetch extra to allow for deduplication
+      }).catch(() => []);
+
+      // Get unique top reporters
+      const seenAuthors = new Set<string>();
+      const topReporters: any[] = [];
+
+      for (const stat of authorStats) {
+        if (!stat.authorId || seenAuthors.has(stat.authorId)) continue;
+        seenAuthors.add(stat.authorId);
+
+        // Get reporter details
+        const reporter = await p.reporter.findFirst({
+          where: { userId: stat.authorId, tenantId: stat.tenantId },
+          select: {
+            designation: true,
+            state: { select: { name: true } },
+            district: { select: { name: true } },
+            user: {
+              select: {
+                id: true,
+                profile: { select: { fullName: true, profilePhotoUrl: true } }
+              }
+            }
+          }
+        }).catch(() => null);
+
+        // Get tenant info
+        const tenant = await p.tenant.findUnique({
+          where: { id: stat.tenantId },
+          select: { id: true, name: true }
+        }).catch(() => null);
+
+        const domain = await p.domain.findFirst({
+          where: { tenantId: stat.tenantId, status: 'ACTIVE' },
+          select: { domain: true }
+        }).catch(() => null);
+
+        topReporters.push({
+          reporter: {
+            id: stat.authorId,
+            name: (reporter as any)?.user?.profile?.fullName || null,
+            photoUrl: (reporter as any)?.user?.profile?.profilePhotoUrl || null,
+            designation: (reporter as any)?.designation || null,
+            location: {
+              state: (reporter as any)?.state?.name || null,
+              district: (reporter as any)?.district?.name || null
+            }
+          },
+          articleCount: stat._count?.id || 0,
+          totalViews: stat._sum?.viewCount || 0,
+          tenant: {
+            id: stat.tenantId,
+            name: (tenant as any)?.name || null,
+            domain: (domain as any)?.domain || null
+          }
+        });
+
+        if (topReporters.length >= limit) break;
+      }
+
+      return topReporters;
+    };
+
+    // Build leaderboards in parallel
+    const [todayLeaderboard, weekLeaderboard, monthLeaderboard, yearLeaderboard, allTimeLeaderboard] = await Promise.all([
+      buildReporterLeaderboard(todayStart, 10),
+      buildReporterLeaderboard(weekStart, 10),
+      buildReporterLeaderboard(monthStart, 10),
+      buildReporterLeaderboard(yearStart, 10),
+      buildReporterLeaderboard(null, 10)
+    ]);
+
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+
+    res.json({
+      scope: domainQuery ? 'domain' : 'all',
+      domain: domainQuery || null,
+      tenantId: specificTenant?.id || null,
+      tenantName: specificTenant?.name || null,
+      topArticle,
+      bestArticles: {
+        today: todayBest,
+        thisWeek: weekBest,
+        thisMonth: monthBest
+      },
+      reporterLeaderboard: {
+        today: todayLeaderboard,
+        thisWeek: weekLeaderboard,
+        thisMonth: monthLeaderboard,
+        thisYear: yearLeaderboard,
+        allTime: allTimeLeaderboard
+      }
+    });
+  } catch (error) {
+    console.error('[dashboard/stats] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard statistics' });
+  }
+});
+
+/**
+ * @swagger
  * /public/ads:
  *   get:
  *     summary: Get website ads for the resolved domain
