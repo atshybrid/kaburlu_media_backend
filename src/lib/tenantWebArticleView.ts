@@ -1,5 +1,21 @@
 // Shared view helpers for website/public APIs backed by TenantWebArticle.
 
+import { config } from '../config/env';
+
+/**
+ * OG-safe cover image structure for social media sharing.
+ * - url: Original image URL (may be WebP, used for website rendering)
+ * - ogImageUrl: CDN-transformed JPG/PNG URL (1200x630, for og:image meta tags)
+ * - alt: Image alt text (article title)
+ * - caption: Image caption (if available)
+ */
+export type CoverImage = {
+  url: string;
+  ogImageUrl: string | null;
+  alt: string;
+  caption: string;
+};
+
 export type WebArticleCard = {
   id: string;
   slug: string;
@@ -23,7 +39,7 @@ export type WebArticleDetail = {
   tags: string[];
   status: string;
   publishedAt: string | null;
-  coverImage: { alt: string; url: string; caption: string };
+  coverImage: CoverImage | null;
   categories: any[];
   blocks: any[];
   contentHtml: string;
@@ -37,23 +53,141 @@ export type WebArticleDetail = {
   media: any;
 };
 
+/**
+ * Build OG-safe image URL using CDN transformation.
+ * Converts WebP/original images to JPG/PNG at 1200x630 for social media sharing.
+ * 
+ * Supported CDN providers:
+ * - bunny: ?format=jpg&width=1200&height=630&quality=85
+ * - cloudflare: /cdn-cgi/image/format=jpg,width=1200,height=630,quality=85/
+ * - imgix: ?fm=jpg&w=1200&h=630&q=85&fit=crop
+ * - none: Returns original URL (fallback)
+ * 
+ * @param originalUrl - Original image URL (may be WebP)
+ * @returns CDN-transformed URL for OG image, or null if no image
+ */
+export function buildOgImageUrl(originalUrl: string | null | undefined): string | null {
+  if (!originalUrl || typeof originalUrl !== 'string' || !originalUrl.trim()) {
+    return null;
+  }
+
+  const url = originalUrl.trim();
+  
+  // Already a non-WebP format? Some platforms may handle it
+  // But we still transform for consistent sizing and format
+  const provider = config.cdn?.imageTransformProvider || 'bunny';
+  const ogConfig = config.cdn?.ogImage || { width: 1200, height: 630, format: 'jpg', quality: 85 };
+  const { width, height, format, quality } = ogConfig;
+
+  // Skip transformation if provider is 'none' or not configured
+  if (provider === 'none') {
+    return url;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    
+    switch (provider) {
+      case 'bunny': {
+        // Bunny CDN: append query params
+        // https://docs.bunny.net/docs/image-processing
+        parsedUrl.searchParams.set('format', format);
+        parsedUrl.searchParams.set('width', String(width));
+        parsedUrl.searchParams.set('height', String(height));
+        parsedUrl.searchParams.set('quality', String(quality));
+        parsedUrl.searchParams.set('aspect_ratio', '1.91:1'); // OG ratio
+        return parsedUrl.toString();
+      }
+      
+      case 'cloudflare': {
+        // Cloudflare Images: /cdn-cgi/image/{options}/{path}
+        // https://developers.cloudflare.com/images/transform-images/
+        const options = `format=${format},width=${width},height=${height},quality=${quality},fit=cover`;
+        const baseUrl = config.cdn?.imageTransformBaseUrl || `${parsedUrl.protocol}//${parsedUrl.host}`;
+        const imagePath = parsedUrl.pathname + parsedUrl.search;
+        return `${baseUrl}/cdn-cgi/image/${options}${imagePath}`;
+      }
+      
+      case 'imgix': {
+        // Imgix: append query params
+        // https://docs.imgix.com/apis/rendering
+        parsedUrl.searchParams.set('fm', format === 'jpg' ? 'jpg' : 'png');
+        parsedUrl.searchParams.set('w', String(width));
+        parsedUrl.searchParams.set('h', String(height));
+        parsedUrl.searchParams.set('q', String(quality));
+        parsedUrl.searchParams.set('fit', 'crop');
+        parsedUrl.searchParams.set('crop', 'faces,center');
+        return parsedUrl.toString();
+      }
+      
+      default:
+        // Fallback: return original URL
+        return url;
+    }
+  } catch {
+    // URL parsing failed, return original
+    return url;
+  }
+}
+
+/**
+ * Build cover image object with OG-safe URL for social sharing.
+ * @param coverImageData - Raw cover image data from contentJson or coverImageUrl
+ * @param articleTitle - Article title for alt text
+ * @returns CoverImage object with ogImageUrl, or null if no image
+ */
+export function buildCoverImage(
+  coverImageData: { url?: string; alt?: string; caption?: string } | string | null | undefined,
+  articleTitle: string
+): CoverImage | null {
+  let url: string | null = null;
+  let alt = '';
+  let caption = '';
+
+  if (typeof coverImageData === 'string') {
+    url = coverImageData.trim() || null;
+  } else if (coverImageData && typeof coverImageData === 'object') {
+    url = coverImageData.url?.trim() || null;
+    alt = coverImageData.alt || '';
+    caption = coverImageData.caption || '';
+  }
+
+  if (!url) {
+    return null;
+  }
+
+  return {
+    url,
+    ogImageUrl: buildOgImageUrl(url),
+    alt: alt || articleTitle || '',
+    caption,
+  };
+}
+
 export function toWebArticleDetailDto(a: any): WebArticleDetail {
   const cj: any = a?.contentJson || {};
-  const coverUrl = (cj?.coverImage?.url || a?.coverImageUrl || '') as string;
   const publishedAt = (a?.publishedAt || cj?.publishedAt || null) as any;
+  const title = a.title || cj?.title || '';
+  
+  // Build cover image with OG-safe URL for social sharing
+  // Priority: contentJson.coverImage > coverImageUrl > media.images[0]
+  const rawCoverImage = cj?.coverImage 
+    || (a?.coverImageUrl ? { url: a.coverImageUrl, alt: '', caption: '' } : null)
+    || (cj?.media?.images?.[0]?.url ? { url: cj.media.images[0].url, alt: '', caption: '' } : null);
+  const coverImage = buildCoverImage(rawCoverImage, title);
 
   return {
     id: a.id,
     tenantId: a.tenantId,
     slug: a.slug,
-    title: a.title || cj?.title || '',
+    title,
     subtitle: cj?.subtitle || '',
     excerpt: cj?.excerpt || '',
     highlights: cj?.highlights || [],
     tags: (a.tags || cj?.tags || []) as string[],
     status: String(a.status || cj?.status || 'draft').toLowerCase(),
     publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
-    coverImage: cj?.coverImage || { alt: '', url: coverUrl, caption: '' },
+    coverImage,
     categories: cj?.categories || [],
     blocks: cj?.blocks || [],
     contentHtml: cj?.contentHtml || '',

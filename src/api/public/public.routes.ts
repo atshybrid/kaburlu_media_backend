@@ -2193,10 +2193,22 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *                 shareCount: { type: number, description: "Total social media shares" }
  *                 coverImage:
  *                   type: object
+ *                   nullable: true
+ *                   description: |
+ *                     Cover image with OG-safe URL for social sharing.
+ *                     - `url`: Original image (may be WebP, for website rendering)
+ *                     - `ogImageUrl`: CDN-transformed JPG/PNG (1200x630, for og:image meta tags)
+ *                     - Use `ogImageUrl` for Facebook, WhatsApp, Twitter/X sharing
  *                   properties:
- *                     url: { type: string }
- *                     alt: { type: string }
- *                     caption: { type: string }
+ *                     url: { type: string, description: "Original image URL (may be WebP)" }
+ *                     ogImageUrl: { type: string, nullable: true, description: "CDN-transformed JPG/PNG URL (1200x630) for social sharing" }
+ *                     alt: { type: string, description: "Alt text (article title)" }
+ *                     caption: { type: string, description: "Image caption if available" }
+ *                   example:
+ *                     url: "https://cdn.example.com/images/article-cover.webp"
+ *                     ogImageUrl: "https://cdn.example.com/images/article-cover.webp?format=jpg&width=1200&height=630&quality=85"
+ *                     alt: "Top headline article"
+ *                     caption: "Photo credit: News Agency"
  *                 categories:
  *                   type: array
  *                   items:

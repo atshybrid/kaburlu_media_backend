@@ -229,6 +229,20 @@ export const config = {
     publisherLogoHeight: parseIntSafe(process.env.SEO_PUBLISHER_LOGO_HEIGHT, 60),
   },
 
+  cdn: {
+    // CDN provider for image transformation: 'bunny' | 'cloudflare' | 'imgix' | 'none'
+    imageTransformProvider: (process.env.CDN_IMAGE_TRANSFORM_PROVIDER || 'bunny').toLowerCase(),
+    // Base URL for CDN image transformation (optional, uses image origin if not set)
+    imageTransformBaseUrl: process.env.CDN_IMAGE_TRANSFORM_BASE_URL,
+    // OG image settings (for social media sharing)
+    ogImage: {
+      width: parseIntSafe(process.env.OG_IMAGE_WIDTH, 1200),
+      height: parseIntSafe(process.env.OG_IMAGE_HEIGHT, 630),
+      format: process.env.OG_IMAGE_FORMAT || 'jpg',
+      quality: parseIntSafe(process.env.OG_IMAGE_QUALITY, 85),
+    },
+  },
+
   slug: {
     requireUnique: parseBool(process.env.SLUG_REQUIRE_UNIQUE, true),
   },
