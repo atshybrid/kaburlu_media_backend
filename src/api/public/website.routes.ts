@@ -614,6 +614,190 @@ router.get('/domain/stats', async (req, res) => {
 
 /**
  * @swagger
+ * /public/all-domains/stats:
+ *   get:
+ *     summary: Get statistics for all newspaper domains
+ *     description: |
+ *       Returns a list of all active domains with their article statistics:
+ *       - Total articles count per domain
+ *       - Total views count per domain
+ *       - Total reporters/authors count per domain
+ *       
+ *       Useful for newspaper dashboard to compare domain performance.
+ *     tags: [Public - Website]
+ *     responses:
+ *       200:
+ *         description: List of all domains with statistics
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   totalDomains: 3
+ *                   summary:
+ *                     totalArticles: 500
+ *                     totalViews: 125000
+ *                     totalReporters: 25
+ *                   domains:
+ *                     - domain: "daxintimes.com"
+ *                       tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                       tenantName: "Daxin Times"
+ *                       status: "ACTIVE"
+ *                       stats:
+ *                         totalArticles: 150
+ *                         totalViews: 45000
+ *                         totalReporters: 8
+ *                     - domain: "news.kaburlu.com"
+ *                       tenantId: "cmi123..."
+ *                       tenantName: "Kaburlu News"
+ *                       status: "ACTIVE"
+ *                       stats:
+ *                         totalArticles: 200
+ *                         totalViews: 50000
+ *                         totalReporters: 10
+ *       500:
+ *         description: Failed to fetch domain statistics
+ */
+router.get('/all-domains/stats', async (_req, res) => {
+  try {
+    // Fetch all active domains with their tenant info
+    const allDomains = await p.domain.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
+          }
+        }
+      },
+      orderBy: { domain: 'asc' }
+    }).catch(() => []);
+
+    if (!allDomains.length) {
+      return res.json({
+        totalDomains: 0,
+        summary: { totalArticles: 0, totalViews: 0, totalReporters: 0 },
+        domains: []
+      });
+    }
+
+    // Get all domain IDs for batch querying
+    const domainIds = allDomains.map((d: any) => d.id);
+    const tenantIds = [...new Set(allDomains.map((d: any) => d.tenantId))];
+
+    // Fetch all stats in parallel using groupBy for efficiency
+    const [
+      articleStatsByDomain,
+      reportersByTenant
+    ] = await Promise.all([
+      // Article count and views grouped by domainId
+      p.tenantWebArticle.groupBy({
+        by: ['domainId'],
+        where: {
+          status: 'PUBLISHED',
+          domainId: { in: domainIds }
+        },
+        _count: { id: true },
+        _sum: { viewCount: true }
+      }).catch(() => []),
+
+      // Unique authors grouped by tenantId
+      p.tenantWebArticle.groupBy({
+        by: ['tenantId', 'authorId'],
+        where: {
+          status: 'PUBLISHED',
+          tenantId: { in: tenantIds },
+          authorId: { not: null }
+        },
+        _count: { id: true }
+      }).catch(() => [])
+    ]);
+
+    // Build lookup maps
+    const articleStatsMap = new Map<string, { articles: number; views: number }>();
+    for (const stat of (articleStatsByDomain || [])) {
+      if (stat.domainId) {
+        articleStatsMap.set(stat.domainId, {
+          articles: stat._count?.id || 0,
+          views: stat._sum?.viewCount || 0
+        });
+      }
+    }
+
+    // Count unique authors per tenant
+    const reporterCountByTenant = new Map<string, number>();
+    const authorsByTenant = new Map<string, Set<string>>();
+    for (const row of (reportersByTenant || [])) {
+      if (row.tenantId && row.authorId) {
+        if (!authorsByTenant.has(row.tenantId)) {
+          authorsByTenant.set(row.tenantId, new Set());
+        }
+        authorsByTenant.get(row.tenantId)!.add(row.authorId);
+      }
+    }
+    for (const [tenantId, authors] of authorsByTenant) {
+      reporterCountByTenant.set(tenantId, authors.size);
+    }
+
+    // Build domain stats list
+    let summaryArticles = 0;
+    let summaryViews = 0;
+    let summaryReporters = 0;
+
+    const domainStatsList = allDomains.map((d: any) => {
+      const stats = articleStatsMap.get(d.id) || { articles: 0, views: 0 };
+      const reporters = reporterCountByTenant.get(d.tenantId) || 0;
+      
+      summaryArticles += stats.articles;
+      summaryViews += stats.views;
+
+      return {
+        domain: d.domain,
+        tenantId: d.tenantId,
+        tenantName: (d.tenant as any)?.name || null,
+        tenantSlug: (d.tenant as any)?.slug || null,
+        status: d.status,
+        stats: {
+          totalArticles: stats.articles,
+          totalViews: stats.views,
+          totalReporters: reporters
+        }
+      };
+    });
+
+    // Calculate unique reporters across all tenants
+    const allReporters = new Set<string>();
+    for (const authors of authorsByTenant.values()) {
+      for (const author of authors) {
+        allReporters.add(author);
+      }
+    }
+    summaryReporters = allReporters.size;
+
+    // Sort by total views descending
+    domainStatsList.sort((a: any, b: any) => b.stats.totalViews - a.stats.totalViews);
+
+    res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=600');
+    
+    res.json({
+      totalDomains: allDomains.length,
+      summary: {
+        totalArticles: summaryArticles,
+        totalViews: summaryViews,
+        totalReporters: summaryReporters
+      },
+      domains: domainStatsList
+    });
+  } catch (error) {
+    console.error('[all-domains/stats] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch domain statistics' });
+  }
+});
+
+/**
+ * @swagger
  * /public/ads:
  *   get:
  *     summary: Get website ads for the resolved domain
