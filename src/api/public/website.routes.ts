@@ -665,11 +665,21 @@ router.get('/features', async (_req, res) => {
 // TenantWebArticle -> card shape for website consumption
 function toCard(a: any) {
   const card = toWebArticleCardDto(a, { category: a.category, languageCode: a.language?.code || null });
+  // Best practice: Try multiple image sources for cover image
+  // Priority: coverImageUrl > contentJson.coverImage.url > contentJson.media.images[0] > first image in images array
+  const cj: any = a?.contentJson || {};
+  const coverImage = card.coverImageUrl 
+    || cj?.coverImage?.url 
+    || cj?.media?.images?.[0]?.url 
+    || cj?.media?.images?.[0]
+    || (Array.isArray(a?.images) && a.images[0]) 
+    || null;
+  
   return {
     id: card.id,
     slug: card.slug,
     title: card.title,
-    image: card.coverImageUrl,
+    image: coverImage,
     excerpt: card.excerpt,
     category: card.category ? { slug: card.category.slug, name: card.category.name } : null,
     publishedAt: card.publishedAt,
@@ -912,33 +922,45 @@ function toV1Article(a: any, imageTarget?: { w: number; h: number }) {
    *                             coverImage: { url: "https://cdn.example.com/cover.webp", w: 900, h: 506 }
    *                             publishedAt: "2025-12-28T10:00:00.000Z"
   *               style2V2:
-  *                 summary: Style2 v2 contract (use ?shape=style2&v=2)
+  *                 summary: Style2 v2.1 contract with analytics-based sections (use ?shape=style2&v=2)
   *                 value:
-  *                   version: "2.0"
+  *                   version: "2.1"
   *                   tenant: { id: "t1", slug: "demo", name: "Kaburlu Demo" }
   *                   theme: { key: "style2" }
+  *                   feeds:
+  *                     latest: { kind: "latest", limit: 20, items: [] }
+  *                     mostRead: { kind: "mostRead", metric: "viewCount", limit: 5, items: [] }
+  *                     ticker: { kind: "ticker", limit: 10, items: [] }
+  *                     breaking: { kind: "breaking", limit: 10, items: [] }
+  *                   adPlacements:
+  *                     - { id: "ad_ticker_top", position: "ticker_top", type: "leaderboard", size: "728x90" }
+  *                     - { id: "ad_hero_sidebar", position: "hero_sidebar", type: "rectangle", size: "300x250" }
   *                   sections:
   *                     - id: "flashTicker"
   *                       type: "flashTicker"
   *                       label: "Flash News"
-  *                       query: { kind: "latest", limit: 10 }
-  *                     - id: "toiGrid3"
-  *                       type: "toiGrid3"
-  *                       label: "Top Stories"
-  *                       query:
-  *                         kind: "toiGrid3"
-  *                         left: { kind: "category", categorySlug: "politics", limit: 12 }
-  *                         center: { kind: "latest", limit: 6 }
-  *                         rightLatest: { kind: "latest", label: "Latest News", limit: 8, offset: 6 }
-  *                         rightMostRead: { kind: "mostRead", label: "Most Read", metric: "viewCount", limit: 8 }
+  *                     - id: "heroFeature"
+  *                       type: "heroFeature"
+  *                       label: "Featured"
+  *                     - id: "trendingWidget"
+  *                       type: "trendingWidget"
+  *                       label: "Trending News"
+  *                     - id: "magazineGrid"
+  *                       type: "magazineGrid"
+  *                       themeColor: "emerald"
   *                   data:
   *                     flashTicker: []
-  *                     toiGrid3:
-  *                       left: { category: { slug: "politics", name: "Politics", href: "/category/politics" }, items: [] }
-  *                       center: []
-  *                       right:
-  *                         latest: { label: "Latest News", kind: "latest", items: [] }
-  *                         mostRead: { label: "Most Read", kind: "mostRead", metric: "viewCount", items: [] }
+  *                     heroFeature: { id: "...", title: "...", image: "..." }
+  *                     secondaryCards: []
+  *                     trendingWidget: []
+  *                     latestNewsWidget: []
+  *                     breaking: []
+  *                     magazineGrid: { category: { slug: "politics", name: "Politics" }, items: [], analytics: { articleCount: 50, totalViews: 1200, score: 112 } }
+  *                   analytics:
+  *                     categoryRanking:
+  *                       - { slug: "politics", name: "Politics", articleCount: 50, totalViews: 1200, score: 112, usedInSection: true }
+  *                     totalCategoriesUsed: 8
+  *                     totalArticlesDeduped: 45
  *       500:
  *         description: Domain context missing
  */
@@ -1663,8 +1685,126 @@ router.get('/homepage', async (_req, res) => {
 
   // Style2 v2: one-API response that matches the common "Style2 sections" (flashTicker, toiGrid3, topStoriesGrid, section3, section4)
   // Controlled by TenantTheme.homepageConfig.style2.v2.sections[] and fetched from the same backend DB.
+  // 
+  // ENHANCED (v2.1): Analytics-based category ranking
+  // - Categories are ranked by: article count + total views
+  // - Each category is used only once across all sections
+  // - Sections: FlashTicker, HeroFeature, SecondaryCards, TrendingWidget, LatestNewsWidget,
+  //             MagazineGrid, HorizontalCards, Spotlight, NewspaperColumns, PhotoGallery, Timeline, CompactLists
   if (wantsStyle2V2) {
     res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+
+    // ============================================================
+    // ANALYTICS-BASED CATEGORY RANKING
+    // Rank categories by: (articleCount * 2) + (totalViews / 100)
+    // This prioritizes categories with both high content volume and engagement
+    // ============================================================
+    type CategoryAnalytics = {
+      categoryId: string;
+      slug: string;
+      name: string;
+      translatedName: string | null;
+      articleCount: number;
+      totalViews: number;
+      score: number;
+    };
+
+    const categoryAnalyticsMap = new Map<string, CategoryAnalytics>();
+    
+    // OPTIMIZED: Fetch analytics for all categories in a single groupBy query
+    // This replaces the slow sequential aggregate() calls
+    const domainCategoryIds = (domainCats || [])
+      .map((dc: any) => dc?.category?.id)
+      .filter(Boolean) as string[];
+
+    if (domainCategoryIds.length > 0) {
+      // Single query to get article count and view sum per category
+      const categoryStats = await p.tenantWebArticle.groupBy({
+        by: ['categoryId'],
+        where: {
+          tenantId: tenant.id,
+          status: 'PUBLISHED',
+          categoryId: { in: domainCategoryIds },
+          ...(domainScope && typeof domainScope === 'object' && Object.keys(domainScope).length ? domainScope : {}),
+          ...(languageId ? { OR: [{ languageId }, { languageId: null }] } : {})
+        },
+        _count: { id: true },
+        _sum: { viewCount: true }
+      }).catch(() => []);
+
+      // Build a lookup map from the groupBy results
+      const statsMap = new Map<string, { count: number; views: number }>();
+      for (const stat of categoryStats) {
+        if (stat.categoryId) {
+          statsMap.set(stat.categoryId, {
+            count: stat._count?.id || 0,
+            views: stat._sum?.viewCount || 0
+          });
+        }
+      }
+
+      // Now populate categoryAnalyticsMap using the pre-fetched stats
+      for (const dc of (domainCats || []) as any[]) {
+        const cat = dc?.category;
+        if (!cat?.id || !cat?.slug) continue;
+        
+        const catId = String(cat.id);
+        const slug = String(cat.slug);
+        const name = String(cat.name || slug);
+        const translatedName = translatedNameByCategoryId.get(catId) || null;
+
+        const stats = statsMap.get(catId) || { count: 0, views: 0 };
+        const articleCount = stats.count;
+        const totalViews = stats.views;
+        // Score formula: prioritize categories with content volume + engagement
+        const score = (articleCount * 2) + Math.floor(totalViews / 100);
+
+        categoryAnalyticsMap.set(slug, {
+          categoryId: catId,
+          slug,
+          name,
+          translatedName,
+          articleCount,
+          totalViews,
+          score
+        });
+      }
+    }
+
+    // Sort categories by score (highest first)
+    const rankedCategories = Array.from(categoryAnalyticsMap.values())
+      .filter(c => c.articleCount > 0) // Only include categories with content
+      .sort((a, b) => b.score - a.score);
+
+    // Track used categories to ensure each is used only once
+    const usedCategorySlugs = new Set<string>();
+    
+    // Helper to get next best available category
+    function getNextBestCategory(): CategoryAnalytics | null {
+      for (const cat of rankedCategories) {
+        if (!usedCategorySlugs.has(cat.slug)) {
+          return cat;
+        }
+      }
+      return null;
+    }
+
+    // Helper to mark category as used
+    function markCategoryUsed(slug: string) {
+      usedCategorySlugs.add(slug);
+    }
+
+    // Helper to get multiple categories (for multi-category sections)
+    function getNextBestCategories(count: number): CategoryAnalytics[] {
+      const result: CategoryAnalytics[] = [];
+      for (const cat of rankedCategories) {
+        if (result.length >= count) break;
+        if (!usedCategorySlugs.has(cat.slug)) {
+          result.push(cat);
+        }
+      }
+      return result;
+    }
 
     const defaultV2Sections: any[] = [
       { key: 'flashTicker', label: 'Flash News', limit: 10 },
@@ -1820,63 +1960,285 @@ router.get('/homepage', async (_req, res) => {
         ? String((toiGrid3 as any).rightMostReadLabel).trim()
         : 'Most Read';
 
-    const navSlugs = resolveNavCategorySlugs(25);
-    const leftCategorySlug =
-      typeof toiGrid3?.leftCategorySlug === 'string' && toiGrid3.leftCategorySlug.trim()
+    // Use analytics-based category ranking instead of nav order
+    const navSlugs = rankedCategories.map(c => c.slug);
+    
+    // Select best category for left panel (highest ranked)
+    const topCategory = getNextBestCategory();
+    const leftCategorySlug = topCategory?.slug || 
+      (typeof toiGrid3?.leftCategorySlug === 'string' && toiGrid3.leftCategorySlug.trim()
         ? toiGrid3.leftCategorySlug.trim()
-        : (navSlugs[0] || null);
+        : (navSlugs[0] || null));
+    if (leftCategorySlug) markCategoryUsed(leftCategorySlug);
 
     const topStoriesLimit = clampInt(topStoriesGrid?.limit, 1, 50, 9);
 
+    // Get next 3 best categories for section3 (category boxes)
     const section3PerCategoryLimit = clampInt(section3?.perCategoryLimit, 1, 50, 5);
-    const section3Slugs = Array.isArray(section3?.categorySlugs)
-      ? (section3.categorySlugs as any[]).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean).slice(0, 3)
-      : navSlugs.slice(0, 3);
+    const section3Categories = getNextBestCategories(3);
+    const section3Slugs = section3Categories.map(c => c.slug);
+    section3Slugs.forEach(markCategoryUsed);
 
+    // Get remaining categories for section4 grid
     const rows = clampInt(section4?.rows, 1, 10, 3);
     const cols = clampInt(section4?.cols, 1, 10, 3);
     const section4PerCategoryLimit = clampInt(section4?.perCategoryLimit, 1, 50, 5);
     const gridCount = Math.min(rows * cols, 25);
-    const gridSlugs = navSlugs.slice(0, gridCount);
+    const section4Categories = getNextBestCategories(gridCount);
+    const gridSlugs = section4Categories.map(c => c.slug);
+    gridSlugs.forEach(markCategoryUsed);
 
-    const [tickerItems, toiCenter, toiRightLatest] = await Promise.all([
-      fetchLatestCards(flashTickerLimit, 0),
-      fetchLatestCards(centerLimit, 0),
-      fetchLatestCards(rightLatestLimit, centerLimit)
-    ]);
+    // ============================================================
+    // STYLE2 LAYOUT SECTIONS (matching frontend theme components)
+    // ============================================================
+    
+    // Global article deduplication
+    const globalUsedArticleIds = new Set<string>();
+    
+    // Helper to deduplicate articles
+    function dedupeCards(cards: any[], limit: number): any[] {
+      const result: any[] = [];
+      for (const card of cards) {
+        if (result.length >= limit) break;
+        if (!card?.id) continue;
+        if (globalUsedArticleIds.has(String(card.id))) continue;
+        globalUsedArticleIds.add(String(card.id));
+        result.push(card);
+      }
+      return result;
+    }
 
-    const excludeMostRead = new Set<string>();
-    for (const c of toiCenter) if (c?.id) excludeMostRead.add(String(c.id));
-    for (const c of toiRightLatest) if (c?.id) excludeMostRead.add(String(c.id));
-    const toiRightMostRead = await fetchMostReadCards(rightMostReadLimit, excludeMostRead);
+    // 1. FLASH TICKER (breaking + latest news scroll)
+    const tickerItems = await fetchLatestCards(flashTickerLimit + 10, 0);
+    const dedupedTickerItems = dedupeCards(tickerItems, flashTickerLimit);
 
+    // 2. HERO FEATURE (1 main article) + SECONDARY CARDS (4 articles)
+    const heroItems = await fetchLatestCards(10, 0);
+    const dedupedHeroItems = dedupeCards(heroItems, 1);
+    const secondaryItems = await fetchLatestCards(15, 1);
+    const dedupedSecondaryItems = dedupeCards(secondaryItems, 4);
+
+    // 3. TRENDING WIDGET (sidebar - most viewed)
+    const trendingItems = await fetchMostReadCards(10, globalUsedArticleIds);
+    const dedupedTrendingItems = dedupeCards(trendingItems, 5);
+
+    // 4. LATEST NEWS WIDGET (sidebar)
+    const latestWidgetItems = await fetchLatestCards(20, 10);
+    const dedupedLatestWidgetItems = dedupeCards(latestWidgetItems, 6);
+
+    // 5. BREAKING NEWS
+    const breakingItems = bestPracticeBreaking.filter((item: any) => 
+      !globalUsedArticleIds.has(String(item?.id))
+    ).slice(0, 5);
+    breakingItems.forEach((item: any) => { if (item?.id) globalUsedArticleIds.add(String(item.id)); });
+
+    // 6. TOI GRID (center latest + most read)
+    const toiCenter = await fetchLatestCards(centerLimit + 5, 0);
+    const dedupedToiCenter = dedupeCards(toiCenter, centerLimit);
+    
+    const toiRightLatest = await fetchLatestCards(rightLatestLimit + 5, centerLimit);
+    const dedupedToiRightLatest = dedupeCards(toiRightLatest, rightLatestLimit);
+    
+    const toiRightMostRead = await fetchMostReadCards(rightMostReadLimit + 5, globalUsedArticleIds);
+    const dedupedToiRightMostRead = dedupeCards(toiRightMostRead, rightMostReadLimit);
+
+    // 7. LEFT CATEGORY PANEL (best category)
     const leftCategory = leftCategorySlug ? categoryBySlug.get(leftCategorySlug) || null : null;
     const toiLeftItems = leftCategorySlug
-      ? await fetchCategoryCards(leftCategorySlug, 12)
+      ? await fetchCategoryCards(leftCategorySlug, 15)
       : [];
+    const dedupedToiLeftItems = dedupeCards(toiLeftItems, 12);
 
-    const topStoriesItems = await fetchLatestCards(topStoriesLimit, 0);
+    // 8. TOP STORIES GRID
+    const topStoriesItems = await fetchLatestCards(topStoriesLimit + 5, 0);
+    const dedupedTopStoriesItems = dedupeCards(topStoriesItems, topStoriesLimit);
 
+    // ============================================================
+    // STYLE2 CATEGORY SECTIONS (using analytics-ranked categories)
+    // OPTIMIZED: Fetch all category articles in parallel using Promise.all
+    // ============================================================
+
+    // Collect all category slugs we need to fetch
+    const allCategorySlugsToFetch = [
+      ...section3Slugs,
+      ...gridSlugs
+    ];
+
+    // Fetch all category items in parallel
+    const categoryItemsResults = await Promise.all(
+      allCategorySlugsToFetch.map(async (slug) => {
+        const cat = categoryBySlug.get(slug) || null;
+        if (!cat) return { slug, items: [] };
+        const items = await fetchCategoryCards(slug, Math.max(section3PerCategoryLimit, section4PerCategoryLimit) + 3);
+        return { slug, items };
+      })
+    );
+
+    // Build lookup map for fetched items
+    const categoryItemsMap = new Map<string, any[]>();
+    for (const result of categoryItemsResults) {
+      categoryItemsMap.set(result.slug, result.items);
+    }
+
+    // Section 3: Category Boxes (3 columns)
     const section3Blocks: any[] = [];
     for (const slug of section3Slugs) {
       const cat = categoryBySlug.get(slug) || null;
+      const analytics = categoryAnalyticsMap.get(slug);
       if (!cat) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const items = await fetchCategoryCards(slug, section3PerCategoryLimit);
-      section3Blocks.push({ category: makeCategoryInfo(slug, cat), items });
+      const items = categoryItemsMap.get(slug) || [];
+      const dedupedItems = dedupeCards(items, section3PerCategoryLimit);
+      section3Blocks.push({ 
+        category: makeCategoryInfo(slug, cat),
+        analytics: analytics ? { articleCount: analytics.articleCount, totalViews: analytics.totalViews, score: analytics.score } : null,
+        items: dedupedItems 
+      });
     }
 
+    // Section 4: Category Grid (remaining categories) - use pre-fetched items
     const section4Cards: any[] = [];
     for (const slug of gridSlugs) {
       const cat = categoryBySlug.get(slug) || null;
+      const analytics = categoryAnalyticsMap.get(slug);
       if (!cat) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const items = await fetchCategoryCards(slug, section4PerCategoryLimit);
-      section4Cards.push({ category: makeCategoryInfo(slug, cat), items });
+      const items = categoryItemsMap.get(slug) || [];
+      const dedupedItems = dedupeCards(items, section4PerCategoryLimit);
+      section4Cards.push({ 
+        category: makeCategoryInfo(slug, cat),
+        analytics: analytics ? { articleCount: analytics.articleCount, totalViews: analytics.totalViews, score: analytics.score } : null,
+        items: dedupedItems 
+      });
     }
 
+    // ============================================================
+    // ADDITIONAL STYLE2 SECTIONS (Magazine, Spotlight, Timeline, etc.)
+    // ============================================================
+    
+    // Get more categories for additional sections
+    const magazineCategory = getNextBestCategory();
+    if (magazineCategory) markCategoryUsed(magazineCategory.slug);
+    
+    const spotlightCategory = getNextBestCategory();
+    if (spotlightCategory) markCategoryUsed(spotlightCategory.slug);
+    
+    const timelineCategory = getNextBestCategory();
+    if (timelineCategory) markCategoryUsed(timelineCategory.slug);
+    
+    const photoGalleryCategory = getNextBestCategory();
+    if (photoGalleryCategory) markCategoryUsed(photoGalleryCategory.slug);
+
+    // Compact Lists (2 columns with remaining categories)
+    const compactListCategories = getNextBestCategories(2);
+    compactListCategories.forEach(c => markCategoryUsed(c.slug));
+
+    // OPTIMIZED: Fetch all additional section items in parallel
+    const additionalSlugs = [
+      magazineCategory?.slug,
+      spotlightCategory?.slug,
+      timelineCategory?.slug,
+      photoGalleryCategory?.slug,
+      ...compactListCategories.map(c => c.slug)
+    ].filter(Boolean) as string[];
+
+    const additionalItemsResults = await Promise.all(
+      additionalSlugs.map(async (slug) => {
+        const items = await fetchCategoryCards(slug, 12);
+        return { slug, items };
+      })
+    );
+
+    const additionalItemsMap = new Map<string, any[]>();
+    for (const result of additionalItemsResults) {
+      additionalItemsMap.set(result.slug, result.items);
+    }
+
+    // Magazine Grid Section
+    let magazineGridData: any = null;
+    if (magazineCategory) {
+      const items = additionalItemsMap.get(magazineCategory.slug) || [];
+      const dedupedItems = dedupeCards(items, 6);
+      magazineGridData = {
+        category: makeCategoryInfo(magazineCategory.slug, categoryBySlug.get(magazineCategory.slug)),
+        analytics: { articleCount: magazineCategory.articleCount, totalViews: magazineCategory.totalViews, score: magazineCategory.score },
+        themeColor: 'emerald',
+        items: dedupedItems
+      };
+    }
+
+    // Spotlight Section
+    let spotlightData: any = null;
+    if (spotlightCategory) {
+      const items = additionalItemsMap.get(spotlightCategory.slug) || [];
+      const dedupedItems = dedupeCards(items, 5);
+      spotlightData = {
+        category: makeCategoryInfo(spotlightCategory.slug, categoryBySlug.get(spotlightCategory.slug)),
+        analytics: { articleCount: spotlightCategory.articleCount, totalViews: spotlightCategory.totalViews, score: spotlightCategory.score },
+        themeColor: 'amber',
+        items: dedupedItems
+      };
+    }
+
+    // Timeline Section
+    let timelineData: any = null;
+    if (timelineCategory) {
+      const items = additionalItemsMap.get(timelineCategory.slug) || [];
+      const dedupedItems = dedupeCards(items, 8);
+      timelineData = {
+        category: makeCategoryInfo(timelineCategory.slug, categoryBySlug.get(timelineCategory.slug)),
+        analytics: { articleCount: timelineCategory.articleCount, totalViews: timelineCategory.totalViews, score: timelineCategory.score },
+        themeColor: 'indigo',
+        items: dedupedItems
+      };
+    }
+
+    // Photo Gallery Section  
+    let photoGalleryData: any = null;
+    if (photoGalleryCategory) {
+      const items = additionalItemsMap.get(photoGalleryCategory.slug) || [];
+      const dedupedItems = dedupeCards(items, 9);
+      photoGalleryData = {
+        category: makeCategoryInfo(photoGalleryCategory.slug, categoryBySlug.get(photoGalleryCategory.slug)),
+        analytics: { articleCount: photoGalleryCategory.articleCount, totalViews: photoGalleryCategory.totalViews, score: photoGalleryCategory.score },
+        themeColor: 'rose',
+        items: dedupedItems
+      };
+    }
+
+    // Compact Lists Data
+    const compactListsData: any[] = [];
+    for (const cat of compactListCategories) {
+      const items = additionalItemsMap.get(cat.slug) || [];
+      const dedupedItems = dedupeCards(items, 6);
+      compactListsData.push({
+        category: makeCategoryInfo(cat.slug, categoryBySlug.get(cat.slug)),
+        analytics: { articleCount: cat.articleCount, totalViews: cat.totalViews, score: cat.score },
+        items: dedupedItems
+      });
+    }
+
+    // ============================================================
+    // AD PLACEMENTS (Style2 layout positions)
+    // ============================================================
+    const adPlacements = [
+      { id: 'ad_ticker_top', position: 'ticker_top', type: 'leaderboard', size: '728x90', description: 'Above flash ticker' },
+      { id: 'ad_hero_sidebar', position: 'hero_sidebar', type: 'rectangle', size: '300x250', description: 'Right sidebar next to hero' },
+      { id: 'ad_between_sections_1', position: 'after_hero', type: 'leaderboard', size: '728x90', description: 'After hero section' },
+      { id: 'ad_sidebar_sticky', position: 'sidebar_sticky', type: 'rectangle', size: '300x600', description: 'Sticky sidebar ad' },
+      { id: 'ad_between_sections_2', position: 'after_section3', type: 'leaderboard', size: '728x90', description: 'After category boxes' },
+      { id: 'ad_inline_content', position: 'inline_content', type: 'native', size: 'fluid', description: 'Within article cards' },
+      { id: 'ad_footer_banner', position: 'footer', type: 'leaderboard', size: '728x90', description: 'Above footer' },
+      { id: 'ad_mobile_sticky', position: 'mobile_sticky', type: 'mobile_banner', size: '320x50', description: 'Mobile sticky bottom' }
+    ];
+
+    // ============================================================
+    // BUILD RESPONSE - STYLE2 LAYOUT STRUCTURE
+    // ============================================================
     const sections = [
       { id: 'flashTicker', type: 'flashTicker', label: String(flashTicker?.label || 'Flash News'), query: { kind: 'latest', limit: flashTickerLimit } },
+      { id: 'heroFeature', type: 'heroFeature', label: 'Featured', query: { kind: 'latest', limit: 1 } },
+      { id: 'secondaryCards', type: 'secondaryCards', label: 'Top Stories', query: { kind: 'latest', limit: 4 } },
+      { id: 'trendingWidget', type: 'trendingWidget', label: 'ట్రెండింగ్ వార్తలు', labelEn: 'Trending News', query: { kind: 'mostRead', limit: 5 } },
+      { id: 'latestNewsWidget', type: 'latestNewsWidget', label: 'తాజా వార్తలు', labelEn: 'Latest News', query: { kind: 'latest', limit: 6 } },
       {
         id: 'toiGrid3',
         type: 'toiGrid3',
@@ -1885,53 +2247,75 @@ router.get('/homepage', async (_req, res) => {
           kind: 'toiGrid3',
           left: { kind: 'category', categorySlug: leftCategorySlug, limit: 12 },
           center: { kind: 'latest', limit: centerLimit },
-          // "Most Read" uses TenantWebArticle.viewCount (incremented when article detail is fetched).
           rightLatest: { kind: 'latest', label: rightLatestLabel, limit: rightLatestLimit, offset: centerLimit },
-          rightMostRead: {
-            kind: 'mostRead',
-            label: rightMostReadLabel,
-            limit: rightMostReadLimit,
-            metric: 'viewCount'
-          }
+          rightMostRead: { kind: 'mostRead', label: rightMostReadLabel, limit: rightMostReadLimit, metric: 'viewCount' }
         }
       },
       { id: 'topStoriesGrid', type: 'topStoriesGrid', label: String(topStoriesGrid?.label || 'Top Stories'), query: { kind: 'latest', limit: topStoriesLimit } },
-      {
-        id: 'section3',
-        type: 'section3',
-        label: String(section3?.label || 'More News'),
-        query: { kind: 'categories', categorySlugs: section3Slugs, perCategoryLimit: section3PerCategoryLimit }
-      },
-      {
-        id: 'section4',
-        type: 'section4',
-        label: String(section4?.label || 'Categories'),
-        query: { kind: 'categoriesGrid', rows, cols, categorySlugs: gridSlugs, perCategoryLimit: section4PerCategoryLimit }
-      }
-    ];
+      { id: 'categoryBoxes3Col', type: 'categoryBoxes3Col', label: 'Categories', query: { kind: 'categories', categorySlugs: section3Slugs, perCategoryLimit: section3PerCategoryLimit } },
+      { id: 'magazineGrid', type: 'magazineGrid', label: magazineCategory?.translatedName || magazineCategory?.name || 'Magazine', themeColor: 'emerald', categorySlug: magazineCategory?.slug },
+      { id: 'spotlight', type: 'spotlight', label: spotlightCategory?.translatedName || spotlightCategory?.name || 'Spotlight', themeColor: 'amber', categorySlug: spotlightCategory?.slug },
+      { id: 'timeline', type: 'timeline', label: timelineCategory?.translatedName || timelineCategory?.name || 'Timeline', themeColor: 'indigo', categorySlug: timelineCategory?.slug },
+      { id: 'photoGallery', type: 'photoGallery', label: photoGalleryCategory?.translatedName || photoGalleryCategory?.name || 'Photo Gallery', themeColor: 'rose', categorySlug: photoGalleryCategory?.slug },
+      { id: 'categoryGrid', type: 'categoryGrid', label: String(section4?.label || 'Categories'), query: { kind: 'categoriesGrid', rows, cols, categorySlugs: gridSlugs, perCategoryLimit: section4PerCategoryLimit } },
+      { id: 'compactLists2Col', type: 'compactLists2Col', label: 'More News', categorySlugs: compactListCategories.map(c => c.slug) }
+    ].filter(s => {
+      // Filter out sections that don't have data
+      if (s.id === 'magazineGrid' && !magazineGridData) return false;
+      if (s.id === 'spotlight' && !spotlightData) return false;
+      if (s.id === 'timeline' && !timelineData) return false;
+      if (s.id === 'photoGallery' && !photoGalleryData) return false;
+      if (s.id === 'compactLists2Col' && compactListsData.length === 0) return false;
+      return true;
+    });
 
     const data = {
-      flashTicker: tickerItems,
+      flashTicker: dedupedTickerItems,
+      heroFeature: dedupedHeroItems[0] || null,
+      secondaryCards: dedupedSecondaryItems,
+      trendingWidget: dedupedTrendingItems,
+      latestNewsWidget: dedupedLatestWidgetItems,
+      breaking: breakingItems,
       toiGrid3: {
         left: leftCategorySlug
           ? {
               category: makeCategoryInfo(leftCategorySlug, leftCategory),
-              items: toiLeftItems.length ? toiLeftItems : []
+              analytics: categoryAnalyticsMap.get(leftCategorySlug) ? {
+                articleCount: categoryAnalyticsMap.get(leftCategorySlug)!.articleCount,
+                totalViews: categoryAnalyticsMap.get(leftCategorySlug)!.totalViews,
+                score: categoryAnalyticsMap.get(leftCategorySlug)!.score
+              } : null,
+              items: dedupedToiLeftItems
             }
           : { category: null, items: [] },
-        center: toiCenter,
+        center: dedupedToiCenter,
         right: {
-          latest: { label: rightLatestLabel, kind: 'latest', items: toiRightLatest },
-          mostRead: { label: rightMostReadLabel, kind: 'mostRead', metric: 'viewCount', items: toiRightMostRead }
+          latest: { label: rightLatestLabel, kind: 'latest', items: dedupedToiRightLatest },
+          mostRead: { label: rightMostReadLabel, kind: 'mostRead', metric: 'viewCount', items: dedupedToiRightMostRead }
         }
       },
-      topStoriesGrid: topStoriesItems,
-      section3: section3Blocks,
-      section4: { rows, cols, cards: section4Cards }
+      topStoriesGrid: dedupedTopStoriesItems,
+      categoryBoxes3Col: section3Blocks,
+      magazineGrid: magazineGridData,
+      spotlight: spotlightData,
+      timeline: timelineData,
+      photoGallery: photoGalleryData,
+      categoryGrid: { rows, cols, cards: section4Cards },
+      compactLists2Col: compactListsData
     };
 
+    // Category analytics summary for debugging/insights
+    const categoryAnalyticsSummary = rankedCategories.slice(0, 15).map(c => ({
+      slug: c.slug,
+      name: c.translatedName || c.name,
+      articleCount: c.articleCount,
+      totalViews: c.totalViews,
+      score: c.score,
+      usedInSection: usedCategorySlugs.has(c.slug)
+    }));
+
     return res.json({
-      version: '2.0',
+      version: '2.1',
       tenant: {
         id: tenant.id,
         slug: tenant.slug,
@@ -1942,8 +2326,14 @@ router.get('/homepage', async (_req, res) => {
       },
       theme: { key: 'style2' },
       feeds,
+      adPlacements,
       sections,
-      data
+      data,
+      analytics: {
+        categoryRanking: categoryAnalyticsSummary,
+        totalCategoriesUsed: usedCategorySlugs.size,
+        totalArticlesDeduped: globalUsedArticleIds.size
+      }
     });
   }
 
