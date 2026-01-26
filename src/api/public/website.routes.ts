@@ -385,6 +385,235 @@ router.get('/domain/settings', async (req, res) => {
 
 /**
  * @swagger
+ * /public/domain/stats:
+ *   get:
+ *     summary: Get domain statistics (articles, views, reporters)
+ *     description: |
+ *       Returns public statistics for the resolved domain including:
+ *       - Total published articles count
+ *       - Total views count (sum of all article viewCount)
+ *       - Total reporters count
+ *       - Articles by category breakdown
+ *       - Top performing articles by views
+ *     tags: [Public - Website]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema:
+ *           type: string
+ *           example: news.kaburlu.com
+ *       - in: query
+ *         name: domain
+ *         required: false
+ *         description: Optional domain override.
+ *         schema:
+ *           type: string
+ *           example: daxintimes.com
+ *     responses:
+ *       200:
+ *         description: Domain statistics
+ *         content:
+ *           application/json:
+ *             examples:
+ *               sample:
+ *                 value:
+ *                   domain: "daxintimes.com"
+ *                   tenantId: "cmidgq4v80004ugv8dtqv4ijk"
+ *                   stats:
+ *                     totalArticles: 150
+ *                     totalViews: 25000
+ *                     totalReporters: 12
+ *                     articlesToday: 5
+ *                     viewsToday: 1200
+ *                   categoryBreakdown:
+ *                     - slug: "politics"
+ *                       name: "రాజకీయాలు"
+ *                       articleCount: 50
+ *                       totalViews: 8000
+ *                     - slug: "crime"
+ *                       name: "క్రైమ్"
+ *                       articleCount: 35
+ *                       totalViews: 5500
+ *                   topArticles:
+ *                     - id: "article_1"
+ *                       title: "Top Article"
+ *                       viewCount: 1500
+ *                       category: { slug: "politics", name: "Politics" }
+ *       500:
+ *         description: Domain context missing
+ */
+router.get('/domain/stats', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+
+  try {
+    // Build domain scope filter
+    const domainScope: any = domain?.id
+      ? { OR: [{ domainId: domain.id }, { domainId: null }] }
+      : {};
+    
+    const baseWhere: any = { 
+      tenantId: tenant.id, 
+      status: 'PUBLISHED',
+      ...(domain?.id ? domainScope : {})
+    };
+
+    // Calculate today's date range
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // Fetch all stats in parallel for performance
+    const [
+      articleStats,
+      todayArticleStats,
+      categoryStats,
+      reporterCount,
+      topArticles,
+      domainCats
+    ] = await Promise.all([
+      // Total articles and views
+      p.tenantWebArticle.aggregate({
+        where: baseWhere,
+        _count: { id: true },
+        _sum: { viewCount: true }
+      }).catch(() => ({ _count: { id: 0 }, _sum: { viewCount: 0 } })),
+      
+      // Today's articles and views
+      p.tenantWebArticle.aggregate({
+        where: {
+          ...baseWhere,
+          publishedAt: { gte: todayStart, lte: todayEnd }
+        },
+        _count: { id: true },
+        _sum: { viewCount: true }
+      }).catch(() => ({ _count: { id: 0 }, _sum: { viewCount: 0 } })),
+      
+      // Category breakdown with article count and views
+      p.tenantWebArticle.groupBy({
+        by: ['categoryId'],
+        where: baseWhere,
+        _count: { id: true },
+        _sum: { viewCount: true }
+      }).catch(() => []),
+      
+      // Total reporters count (users who have authored articles)
+      p.tenantWebArticle.groupBy({
+        by: ['authorId'],
+        where: { ...baseWhere, authorId: { not: null } },
+        _count: { id: true }
+      }).then((res: any[]) => res.length).catch(() => 0),
+      
+      // Top 10 articles by views
+      p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: { viewCount: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          viewCount: true,
+          publishedAt: true,
+          category: { select: { slug: true, name: true } }
+        }
+      }).catch(() => []),
+      
+      // Domain categories for translation
+      domain?.id 
+        ? p.domainCategory.findMany({ 
+            where: { domainId: domain.id }, 
+            include: { category: true } 
+          }).catch(() => [])
+        : Promise.resolve([])
+    ]);
+
+    // Get category info for breakdown
+    const categoryIds = (categoryStats || [])
+      .map((s: any) => s.categoryId)
+      .filter(Boolean);
+    
+    const categories = categoryIds.length > 0
+      ? await p.category.findMany({
+          where: { id: { in: categoryIds } },
+          select: { id: true, slug: true, name: true }
+        }).catch(() => [])
+      : [];
+    
+    const categoryById = new Map<string, any>(
+      (categories || []).map((c: any) => [c.id, c])
+    );
+
+    // Get category translations if tenant has a language
+    const tenantEntity = await p.tenantEntity?.findUnique?.({ 
+      where: { tenantId: tenant.id }, 
+      include: { language: true } 
+    }).catch(() => null);
+    
+    const langCode = (tenantEntity as any)?.language?.code || null;
+    const categoryTranslations = langCode && categoryIds.length > 0
+      ? await p.categoryTranslation.findMany({
+          where: { language: langCode, categoryId: { in: categoryIds } }
+        }).catch(() => [])
+      : [];
+    
+    const translatedNameById = new Map<string, string>(
+      (categoryTranslations || []).map((t: any) => [t.categoryId, t.name])
+    );
+
+    // Build category breakdown with names
+    const categoryBreakdown = (categoryStats || [])
+      .map((s: any) => {
+        const cat = categoryById.get(s.categoryId);
+        if (!cat) return null;
+        return {
+          slug: cat.slug,
+          name: translatedNameById.get(s.categoryId) || cat.name,
+          articleCount: s._count?.id || 0,
+          totalViews: s._sum?.viewCount || 0
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => b.totalViews - a.totalViews);
+
+    // Format top articles
+    const formattedTopArticles = (topArticles || []).map((a: any) => ({
+      id: a.id,
+      slug: a.slug,
+      title: a.title,
+      viewCount: a.viewCount || 0,
+      publishedAt: a.publishedAt ? new Date(a.publishedAt).toISOString() : null,
+      category: a.category ? { slug: a.category.slug, name: a.category.name } : null
+    }));
+
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+    
+    res.json({
+      domain: domain?.domain || null,
+      tenantId: tenant.id,
+      tenantName: (tenant as any).displayName || tenant.name,
+      stats: {
+        totalArticles: articleStats._count?.id || 0,
+        totalViews: articleStats._sum?.viewCount || 0,
+        totalReporters: reporterCount || 0,
+        articlesToday: todayArticleStats._count?.id || 0,
+        viewsToday: todayArticleStats._sum?.viewCount || 0
+      },
+      categoryBreakdown,
+      topArticles: formattedTopArticles
+    });
+  } catch (error) {
+    console.error('[domain/stats] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch domain statistics' });
+  }
+});
+
+/**
+ * @swagger
  * /public/ads:
  *   get:
  *     summary: Get website ads for the resolved domain
