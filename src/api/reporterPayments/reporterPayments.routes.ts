@@ -362,6 +362,153 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
 
 /**
  * @swagger
+ * /public/reporter-payments/verify:
+ *   post:
+ *     summary: Verify Razorpay payment (PUBLIC - no auth required)
+ *     description: |
+ *       Public endpoint for verifying Razorpay payments without JWT authentication.
+ *       Used by mobile apps when reporter hasn't logged in yet (402 payment flow).
+ *       
+ *       The razorpay_order_id is used to look up the payment record and tenant context.
+ *       
+ *       On successful verification:
+ *       - Reporter's `paymentStatus` is updated to `PAID`
+ *       - `subscriptionExpiry` is set to 1 year from now
+ *       - Payment record status is updated to `SUCCESS`
+ *       - Returns success so app can retry login
+ *     tags: [Reporter Payments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - razorpay_order_id
+ *               - razorpay_payment_id
+ *               - razorpay_signature
+ *             properties:
+ *               razorpay_order_id:
+ *                 type: string
+ *                 description: Order ID from Razorpay
+ *                 example: "order_NxYz123456"
+ *               razorpay_payment_id:
+ *                 type: string
+ *                 description: Payment ID from Razorpay
+ *                 example: "pay_AbCd789012"
+ *               razorpay_signature:
+ *                 type: string
+ *                 description: HMAC SHA256 signature from Razorpay
+ *                 example: "9ef4dffbfd84f1318f6739a3ce19f9d85851857ae648f114332d8401e0949a3d"
+ *     responses:
+ *       200:
+ *         description: Payment verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Payment verified successfully. You can now login."
+ *                 reporter:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     paymentStatus:
+ *                       type: string
+ *                       example: "PAID"
+ *       400:
+ *         description: Invalid signature or missing parameters
+ *       404:
+ *         description: Payment record not found
+ */
+router.post('/public/reporter-payments/verify', async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'Missing required payment parameters' });
+    }
+
+    // Find the payment record by order ID (no tenantId/reporterId needed)
+    const paymentRecord = await (prisma as any).reporterPayment.findFirst({
+      where: { razorpayOrderId: razorpay_order_id },
+      include: { reporter: { select: { id: true, tenantId: true } } }
+    });
+
+    if (!paymentRecord) {
+      return res.status(404).json({ error: 'Payment record not found' });
+    }
+
+    const { tenantId, id: reporterId } = paymentRecord.reporter;
+
+    // Get Razorpay config for signature verification
+    const razorpayConfig = await getRazorpayConfigForTenant(tenantId);
+    if (!razorpayConfig?.keySecret) {
+      return res.status(500).json({ error: 'Razorpay configuration not found' });
+    }
+
+    // Verify signature
+    const body = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac('sha256', razorpayConfig.keySecret)
+      .update(body)
+      .digest('hex');
+
+    if (expectedSignature !== razorpay_signature) {
+      // Update payment status to FAILED
+      await (prisma as any).reporterPayment.update({
+        where: { id: paymentRecord.id },
+        data: { status: 'FAILED', razorpayPaymentId: razorpay_payment_id },
+      });
+      return res.status(400).json({ error: 'Invalid payment signature' });
+    }
+
+    // Signature valid - update payment and reporter
+    const subscriptionExpiry = new Date();
+    subscriptionExpiry.setFullYear(subscriptionExpiry.getFullYear() + 1);
+
+    const [updatedPayment, updatedReporter] = await (prisma as any).$transaction([
+      (prisma as any).reporterPayment.update({
+        where: { id: paymentRecord.id },
+        data: {
+          status: 'SUCCESS',
+          razorpayPaymentId: razorpay_payment_id,
+          paidAt: new Date(),
+        },
+      }),
+      (prisma as any).reporter.update({
+        where: { id: reporterId },
+        data: {
+          paymentStatus: 'PAID',
+          subscriptionExpiry,
+        },
+        select: {
+          id: true,
+          paymentStatus: true,
+          subscriptionExpiry: true,
+        },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Payment verified successfully. You can now login.',
+      reporter: updatedReporter,
+    });
+  } catch (e: any) {
+    console.error('public verify payment error', e);
+    res.status(500).json({ error: e.message || 'Failed to verify payment' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/{tenantId}/reporters/{id}/payments:
  *   get:
  *     summary: Get payment history for a reporter

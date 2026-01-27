@@ -15,6 +15,7 @@ import { GuestRegistrationDto } from './guest-registration.dto';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
+import { getRazorpayClientForTenant, getRazorpayConfigForTenant } from '../reporterPayments/razorpay.service';
 
 type TenantAdminLoginContext = {
   tenantId: string;
@@ -501,12 +502,103 @@ export const login = async (loginDto: MpinLoginDto) => {
 
       if (outstanding.length > 0) {
         console.log('[Auth] Payment gating triggered for reporter', reporter.id, 'Outstanding:', outstanding);
+        
+        // Auto-create Razorpay order for pending payments
+        let razorpayOrder: any = null;
+        let razorpayKeyId: string | null = null;
+        let reporterPaymentId: string | null = null;
+        
+        try {
+          // Calculate total outstanding amount
+          const totalAmount = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+          
+          if (totalAmount > 0) {
+            // Get Razorpay config
+            const razorpayConfig = await getRazorpayConfigForTenant(reporter.tenantId);
+            
+            if (razorpayConfig?.keyId) {
+              razorpayKeyId = razorpayConfig.keyId;
+              
+              // Check if there's already a PENDING payment record
+              const existingPendingPayment = await (prisma as any).reporterPayment.findFirst({
+                where: {
+                  reporterId: reporter.id,
+                  tenantId: reporter.tenantId,
+                  status: 'PENDING',
+                  expiresAt: { gt: new Date() }
+                },
+                orderBy: { createdAt: 'desc' }
+              });
+              
+              if (existingPendingPayment?.razorpayOrderId) {
+                // Reuse existing pending order
+                razorpayOrder = { id: existingPendingPayment.razorpayOrderId };
+                reporterPaymentId = existingPendingPayment.id;
+                console.log('[Auth] Reusing existing Razorpay order:', razorpayOrder.id);
+              } else {
+                // Create new Razorpay order
+                const razorpay = await getRazorpayClientForTenant(reporter.tenantId);
+                const now = new Date();
+                const year = now.getUTCFullYear();
+                const month = now.getUTCMonth() + 1;
+                
+                const shortReporterId = reporter.id.slice(0, 12);
+                let receipt = `REP-${shortReporterId}-${Date.now()}`;
+                if (receipt.length > 40) receipt = receipt.slice(0, 40);
+                
+                // Determine payment type
+                const hasOnboarding = outstanding.some(o => o.type === 'ONBOARDING');
+                const paymentType = hasOnboarding ? 'ONBOARDING' : 'MONTHLY_SUBSCRIPTION';
+                
+                razorpayOrder = await (razorpay as any).orders.create({
+                  amount: totalAmount, // amount in paise
+                  currency: 'INR',
+                  receipt,
+                  notes: { tenantId: reporter.tenantId, reporterId: reporter.id, type: paymentType },
+                });
+                
+                const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                
+                const paymentRecord = await (prisma as any).reporterPayment.create({
+                  data: {
+                    reporterId: reporter.id,
+                    tenantId: reporter.tenantId,
+                    type: paymentType,
+                    year,
+                    month,
+                    amount: totalAmount,
+                    currency: 'INR',
+                    status: 'PENDING',
+                    razorpayOrderId: razorpayOrder.id,
+                    meta: razorpayOrder,
+                    expiresAt,
+                  },
+                });
+                
+                reporterPaymentId = paymentRecord.id;
+                console.log('[Auth] Created Razorpay order:', razorpayOrder.id, 'for reporter:', reporter.id);
+              }
+            }
+          }
+        } catch (rpErr) {
+          console.error('[Auth] Failed to create Razorpay order for payment gating:', rpErr);
+          // Continue without Razorpay details - mobile app can call /payments/order manually
+        }
+        
         return {
           paymentRequired: true,
           code: 'PAYMENT_REQUIRED',
-            message: 'Reporter payments required before login',
+          message: 'Reporter payments required before login',
           reporter: { id: reporter.id, tenantId: reporter.tenantId },
-          outstanding
+          outstanding,
+          // Include Razorpay details for mobile app to directly open payment UI
+          razorpay: razorpayOrder ? {
+            orderId: razorpayOrder.id,
+            keyId: razorpayKeyId,
+            amount: outstanding.reduce((sum, o) => sum + (o.amount || 0), 0),
+            currency: 'INR',
+            reporterPaymentId
+          } : null
         };
       }
     }

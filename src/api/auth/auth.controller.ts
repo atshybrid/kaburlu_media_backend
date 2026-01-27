@@ -46,10 +46,11 @@ export const loginController = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     if (result.paymentRequired) {
-      // 402 Payment Required semantics; client should create orders via existing endpoints
+      // 402 Payment Required - includes Razorpay order details for immediate payment
       return res.status(402).json({ success: false, code: 'PAYMENT_REQUIRED', message: result.message || 'Payment required before login', data: {
         reporter: result.reporter,
-        outstanding: result.outstanding
+        outstanding: result.outstanding,
+        razorpay: result.razorpay || null // Contains orderId, keyId, amount for mobile app
       }});
     }
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
