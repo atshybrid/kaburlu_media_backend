@@ -617,19 +617,23 @@ const STYLE1_AD_SIZES = {
  *     description: |
  *       Returns the complete Style1 homepage layout with sections, ads, and category config.
  *       
- *       **Sections:**
- *       1. flashTicker - 12 articles
- *       2. heroSection - 26 articles (4 columns)
- *       3. heroAd1 - Ad after hero
- *       4. categorySection - 20 articles (4 categories × 5)
- *       5. categoryAd1 - Ad after categories
- *       6. webStories - 10 stories (optional)
+ *       ## Sections Summary
+ *       | # | Section | Articles | Description |
+ *       |---|---------|----------|-------------|
+ *       | 1 | flashTicker | 12 | Breaking news ticker |
+ *       | 2 | heroSection | 26 | 4-column hero grid |
+ *       | 3 | heroAd1 | - | Horizontal ad (728×90/970×250) |
+ *       | 4 | categorySection | 20 | 4 categories × 5 articles |
+ *       | 5 | categoryAd1 | - | Horizontal ad (728×90/970×250) |
+ *       | 6 | webStories | 10 | Web stories (optional) |
  *       
- *       **Hero Columns:**
- *       - col-1: Latest Hero (6: 1 hero + 2 medium + 3 small)
- *       - col-2: Latest List (8 rows)
- *       - col-3: Must Read (8 rows)
- *       - col-4: Top Articles (4 rows)
+ *       ## Hero Section Columns (26 articles)
+ *       | Column | Name | Articles | Layout |
+ *       |--------|------|----------|--------|
+ *       | col-1 | Latest Hero | 6 | 1 hero + 2 medium + 3 small |
+ *       | col-2 | Latest List | 8 | Vertical list |
+ *       | col-3 | Must Read | 8 | Labeled section |
+ *       | col-4 | Top Articles | 4 | Compact list |
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -637,25 +641,110 @@ const STYLE1_AD_SIZES = {
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     responses:
  *       200:
  *         description: Style1 layout configuration
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 layout:
- *                   type: object
- *                   properties:
- *                     themeKey: { type: string, example: "style1" }
- *                     sections: { type: array }
- *                 summary:
- *                   type: object
- *                   properties:
- *                     totalArticles: { type: number, example: 58 }
- *                     sections: { type: number, example: 6 }
- *                     ads: { type: number, example: 2 }
+ *             example:
+ *               layout:
+ *                 themeKey: style1
+ *                 sections:
+ *                   - id: section-1
+ *                     key: flashTicker
+ *                     name: Flash News Ticker
+ *                     isActive: true
+ *                     position: 1
+ *                     config:
+ *                       articlesLimit: 12
+ *                       autoScroll: true
+ *                       scrollSpeed: 5000
+ *                   - id: section-2
+ *                     key: heroSection
+ *                     name: Hero Grid
+ *                     isActive: true
+ *                     position: 2
+ *                     layout:
+ *                       type: grid
+ *                       columns:
+ *                         - key: col-1
+ *                           position: 1
+ *                           name: Latest Hero
+ *                           articlesLimit: 6
+ *                         - key: col-2
+ *                           position: 2
+ *                           name: Latest List
+ *                           articlesLimit: 8
+ *                         - key: col-3
+ *                           position: 3
+ *                           name: Must Read
+ *                           articlesLimit: 8
+ *                           label: Must Read
+ *                         - key: col-4
+ *                           position: 4
+ *                           name: Top Articles
+ *                           articlesLimit: 4
+ *                           label: Top Articles
+ *                   - id: section-3
+ *                     key: heroAd1
+ *                     name: Ad After Hero
+ *                     isActive: true
+ *                     position: 3
+ *                     type: ad
+ *                     config:
+ *                       adType: horizontal
+ *                       sizes: ["728x90", "970x250"]
+ *                       provider: google
+ *                       google:
+ *                         slot: null
+ *                         format: auto
+ *                         responsive: true
+ *                       local:
+ *                         enabled: false
+ *                         imageUrl: null
+ *                         clickUrl: null
+ *                   - id: section-4
+ *                     key: categorySection
+ *                     name: 4-Column Categories
+ *                     isActive: true
+ *                     position: 4
+ *                     config:
+ *                       categoriesCount: 4
+ *                       articlesPerCategory: 5
+ *                       categories: ["national", "entertainment", "politics", "sports"]
+ *                   - id: section-5
+ *                     key: categoryAd1
+ *                     name: Ad After Categories
+ *                     isActive: true
+ *                     position: 5
+ *                     type: ad
+ *                     config:
+ *                       adType: horizontal
+ *                       sizes: ["728x90", "970x250"]
+ *                       provider: google
+ *                   - id: section-6
+ *                     key: webStories
+ *                     name: Web Stories
+ *                     isActive: false
+ *                     position: 6
+ *                     config:
+ *                       storiesLimit: 10
+ *               summary:
+ *                 totalArticles: 58
+ *                 sections: 6
+ *                 ads: 2
+ *                 breakdown:
+ *                   flashTicker: 12
+ *                   heroSection: 26
+ *                   categorySection: 20
+ *               adSizes:
+ *                 horizontal:
+ *                   desktop: "970x250"
+ *                   mobile: "728x90"
+ *                 sidebar:
+ *                   desktop: "300x600"
+ *                   mobile: hidden
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
@@ -702,16 +791,20 @@ router.get(
  *     description: |
  *       Update Style1 homepage sections configuration.
  *       
- *       **Updatable fields per section:**
- *       - `isActive` - Enable/disable section
- *       - `config.categories` - Category slugs for categorySection
- *       - `config.provider` - Ad provider (google/local) for ad sections
- *       - `config.google` - Google AdSense config
- *       - `config.local` - Local ad config (imageUrl, clickUrl, schedule)
+ *       ## Updatable Sections
+ *       | Section | Updatable Fields |
+ *       |---------|------------------|
+ *       | flashTicker | isActive, autoScroll, scrollSpeed |
+ *       | heroSection | isActive |
+ *       | heroAd1 | isActive, provider, google, local |
+ *       | categorySection | isActive, categories (exactly 4) |
+ *       | categoryAd1 | isActive, provider, google, local |
+ *       | webStories | isActive, storiesLimit |
  *       
- *       **Category Section Rules:**
+ *       ## Category Section Rules
  *       - Exactly 4 category slugs required
- *       - 5 articles per category
+ *       - 5 articles displayed per category = 20 total
+ *       - Use Telugu slugs like: జాతీయం, వినోదం, రాజకీయాలు, క్రీడలు
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -719,12 +812,14 @@ router.get(
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [sections]
  *             properties:
  *               sections:
  *                 type: array
@@ -742,14 +837,41 @@ router.get(
  *                       type: object
  *           examples:
  *             updateCategories:
- *               summary: Update category section with Telugu slugs
+ *               summary: Update category section (Telugu slugs)
  *               value:
  *                 sections:
  *                   - key: categorySection
+ *                     isActive: true
+ *                     config:
+ *                       categories: ["జాతీయం", "వినోదం", "రాజకీయాలు", "క్రీడలు"]
+ *             updateCategoriesEnglish:
+ *               summary: Update category section (English slugs)
+ *               value:
+ *                 sections:
+ *                   - key: categorySection
+ *                     isActive: true
  *                     config:
  *                       categories: ["national", "entertainment", "politics", "sports"]
- *             updateAds:
- *               summary: Enable local ad for heroAd1
+ *             setupGoogleAds:
+ *               summary: Setup Google AdSense for both ad slots
+ *               value:
+ *                 sections:
+ *                   - key: heroAd1
+ *                     isActive: true
+ *                     config:
+ *                       provider: google
+ *                       google:
+ *                         slot: "ca-pub-1234567890/heroAd1"
+ *                         format: auto
+ *                         responsive: true
+ *                   - key: categoryAd1
+ *                     isActive: true
+ *                     config:
+ *                       provider: google
+ *                       google:
+ *                         slot: "ca-pub-1234567890/categoryAd1"
+ *             setupLocalAd:
+ *               summary: Setup local banner ad with schedule
  *               value:
  *                 sections:
  *                   - key: heroAd1
@@ -758,17 +880,28 @@ router.get(
  *                       provider: local
  *                       local:
  *                         enabled: true
- *                         imageUrl: "https://cdn.example.com/ads/banner.jpg"
- *                         clickUrl: "https://advertiser.com/offer"
- *                         alt: "Special Offer"
+ *                         imageUrl: "https://cdn.example.com/ads/diwali-sale-970x250.jpg"
+ *                         clickUrl: "https://advertiser.com/diwali-offer"
+ *                         alt: "Diwali Sale - 50% Off"
+ *                         schedule:
+ *                           startDate: "2026-01-25"
+ *                           endDate: "2026-02-15"
  *             disableWebStories:
  *               summary: Disable web stories section
  *               value:
  *                 sections:
  *                   - key: webStories
  *                     isActive: false
- *             fullUpdate:
- *               summary: Complete update with categories and ads
+ *             disableAds:
+ *               summary: Disable all ads
+ *               value:
+ *                 sections:
+ *                   - key: heroAd1
+ *                     isActive: false
+ *                   - key: categoryAd1
+ *                     isActive: false
+ *             completeSetup:
+ *               summary: Complete homepage setup (categories + ads)
  *               value:
  *                 sections:
  *                   - key: categorySection
@@ -787,11 +920,35 @@ router.get(
  *                       provider: google
  *                       google:
  *                         slot: "0987654321"
+ *                   - key: webStories
+ *                     isActive: false
  *     responses:
  *       200:
  *         description: Updated layout configuration
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               layout:
+ *                 themeKey: style1
+ *                 sections: "... (full sections array)"
+ *               summary:
+ *                 totalArticles: 58
+ *                 sections: 6
+ *                 ads: 2
  *       400:
  *         description: Validation error
+ *         content:
+ *           application/json:
+ *             examples:
+ *               categoryError:
+ *                 value:
+ *                   error: Validation failed
+ *                   details: ["categorySection requires exactly 4 categories"]
+ *               invalidSection:
+ *                 value:
+ *                   error: Validation failed
+ *                   details: ["Invalid section key: invalidKey"]
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
@@ -927,7 +1084,15 @@ router.put(
  * /tenant-theme/{tenantId}/homepage/style1/smart/reset:
  *   post:
  *     summary: Reset Style1 layout to defaults
- *     description: Resets the Style1 homepage layout to the default configuration.
+ *     description: |
+ *       Resets the Style1 homepage layout to the default configuration.
+ *       
+ *       **Default values after reset:**
+ *       - flashTicker: 12 articles, autoScroll enabled
+ *       - heroSection: 26 articles (6+8+8+4)
+ *       - categorySection: 4 default categories (national, entertainment, politics, sports)
+ *       - Both ads: enabled with Google provider
+ *       - webStories: disabled
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -935,9 +1100,18 @@ router.put(
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     responses:
  *       200:
  *         description: Layout reset to defaults
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Layout reset to defaults
+ *               layout:
+ *                 themeKey: style1
+ *                 sections: "... (default sections array)"
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
@@ -986,13 +1160,17 @@ router.post(
  *     description: |
  *       Returns ads configuration for Style1 homepage.
  *       
- *       **Ad Slots:**
- *       - heroAd1: After hero section (728×90 / 970×250)
- *       - categoryAd1: After category section (728×90 / 970×250)
+ *       ## Ad Slots
+ *       | Slot | Position | Sizes |
+ *       |------|----------|-------|
+ *       | heroAd1 | After hero section | 728×90 / 970×250 |
+ *       | categoryAd1 | After category section | 728×90 / 970×250 |
  *       
- *       **Providers:**
- *       - `google`: Google AdSense
- *       - `local`: Custom banner ads
+ *       ## Providers
+ *       | Provider | Description |
+ *       |----------|-------------|
+ *       | google | Google AdSense (requires slot ID) |
+ *       | local | Custom banner (imageUrl, clickUrl, schedule) |
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -1000,31 +1178,67 @@ router.post(
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     responses:
  *       200:
  *         description: Ads configuration
  *         content:
  *           application/json:
- *             example:
- *               ads:
- *                 heroAd1:
- *                   isActive: true
- *                   provider: google
- *                   sizes: ["728x90", "970x250"]
- *                   google:
- *                     slot: "1234567890"
- *                   local: null
- *                 categoryAd1:
- *                   isActive: true
- *                   provider: local
- *                   sizes: ["728x90", "970x250"]
- *                   google: null
- *                   local:
- *                     enabled: true
- *                     imageUrl: "https://cdn.example.com/ad.jpg"
- *                     clickUrl: "https://example.com"
- *               adSizes:
- *                 horizontal: { desktop: "970x250", mobile: "728x90" }
+ *             examples:
+ *               googleAds:
+ *                 summary: Google AdSense configured
+ *                 value:
+ *                   ads:
+ *                     heroAd1:
+ *                       isActive: true
+ *                       provider: google
+ *                       sizes: ["728x90", "970x250"]
+ *                       google:
+ *                         slot: "ca-pub-1234567890/heroAd1"
+ *                         format: auto
+ *                         responsive: true
+ *                       local: null
+ *                     categoryAd1:
+ *                       isActive: true
+ *                       provider: google
+ *                       sizes: ["728x90", "970x250"]
+ *                       google:
+ *                         slot: "ca-pub-1234567890/categoryAd1"
+ *                       local: null
+ *                   adSizes:
+ *                     horizontal:
+ *                       desktop: "970x250"
+ *                       mobile: "728x90"
+ *                     sidebar:
+ *                       desktop: "300x600"
+ *                       mobile: hidden
+ *               localAd:
+ *                 summary: Local banner with schedule
+ *                 value:
+ *                   ads:
+ *                     heroAd1:
+ *                       isActive: true
+ *                       provider: local
+ *                       sizes: ["728x90", "970x250"]
+ *                       google: null
+ *                       local:
+ *                         enabled: true
+ *                         imageUrl: "https://cdn.example.com/ads/festival-banner.jpg"
+ *                         clickUrl: "https://advertiser.com/offer"
+ *                         alt: "Festival Sale - 50% Off"
+ *                         schedule:
+ *                           startDate: "2026-01-25"
+ *                           endDate: "2026-02-15"
+ *                     categoryAd1:
+ *                       isActive: false
+ *                       provider: google
+ *                       sizes: ["728x90", "970x250"]
+ *                       google: null
+ *                       local: null
+ *                   adSizes:
+ *                     horizontal:
+ *                       desktop: "970x250"
+ *                       mobile: "728x90"
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
@@ -1077,15 +1291,15 @@ router.get(
  *     description: |
  *       Update ads for heroAd1 and/or categoryAd1.
  *       
- *       **Providers:**
- *       - `google`: Use Google AdSense slot
- *       - `local`: Use custom image banner
+ *       ## Providers
+ *       | Provider | Fields Required |
+ *       |----------|-----------------|
+ *       | google | slot (AdSense slot ID) |
+ *       | local | imageUrl, clickUrl, alt, schedule (optional) |
  *       
- *       **Local Ad Fields:**
- *       - `imageUrl`: Banner image URL
- *       - `clickUrl`: Click destination
- *       - `alt`: Alt text
- *       - `schedule`: Optional `{ startDate, endDate }` for timed campaigns
+ *       ## Local Ad Schedule
+ *       Use schedule for time-limited campaigns (festivals, promotions).
+ *       When schedule expires, ad automatically deactivates.
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -1093,6 +1307,7 @@ router.get(
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: cmk7e7tg401ezlp22wkz5rxky
  *     requestBody:
  *       required: true
  *       content:
@@ -1105,53 +1320,101 @@ router.get(
  *                 properties:
  *                   isActive: { type: boolean }
  *                   provider: { type: string, enum: [google, local] }
- *                   google: { type: object }
- *                   local: { type: object }
+ *                   google:
+ *                     type: object
+ *                     properties:
+ *                       slot: { type: string, description: "AdSense slot ID" }
+ *                       format: { type: string, default: "auto" }
+ *                       responsive: { type: boolean, default: true }
+ *                   local:
+ *                     type: object
+ *                     properties:
+ *                       enabled: { type: boolean }
+ *                       imageUrl: { type: string, description: "Banner image (970x250 recommended)" }
+ *                       clickUrl: { type: string, description: "Click destination URL" }
+ *                       alt: { type: string, description: "Alt text" }
+ *                       schedule:
+ *                         type: object
+ *                         properties:
+ *                           startDate: { type: string, format: date }
+ *                           endDate: { type: string, format: date }
  *               categoryAd1:
  *                 type: object
- *                 properties:
- *                   isActive: { type: boolean }
- *                   provider: { type: string, enum: [google, local] }
- *                   google: { type: object }
- *                   local: { type: object }
+ *                 description: Same structure as heroAd1
  *           examples:
- *             googleAds:
- *               summary: Setup Google AdSense
+ *             setupGoogleAdSense:
+ *               summary: Setup Google AdSense for both slots
  *               value:
  *                 heroAd1:
  *                   isActive: true
  *                   provider: google
  *                   google:
- *                     slot: "1234567890"
+ *                     slot: "ca-pub-1234567890/homepage-hero"
  *                     format: auto
  *                     responsive: true
  *                 categoryAd1:
  *                   isActive: true
  *                   provider: google
  *                   google:
- *                     slot: "0987654321"
- *             localAd:
- *               summary: Setup local banner ad
+ *                     slot: "ca-pub-1234567890/homepage-category"
+ *             setupLocalBanner:
+ *               summary: Setup local banner ad with schedule
  *               value:
  *                 heroAd1:
  *                   isActive: true
  *                   provider: local
  *                   local:
  *                     enabled: true
- *                     imageUrl: "https://cdn.example.com/festival-sale.jpg"
- *                     clickUrl: "https://advertiser.com/offer"
- *                     alt: "Festival Sale - 50% Off"
+ *                     imageUrl: "https://cdn.example.com/ads/diwali-sale-970x250.jpg"
+ *                     clickUrl: "https://advertiser.com/diwali-offer"
+ *                     alt: "Diwali Sale - 50% Off on Electronics"
  *                     schedule:
- *                       startDate: "2026-01-25"
- *                       endDate: "2026-02-15"
- *             disableAd:
- *               summary: Disable an ad slot
+ *                       startDate: "2026-10-15"
+ *                       endDate: "2026-11-15"
+ *             disableHeroAd:
+ *               summary: Disable hero ad slot
  *               value:
+ *                 heroAd1:
+ *                   isActive: false
+ *             disableAllAds:
+ *               summary: Disable both ad slots
+ *               value:
+ *                 heroAd1:
+ *                   isActive: false
  *                 categoryAd1:
  *                   isActive: false
+ *             switchToLocal:
+ *               summary: Switch from Google to local ad
+ *               value:
+ *                 heroAd1:
+ *                   provider: local
+ *                   local:
+ *                     enabled: true
+ *                     imageUrl: "https://cdn.example.com/ads/sponsor.jpg"
+ *                     clickUrl: "https://sponsor.com"
+ *                     alt: "Sponsored by Example Corp"
  *     responses:
  *       200:
  *         description: Updated ads configuration
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               ads:
+ *                 heroAd1:
+ *                   isActive: true
+ *                   provider: google
+ *                   google:
+ *                     slot: "ca-pub-1234567890/homepage-hero"
+ *                     format: auto
+ *                     responsive: true
+ *                   local: null
+ *                 categoryAd1:
+ *                   isActive: true
+ *                   provider: google
+ *                   google:
+ *                     slot: "ca-pub-1234567890/homepage-category"
+ *                   local: null
  *       401: { description: Unauthorized }
  *       403: { description: Forbidden }
  */
