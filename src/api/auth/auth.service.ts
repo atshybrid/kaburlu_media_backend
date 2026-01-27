@@ -582,8 +582,13 @@ export const login = async (loginDto: MpinLoginDto) => {
           }
         } catch (rpErr) {
           console.error('[Auth] Failed to create Razorpay order for payment gating:', rpErr);
-          // Continue without Razorpay details - mobile app can call /payments/order manually
+          // Continue without Razorpay order - but still return keyId so mobile app can call /payments/order manually
         }
+        
+        // Calculate totals for breakdown
+        const idCardAmount = outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0;
+        const subscriptionAmount = outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0;
+        const totalAmountPaise = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
         
         return {
           paymentRequired: true,
@@ -591,14 +596,41 @@ export const login = async (loginDto: MpinLoginDto) => {
           message: 'Reporter payments required before login',
           reporter: { id: reporter.id, tenantId: reporter.tenantId },
           outstanding,
+          // Breakdown for UI display
+          breakdown: {
+            idCardCharge: {
+              label: 'ID Card / Onboarding Fee',
+              amountPaise: idCardAmount,
+              amountRupees: idCardAmount / 100,
+              displayAmount: `₹${(idCardAmount / 100).toFixed(2)}`
+            },
+            monthlySubscription: {
+              label: 'Monthly Subscription',
+              amountPaise: subscriptionAmount,
+              amountRupees: subscriptionAmount / 100,
+              displayAmount: `₹${(subscriptionAmount / 100).toFixed(2)}`,
+              year: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
+              month: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.month
+            },
+            total: {
+              label: 'Total Amount',
+              amountPaise: totalAmountPaise,
+              amountRupees: totalAmountPaise / 100,
+              displayAmount: `₹${(totalAmountPaise / 100).toFixed(2)}`
+            }
+          },
           // Include Razorpay details for mobile app to directly open payment UI
-          razorpay: razorpayOrder ? {
-            orderId: razorpayOrder.id,
-            keyId: razorpayKeyId,
-            amount: outstanding.reduce((sum, o) => sum + (o.amount || 0), 0),
+          // Always include keyId so frontend can create order via API if needed
+          razorpay: {
+            keyId: razorpayKeyId, // Always provide keyId for frontend
+            orderId: razorpayOrder?.id || null,
+            amount: totalAmountPaise,
+            amountRupees: totalAmountPaise / 100,
             currency: 'INR',
-            reporterPaymentId
-          } : null
+            reporterPaymentId: reporterPaymentId || null,
+            // If order creation failed, frontend should call POST /reporter-payments/order
+            orderCreated: !!razorpayOrder
+          }
         };
       }
     }

@@ -50,7 +50,8 @@ export const loginController = async (req: Request, res: Response) => {
       return res.status(402).json({ success: false, code: 'PAYMENT_REQUIRED', message: result.message || 'Payment required before login', data: {
         reporter: result.reporter,
         outstanding: result.outstanding,
-        razorpay: result.razorpay || null // Contains orderId, keyId, amount for mobile app
+        breakdown: result.breakdown, // Detailed breakdown with labels and amounts
+        razorpay: result.razorpay // Contains keyId, orderId (if created), amount for mobile app
       }});
     }
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
