@@ -550,6 +550,7 @@ router.get('/domain/stats', async (req, res) => {
           id: true,
           slug: true,
           title: true,
+          coverImageUrl: true,
           viewCount: true,
           publishedAt: true,
           category: { select: { slug: true, name: true } }
@@ -618,6 +619,7 @@ router.get('/domain/stats', async (req, res) => {
       id: a.id,
       slug: a.slug,
       title: a.title,
+      coverImageUrl: a.coverImageUrl || null,
       viewCount: a.viewCount || 0,
       publishedAt: a.publishedAt ? new Date(a.publishedAt).toISOString() : null,
       category: a.category ? { slug: a.category.slug, name: a.category.name } : null
