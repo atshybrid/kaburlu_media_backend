@@ -4,6 +4,7 @@ import { getEntitySettings, upsertEntitySettings, getTenantSettings, upsertTenan
 import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import prisma from '../../lib/prisma';
 import { autoGenerateLegalPages } from '../../lib/legalPagesAuto';
+import { generateTeluguNewsSeo } from '../../lib/newsDomainSettingsAuto';
 
 const router = Router();
 
@@ -254,6 +255,95 @@ router.patch('/entity/settings', passport.authenticate('jwt', { session: false }
 router.get('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, getTenantSettings);
 router.put('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertTenantSettings);
 router.patch('/tenants/:tenantId/settings', passport.authenticate('jwt', { session: false }), requireSuperAdmin, upsertTenantSettings);
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/news-domain/seo/auto:
+ *   post:
+ *     summary: Auto-generate Telugu news website SEO using AI
+ *     description: |
+ *       SUPER_ADMIN only. Generates SEO metadata for tenant's NEWS domain using AI.
+ *       Uses Aksharam-style Telugu news language with formal, neutral tone.
+ *       
+ *       **What it generates:**
+ *       - Website title (Telugu + English mixed, under 60 chars)
+ *       - Meta description (Telugu only, under 160 chars)
+ *       - Keywords (5-10 relevant keywords)
+ *       - Open Graph title and description
+ *       
+ *       **Note:** Does NOT overwrite existing SEO values - only fills missing fields.
+ *     tags: [Settings (Admin)]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *         description: Tenant ID to generate SEO for
+ *     responses:
+ *       200:
+ *         description: SEO generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 tenantId: { type: string }
+ *                 seo:
+ *                   type: object
+ *                   properties:
+ *                     defaultMetaTitle: { type: string }
+ *                     defaultMetaDescription: { type: string }
+ *                     keywords: { type: string }
+ *                     ogTitle: { type: string }
+ *                     ogDescription: { type: string }
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   tenantId: "cmkuabu8a01f8mr1ewn7wg0pk"
+ *                   seo:
+ *                     defaultMetaTitle: "తెలంగాణ తాజా వార్తలు | Kaburlu News"
+ *                     defaultMetaDescription: "తెలంగాణ రాజకీయాలు, వ్యాపారం, క్రీడలు, జిల్లా వార్తలు - నమ్మకమైన వార్తా వేదిక."
+ *                     keywords: "తెలంగాణ వార్తలు, Kaburlu News, రాజకీయాలు, క్రీడలు"
+ *                     ogTitle: "తెలంగాణ తాజా వార్తలు | Kaburlu News"
+ *                     ogDescription: "తెలంగాణ రాజకీయాలు, వ్యాపారం, క్రీడలు - నమ్మకమైన వార్తా వేదిక."
+ *       400:
+ *         description: Generation failed
+ *         content:
+ *           application/json:
+ *             examples:
+ *               error:
+ *                 value: { success: false, error: "AI did not return valid JSON" }
+ *       404:
+ *         description: Tenant not found
+ *         content:
+ *           application/json:
+ *             examples:
+ *               error:
+ *                 value: { success: false, error: "Tenant not found" }
+ */
+router.post('/tenants/:tenantId/news-domain/seo/auto', passport.authenticate('jwt', { session: false }), requireSuperAdmin, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const result = await generateTeluguNewsSeo(tenantId);
+    
+    if (!result.success) {
+      const status = result.error === 'Tenant not found' ? 404 : 400;
+      return res.status(status).json(result);
+    }
+    
+    return res.json({
+      success: true,
+      tenantId,
+      seo: result.seo,
+    });
+  } catch (e: any) {
+    console.error('news-domain seo auto error:', e);
+    return res.status(500).json({ success: false, error: 'Failed to generate SEO' });
+  }
+});
 
 // ---------------- Reporter Pricing (TENANT_ADMIN scoped or SUPER_ADMIN) ----------------
 
