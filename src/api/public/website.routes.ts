@@ -1814,6 +1814,32 @@ router.get('/homepage', async (_req, res) => {
   // Convenience: allow `shape=style2` to behave like `themeKey=style2` for Style2 homepage.
   const themeKey = String((req.query as any)?.themeKey || (autoShape && autoShape !== 'style1' ? autoShape : 'style1'));
   const langCode = String((req.query as any)?.lang || '').trim() || null;
+  
+  // CRITICAL VALIDATION: Check if requested style matches domain's configured themeStyle
+  // If domain has themeStyle configured, users must request the same style
+  if (domainThemeStyle) {
+    const requestedStyle = shape || (versionParam === '1' ? 'style1' : versionParam === '2' ? 'style2' : null);
+    
+    // If style2 is configured but user requests style1 (or vice versa), reject the request
+    if (domainThemeStyle === 'style2' && (requestedStyle === 'style1' || wantsV1)) {
+      return res.status(400).json({ 
+        code: 'LAYOUT_NOT_SET', 
+        message: 'Layout not set. This domain is configured for style2. Please use shape=style2 or v=2',
+        configuredStyle: 'style2',
+        requestedStyle: 'style1'
+      });
+    }
+    
+    if (domainThemeStyle === 'style1' && (requestedStyle === 'style2' || wantsStyle2)) {
+      return res.status(400).json({ 
+        code: 'LAYOUT_NOT_SET', 
+        message: 'Layout not set. This domain is configured for style1. Please use shape=style1 or v=1',
+        configuredStyle: 'style1',
+        requestedStyle: 'style2'
+      });
+    }
+  }
+  
   if (wantsV1 && themeKey !== 'style1') {
     return res.status(400).json({ code: 'UNSUPPORTED_THEME', message: 'Only themeKey=style1 is supported currently' });
   }

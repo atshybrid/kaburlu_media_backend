@@ -1165,8 +1165,10 @@ model ReporterDesignation {
   id               String                    @id @default(cuid())
   tenantId         String?
   level            ReporterLevel
+  levelOrder       Int                       // Hierarchy: 1=highest (State Bureau Chief), 2=Staff Reporter, 3=RC In-charge, 4=Mandal Reporter
   code             String
   name             String
+  nativeName       String?                   // Telugu/Hindi/Regional language name
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   reporters        Reporter[]
@@ -1175,6 +1177,7 @@ model ReporterDesignation {
 
   @@unique([tenantId, code])
   @@index([tenantId, level])
+  @@index([tenantId, levelOrder])
 }
 
 model ReporterIDCard {

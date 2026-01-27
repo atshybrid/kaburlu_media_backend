@@ -1018,6 +1018,140 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{reporterId}/subscription:
+ *   patch:
+ *     summary: Enable or disable reporter subscription
+ *     description: |
+ *       Toggle subscription status for a reporter. When disabled, monthly subscription amount is set to 0.
+ *       Use this to activate/deactivate reporter payment requirements.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: reporterId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [subscriptionActive]
+ *             properties:
+ *               subscriptionActive:
+ *                 type: boolean
+ *                 description: Enable or disable subscription
+ *               monthlySubscriptionAmount:
+ *                 type: integer
+ *                 description: Monthly subscription amount (optional, defaults to tenant settings)
+ *           examples:
+ *             enable:
+ *               summary: Enable subscription with default amount
+ *               value:
+ *                 subscriptionActive: true
+ *             enableWithAmount:
+ *               summary: Enable subscription with custom amount
+ *               value:
+ *                 subscriptionActive: true
+ *                 monthlySubscriptionAmount: 5000
+ *             disable:
+ *               summary: Disable subscription
+ *               value:
+ *                 subscriptionActive: false
+ *     responses:
+ *       200:
+ *         description: Subscription status updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 reporterId: { type: string }
+ *                 tenantId: { type: string }
+ *                 subscriptionActive: { type: boolean }
+ *                 monthlySubscriptionAmount: { type: integer }
+ *             example:
+ *               success: true
+ *               reporterId: "cmrep_123"
+ *               tenantId: "cmtenant_456"
+ *               subscriptionActive: true
+ *               monthlySubscriptionAmount: 5000
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden - requires TENANT_ADMIN or SUPER_ADMIN }
+ *       404: { description: Reporter not found }
+ */
+router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { tenantId, reporterId } = req.params;
+    const { subscriptionActive, monthlySubscriptionAmount } = req.body || {};
+
+    if (typeof subscriptionActive !== 'boolean') {
+      return res.status(400).json({ error: 'subscriptionActive (boolean) is required' });
+    }
+
+    const existing = await (prisma as any).reporter.findFirst({
+      where: { id: reporterId, tenantId },
+      select: { id: true, designationId: true, level: true }
+    }).catch(() => null);
+
+    if (!existing?.id) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Get default amount from tenant settings if not provided
+    let finalAmount = 0;
+    if (subscriptionActive) {
+      if (typeof monthlySubscriptionAmount === 'number' && monthlySubscriptionAmount >= 0) {
+        finalAmount = monthlySubscriptionAmount;
+      } else {
+        // Fallback to tenant settings
+        const tenantSettings = await (prisma as any).tenantSettings.findUnique({
+          where: { tenantId },
+          select: { data: true }
+        }).catch(() => null);
+
+        const pricingConfig = normalizePricingFromSettings(tenantSettings?.data);
+        const pricing = resolvePricingForDesignation(pricingConfig, existing.designationId);
+        finalAmount = pricing.monthlySubscriptionAmount || 0;
+      }
+    }
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id: reporterId },
+      data: {
+        subscriptionActive,
+        monthlySubscriptionAmount: finalAmount
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        subscriptionActive: true,
+        monthlySubscriptionAmount: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      reporterId: updated.id,
+      tenantId: updated.tenantId,
+      subscriptionActive: updated.subscriptionActive,
+      monthlySubscriptionAmount: updated.monthlySubscriptionAmount
+    });
+  } catch (e: any) {
+    console.error('set reporter subscription error', e);
+    return res.status(500).json({ error: 'Failed to update subscription status' });
+  }
+});
+
 // PATCH /tenants/:tenantId/reporters/:reporterId/auto-publish
 /**
  * @swagger
