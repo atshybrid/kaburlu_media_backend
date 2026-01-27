@@ -509,10 +509,11 @@ export const login = async (loginDto: MpinLoginDto) => {
         let reporterPaymentId: string | null = null;
         
         try {
-          // Calculate total outstanding amount
-          const totalAmount = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+          // Calculate total outstanding amount (stored in RUPEES in DB)
+          const totalAmountRupees = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+          const totalAmountPaise = totalAmountRupees * 100; // Convert to paise for Razorpay
           
-          if (totalAmount > 0) {
+          if (totalAmountRupees > 0) {
             // Get Razorpay config
             const razorpayConfig = await getRazorpayConfigForTenant(reporter.tenantId);
             
@@ -551,7 +552,7 @@ export const login = async (loginDto: MpinLoginDto) => {
                 const paymentType = hasOnboarding ? 'ONBOARDING' : 'MONTHLY_SUBSCRIPTION';
                 
                 razorpayOrder = await (razorpay as any).orders.create({
-                  amount: totalAmount, // amount in paise
+                  amount: totalAmountPaise, // Razorpay expects amount in PAISE
                   currency: 'INR',
                   receipt,
                   notes: { tenantId: reporter.tenantId, reporterId: reporter.id, type: paymentType },
@@ -566,7 +567,7 @@ export const login = async (loginDto: MpinLoginDto) => {
                     type: paymentType,
                     year,
                     month,
-                    amount: totalAmount,
+                    amount: totalAmountRupees, // Store in rupees for consistency
                     currency: 'INR',
                     status: 'PENDING',
                     razorpayOrderId: razorpayOrder.id,
@@ -586,9 +587,11 @@ export const login = async (loginDto: MpinLoginDto) => {
         }
         
         // Calculate totals for breakdown
-        const idCardAmount = outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0;
-        const subscriptionAmount = outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0;
-        const totalAmountPaise = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+        // NOTE: Amounts in DB are stored in RUPEES, Razorpay expects PAISE (1 rupee = 100 paise)
+        const idCardAmountRupees = outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0;
+        const subscriptionAmountRupees = outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0;
+        const totalAmountRupees = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+        const totalAmountPaise = totalAmountRupees * 100; // Convert to paise for Razorpay
         
         return {
           paymentRequired: true,
@@ -596,27 +599,27 @@ export const login = async (loginDto: MpinLoginDto) => {
           message: 'Reporter payments required before login',
           reporter: { id: reporter.id, tenantId: reporter.tenantId },
           outstanding,
-          // Breakdown for UI display
+          // Breakdown for UI display (amounts in Rupees as stored in DB)
           breakdown: {
             idCardCharge: {
               label: 'ID Card / Onboarding Fee',
-              amountPaise: idCardAmount,
-              amountRupees: idCardAmount / 100,
-              displayAmount: `₹${(idCardAmount / 100).toFixed(2)}`
+              amount: idCardAmountRupees,
+              amountPaise: idCardAmountRupees * 100,
+              displayAmount: `₹${idCardAmountRupees.toFixed(2)}`
             },
             monthlySubscription: {
               label: 'Monthly Subscription',
-              amountPaise: subscriptionAmount,
-              amountRupees: subscriptionAmount / 100,
-              displayAmount: `₹${(subscriptionAmount / 100).toFixed(2)}`,
+              amount: subscriptionAmountRupees,
+              amountPaise: subscriptionAmountRupees * 100,
+              displayAmount: `₹${subscriptionAmountRupees.toFixed(2)}`,
               year: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
               month: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.month
             },
             total: {
               label: 'Total Amount',
+              amount: totalAmountRupees,
               amountPaise: totalAmountPaise,
-              amountRupees: totalAmountPaise / 100,
-              displayAmount: `₹${(totalAmountPaise / 100).toFixed(2)}`
+              displayAmount: `₹${totalAmountRupees.toFixed(2)}`
             }
           },
           // Include Razorpay details for mobile app to directly open payment UI
@@ -624,8 +627,8 @@ export const login = async (loginDto: MpinLoginDto) => {
           razorpay: {
             keyId: razorpayKeyId, // Always provide keyId for frontend
             orderId: razorpayOrder?.id || null,
-            amount: totalAmountPaise,
-            amountRupees: totalAmountPaise / 100,
+            amount: totalAmountPaise, // Razorpay amount in PAISE
+            amountRupees: totalAmountRupees,
             currency: 'INR',
             reporterPaymentId: reporterPaymentId || null,
             // If order creation failed, frontend should call POST /reporter-payments/order
