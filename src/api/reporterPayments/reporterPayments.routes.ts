@@ -460,13 +460,30 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
       .update(body)
       .digest('hex');
 
+    // Debug logging for signature verification
+    console.log('[Payment Verify] Debug:', {
+      body,
+      keySecretLength: razorpayConfig.keySecret.length,
+      keySecretPrefix: razorpayConfig.keySecret.substring(0, 10) + '...',
+      expectedSignature,
+      receivedSignature: razorpay_signature,
+      match: expectedSignature === razorpay_signature,
+    });
+
     if (expectedSignature !== razorpay_signature) {
       // Update payment status to EXPIRED (signature verification failed)
       await (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
         data: { status: 'EXPIRED', razorpayPaymentId: razorpay_payment_id },
       });
-      return res.status(400).json({ error: 'Invalid payment signature' });
+      return res.status(400).json({ 
+        error: 'Invalid payment signature',
+        debug: {
+          bodyUsed: body,
+          expectedSigPrefix: expectedSignature.substring(0, 20) + '...',
+          receivedSigPrefix: razorpay_signature.substring(0, 20) + '...',
+        }
+      });
     }
 
     // Signature valid - update payment and reporter
