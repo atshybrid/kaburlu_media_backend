@@ -314,10 +314,10 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
-      // Update payment status to FAILED
+      // Update payment status to EXPIRED (signature verification failed)
       await (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
-        data: { status: 'FAILED', razorpayPaymentId: razorpay_payment_id },
+        data: { status: 'EXPIRED', razorpayPaymentId: razorpay_payment_id },
       });
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
@@ -330,7 +330,7 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
       (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
         data: {
-          status: 'SUCCESS',
+          status: 'PAID',
           razorpayPaymentId: razorpay_payment_id,
           paidAt: new Date(),
         },
@@ -461,10 +461,10 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
-      // Update payment status to FAILED
+      // Update payment status to EXPIRED (signature verification failed)
       await (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
-        data: { status: 'FAILED', razorpayPaymentId: razorpay_payment_id },
+        data: { status: 'EXPIRED', razorpayPaymentId: razorpay_payment_id },
       });
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
@@ -477,7 +477,7 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
       (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
         data: {
-          status: 'SUCCESS',
+          status: 'PAID',
           razorpayPaymentId: razorpay_payment_id,
           paidAt: new Date(),
         },
