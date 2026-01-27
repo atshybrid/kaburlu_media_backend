@@ -332,7 +332,6 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
         data: {
           status: 'PAID',
           razorpayPaymentId: razorpay_payment_id,
-          paidAt: new Date(),
         },
       }),
       (prisma as any).reporter.update({
@@ -496,7 +495,6 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
         data: {
           status: 'PAID',
           razorpayPaymentId: razorpay_payment_id,
-          paidAt: new Date(),
         },
       }),
       (prisma as any).reporter.update({
