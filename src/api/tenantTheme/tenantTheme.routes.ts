@@ -463,6 +463,646 @@ router.patch(
   }
 );
 
+// ==================== SMART STYLE1 HOMEPAGE MANAGEMENT ====================
+
+/**
+ * Smart Style1 Section Structure (Fixed - cannot be changed by admin)
+ * ====================================================================
+ * Position 1: flashTicker       - 12 articles (latest, auto-filled)
+ * Position 2: heroStack         - 27 articles total (4 sub-sections, auto-filled by viewCount + latest)
+ *             ├─ heroMain        - 8 articles (1 large + 7 grid)
+ *             ├─ heroLatest      - 7 articles (latest news)
+ *             ├─ heroMostRead    - 8 articles (by viewCount desc)
+ *             └─ heroTrending    - 4 articles (top viewCount)
+ * Position 3: categorySection1  - 20 articles (admin links 4 categories, 5 each)
+ * Position 4: categorySection2  - 20 articles (admin links 4 categories, 5 each)
+ * Position 5: categoryHub       - 10 articles (admin links 2 categories, 5 each)
+ * 
+ * Total: 89 articles per homepage load
+ * 
+ * Ad Slots:
+ * - adSection1: Between heroStack and categorySection1
+ * - adSection2: Between categorySection1 and categorySection2
+ * - adSection3: Between categorySection2 and categoryHub
+ */
+
+const SMART_STYLE1_FIXED_SECTIONS = {
+  flashTicker: { position: 1, label: 'Flash Ticker', limit: 12, autoFill: true, fillBy: 'latest' },
+  heroStack: {
+    position: 2,
+    label: 'Hero Stack',
+    limit: 27,
+    autoFill: true,
+    fillBy: 'viewCount+latest',
+    subSections: {
+      heroMain: { limit: 8, fillBy: 'viewCount' },
+      heroLatest: { limit: 7, fillBy: 'latest' },
+      heroMostRead: { limit: 8, fillBy: 'viewCount' },
+      heroTrending: { limit: 4, fillBy: 'viewCount' }
+    }
+  },
+  categorySection1: { position: 3, label: 'Category Section 1', limit: 20, perCategoryLimit: 5, categoryCount: 4 },
+  categorySection2: { position: 4, label: 'Category Section 2', limit: 20, perCategoryLimit: 5, categoryCount: 4 },
+  categoryHub: { position: 5, label: 'Category Hub', limit: 10, perCategoryLimit: 5, categoryCount: 2 }
+};
+
+const SMART_STYLE1_AD_SLOTS = {
+  adSection1: { position: 'after_heroStack', label: 'Ad Section 1 (After Hero)' },
+  adSection2: { position: 'after_categorySection1', label: 'Ad Section 2 (After Category 1)' },
+  adSection3: { position: 'after_categorySection2', label: 'Ad Section 3 (After Category 2)' }
+};
+
+/**
+ * @swagger
+ * tags:
+ *   - name: Smart Theme Management
+ *     description: Smart homepage configuration with fixed sections and category linking
+ */
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style1/smart:
+ *   get:
+ *     summary: Get Smart Style1 homepage configuration
+ *     description: |
+ *       Returns the fixed section structure for Style1 homepage with current category links.
+ *       
+ *       **Fixed Sections (cannot be changed):**
+ *       - Position 1: flashTicker (12 articles, auto-filled by latest)
+ *       - Position 2: heroStack (27 articles, auto-filled by viewCount + latest)
+ *       - Position 3: categorySection1 (20 articles = 4 categories × 5)
+ *       - Position 4: categorySection2 (20 articles = 4 categories × 5)
+ *       - Position 5: categoryHub (10 articles = 2 categories × 5)
+ *       
+ *       **Ads Slots:**
+ *       - adSection1: Between heroStack and categorySection1
+ *       - adSection2: Between categorySection1 and categorySection2
+ *       - adSection3: Between categorySection2 and categoryHub
+ *       
+ *       Admin can only configure: category links for sections 3,4,5 and ad provider/content per slot.
+ *     tags: [Smart Theme Management]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Smart Style1 configuration
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 fixedSections:
+ *                   type: object
+ *                   description: Fixed section definitions (read-only)
+ *                 adSlots:
+ *                   type: object
+ *                   description: Ad slot definitions
+ *                 categoryLinks:
+ *                   type: object
+ *                   description: Current category assignments (admin configurable)
+ *                   properties:
+ *                     categorySection1:
+ *                       type: array
+ *                       items: { type: string }
+ *                       example: ["politics", "sports", "entertainment", "technology"]
+ *                     categorySection2:
+ *                       type: array
+ *                       items: { type: string }
+ *                       example: ["health", "education", "crime", "national"]
+ *                     categoryHub:
+ *                       type: array
+ *                       items: { type: string }
+ *                       example: ["business", "international"]
+ *                 adsConfig:
+ *                   type: object
+ *                   description: Ad configuration per slot
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get(
+  '/:tenantId/homepage/style1/smart',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const homepageConfig = isPlainObject((theme as any)?.homepageConfig) ? (theme as any).homepageConfig : {};
+      const smartStyle1 = isPlainObject(homepageConfig.smartStyle1) ? homepageConfig.smartStyle1 : {};
+
+      return res.json({
+        fixedSections: SMART_STYLE1_FIXED_SECTIONS,
+        adSlots: SMART_STYLE1_AD_SLOTS,
+        categoryLinks: {
+          categorySection1: Array.isArray(smartStyle1.categorySection1) ? smartStyle1.categorySection1 : [],
+          categorySection2: Array.isArray(smartStyle1.categorySection2) ? smartStyle1.categorySection2 : [],
+          categoryHub: Array.isArray(smartStyle1.categoryHub) ? smartStyle1.categoryHub : []
+        },
+        adsConfig: isPlainObject(smartStyle1.adsConfig) ? smartStyle1.adsConfig : {}
+      });
+    } catch (e: any) {
+      console.error('get smart style1 config error', e);
+      return res.status(500).json({ error: 'Failed to get smart style1 config' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style1/smart:
+ *   put:
+ *     summary: Update Smart Style1 category links
+ *     description: |
+ *       Update category links for the configurable sections.
+ *       
+ *       **Rules:**
+ *       - categorySection1: Requires exactly 4 category slugs
+ *       - categorySection2: Requires exactly 4 category slugs
+ *       - categoryHub: Requires exactly 2 category slugs
+ *       
+ *       Category slugs must match existing categories in the tenant's domain.
+ *     tags: [Smart Theme Management]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               categorySection1:
+ *                 type: array
+ *                 items: { type: string }
+ *                 minItems: 4
+ *                 maxItems: 4
+ *                 example: ["politics", "sports", "entertainment", "technology"]
+ *                 description: "4 category slugs for section 1 (5 articles each = 20 total)"
+ *               categorySection2:
+ *                 type: array
+ *                 items: { type: string }
+ *                 minItems: 4
+ *                 maxItems: 4
+ *                 example: ["health", "education", "crime", "national"]
+ *                 description: "4 category slugs for section 2 (5 articles each = 20 total)"
+ *               categoryHub:
+ *                 type: array
+ *                 items: { type: string }
+ *                 minItems: 2
+ *                 maxItems: 2
+ *                 example: ["business", "international"]
+ *                 description: "2 category slugs for category hub (5 articles each = 10 total)"
+ *           examples:
+ *             fullUpdate:
+ *               summary: Update all category sections
+ *               value:
+ *                 categorySection1: ["politics", "sports", "entertainment", "technology"]
+ *                 categorySection2: ["health", "education", "crime", "national"]
+ *                 categoryHub: ["business", "international"]
+ *             partialUpdate:
+ *               summary: Update only categorySection1
+ *               value:
+ *                 categorySection1: ["రాజకీయాలు", "క్రీడలు", "వినోదం", "సాంకేతికం"]
+ *     responses:
+ *       200:
+ *         description: Updated configuration
+ *       400:
+ *         description: Validation error (wrong number of categories)
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.put(
+  '/:tenantId/homepage/style1/smart',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const body = req.body || {};
+      const errors: string[] = [];
+
+      // Validate category counts if provided
+      if (body.categorySection1 !== undefined) {
+        if (!Array.isArray(body.categorySection1) || body.categorySection1.length !== 4) {
+          errors.push('categorySection1 must have exactly 4 category slugs');
+        }
+      }
+      if (body.categorySection2 !== undefined) {
+        if (!Array.isArray(body.categorySection2) || body.categorySection2.length !== 4) {
+          errors.push('categorySection2 must have exactly 4 category slugs');
+        }
+      }
+      if (body.categoryHub !== undefined) {
+        if (!Array.isArray(body.categoryHub) || body.categoryHub.length !== 2) {
+          errors.push('categoryHub must have exactly 2 category slugs');
+        }
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({ error: 'Validation failed', details: errors });
+      }
+
+      // Get existing theme
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const existingHomepageConfig = isPlainObject((theme as any)?.homepageConfig)
+        ? { ...(theme as any).homepageConfig }
+        : {};
+      const existingSmartStyle1 = isPlainObject(existingHomepageConfig.smartStyle1)
+        ? { ...existingHomepageConfig.smartStyle1 }
+        : {};
+
+      // Update category links
+      if (body.categorySection1 !== undefined) {
+        existingSmartStyle1.categorySection1 = body.categorySection1.map((s: any) => String(s).trim());
+      }
+      if (body.categorySection2 !== undefined) {
+        existingSmartStyle1.categorySection2 = body.categorySection2.map((s: any) => String(s).trim());
+      }
+      if (body.categoryHub !== undefined) {
+        existingSmartStyle1.categoryHub = body.categoryHub.map((s: any) => String(s).trim());
+      }
+
+      existingHomepageConfig.smartStyle1 = existingSmartStyle1;
+
+      const saved = theme
+        ? await (prisma as any).tenantTheme.update({
+            where: { tenantId },
+            data: { homepageConfig: existingHomepageConfig }
+          })
+        : await (prisma as any).tenantTheme.create({
+            data: { tenantId, homepageConfig: existingHomepageConfig }
+          });
+
+      const savedSmartStyle1 = isPlainObject((saved.homepageConfig as any)?.smartStyle1)
+        ? (saved.homepageConfig as any).smartStyle1
+        : {};
+
+      return res.json({
+        success: true,
+        categoryLinks: {
+          categorySection1: Array.isArray(savedSmartStyle1.categorySection1) ? savedSmartStyle1.categorySection1 : [],
+          categorySection2: Array.isArray(savedSmartStyle1.categorySection2) ? savedSmartStyle1.categorySection2 : [],
+          categoryHub: Array.isArray(savedSmartStyle1.categoryHub) ? savedSmartStyle1.categoryHub : []
+        }
+      });
+    } catch (e: any) {
+      console.error('update smart style1 config error', e);
+      return res.status(500).json({ error: 'Failed to update smart style1 config' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style1/smart/ads:
+ *   get:
+ *     summary: Get Smart Style1 ads configuration
+ *     description: |
+ *       Returns the ads configuration for Style1 homepage.
+ *       
+ *       **Ad Slots:**
+ *       - adSection1: Between heroStack and categorySection1
+ *       - adSection2: Between categorySection1 and categorySection2
+ *       - adSection3: Between categorySection2 and categoryHub
+ *       
+ *       **Provider Types:**
+ *       - `google`: Google AdSense (default) - uses slot ID from Google
+ *       - `local`: Local/Private ads - custom image, click URL, schedule
+ *       
+ *       Local ads can override Google ads for specific time periods (e.g., festival campaigns).
+ *     tags: [Smart Theme Management]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Ads configuration per slot
+ *         content:
+ *           application/json:
+ *             example:
+ *               globalEnabled: true
+ *               defaultProvider: "google"
+ *               googleAdsense:
+ *                 client: "ca-pub-XXXXXXXXX"
+ *               slots:
+ *                 adSection1:
+ *                   enabled: true
+ *                   provider: "google"
+ *                   google:
+ *                     slot: "1234567890"
+ *                     format: "auto"
+ *                     responsive: true
+ *                   local: null
+ *                 adSection2:
+ *                   enabled: true
+ *                   provider: "local"
+ *                   google: null
+ *                   local:
+ *                     enabled: true
+ *                     imageUrl: "https://cdn.example.com/ads/diwali-sale.jpg"
+ *                     clickUrl: "https://advertiser.com/offer"
+ *                     alt: "Diwali Sale - 50% Off"
+ *                     schedule:
+ *                       startDate: "2025-10-15"
+ *                       endDate: "2025-11-15"
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get(
+  '/:tenantId/homepage/style1/smart/ads',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const homepageConfig = isPlainObject((theme as any)?.homepageConfig) ? (theme as any).homepageConfig : {};
+      const smartStyle1 = isPlainObject(homepageConfig.smartStyle1) ? homepageConfig.smartStyle1 : {};
+      const adsConfig = isPlainObject(smartStyle1.adsConfig) ? smartStyle1.adsConfig : {};
+
+      // Build response with defaults
+      const response = {
+        globalEnabled: adsConfig.globalEnabled !== false,
+        defaultProvider: adsConfig.defaultProvider || 'google',
+        googleAdsense: isPlainObject(adsConfig.googleAdsense) ? adsConfig.googleAdsense : { client: null },
+        slots: {
+          adSection1: buildAdSlotResponse(adsConfig.slots?.adSection1),
+          adSection2: buildAdSlotResponse(adsConfig.slots?.adSection2),
+          adSection3: buildAdSlotResponse(adsConfig.slots?.adSection3)
+        }
+      };
+
+      return res.json(response);
+    } catch (e: any) {
+      console.error('get smart style1 ads config error', e);
+      return res.status(500).json({ error: 'Failed to get ads config' });
+    }
+  }
+);
+
+function buildAdSlotResponse(slot: any) {
+  if (!isPlainObject(slot)) {
+    return {
+      enabled: false,
+      provider: 'google',
+      google: { slot: null, format: 'auto', responsive: true },
+      local: null
+    };
+  }
+  return {
+    enabled: slot.enabled !== false,
+    provider: slot.provider || 'google',
+    google: isPlainObject(slot.google) ? slot.google : null,
+    local: isPlainObject(slot.local) ? slot.local : null
+  };
+}
+
+/**
+ * @swagger
+ * /tenant-theme/{tenantId}/homepage/style1/smart/ads:
+ *   put:
+ *     summary: Update Smart Style1 ads configuration
+ *     description: |
+ *       Update ads configuration for Style1 homepage slots.
+ *       
+ *       **Use Cases:**
+ *       1. **Enable Google Ads (default):** Set provider to "google" with slot ID
+ *       2. **Override with Local Ad:** Set provider to "local" with image/click URLs
+ *       3. **Schedule Local Ad:** Add schedule.startDate and schedule.endDate for time-limited campaigns
+ *       4. **Disable a slot:** Set enabled: false
+ *       
+ *       **Provider Priority:**
+ *       - If local ad has active schedule → show local ad
+ *       - Otherwise → show Google ad (if enabled)
+ *       - If both disabled → hide slot
+ *     tags: [Smart Theme Management]
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               globalEnabled:
+ *                 type: boolean
+ *                 description: Master switch for all ads
+ *               defaultProvider:
+ *                 type: string
+ *                 enum: [google, local]
+ *                 description: Default provider for new slots
+ *               googleAdsense:
+ *                 type: object
+ *                 properties:
+ *                   client:
+ *                     type: string
+ *                     example: "ca-pub-XXXXXXXXX"
+ *               slots:
+ *                 type: object
+ *                 properties:
+ *                   adSection1:
+ *                     $ref: '#/components/schemas/AdSlotConfig'
+ *                   adSection2:
+ *                     $ref: '#/components/schemas/AdSlotConfig'
+ *                   adSection3:
+ *                     $ref: '#/components/schemas/AdSlotConfig'
+ *           examples:
+ *             enableGoogleAds:
+ *               summary: Enable Google AdSense for all slots
+ *               value:
+ *                 globalEnabled: true
+ *                 googleAdsense:
+ *                   client: "ca-pub-1234567890"
+ *                 slots:
+ *                   adSection1:
+ *                     enabled: true
+ *                     provider: "google"
+ *                     google:
+ *                       slot: "1111111111"
+ *                   adSection2:
+ *                     enabled: true
+ *                     provider: "google"
+ *                     google:
+ *                       slot: "2222222222"
+ *             localAdCampaign:
+ *               summary: Schedule a local ad campaign (overrides Google for time period)
+ *               value:
+ *                 slots:
+ *                   adSection1:
+ *                     enabled: true
+ *                     provider: "local"
+ *                     local:
+ *                       enabled: true
+ *                       imageUrl: "https://cdn.example.com/ads/diwali-banner.jpg"
+ *                       clickUrl: "https://advertiser.com/diwali-offer"
+ *                       alt: "Diwali Special - 50% Off"
+ *                       schedule:
+ *                         startDate: "2025-10-15"
+ *                         endDate: "2025-11-15"
+ *             disableAdsOnSlot:
+ *               summary: Disable ads on a specific slot
+ *               value:
+ *                 slots:
+ *                   adSection2:
+ *                     enabled: false
+ *     responses:
+ *       200:
+ *         description: Updated ads configuration
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *
+ * components:
+ *   schemas:
+ *     AdSlotConfig:
+ *       type: object
+ *       properties:
+ *         enabled:
+ *           type: boolean
+ *           description: Whether this slot shows ads
+ *         provider:
+ *           type: string
+ *           enum: [google, local]
+ *           description: Which ad provider to use
+ *         google:
+ *           type: object
+ *           properties:
+ *             slot:
+ *               type: string
+ *               description: Google AdSense slot ID
+ *             format:
+ *               type: string
+ *               default: "auto"
+ *             responsive:
+ *               type: boolean
+ *               default: true
+ *         local:
+ *           type: object
+ *           properties:
+ *             enabled:
+ *               type: boolean
+ *             imageUrl:
+ *               type: string
+ *               description: Ad banner image URL
+ *             clickUrl:
+ *               type: string
+ *               description: Click destination URL
+ *             alt:
+ *               type: string
+ *               description: Alt text for accessibility
+ *             logoUrl:
+ *               type: string
+ *               description: Optional sponsor logo
+ *             schedule:
+ *               type: object
+ *               properties:
+ *                 startDate:
+ *                   type: string
+ *                   format: date
+ *                   description: Campaign start date (YYYY-MM-DD)
+ *                 endDate:
+ *                   type: string
+ *                   format: date
+ *                   description: Campaign end date (YYYY-MM-DD)
+ */
+router.put(
+  '/:tenantId/homepage/style1/smart/ads',
+  passport.authenticate('jwt', { session: false }),
+  requireSuperOrTenantAdminScoped,
+  async (req, res) => {
+    try {
+      const { tenantId } = req.params;
+      const body = req.body || {};
+
+      // Get existing theme
+      const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
+      const existingHomepageConfig = isPlainObject((theme as any)?.homepageConfig)
+        ? { ...(theme as any).homepageConfig }
+        : {};
+      const existingSmartStyle1 = isPlainObject(existingHomepageConfig.smartStyle1)
+        ? { ...existingHomepageConfig.smartStyle1 }
+        : {};
+      const existingAdsConfig = isPlainObject(existingSmartStyle1.adsConfig)
+        ? { ...existingSmartStyle1.adsConfig }
+        : {};
+
+      // Update global settings
+      if (typeof body.globalEnabled === 'boolean') {
+        existingAdsConfig.globalEnabled = body.globalEnabled;
+      }
+      if (body.defaultProvider === 'google' || body.defaultProvider === 'local') {
+        existingAdsConfig.defaultProvider = body.defaultProvider;
+      }
+      if (isPlainObject(body.googleAdsense)) {
+        existingAdsConfig.googleAdsense = {
+          ...(existingAdsConfig.googleAdsense || {}),
+          ...body.googleAdsense
+        };
+      }
+
+      // Update slot configs
+      if (isPlainObject(body.slots)) {
+        const existingSlots = isPlainObject(existingAdsConfig.slots) ? { ...existingAdsConfig.slots } : {};
+        for (const slotKey of ['adSection1', 'adSection2', 'adSection3']) {
+          if (isPlainObject(body.slots[slotKey])) {
+            existingSlots[slotKey] = {
+              ...(existingSlots[slotKey] || {}),
+              ...body.slots[slotKey]
+            };
+          }
+        }
+        existingAdsConfig.slots = existingSlots;
+      }
+
+      existingSmartStyle1.adsConfig = existingAdsConfig;
+      existingHomepageConfig.smartStyle1 = existingSmartStyle1;
+
+      const saved = theme
+        ? await (prisma as any).tenantTheme.update({
+            where: { tenantId },
+            data: { homepageConfig: existingHomepageConfig }
+          })
+        : await (prisma as any).tenantTheme.create({
+            data: { tenantId, homepageConfig: existingHomepageConfig }
+          });
+
+      const savedAdsConfig = (saved.homepageConfig as any)?.smartStyle1?.adsConfig || {};
+
+      return res.json({
+        success: true,
+        adsConfig: {
+          globalEnabled: savedAdsConfig.globalEnabled !== false,
+          defaultProvider: savedAdsConfig.defaultProvider || 'google',
+          googleAdsense: savedAdsConfig.googleAdsense || { client: null },
+          slots: {
+            adSection1: buildAdSlotResponse(savedAdsConfig.slots?.adSection1),
+            adSection2: buildAdSlotResponse(savedAdsConfig.slots?.adSection2),
+            adSection3: buildAdSlotResponse(savedAdsConfig.slots?.adSection3)
+          }
+        }
+      });
+    } catch (e: any) {
+      console.error('update smart style1 ads config error', e);
+      return res.status(500).json({ error: 'Failed to update ads config' });
+    }
+  }
+);
+
 // ==================== SEO ENDPOINTS ====================
 
 const DEFAULT_SEO_CONFIG = {
