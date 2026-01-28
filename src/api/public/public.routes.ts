@@ -2838,6 +2838,530 @@ router.get('/articles/:slug', async (req, res) => {
 
 /**
  * @swagger
+ * /public/article/{slug}:
+ *   get:
+ *     summary: Get SEO-optimized article with full reporter details and media
+ *     description: |
+ *       Returns a complete article with comprehensive SEO metadata, structured data,
+ *       reporter/author profile with fallback to brand logo, and all media assets.
+ *       Ideal for news website article detail pages.
+ *     tags: [Public - Website, Public - Articles]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Article slug or ID
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *         description: Language code (e.g., te, en, hi)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Domain override for testing
+ *     responses:
+ *       200:
+ *         description: Full SEO-optimized article response
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: "ok"
+ *               article:
+ *                 id: "cmkr42x2t01fkli1xll9tqaxr"
+ *                 slug: "hyderabad-metro-fare-hike"
+ *                 headline: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు"
+ *                 subheadline: "ఫిబ్రవరి 1 నుంచి అమలు"
+ *                 content_html: "<p>హైదరాబాద్ మెట్రో రైలు ఛార్జీలు...</p>"
+ *                 language: "te"
+ *                 category:
+ *                   id: "metro"
+ *                   name: "మెట్రో న్యూస్"
+ *                   slug: "metro-news"
+ *                 dateline:
+ *                   place: "హైదరాబాద్"
+ *                   published_at: "2026-01-27T09:30:00+05:30"
+ *                   updated_at: "2026-01-27T10:10:00+05:30"
+ *                 author:
+ *                   name: "స్టాఫ్ రిపోర్టర్"
+ *                   designation: "Senior Reporter"
+ *                   location: "హైదరాబాద్, తెలంగాణ"
+ *                   photo_url: "https://cdn.site.com/reporter.webp"
+ *                 images:
+ *                   cover:
+ *                     url: "https://cdn.site.com/articles/metro.webp"
+ *                     width: 1200
+ *                     height: 630
+ *                     alt: "హైదరాబాద్ మెట్రో రైలు"
+ *                   inline: []
+ *                 seo:
+ *                   title: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు | Aksharam Voice"
+ *                   description: "ఫిబ్రవరి 1 నుంచి హైదరాబాద్ మెట్రో ఛార్జీల పెంపు అమలు"
+ *                   keywords: ["Hyderabad Metro", "Metro Fare Hike"]
+ *                 og:
+ *                   title: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు"
+ *                   description: "మెట్రో ప్రయాణికులకు కీలక సమాచారం"
+ *                   image: "https://cdn.site.com/articles/metro-og.webp"
+ *                 publisher:
+ *                   name: "Aksharam Voice"
+ *                   logo_url: "https://cdn.site.com/logo.webp"
+ *               related_articles: []
+ *       404:
+ *         description: Article not found
+ */
+router.get('/article/:slug', async (req, res) => {
+  const domain = (res.locals as any).domain;
+  const tenant = (res.locals as any).tenant;
+  if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
+
+  const slugRaw = String(req.params.slug);
+  const slug = (() => {
+    try { return decodeURIComponent(slugRaw); } catch { return slugRaw; }
+  })();
+  const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
+
+  // Fetch domain configuration
+  const [domainCats, domainLangs] = await Promise.all([
+    p.domainCategory.findMany({ where: { domainId: domain.id } }),
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }),
+  ]);
+  const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
+  const allowedLanguageIds = new Set(domainLangs.map((d: any) => d.languageId));
+  const domainScope: any = { OR: [{ domainId: domain.id }, { domainId: null }] };
+
+  // Language filter
+  let languageIdFilter: string | undefined;
+  if (languageCode) {
+    const match = domainLangs.find((d: any) => d.language?.code === languageCode);
+    if (!match) return res.status(404).json({ error: 'Language not supported for this domain' });
+    languageIdFilter = match.languageId;
+  }
+
+  const and: any[] = [domainScope];
+  if (languageIdFilter) {
+    and.push({ languageId: languageIdFilter });
+  } else if (allowedLanguageIds.size) {
+    and.push({ OR: [{ languageId: { in: Array.from(allowedLanguageIds) } }, { languageId: null }] });
+  }
+  if (allowedCategoryIds.size) {
+    and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+  }
+
+  const where: any = {
+    tenantId: tenant.id,
+    status: 'PUBLISHED',
+    AND: and,
+    OR: [{ slug }, { id: slug }]
+  };
+
+  // Fetch article with all relations
+  const [article, tenantTheme, tenantEntity] = await Promise.all([
+    p.tenantWebArticle.findFirst({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        language: { select: { code: true, name: true } },
+        category: { select: { id: true, slug: true, name: true } },
+        author: {
+          select: {
+            id: true,
+            mobileNumber: true,
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
+            reporterProfile: {
+              select: {
+                id: true,
+                profilePhotoUrl: true,
+                designation: { select: { id: true, title: true, nativeTitle: true } },
+                state: { select: { id: true, name: true } },
+                district: { select: { id: true, name: true } },
+                mandal: { select: { id: true, name: true } },
+              }
+            }
+          }
+        }
+      }
+    }),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+    p.tenantEntity?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+  ]);
+
+  if (!article) return res.status(404).json({ error: 'Not found' });
+
+  // Fire-and-forget view count increment
+  void p.tenantWebArticle.update({ where: { id: article.id }, data: { viewCount: { increment: 1 } } }).catch(() => null);
+
+  // Extract content and images from contentJson
+  const contentJson = article.contentJson || {};
+  const coverImage = (contentJson as any).coverImage || null;
+  const inlineMedia = Array.isArray((contentJson as any).media) ? (contentJson as any).media : [];
+  const contentHtml = (contentJson as any).html || (contentJson as any).content || '';
+  const subheadline = (contentJson as any).subheadline || (contentJson as any).subtitle || null;
+
+  // Build author/reporter details with fallback to brand logo
+  const brandLogoUrl = (tenantTheme as any)?.logoUrl || null;
+  const tenantDisplayName = (tenant as any)?.displayName || tenant.name;
+  const tenantNativeName = (tenantEntity as any)?.nativeName || null;
+
+  const authorUser = article.author;
+  const reporter = authorUser?.reporterProfile;
+  
+  let authorDetails: any = {
+    name: `${tenantDisplayName} Reporter`,
+    slug: 'staff-reporter',
+    designation: null,
+    location: null,
+    photo_url: brandLogoUrl, // fallback to brand logo
+  };
+
+  if (authorUser) {
+    const reporterName = authorUser.profile?.fullName || null;
+    const reporterPhoto = reporter?.profilePhotoUrl || authorUser.profile?.profilePhotoUrl || null;
+    const designation = reporter?.designation;
+    
+    // Build location string
+    const locationParts: string[] = [];
+    if (reporter?.mandal?.name) locationParts.push(reporter.mandal.name);
+    if (reporter?.district?.name) locationParts.push(reporter.district.name);
+    if (reporter?.state?.name) locationParts.push(reporter.state.name);
+    const locationStr = locationParts.length > 0 ? locationParts.join(', ') : null;
+
+    authorDetails = {
+      name: reporterName || `${tenantDisplayName} Reporter`,
+      slug: reporterName ? reporterName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : 'staff-reporter',
+      designation: designation ? (designation.nativeTitle || designation.title) : null,
+      location: locationStr,
+      photo_url: reporterPhoto || brandLogoUrl, // fallback to brand logo if no profile photo
+    };
+  }
+
+  // Build images object
+  const images: any = {
+    cover: coverImage ? {
+      url: coverImage.url || article.coverImageUrl,
+      width: coverImage.w || coverImage.width || 1200,
+      height: coverImage.h || coverImage.height || 630,
+      alt: coverImage.alt || article.title,
+    } : (article.coverImageUrl ? {
+      url: article.coverImageUrl,
+      width: 1200,
+      height: 630,
+      alt: article.title,
+    } : null),
+    inline: inlineMedia.map((m: any) => ({
+      url: m.url,
+      alt: m.alt || m.caption || article.title,
+      caption: m.caption || null,
+      type: m.type || 'image',
+    })),
+  };
+
+  // Build SEO object
+  const canonicalUrl = `https://${domain.domain}/${article.language?.code || 'te'}/article/${article.slug}`;
+  const seo = {
+    title: article.seoTitle || `${article.title} | ${tenantDisplayName}`,
+    description: article.metaDescription || article.title,
+    keywords: Array.isArray(article.tags) ? article.tags : [],
+    canonical_url: canonicalUrl,
+  };
+
+  // Build Open Graph object
+  const og = {
+    title: article.seoTitle || article.title,
+    description: article.metaDescription || article.title,
+    image: images.cover?.url || brandLogoUrl,
+    type: 'article',
+    url: canonicalUrl,
+  };
+
+  // Build dateline
+  const dateline = {
+    place: authorDetails.location?.split(',')[0]?.trim() || null,
+    published_at: article.publishedAt?.toISOString() || article.createdAt.toISOString(),
+    updated_at: article.updatedAt.toISOString(),
+  };
+
+  // Fetch related articles (same category, excluding current)
+  const relatedArticles = article.categoryId
+    ? await p.tenantWebArticle.findMany({
+        where: {
+          tenantId: tenant.id,
+          categoryId: article.categoryId,
+          status: 'PUBLISHED',
+          id: { not: article.id },
+          ...domainScope,
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 6,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          coverImageUrl: true,
+          publishedAt: true,
+        },
+      }).catch(() => [])
+    : [];
+
+  // Build JSON-LD structured data
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'NewsArticle',
+    headline: article.title,
+    description: seo.description,
+    image: images.cover?.url ? [images.cover.url] : [],
+    datePublished: dateline.published_at,
+    dateModified: dateline.updated_at,
+    author: {
+      '@type': 'Person',
+      name: authorDetails.name,
+      image: authorDetails.photo_url,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: tenantDisplayName,
+      logo: {
+        '@type': 'ImageObject',
+        url: brandLogoUrl,
+      },
+    },
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': canonicalUrl,
+    },
+    articleSection: article.category?.name || null,
+    keywords: seo.keywords.join(', '),
+    inLanguage: article.language?.code || 'te',
+  };
+
+  // Build response in reference format
+  const response = {
+    status: 'ok',
+    article: {
+      id: article.id,
+      slug: article.slug,
+      headline: article.title,
+      subheadline,
+      content_html: contentHtml,
+      language: article.language?.code || 'te',
+      category: article.category ? {
+        id: article.category.id,
+        name: article.category.name,
+        slug: article.category.slug,
+      } : null,
+      dateline,
+      author: authorDetails,
+      images,
+      seo,
+      og,
+      jsonLd,
+      viewCount: article.viewCount || 0,
+      shareCount: article.shareCount || 0,
+      isBreaking: article.isBreaking || false,
+      isLive: article.isLive || false,
+      tags: article.tags || [],
+    },
+    publisher: {
+      id: tenant.id,
+      name: tenantDisplayName,
+      native_name: tenantNativeName,
+      logo_url: brandLogoUrl,
+    },
+    related_articles: relatedArticles.map((ra: any) => ({
+      id: ra.id,
+      slug: ra.slug,
+      headline: ra.title,
+      cover_image_url: ra.coverImageUrl,
+      published_at: ra.publishedAt?.toISOString(),
+    })),
+  };
+
+  res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+  res.json(response);
+});
+
+/**
+ * @swagger
+ * /public/category/{categorySlug}/articles:
+ *   get:
+ *     summary: Get articles by category slug with SEO-friendly format
+ *     description: Returns paginated articles for a specific category with full metadata
+ *     tags: [Public - Website, Public - Articles]
+ *     parameters:
+ *       - in: path
+ *         name: categorySlug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Category slug
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *         description: Language code (e.g., te, en, hi)
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Items per page (max 50)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Domain override for testing
+ *     responses:
+ *       200:
+ *         description: Category articles with pagination
+ *       404:
+ *         description: Category not found
+ */
+router.get('/category/:categorySlug/articles', async (req, res) => {
+  const domain = (res.locals as any).domain;
+  const tenant = (res.locals as any).tenant;
+  if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
+
+  const categorySlug = String(req.params.categorySlug);
+  const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+  const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '20'), 10)));
+  const skip = (page - 1) * limit;
+
+  // Find category by slug
+  const category = await p.category.findFirst({
+    where: { slug: categorySlug },
+    select: { id: true, slug: true, name: true },
+  });
+  if (!category) return res.status(404).json({ error: 'Category not found' });
+
+  // Get domain configuration
+  const [domainCats, domainLangs, tenantTheme] = await Promise.all([
+    p.domainCategory.findMany({ where: { domainId: domain.id } }),
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }),
+    p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+  ]);
+
+  const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
+  
+  // Check if category is allowed for this domain
+  if (allowedCategoryIds.size > 0 && !allowedCategoryIds.has(category.id)) {
+    return res.status(404).json({ error: 'Category not available for this domain' });
+  }
+
+  const domainScope: any = { OR: [{ domainId: domain.id }, { domainId: null }] };
+
+  // Language filter
+  let languageIdFilter: string | undefined;
+  if (languageCode) {
+    const match = domainLangs.find((d: any) => d.language?.code === languageCode);
+    if (!match) return res.status(404).json({ error: 'Language not supported for this domain' });
+    languageIdFilter = match.languageId;
+  }
+
+  const and: any[] = [domainScope];
+  if (languageIdFilter) {
+    and.push({ languageId: languageIdFilter });
+  }
+
+  const where: any = {
+    tenantId: tenant.id,
+    categoryId: category.id,
+    status: 'PUBLISHED',
+    AND: and,
+  };
+
+  // Fetch articles and count
+  const [articles, totalCount] = await Promise.all([
+    p.tenantWebArticle.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      skip,
+      take: limit,
+      include: {
+        language: { select: { code: true } },
+        author: {
+          select: {
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
+            reporterProfile: {
+              select: {
+                profilePhotoUrl: true,
+                designation: { select: { title: true, nativeTitle: true } },
+              }
+            }
+          }
+        }
+      }
+    }),
+    p.tenantWebArticle.count({ where }),
+  ]);
+
+  const brandLogoUrl = (tenantTheme as any)?.logoUrl || null;
+  const tenantDisplayName = (tenant as any)?.displayName || tenant.name;
+
+  // Format articles
+  const formattedArticles = articles.map((a: any) => {
+    const authorUser = a.author;
+    const reporter = authorUser?.reporterProfile;
+    const reporterName = authorUser?.profile?.fullName || null;
+    const reporterPhoto = reporter?.profilePhotoUrl || authorUser?.profile?.profilePhotoUrl || brandLogoUrl;
+    const designation = reporter?.designation;
+
+    return {
+      id: a.id,
+      slug: a.slug,
+      headline: a.title,
+      cover_image_url: a.coverImageUrl,
+      published_at: a.publishedAt?.toISOString() || a.createdAt.toISOString(),
+      language: a.language?.code || 'te',
+      author: {
+        name: reporterName || `${tenantDisplayName} Reporter`,
+        photo_url: reporterPhoto,
+        designation: designation ? (designation.nativeTitle || designation.title) : null,
+      },
+      view_count: a.viewCount || 0,
+      is_breaking: a.isBreaking || false,
+    };
+  });
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  res.json({
+    status: 'ok',
+    category: {
+      id: category.id,
+      slug: category.slug,
+      name: category.name,
+    },
+    articles: formattedArticles,
+    pagination: {
+      page,
+      limit,
+      total_count: totalCount,
+      total_pages: totalPages,
+      has_next: page < totalPages,
+      has_prev: page > 1,
+    },
+    publisher: {
+      id: tenant.id,
+      name: tenantDisplayName,
+      logo_url: brandLogoUrl,
+    },
+  });
+});
+
+/**
+ * @swagger
  * /public/entity:
  *   get:
  *     summary: Get public PRGI/entity details for this domain's tenant
