@@ -343,18 +343,39 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           tenantId,
           authorId,
           title: headline,
-          slug: seoSlug,
+          type: 'UNIFIED',
+          content: bodyParagraphs.join('\n\n'),
           languageId,
           status: effectiveStatus,
+          isBreakingNews: payload.isBreaking || false,
+          tags: seoKeywords.slice(0, 10),
+          images: images.map((img: any) => img.url).filter(isHttpUrl),
           contentJson: {
             raw: {
               title: headline,
               content: bodyParagraphs.join('\n\n'),
               coverImageUrl,
+            },
+            seo: {
+              slug: seoSlug,
+              metaTitle: seoMetaTitle,
+              metaDescription: seoMetaDescription,
             }
           }
         }
       });
+
+      // Link base article to category (many-to-many)
+      if (categoryId) {
+        await tx.article.update({
+          where: { id: baseArticle.id },
+          data: {
+            categories: {
+              connect: { id: categoryId }
+            }
+          }
+        });
+      }
 
       // 1. Create NewspaperArticle (linked to base article)
       const newspaperArticle = await tx.newspaperArticle.create({
@@ -375,6 +396,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           villageId,
           placeName,
           status: effectiveStatus,
+          isBreaking: payload.isBreaking || false,
           featuredImageUrl: coverImageUrl,
           mediaUrls: images.map((img: any) => img.url).filter(isHttpUrl),
           content: bodyParagraphs.join('\n\n'),
@@ -390,9 +412,12 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         const contentHtml = buildWebContentHtml(webArticle);
         const plainText = buildPlainText(webArticle);
         
+        // Build canonical URL in new format: https://domain/categorySlug/articleSlug
         const canonicalUrl = domainName
-          ? `https://${domainName}/${languageCode}/articles/${seoSlug}`
-          : `/${languageCode}/articles/${seoSlug}`;
+          ? (categorySlug 
+              ? `https://${domainName}/${categorySlug}/${seoSlug}`
+              : `https://${domainName}/${seoSlug}`)
+          : `/${seoSlug}`;
         
         const jsonLd = buildNewsArticleJsonLd({
           headline: webArticle.headline || headline,
@@ -418,6 +443,8 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           }
         };
 
+        const isBreaking = payload.isBreaking || false;
+
         tenantWebArticle = await tx.tenantWebArticle.create({
           data: {
             tenantId,
@@ -427,6 +454,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
             categoryId,
             title: webArticle.headline || headline,
             slug: seoSlug,
+            isBreaking,
             contentJson,
             tags: seoKeywords.slice(0, 10),
             seoTitle: seoMetaTitle,
@@ -455,6 +483,8 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
             mediaUrls: images.map((img: any) => img.url).filter(isHttpUrl),
             tags: seoKeywords.slice(0, 5),
             status: effectiveStatus,
+            isBreaking: payload.isBreaking || false,
+            slug: seoSlug,
             publishDate: effectiveStatus === 'PUBLISHED' ? new Date() : null
           }
         });
