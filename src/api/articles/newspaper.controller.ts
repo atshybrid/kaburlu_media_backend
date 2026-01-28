@@ -956,10 +956,12 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
         const domainById = new Map<string, string>();
         let fallbackDomain: string | null = null;
 
+        const categoryById = new Map<string, string>();
+
         if (webIds.length) {
             const webRows = await prisma.tenantWebArticle.findMany({
                 where: { id: { in: Array.from(new Set(webIds)) } },
-                select: { id: true, slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, tenantId: true, language: { select: { code: true } } },
+                select: { id: true, slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, tenantId: true, categoryId: true, language: { select: { code: true } }, category: { select: { slug: true } } },
             }).catch(() => [] as any);
             for (const w of webRows as any[]) webById.set(String(w.id), w);
 
@@ -969,6 +971,11 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
             if (domainIds.length) {
                 const doms = await prisma.domain.findMany({ where: { id: { in: domainIds } }, select: { id: true, domain: true } }).catch(() => [] as any);
                 for (const d of doms as any[]) domainById.set(String(d.id), String(d.domain));
+            }
+
+            // Cache category slugs from loaded web articles
+            for (const w of webRows as any[]) {
+                if (w?.category?.slug) categoryById.set(String(w.id), String(w.category.slug));
             }
         }
 
@@ -987,12 +994,17 @@ export const listNewspaperArticles = async (req: Request, res: Response) => {
             const sportLinkSlug = web?.slug ? String(web.slug) : null;
             const dom = web?.domainId ? domainById.get(String(web.domainId)) : null;
             const sportLinkDomain = dom || fallbackDomain;
-            const lang = String(web?.language?.code || 'en').trim().toLowerCase() || 'en';
-            const sportLink = sportLinkDomain && sportLinkSlug ? `https://${sportLinkDomain}/${encodeURIComponent(lang)}/articles/${encodeURIComponent(sportLinkSlug)}` : null;
+            const categorySlug = webArticleId ? categoryById.get(webArticleId) : null;
+            // Build sportLink as: https://domain/categorySlug/articleSlug (preferred) OR fallback to old format
+            const sportLink = sportLinkDomain && sportLinkSlug 
+                ? (categorySlug 
+                    ? `https://${sportLinkDomain}/${encodeURIComponent(categorySlug)}/${encodeURIComponent(sportLinkSlug)}`
+                    : `https://${sportLinkDomain}/${encodeURIComponent(sportLinkSlug)}`)
+                : null;
 
             const webArticleStatus = web?.status ? String(web.status) : null;
             const webArticleUrl = sportLink;
-            const webArticleLanguageCode = lang;
+            const webArticleLanguageCode = String(web?.language?.code || 'en').trim().toLowerCase() || 'en';
             const webArticleTitle = web?.title ? String(web.title) : null;
             const webArticleViewCount = typeof web?.viewCount === 'number' ? Number(web.viewCount) : null;
             const webArticlePublishedAt = web?.publishedAt ? new Date(web.publishedAt).toISOString() : null;
@@ -1057,6 +1069,7 @@ export const getNewspaperArticle = async (req: Request, res: Response) => {
         let sportLinkDomain: string | null = null;
         let sportLinkSlug: string | null = null;
         let sportLinkLang: string | null = null;
+        let sportLinkCategorySlug: string | null = null;
         try {
             const webArticleId = item?.baseArticle?.contentJson?.webArticleId ? String(item.baseArticle.contentJson.webArticleId) : null;
             let webArticleStatus: string | null = null;
@@ -1064,9 +1077,10 @@ export const getNewspaperArticle = async (req: Request, res: Response) => {
             let webArticleViewCount: number | null = null;
             let webArticlePublishedAt: string | null = null;
             if (webArticleId) {
-                const web = await prisma.tenantWebArticle.findUnique({ where: { id: webArticleId }, select: { slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, language: { select: { code: true } } } }).catch(() => null);
+                const web = await prisma.tenantWebArticle.findUnique({ where: { id: webArticleId }, select: { slug: true, status: true, title: true, viewCount: true, publishedAt: true, domainId: true, categoryId: true, language: { select: { code: true } }, category: { select: { slug: true } } } }).catch(() => null);
                 sportLinkSlug = web?.slug ? String(web.slug) : null;
                 sportLinkLang = String(web?.language?.code || '').trim().toLowerCase() || null;
+                sportLinkCategorySlug = web?.category?.slug ? String(web.category.slug) : null;
                 webArticleStatus = web?.status ? String(web.status) : null;
                 webArticleTitle = web?.title ? String(web.title) : null;
                 webArticleViewCount = typeof web?.viewCount === 'number' ? Number(web.viewCount) : null;
@@ -1085,7 +1099,12 @@ export const getNewspaperArticle = async (req: Request, res: Response) => {
                 sportLinkDomain = primary?.domain ? String(primary.domain) : null;
             }
             const finalLang = sportLinkLang || 'en';
-            sportLink = sportLinkDomain && sportLinkSlug ? `https://${sportLinkDomain}/${encodeURIComponent(finalLang)}/articles/${encodeURIComponent(sportLinkSlug)}` : null;
+            // Build sportLink as: https://domain/categorySlug/articleSlug (preferred) OR fallback
+            sportLink = sportLinkDomain && sportLinkSlug 
+                ? (sportLinkCategorySlug 
+                    ? `https://${sportLinkDomain}/${encodeURIComponent(sportLinkCategorySlug)}/${encodeURIComponent(sportLinkSlug)}`
+                    : `https://${sportLinkDomain}/${encodeURIComponent(sportLinkSlug)}`)
+                : null;
 
             const webArticleUrl = sportLink;
             const webArticleLanguageCode = finalLang;
