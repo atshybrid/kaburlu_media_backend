@@ -323,9 +323,6 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
     }
 
     // Signature valid - update payment and reporter
-    const subscriptionExpiry = new Date();
-    subscriptionExpiry.setFullYear(subscriptionExpiry.getFullYear() + 1);
-
     const [updatedPayment, updatedReporter] = await (prisma as any).$transaction([
       (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
@@ -337,13 +334,11 @@ router.post('/tenants/:tenantId/reporters/:id/payments/verify', passport.authent
       (prisma as any).reporter.update({
         where: { id },
         data: {
-          paymentStatus: 'PAID',
-          subscriptionExpiry,
+          subscriptionActive: true,
         },
         select: {
           id: true,
-          paymentStatus: true,
-          subscriptionExpiry: true,
+          subscriptionActive: true,
         },
       }),
     ]);
@@ -486,9 +481,6 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
     }
 
     // Signature valid - update payment and reporter
-    const subscriptionExpiry = new Date();
-    subscriptionExpiry.setFullYear(subscriptionExpiry.getFullYear() + 1);
-
     const [updatedPayment, updatedReporter] = await (prisma as any).$transaction([
       (prisma as any).reporterPayment.update({
         where: { id: paymentRecord.id },
@@ -500,13 +492,11 @@ router.post('/public/reporter-payments/verify', async (req, res) => {
       (prisma as any).reporter.update({
         where: { id: reporterId },
         data: {
-          paymentStatus: 'PAID',
-          subscriptionExpiry,
+          subscriptionActive: true,
         },
         select: {
           id: true,
-          paymentStatus: true,
-          subscriptionExpiry: true,
+          subscriptionActive: true,
         },
       }),
     ]);
