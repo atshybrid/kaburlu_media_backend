@@ -503,6 +503,22 @@ export const login = async (loginDto: MpinLoginDto) => {
       if (outstanding.length > 0) {
         console.log('[Auth] Payment gating triggered for reporter', reporter.id, 'Outstanding:', outstanding);
         
+        // Fetch tenant branding for payment screen trust
+        const [tenantWithBranding, tenantTheme, tenantEntity] = await Promise.all([
+          prisma.tenant.findUnique({
+            where: { id: reporter.tenantId },
+            select: { id: true, name: true, slug: true }
+          }),
+          (prisma as any).tenantTheme?.findUnique?.({
+            where: { tenantId: reporter.tenantId },
+            select: { logoUrl: true, faviconUrl: true, primaryColor: true }
+          }).catch(() => null),
+          (prisma as any).tenantEntity?.findUnique?.({
+            where: { tenantId: reporter.tenantId },
+            select: { nativeName: true, registrationTitle: true, publisherName: true }
+          }).catch(() => null),
+        ]);
+        
         // Auto-create Razorpay order for pending payments
         let razorpayOrder: any = null;
         let razorpayKeyId: string | null = null;
@@ -598,6 +614,18 @@ export const login = async (loginDto: MpinLoginDto) => {
           code: 'PAYMENT_REQUIRED',
           message: 'Reporter payments required before login',
           reporter: { id: reporter.id, tenantId: reporter.tenantId },
+          // Tenant branding for payment screen trust
+          tenant: {
+            id: tenantWithBranding?.id || reporter.tenantId,
+            name: tenantWithBranding?.name || null,
+            slug: tenantWithBranding?.slug || null,
+            nativeName: tenantEntity?.nativeName || null,
+            registrationTitle: tenantEntity?.registrationTitle || null,
+            publisherName: tenantEntity?.publisherName || null,
+            logoUrl: tenantTheme?.logoUrl || null,
+            faviconUrl: tenantTheme?.faviconUrl || null,
+            primaryColor: tenantTheme?.primaryColor || null,
+          },
           outstanding,
           // Breakdown for UI display (amounts in Rupees as stored in DB)
           breakdown: {
