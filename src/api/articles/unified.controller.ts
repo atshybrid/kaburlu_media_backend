@@ -324,14 +324,44 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       languageId = lang?.id || null;
     }
 
+    // ========== RESOLVE CATEGORY SLUG (for sportLink URL) ==========
+    let categorySlug: string | null = null;
+    if (categoryId) {
+      const cat = await prisma.category.findUnique({
+        where: { id: categoryId },
+        select: { slug: true }
+      });
+      categorySlug = cat?.slug || null;
+    }
+
     // ========== TRANSACTION: CREATE ALL 3 ARTICLES ==========
     const result = await prisma.$transaction(async (tx: any) => {
       
-      // 1. Create NewspaperArticle
+      // 0. Create base Article first (to link all 3 article types)
+      const baseArticle = await tx.article.create({
+        data: {
+          tenantId,
+          authorId,
+          title: headline,
+          slug: seoSlug,
+          languageId,
+          status: effectiveStatus,
+          contentJson: {
+            raw: {
+              title: headline,
+              content: bodyParagraphs.join('\n\n'),
+              coverImageUrl,
+            }
+          }
+        }
+      });
+
+      // 1. Create NewspaperArticle (linked to base article)
       const newspaperArticle = await tx.newspaperArticle.create({
         data: {
           tenantId,
           authorId,
+          baseArticleId: baseArticle.id,
           title: headline,
           heading: headline,
           subTitle: subtitle,
@@ -430,7 +460,21 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         });
       }
 
+      // 4. Update base Article with webArticleId and shortNewsId for linking
+      await tx.article.update({
+        where: { id: baseArticle.id },
+        data: {
+          contentJson: {
+            ...(baseArticle.contentJson as any),
+            webArticleId: tenantWebArticle?.id || null,
+            shortNewsId: shortNewsRecord?.id || null,
+            newspaperArticleId: newspaperArticle.id,
+          }
+        }
+      });
+
       return {
+        baseArticle,
         newspaperArticle,
         tenantWebArticle,
         shortNewsRecord
@@ -443,6 +487,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       message: 'All articles created successfully',
       status: effectiveStatus,
       data: {
+        baseArticleId: result.baseArticle.id,
         newspaperArticle: {
           id: result.newspaperArticle.id,
           title: result.newspaperArticle.title,
@@ -452,7 +497,12 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           id: result.tenantWebArticle.id,
           title: result.tenantWebArticle.title,
           slug: result.tenantWebArticle.slug,
-          status: result.tenantWebArticle.status
+          status: result.tenantWebArticle.status,
+          url: domainName && result.tenantWebArticle.slug 
+            ? (categorySlug 
+                ? `https://${domainName}/${categorySlug}/${result.tenantWebArticle.slug}`
+                : `https://${domainName}/${result.tenantWebArticle.slug}`)
+            : null
         } : null,
         shortNews: result.shortNewsRecord ? {
           id: result.shortNewsRecord.id,
