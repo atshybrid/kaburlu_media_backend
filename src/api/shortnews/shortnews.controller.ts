@@ -761,7 +761,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         return res.status(400).json({ success: false, error: 'Invalid languageId/languageCode' });
       }
     }
-    const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED'] } };
+    const where: any = { status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] } };
     // ShortNews.language is a string (historically may store either Language.id or Language.code)
     if (filterLang) where.language = { in: [filterLang.id, filterLang.code] };
 
