@@ -294,6 +294,8 @@ apiV1.use('/location', locationStatusRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
 apiV1.use('/dashboard', dashboardRoutes);
+apiV1.use('/analytics', analyticsRoutes);
+apiV1.use('/leaderboard', leaderboardRoutes);
 // Mount reporter payments under versioned root as well for absolute paths
 apiV1.use('/', reporterPaymentsRoutes);
 // family & kin-relations removed
