@@ -3185,6 +3185,254 @@ router.get('/article/:slug', async (req, res) => {
 
 /**
  * @swagger
+ * /public/webarticle/{slug}:
+ *   get:
+ *     summary: Get full SEO-optimized article by slug (alias endpoint)
+ *     description: |
+ *       Returns a complete article with SEO metadata, author info, related articles, and structured data.
+ *       This is an alias for /public/article/:slug for frontend convenience.
+ *     tags: [Public - Website, Public - Articles]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Article slug or ID
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Domain override for testing
+ *     responses:
+ *       200:
+ *         description: Full SEO-optimized article response
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: "ok"
+ *               article:
+ *                 id: "cmkr42x2t01fkli1xll9tqaxr"
+ *                 slug: "hyderabad-metro-fare-hike"
+ *                 headline: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు"
+ *                 subheadline: "ఫిబ్రవరి 1 నుంచి అమలు"
+ *                 content_html: "<p>హైదరాబాద్ మెట్రో రైలు ఛార్జీలు...</p>"
+ *                 language: "te"
+ *                 category:
+ *                   id: "metro"
+ *                   name: "మెట్రో న్యూస్"
+ *                   slug: "metro-news"
+ *                 dateline:
+ *                   place: "హైదరాబాద్"
+ *                   published_at: "2026-01-27T09:30:00+05:30"
+ *                   updated_at: "2026-01-27T10:10:00+05:30"
+ *                 author:
+ *                   name: "స్టాఫ్ రిపోర్టర్"
+ *                   designation: "Senior Reporter"
+ *                   location: "హైదరాబాద్, తెలంగాణ"
+ *                   photo_url: "https://cdn.site.com/reporter.webp"
+ *                 images:
+ *                   cover:
+ *                     url: "https://cdn.site.com/articles/metro.webp"
+ *                     width: 1200
+ *                     height: 630
+ *                     alt: "హైదరాబాద్ మెట్రో రైలు"
+ *                   inline: []
+ *                 seo:
+ *                   title: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు | Aksharam Voice"
+ *                   description: "ఫిబ్రవరి 1 నుంచి హైదరాబాద్ మెట్రో ఛార్జీల పెంపు అమలు"
+ *                   keywords: ["Hyderabad Metro", "Metro Fare Hike"]
+ *                 og:
+ *                   title: "హైదరాబాద్ మెట్రో ఛార్జీల పెంపు"
+ *                   description: "మెట్రో ప్రయాణికులకు కీలక సమాచారం"
+ *                   image: "https://cdn.site.com/articles/metro-og.webp"
+ *                 publisher:
+ *                   name: "Aksharam Voice"
+ *                   logo_url: "https://cdn.site.com/logo.webp"
+ *               related_articles: []
+ *       404:
+ *         description: Article not found
+ */
+router.get('/webarticle/:slug', async (req, res) => {
+  const domain = (res.locals as any).domain;
+  const tenant = (res.locals as any).tenant;
+  if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
+
+  const slugRaw = String(req.params.slug);
+  const slug = (() => {
+    try { return decodeURIComponent(slugRaw); } catch { return slugRaw; }
+  })();
+
+  // Fetch domain configuration
+  const [domainCats, domainLangs] = await Promise.all([
+    p.domainCategory.findMany({ where: { domainId: domain.id } }),
+    p.domainLanguage.findMany({ where: { domainId: domain.id }, include: { language: true } }),
+  ]);
+  const allowedCategoryIds = new Set(domainCats.map((d: any) => d.categoryId));
+  const allowedLanguageIds = new Set(domainLangs.map((d: any) => d.languageId));
+  const domainScope: any = { OR: [{ domainId: domain.id }, { domainId: null }] };
+
+  const and: any[] = [domainScope];
+  if (allowedLanguageIds.size) {
+    and.push({ OR: [{ languageId: { in: Array.from(allowedLanguageIds) } }, { languageId: null }] });
+  }
+  if (allowedCategoryIds.size) {
+    and.push({ OR: [{ categoryId: { in: Array.from(allowedCategoryIds) } }, { categoryId: null }] });
+  }
+
+  const where: any = {
+    tenantId: tenant.id,
+    status: 'PUBLISHED',
+    AND: and,
+    OR: [{ slug }, { id: slug }],
+  };
+
+  const article = await p.tenantWebArticle.findFirst({
+    where,
+    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+    include: {
+      category: { select: { id: true, slug: true, name: true } },
+      language: { select: { code: true } },
+      author: {
+        select: {
+          id: true,
+          profile: { select: { fullName: true, photoUrl: true, bio: true } },
+        },
+      },
+    },
+  });
+
+  if (!article) return res.status(404).json({ error: 'Not found' });
+
+  // Increment view count (fire and forget)
+  p.tenantWebArticle.update({ where: { id: article.id }, data: { viewCount: { increment: 1 } } }).catch(() => {});
+
+  // Extract content
+  const contentJson = article.contentJson || {};
+  const contentHtml = (contentJson as any).contentHtml || (contentJson as any).content || '';
+  const subheadline = (contentJson as any).subheadline || (contentJson as any).subtitle || (contentJson as any).excerpt || null;
+
+  // Author details
+  const authorName = article.author?.profile?.fullName || 'Staff Reporter';
+  const authorPhotoUrl = article.author?.profile?.photoUrl || null;
+  const authorBio = article.author?.profile?.bio || null;
+
+  // Dateline
+  const dateline = {
+    place: (contentJson as any).placeName || null,
+    published_at: article.publishedAt?.toISOString() || article.createdAt.toISOString(),
+    updated_at: article.updatedAt.toISOString(),
+  };
+
+  // Images
+  const coverImage = article.coverImageUrl ? {
+    url: article.coverImageUrl,
+    width: 1200,
+    height: 630,
+    alt: article.title,
+  } : null;
+  const inlineImages = Array.isArray((contentJson as any).images) ? (contentJson as any).images : [];
+
+  // SEO
+  const seo = {
+    title: article.seoTitle || article.title,
+    description: article.metaDescription || subheadline || '',
+    keywords: article.tags || [],
+  };
+
+  // OG
+  const og = {
+    title: article.seoTitle || article.title,
+    description: article.metaDescription || subheadline || '',
+    image: article.coverImageUrl || null,
+  };
+
+  // Tenant branding
+  const tenantEntity = await p.tenant.findUnique({
+    where: { id: tenant.id },
+    select: { name: true, brandConfig: true },
+  });
+  const brandConfig = (tenantEntity?.brandConfig as any) || {};
+  const tenantDisplayName = brandConfig.displayName || tenantEntity?.name || 'News';
+  const tenantNativeName = brandConfig.nativeName || tenantDisplayName;
+  const brandLogoUrl = brandConfig.logoUrl || null;
+
+  // Related articles
+  const relatedArticles = article.categoryId
+    ? await p.tenantWebArticle.findMany({
+        where: {
+          tenantId: tenant.id,
+          categoryId: article.categoryId,
+          status: 'PUBLISHED',
+          id: { not: article.id },
+        },
+        take: 5,
+        orderBy: { publishedAt: 'desc' },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          coverImageUrl: true,
+          publishedAt: true,
+        },
+      }).catch(() => [])
+    : [];
+
+  // Build response
+  const response = {
+    status: 'ok',
+    article: {
+      id: article.id,
+      slug: article.slug,
+      headline: article.title,
+      subheadline,
+      content_html: contentHtml,
+      language: article.language?.code || 'te',
+      category: article.category ? {
+        id: article.category.id,
+        name: article.category.name,
+        slug: article.category.slug,
+      } : null,
+      dateline,
+      author: {
+        name: authorName,
+        photo_url: authorPhotoUrl,
+        bio: authorBio,
+      },
+      images: {
+        cover: coverImage,
+        inline: inlineImages,
+      },
+      seo,
+      og,
+      viewCount: article.viewCount || 0,
+      shareCount: article.shareCount || 0,
+      isBreaking: article.isBreaking || false,
+      isLive: article.isLive || false,
+      tags: article.tags || [],
+    },
+    publisher: {
+      id: tenant.id,
+      name: tenantDisplayName,
+      native_name: tenantNativeName,
+      logo_url: brandLogoUrl,
+    },
+    related_articles: relatedArticles.map((ra: any) => ({
+      id: ra.id,
+      slug: ra.slug,
+      headline: ra.title,
+      cover_image_url: ra.coverImageUrl,
+      published_at: ra.publishedAt?.toISOString(),
+    })),
+  };
+
+  res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+  res.json(response);
+});
+
+/**
+ * @swagger
  * /public/category/{categorySlug}/articles:
  *   get:
  *     summary: Get articles by category slug with SEO-friendly format
