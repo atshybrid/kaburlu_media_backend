@@ -15,16 +15,20 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: 'http://localhost:3001/api/v1',
-      description: 'Local server'
+      url: 'https://api.kaburlumedia.com/api/v1',
+      description: 'Production server (DigitalOcean)'
+    },
+    {
+      url: 'https://app.kaburlumedia.com/api/v1',
+      description: 'Production server (App)'
     },
     {
       url: 'https://kaburlu-media-backend.onrender.com/api/v1',
       description: 'Render server'
     },
     {
-      url: 'https://app.kaburlumedia.com/api/v1',
-      description: 'Production server'
+      url: 'http://localhost:3001/api/v1',
+      description: 'Local development'
     }
   ],
   tags: [
