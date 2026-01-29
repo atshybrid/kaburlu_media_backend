@@ -1,0 +1,26 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DO_SERVER_IP }}
+          username: deploy
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            cd ~/kaburlu_media_backend
+            git pull origin main
+            npm install
+            npm run prisma:generate
+            npm run build
+            pm2 reload kaburlu-api || pm2 start npm --name kaburlu-api -- start
+            pm2 save
