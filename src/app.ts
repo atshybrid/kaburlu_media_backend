@@ -345,9 +345,109 @@ app.get(
   }
 );
 
-// Root route
+// Root route - Landing page
 app.get('/', (_req, res) => {
-  res.send('Welcome to the API. Visit /api/v1/docs for documentation.');
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaburlu Media API</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      padding: 40px;
+    }
+    .logo {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #e94560, #ff6b6b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .tagline {
+      font-size: 1.2rem;
+      color: #a0a0a0;
+      margin-bottom: 40px;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.1);
+      padding: 12px 24px;
+      border-radius: 50px;
+      margin-bottom: 30px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      background: #00ff88;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .links {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .links a {
+      color: #fff;
+      text-decoration: none;
+      padding: 12px 28px;
+      border: 2px solid #e94560;
+      border-radius: 8px;
+      transition: all 0.3s;
+    }
+    .links a:hover {
+      background: #e94560;
+    }
+    .links a.primary {
+      background: #e94560;
+    }
+    .links a.primary:hover {
+      background: #ff6b6b;
+      border-color: #ff6b6b;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">📰</div>
+    <h1>Kaburlu Media API</h1>
+    <p class="tagline">News & Media Backend Services</p>
+    <div class="status">
+      <span class="status-dot"></span>
+      <span>API Running</span>
+    </div>
+    <div class="links">
+      <a href="/api/v1/docs" class="primary">📖 API Documentation</a>
+      <a href="/api/docs">Swagger UI</a>
+    </div>
+  </div>
+</body>
+</html>
+  `);
 });
 
 // 404 handler
