@@ -786,7 +786,31 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const items = await prisma.shortNews.findMany({
       where,
       include: {
-        author: { select: { id: true, email: true, mobileNumber: true, role: { select: { name: true } }, profile: { select: { fullName: true, profilePhotoUrl: true } } } },
+        author: { 
+          select: { 
+            id: true, 
+            email: true, 
+            mobileNumber: true, 
+            role: { select: { name: true } }, 
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
+            reporterProfile: {
+              select: {
+                id: true,
+                tenantId: true,
+                tenant: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    theme: { select: { logoUrl: true, faviconUrl: true } },
+                    entity: { select: { nativeName: true, languageId: true } },
+                    domains: { where: { isPrimary: true }, take: 1, select: { domain: true } }
+                  }
+                }
+              }
+            }
+          } 
+        },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.max(limit * 10, 200),
@@ -912,14 +936,51 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       }
       const isOwner = user ? i.authorId === user.id : false;
       const isRead = user ? readSet.has(i.id) : false;
+
+      // Extract tenant info from reporter profile
+      const reporterProfile = author?.reporterProfile as any;
+      const tenantData = reporterProfile?.tenant;
+      const tenantInfo = tenantData ? {
+        id: tenantData.id,
+        name: tenantData.name,
+        slug: tenantData.slug,
+        domain: tenantData.domains?.[0]?.domain || null,
+        language: resolvedLangCode,
+        logoUrl: tenantData.theme?.logoUrl || null,
+        faviconUrl: tenantData.theme?.faviconUrl || null,
+        nativeName: tenantData.entity?.nativeName || null,
+      } : null;
+
+      // Build SEO object
+      const seoData = i.seo as any;
+      const seo = {
+        title: seoData?.metaTitle || `${i.title} | ${tenantInfo?.name || 'News'}`,
+        description: seoData?.metaDescription || i.content?.slice(0, 160) || '',
+        keywords: seoData?.keywords || i.tags || [],
+        ogTitle: seoData?.ogTitle || i.title,
+        ogDescription: seoData?.ogDescription || i.content?.slice(0, 160) || '',
+        ogImage: primaryImageUrl || seoData?.ogImage || null,
+      };
+
+      // Image alt text
+      const imageAlt = seoData?.imageAlt || (i.title ? `${i.title} - ${categoryName || 'News'}` : null);
+
       return {
         ...i,
+        // Ensure slug is always present
+        slug: i.slug || null,
         // Ensure mediaUrls always present as array
         mediaUrls,
         primaryImageUrl,
         primaryVideoUrl,
+        featuredImage: i.featuredImage || primaryImageUrl || null,
+        imageAlt,
         canonicalUrl,
         jsonLd,
+        // SEO object
+        seo,
+        // Timestamp
+        timestampUtc: i.timestampUtc || i.createdAt?.toISOString() || null,
         languageId: l?.id ?? null,
         languageName: l?.name ?? null,
         languageCode: resolvedLangCode,
@@ -934,6 +995,11 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
           roleName: author?.role?.name || null,
           reporterType: author?.role?.name || null,
         },
+        // Tenant info with brand logo
+        tenant: tenantInfo,
+        // Source/Provider
+        source: i.source || (tenantInfo?.name ? `${tenantInfo.name} Reporter` : null),
+        provider: i.provider || tenantInfo?.name || null,
         isOwner,
         isRead,
         placeName,
@@ -941,10 +1007,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         latitude: i.latitude ?? null,
         longitude: i.longitude ?? null,
         accuracyMeters: i.accuracyMeters ?? null,
-        provider: i.provider ?? null,
-        timestampUtc: i.timestampUtc ?? null,
         placeId: i.placeId ?? null,
-        source: i.source ?? null,
       } as any;
     });
     return res.json({ success: true, pageInfo: { limit, nextCursor, hasMore: filtered.length > limit }, data });
@@ -970,7 +1033,23 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
             email: true, 
             mobileNumber: true, 
             role: { select: { name: true } }, 
-            profile: { select: { fullName: true, profilePhotoUrl: true } } 
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
+            reporterProfile: {
+              select: {
+                id: true,
+                tenantId: true,
+                tenant: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    theme: { select: { logoUrl: true, faviconUrl: true } },
+                    entity: { select: { nativeName: true, languageId: true } },
+                    domains: { where: { isPrimary: true }, take: 1, select: { domain: true } }
+                  }
+                }
+              }
+            }
           } 
         },
       },
@@ -1052,13 +1131,49 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       });
     }
 
+    // Extract tenant info from reporter profile
+    const reporterProfile = author?.reporterProfile as any;
+    const tenantData = reporterProfile?.tenant;
+    const tenantInfo = tenantData ? {
+      id: tenantData.id,
+      name: tenantData.name,
+      slug: tenantData.slug,
+      domain: tenantData.domains?.[0]?.domain || null,
+      language: languageCode,
+      logoUrl: tenantData.theme?.logoUrl || null,
+      faviconUrl: tenantData.theme?.faviconUrl || null,
+      nativeName: tenantData.entity?.nativeName || null,
+    } : null;
+
+    // Build SEO object
+    const seoData = item.seo as any;
+    const seo = {
+      title: seoData?.metaTitle || `${item.title} | ${tenantInfo?.name || 'News'}`,
+      description: seoData?.metaDescription || item.content?.slice(0, 160) || '',
+      keywords: seoData?.keywords || item.tags || [],
+      ogTitle: seoData?.ogTitle || item.title,
+      ogDescription: seoData?.ogDescription || item.content?.slice(0, 160) || '',
+      ogImage: primaryImageUrl || seoData?.ogImage || null,
+    };
+
+    // Image alt text
+    const imageAlt = seoData?.imageAlt || (item.title ? `${item.title} - ${categoryName || 'News'}` : null);
+
     const data = {
       ...item,
+      // Ensure slug is always present
+      slug: item.slug || null,
       mediaUrls,
       primaryImageUrl,
       primaryVideoUrl,
+      featuredImage: item.featuredImage || primaryImageUrl || null,
+      imageAlt,
       canonicalUrl,
       jsonLd,
+      // SEO object
+      seo,
+      // Timestamp
+      timestampUtc: item.timestampUtc || item.createdAt?.toISOString() || null,
       languageId: lang?.id ?? null,
       languageName: lang?.name ?? null,
       languageCode: lang?.code ?? (typeof item.language === 'string' ? item.language : null),
@@ -1073,6 +1188,11 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
         roleName: author?.role?.name || null,
         reporterType: author?.role?.name || null,
       },
+      // Tenant info with brand logo
+      tenant: tenantInfo,
+      // Source/Provider
+      source: item.source || (tenantInfo?.name ? `${tenantInfo.name} Reporter` : null),
+      provider: item.provider || tenantInfo?.name || null,
       isOwner,
       isRead,
       placeName,
@@ -1080,10 +1200,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       latitude: item.latitude ?? null,
       longitude: item.longitude ?? null,
       accuracyMeters: item.accuracyMeters ?? null,
-      provider: item.provider ?? null,
-      timestampUtc: item.timestampUtc ?? null,
       placeId: item.placeId ?? null,
-      source: item.source ?? null,
     };
 
     return res.json({ success: true, data });

@@ -25,7 +25,7 @@ export const checkUserExistsController = async (req: Request, res: Response) => 
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-import { getTenantAdminLoginContext, login, refresh, registerGuestUser } from './auth.service';
+import { getTenantAdminLoginContext, login, refresh, registerGuestUser, verifyMpinForPayment, changeMpinWithOldMpin } from './auth.service';
 import { MpinLoginDto } from './mpin-login.dto';
 import { RefreshDto } from './refresh.dto';
 import { validate } from 'class-validator';
@@ -43,16 +43,24 @@ export const loginController = async (req: Request, res: Response) => {
     const result: any = await login(loginDto);
     console.log("result", result);
     if (!result) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
+      return res.status(401).json({ success: false, verified: false, message: 'Unauthorized' });
     }
     if (result.paymentRequired) {
       // 402 Payment Required - includes Razorpay order details for immediate payment
-      return res.status(402).json({ success: false, code: 'PAYMENT_REQUIRED', message: result.message || 'Payment required before login', data: {
-        reporter: result.reporter,
-        outstanding: result.outstanding,
-        breakdown: result.breakdown, // Detailed breakdown with labels and amounts
-        razorpay: result.razorpay // Contains keyId, orderId (if created), amount for mobile app
-      }});
+      // verified: true indicates MPIN was correct, just payment is pending
+      return res.status(402).json({ 
+        success: false, 
+        verified: true,  // MPIN was correct
+        code: 'PAYMENT_REQUIRED', 
+        message: result.message || 'Payment required before login', 
+        data: {
+          reporter: result.reporter,
+          tenant: result.tenant, // Include tenant branding for payment screen
+          outstanding: result.outstanding,
+          breakdown: result.breakdown, // Detailed breakdown with labels and amounts
+          razorpay: result.razorpay // Contains keyId, orderId (if created), amount for mobile app
+        }
+      });
     }
     res.status(200).json({ success: true, message: 'Operation successful', data: result });
   } catch (error) {
@@ -673,5 +681,97 @@ export const upgradeCitizenReporterGoogleController = async (req: Request, res: 
     return res.json({ success: true, message: 'Operation successful', data });
   } catch (e: any) {
     return res.status(400).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Verify MPIN for payment flow - returns reporter info + payment status without full login.
+ */
+export const verifyMpinForPaymentController = async (req: Request, res: Response) => {
+  try {
+    const { mobileNumber, mpin } = req.body;
+    
+    if (!mobileNumber || !mpin) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'mobileNumber and mpin are required' 
+      });
+    }
+
+    const result = await verifyMpinForPayment(mobileNumber, mpin);
+    
+    if (!result.verified) {
+      return res.status(401).json({ 
+        success: false, 
+        verified: false,
+        message: result.message || 'Invalid credentials' 
+      });
+    }
+
+    // If payment required, return 402 with payment info
+    if (result.paymentRequired) {
+      return res.status(402).json({
+        success: false,
+        verified: true,
+        code: 'PAYMENT_REQUIRED',
+        message: 'Payment required before login',
+        data: {
+          reporter: result.reporter,
+          tenant: result.tenant,
+          outstanding: result.outstanding,
+          breakdown: result.breakdown,
+          razorpay: result.razorpay
+        }
+      });
+    }
+
+    // No payment required - user can proceed with normal login
+    return res.status(200).json({
+      success: true,
+      verified: true,
+      message: 'MPIN verified, no payment required',
+      data: {
+        isReporter: result.isReporter,
+        reporter: result.reporter,
+        tenant: result.tenant,
+        paymentRequired: false
+      }
+    });
+  } catch (error) {
+    console.error('[Auth] verifyMpinForPaymentController error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+/**
+ * Change MPIN using old MPIN for authentication.
+ */
+export const changeMpinController = async (req: Request, res: Response) => {
+  try {
+    const { mobileNumber, oldMpin, newMpin } = req.body;
+    
+    if (!mobileNumber || !oldMpin || !newMpin) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'mobileNumber, oldMpin, and newMpin are required' 
+      });
+    }
+
+    const result = await changeMpinWithOldMpin(mobileNumber, oldMpin, newMpin);
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        success: false, 
+        message: result.message 
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: result.message
+    });
+  } catch (error) {
+    console.error('[Auth] changeMpinController error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

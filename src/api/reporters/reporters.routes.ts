@@ -152,6 +152,15 @@ router.get('/:id', async (req, res) => {
  *     description: |
  *       Generates a Reporter ID card for the given reporter using per-tenant ID card settings
  *       (prefix, digit length, validity rules). If a card already exists, it simply returns it.
+ *       
+ *       **Access Control:**
+ *       - Reporter can generate their OWN ID card only
+ *       - Tenant Admin/Super Admin can generate ID cards for any reporter in their tenant
+ *       
+ *       **Prerequisites:**
+ *       - Profile photo is required
+ *       - If idCardCharge > 0: Onboarding payment must be PAID
+ *       - If subscriptionActive: Current month subscription must be PAID
  *     tags: [ID Cards]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -159,11 +168,13 @@ router.get('/:id', async (req, res) => {
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: "cmk7e7tg401ezlp22wkz5rxky"
  *       - in: path
  *         name: id
  *         description: Reporter id
  *         required: true
  *         schema: { type: string }
+ *         example: "cmk8abc123reporter456"
  *     responses:
  *       201:
  *         description: Reporter ID card created or returned
@@ -172,26 +183,98 @@ router.get('/:id', async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 id: { type: string }
- *                 reporterId: { type: string }
- *                 cardNumber: { type: string, example: "KM000123" }
- *                 issuedAt: { type: string, format: date-time }
- *                 expiresAt: { type: string, format: date-time }
- *                 pdfUrl: { type: string, nullable: true }
- *       400: { description: Validation error }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
- *       404: { description: Reporter or settings not found }
+ *                 id: { type: string, example: "cmkabc123idcard456" }
+ *                 reporterId: { type: string, example: "cmk8abc123reporter456" }
+ *                 cardNumber: { type: string, example: "KM202601000123" }
+ *                 issuedAt: { type: string, format: date-time, example: "2026-01-30T10:30:00.000Z" }
+ *                 expiresAt: { type: string, format: date-time, example: "2027-01-30T10:30:00.000Z" }
+ *                 pdfUrl: { type: string, nullable: true, example: null }
+ *             example:
+ *               id: "cmkabc123idcard456"
+ *               reporterId: "cmk8abc123reporter456"
+ *               cardNumber: "KM202601000123"
+ *               issuedAt: "2026-01-30T10:30:00.000Z"
+ *               expiresAt: "2027-01-30T10:30:00.000Z"
+ *               pdfUrl: null
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "Invalid request"
+ *       401:
+ *         description: Unauthorized - JWT token required
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "Unauthorized"
+ *       403:
+ *         description: Forbidden - not authorized or prerequisites not met
+ *         content:
+ *           application/json:
+ *             examples:
+ *               notAuthorized:
+ *                 summary: Not authorized
+ *                 value:
+ *                   error: "Not authorized to generate ID card for this reporter"
+ *                   details: "Only the reporter themselves or tenant admin can generate ID cards"
+ *               noPhoto:
+ *                 summary: No profile photo
+ *                 value:
+ *                   error: "Profile photo is required to generate ID card"
+ *               paymentRequired:
+ *                 summary: Payment required
+ *                 value:
+ *                   error: "Onboarding payment must be PAID to generate ID card"
+ *       404:
+ *         description: Reporter or settings not found
+ *         content:
+ *           application/json:
+ *             examples:
+ *               reporterNotFound:
+ *                 value:
+ *                   error: "Reporter not found"
+ *               settingsNotFound:
+ *                 value:
+ *                   error: "Tenant ID card settings not configured"
  */
 router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
     const { tenantId, id } = req.params;
+    const user = req.user as any;
 
     const reporter = await (prisma as any).reporter.findFirst({
       where: { id, tenantId },
       include: { idCard: true }
     });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access Control: Check if user can generate this ID card
+    const userRole = user?.role?.name?.toUpperCase() || '';
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
+    const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    
+    // Check if user is the reporter themselves
+    const isOwnReporter = reporter.userId && reporter.userId === user?.id;
+    
+    // Check if user is admin of this tenant
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      // Check if admin belongs to this tenant
+      const adminReporter = await (prisma as any).reporter.findFirst({
+        where: { userId: user.id, tenantId },
+        select: { id: true }
+      }).catch(() => null);
+      isAdminOfTenant = !!adminReporter;
+    }
+    
+    // Allow if: super admin, tenant admin of this tenant, or own reporter
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+      return res.status(403).json({ 
+        error: 'Not authorized to generate ID card for this reporter',
+        details: 'Only the reporter themselves or tenant admin can generate ID cards'
+      });
+    }
 
     if (reporter.idCard) {
       return res.status(201).json(reporter.idCard);
@@ -290,6 +373,231 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
   } catch (e) {
     console.error('generate reporter id-card error', e);
     res.status(500).json({ error: 'Failed to generate reporter ID card' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/regenerate:
+ *   post:
+ *     summary: Regenerate reporter ID card (Admin only)
+ *     description: |
+ *       Deletes existing ID card and generates a new one. Use this when something went wrong 
+ *       with the original ID card (wrong photo, wrong data, expired settings, etc.)
+ *       
+ *       **Access Control:**
+ *       - Only Tenant Admin or Super Admin can regenerate ID cards
+ *       - Reporters CANNOT regenerate their own ID cards (must contact admin)
+ *       
+ *       **Options:**
+ *       - `keepCardNumber: true` - Keeps the same card number (useful for corrections)
+ *       - `keepCardNumber: false` - Generates a new card number (default)
+ *     tags: [ID Cards]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *         example: "cmk7e7tg401ezlp22wkz5rxky"
+ *       - in: path
+ *         name: id
+ *         description: Reporter id
+ *         required: true
+ *         schema: { type: string }
+ *         example: "cmk8abc123reporter456"
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: Reason for regeneration (for audit trail)
+ *               keepCardNumber:
+ *                 type: boolean
+ *                 description: If true, keeps the same card number; if false (default), generates new number
+ *                 default: false
+ *           examples:
+ *             photoCorrection:
+ *               summary: Photo was wrong - keep same card number
+ *               value:
+ *                 reason: "Reporter uploaded wrong photo, now corrected"
+ *                 keepCardNumber: true
+ *             newCard:
+ *               summary: Generate completely new card
+ *               value:
+ *                 reason: "Card was lost, issuing replacement"
+ *                 keepCardNumber: false
+ *             simple:
+ *               summary: Simple regeneration
+ *               value:
+ *                 reason: "Validity period was incorrect"
+ *     responses:
+ *       201:
+ *         description: New ID card generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string, example: "cmknew123idcard789" }
+ *                 reporterId: { type: string, example: "cmk8abc123reporter456" }
+ *                 cardNumber: { type: string, example: "KM202601000124" }
+ *                 issuedAt: { type: string, format: date-time, example: "2026-01-30T12:00:00.000Z" }
+ *                 expiresAt: { type: string, format: date-time, example: "2027-01-30T12:00:00.000Z" }
+ *                 pdfUrl: { type: string, nullable: true, example: null }
+ *                 previousCardNumber: { type: string, nullable: true, example: "KM202601000123" }
+ *                 regeneratedBy: { type: string, example: "cmkadmin123user456" }
+ *                 regenerationReason: { type: string, nullable: true, example: "Photo was incorrect" }
+ *             example:
+ *               id: "cmknew123idcard789"
+ *               reporterId: "cmk8abc123reporter456"
+ *               cardNumber: "KM202601000124"
+ *               issuedAt: "2026-01-30T12:00:00.000Z"
+ *               expiresAt: "2027-01-30T12:00:00.000Z"
+ *               pdfUrl: null
+ *               previousCardNumber: "KM202601000123"
+ *               regeneratedBy: "cmkadmin123user456"
+ *               regenerationReason: "Photo was incorrect"
+ *       401:
+ *         description: Unauthorized - JWT token required
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "Unauthorized"
+ *       403:
+ *         description: Forbidden - Only admin can regenerate
+ *         content:
+ *           application/json:
+ *             examples:
+ *               notAdmin:
+ *                 summary: Reporter trying to regenerate
+ *                 value:
+ *                   error: "Only admin can regenerate ID cards"
+ *                   details: "Reporters cannot regenerate their own ID cards. Contact your tenant admin."
+ *               noPhoto:
+ *                 summary: No profile photo
+ *                 value:
+ *                   error: "Profile photo is required to generate ID card"
+ *       404:
+ *         description: Reporter or settings not found
+ *         content:
+ *           application/json:
+ *             examples:
+ *               reporterNotFound:
+ *                 value:
+ *                   error: "Reporter not found"
+ *               settingsNotFound:
+ *                 value:
+ *                   error: "Tenant ID card settings not configured"
+ */
+router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    const user = req.user as any;
+    const body = req.body || {};
+    const keepCardNumber = body.keepCardNumber === true;
+    const reason = String(body.reason || '').trim();
+
+    // Access Control: Only admin can regenerate
+    const userRole = user?.role?.name?.toUpperCase() || '';
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
+    const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      const adminReporter = await (prisma as any).reporter.findFirst({
+        where: { userId: user.id, tenantId },
+        select: { id: true }
+      }).catch(() => null);
+      isAdminOfTenant = !!adminReporter;
+    }
+    
+    if (!isSuperAdmin && !isAdminOfTenant) {
+      return res.status(403).json({ 
+        error: 'Only admin can regenerate ID cards',
+        details: 'Reporters cannot regenerate their own ID cards. Contact your tenant admin.'
+      });
+    }
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true }
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    const previousCardNumber = reporter.idCard?.cardNumber || null;
+
+    // Delete existing ID card if present
+    if (reporter.idCard) {
+      await (prisma as any).reporterIDCard.delete({
+        where: { id: reporter.idCard.id }
+      });
+    }
+
+    // Require profile photo
+    let hasPhoto = !!reporter.profilePhotoUrl;
+    if (!hasPhoto && reporter.userId) {
+      const profile = await (prisma as any).userProfile.findUnique({ where: { userId: reporter.userId }, select: { profilePhotoUrl: true } }).catch(() => null);
+      hasPhoto = !!profile?.profilePhotoUrl;
+    }
+    if (!hasPhoto) {
+      return res.status(403).json({ error: 'Profile photo is required to generate ID card' });
+    }
+
+    const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId } });
+    if (!settings) return res.status(404).json({ error: 'Tenant ID card settings not configured' });
+
+    const prefix: string = settings.idPrefix || 'ID';
+    const digits: number = settings.idDigits || 6;
+
+    let cardNumber: string;
+    if (keepCardNumber && previousCardNumber) {
+      // Keep the same card number
+      cardNumber = previousCardNumber;
+    } else {
+      // Generate new card number
+      const existingCount = await (prisma as any).reporterIDCard.count({
+        where: { reporter: { tenantId } }
+      });
+      const nextNumber = existingCount + 1;
+      const padded = String(nextNumber).padStart(digits, '0');
+      cardNumber = `${prefix}${padded}`;
+    }
+
+    const issuedAt = new Date();
+    let expiresAt: Date;
+    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+      expiresAt = new Date(settings.fixedValidUntil);
+    } else {
+      const days = settings.validityDays && settings.validityDays > 0 ? settings.validityDays : 365;
+      expiresAt = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000);
+    }
+
+    const newIdCard = await (prisma as any).reporterIDCard.create({
+      data: {
+        reporterId: reporter.id,
+        cardNumber,
+        issuedAt,
+        expiresAt,
+        pdfUrl: null
+      }
+    });
+
+    console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${cardNumber}, by=${user?.id}, reason=${reason}`);
+
+    res.status(201).json({
+      ...newIdCard,
+      previousCardNumber,
+      regeneratedBy: user?.id,
+      regenerationReason: reason || null
+    });
+  } catch (e) {
+    console.error('regenerate reporter id-card error', e);
+    res.status(500).json({ error: 'Failed to regenerate reporter ID card' });
   }
 });
 

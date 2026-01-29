@@ -144,15 +144,42 @@ app.get('/api/v1/sitemap.xml', (req, res) => {
   const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
   return res.redirect(301, `/sitemap.xml${qs}`);
 });
+
+// JSON body parser with sanitization for illegal control characters
+// Control chars 0x00-0x1F are illegal in JSON strings except \t(9), \n(10), \r(13).
+// This helps when text is pasted from Word/web with invisible control chars.
 app.use(
   express.json({
-    limit: '50mb', // Increase limit for large article payloads with images
+    limit: '50mb',
     verify: (req: any, _res, buf) => {
       req.rawBody = buf;
+      // Sanitize the buffer string to strip illegal control chars before parsing
+      // Note: This is done post-parse via middleware below
     },
   })
 );
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Post-parse sanitization: strip illegal JSON control characters from string fields
+// (0x00-0x1F except \t \n \r). Helps when text is pasted from Word/web sources.
+app.use((req, _res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    const sanitize = (obj: any): any => {
+      if (typeof obj === 'string') {
+        return obj.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+      }
+      if (Array.isArray(obj)) return obj.map(sanitize);
+      if (obj && typeof obj === 'object') {
+        for (const key of Object.keys(obj)) {
+          obj[key] = sanitize(obj[key]);
+        }
+      }
+      return obj;
+    };
+    req.body = sanitize(req.body);
+  }
+  next();
+});
 
 // JSON body parse error handler (must be BEFORE other routes' logic error handling) –
 // Express's built-in json parser throws a SyntaxError for invalid JSON; we intercept
@@ -160,11 +187,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Also handles PayloadTooLargeError for oversized requests.
 app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && 'body' in err) {
+    // Check if it's a control character issue (common when pasting from Word/web)
+    const isControlCharError = err.message.includes('control character');
     return res.status(400).json({
       success: false,
       error: 'Invalid JSON payload',
       message: err.message,
-      hint: 'Ensure request body is valid JSON: use double quotes for property names & strings, no trailing commas.'
+      hint: isControlCharError
+        ? 'Text contains invisible control characters (often from Word/web copy-paste). Try: 1) Paste into plain text editor first, 2) Remove and re-type special characters, 3) Use a JSON validator to find the exact position.'
+        : 'Ensure request body is valid JSON: use double quotes for property names & strings, no trailing commas.'
     });
   }
   if (err.type === 'entity.too.large') {

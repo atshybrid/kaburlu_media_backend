@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { logoutController, checkUserExistsController, loginController, refreshController, registerGuestController, upgradeGuestController, upsertDeviceController, loginWithGoogleController, createCitizenReporterByMobileController, upgradeCitizenReporterGoogleController } from './auth.controller';
+import { logoutController, checkUserExistsController, loginController, refreshController, registerGuestController, upgradeGuestController, upsertDeviceController, loginWithGoogleController, createCitizenReporterByMobileController, upgradeCitizenReporterGoogleController, verifyMpinForPaymentController, changeMpinController } from './auth.controller';
 import { validationMiddleware } from '../middlewares/validation.middleware';
 import { GuestRegistrationDto } from './guest-registration.dto';
 
@@ -462,5 +462,171 @@ router.post('/create-citizen-reporter/mobile', createCitizenReporterByMobileCont
  *                   languageId: lang_1
  */
 router.post('/create-citizen-reporter/google', upgradeCitizenReporterGoogleController);
+
+/**
+ * @swagger
+ * /auth/verify-mpin:
+ *   post:
+ *     summary: Verify MPIN for payment flow
+ *     description: |
+ *       Verifies MPIN without full login. Returns reporter info and payment status.
+ *       Use this before showing payment screen to verify user identity.
+ *       
+ *       **Response codes:**
+ *       - 200: MPIN valid, no payment required - can proceed with normal login
+ *       - 401: Invalid MPIN
+ *       - 402: MPIN valid but payment required - show payment screen with returned data
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - mobileNumber
+ *               - mpin
+ *             properties:
+ *               mobileNumber:
+ *                 type: string
+ *                 example: "9392010248"
+ *               mpin:
+ *                 type: string
+ *                 example: "1234"
+ *     responses:
+ *       200:
+ *         description: MPIN verified, no payment required
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               verified: true
+ *               message: MPIN verified, no payment required
+ *               data:
+ *                 isReporter: true
+ *                 reporter:
+ *                   id: rep_123
+ *                   tenantId: tenant_456
+ *                   name: John Doe
+ *                   mobileNumber: "9392010248"
+ *                 tenant:
+ *                   id: tenant_456
+ *                   name: Kaburlu Today
+ *                   logoUrl: https://...
+ *                 paymentRequired: false
+ *       401:
+ *         description: Invalid MPIN
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               verified: false
+ *               message: Invalid MPIN
+ *       402:
+ *         description: MPIN valid but payment required
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               verified: true
+ *               code: PAYMENT_REQUIRED
+ *               message: Payment required before login
+ *               data:
+ *                 reporter:
+ *                   id: rep_123
+ *                   tenantId: tenant_456
+ *                   name: John Doe
+ *                   mobileNumber: "9392010248"
+ *                 tenant:
+ *                   id: tenant_456
+ *                   name: Kaburlu Today
+ *                   slug: kaburlu-today
+ *                   nativeName: కబుర్లు టుడే
+ *                   logoUrl: https://...
+ *                   primaryColor: "#FF5733"
+ *                 outstanding:
+ *                   - type: ONBOARDING
+ *                     amount: 500
+ *                     currency: INR
+ *                     status: MISSING
+ *                 breakdown:
+ *                   idCardCharge:
+ *                     label: ID Card / Onboarding Fee
+ *                     amount: 500
+ *                     displayAmount: ₹500.00
+ *                   total:
+ *                     label: Total Amount
+ *                     amount: 500
+ *                     amountPaise: 50000
+ *                     displayAmount: ₹500.00
+ *                 razorpay:
+ *                   keyId: rzp_test_xxx
+ *                   amount: 50000
+ *                   amountRupees: 500
+ *                   currency: INR
+ */
+router.post('/verify-mpin', verifyMpinForPaymentController);
+
+/**
+ * @swagger
+ * /auth/change-mpin:
+ *   post:
+ *     summary: Change MPIN using old MPIN
+ *     description: |
+ *       Change user's MPIN by providing current (old) MPIN and new MPIN.
+ *       New MPIN must be 4-6 digits and different from old MPIN.
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - mobileNumber
+ *               - oldMpin
+ *               - newMpin
+ *             properties:
+ *               mobileNumber:
+ *                 type: string
+ *                 example: "9392010248"
+ *               oldMpin:
+ *                 type: string
+ *                 example: "1234"
+ *               newMpin:
+ *                 type: string
+ *                 example: "5678"
+ *     responses:
+ *       200:
+ *         description: MPIN changed successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: MPIN changed successfully
+ *       400:
+ *         description: Validation error or old MPIN incorrect
+ *         content:
+ *           application/json:
+ *             examples:
+ *               oldMpinIncorrect:
+ *                 summary: Old MPIN is incorrect
+ *                 value:
+ *                   success: false
+ *                   message: Old MPIN is incorrect
+ *               invalidFormat:
+ *                 summary: Invalid new MPIN format
+ *                 value:
+ *                   success: false
+ *                   message: New MPIN must be 4-6 digits
+ *               sameMpin:
+ *                 summary: Same as old MPIN
+ *                 value:
+ *                   success: false
+ *                   message: New MPIN cannot be same as old MPIN
+ */
+router.post('/change-mpin', changeMpinController);
 
 export default router;

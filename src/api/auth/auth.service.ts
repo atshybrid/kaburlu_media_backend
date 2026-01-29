@@ -910,3 +910,206 @@ export const registerGuestUser = async (guestDto: GuestRegistrationDto, existing
     throw error;
   }
 };
+
+/**
+ * Verify MPIN without full login - returns user/reporter info + payment status.
+ * Used for payment flow where we need to verify identity before payment.
+ */
+export const verifyMpinForPayment = async (mobileNumber: string, mpin: string) => {
+  const user = await findUserByMobileNumber(mobileNumber);
+  if (!user || !user.mpin) {
+    return { verified: false, message: 'User not found or MPIN not set' };
+  }
+
+  // Check MPIN
+  const isBcryptHash = typeof user.mpin === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(user.mpin);
+  let isMpinValid = false;
+  
+  if (isBcryptHash) {
+    try {
+      isMpinValid = await bcrypt.compare(mpin, user.mpin);
+    } catch (e) {
+      isMpinValid = false;
+    }
+  } else {
+    isMpinValid = mpin === user.mpin;
+  }
+
+  if (!isMpinValid) {
+    return { verified: false, message: 'Invalid MPIN' };
+  }
+
+  // Get reporter info if exists
+  const reporter = await prisma.reporter.findUnique({
+    where: { userId: user.id },
+    include: { payments: true },
+  });
+
+  if (!reporter) {
+    return { verified: true, isReporter: false, userId: user.id };
+  }
+
+  // Cast to include all fields
+  const reporterData = reporter as any;
+
+  // Get tenant branding
+  const [tenantWithBranding, tenantTheme, tenantEntity] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: reporter.tenantId },
+      select: { id: true, name: true, slug: true }
+    }),
+    (prisma as any).tenantTheme?.findUnique?.({
+      where: { tenantId: reporter.tenantId },
+      select: { logoUrl: true, faviconUrl: true, primaryColor: true }
+    }).catch(() => null),
+    (prisma as any).tenantEntity?.findUnique?.({
+      where: { tenantId: reporter.tenantId },
+      select: { nativeName: true, registrationTitle: true, publisherName: true }
+    }).catch(() => null),
+  ]);
+
+  // Check outstanding payments
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  const outstanding: any[] = [];
+
+  if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+    const onboardingPaid = reporter.payments.find(p => p.type === 'ONBOARDING' && p.status === 'PAID');
+    if (!onboardingPaid) {
+      const existingOnboarding = reporter.payments.find(p => p.type === 'ONBOARDING');
+      outstanding.push({
+        type: 'ONBOARDING',
+        amount: reporter.idCardCharge,
+        currency: 'INR',
+        status: existingOnboarding ? existingOnboarding.status : 'MISSING',
+        paymentId: existingOnboarding?.id || null,
+      });
+    }
+  }
+
+  if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+    const monthlyPaid = reporter.payments.find(p => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth && p.status === 'PAID');
+    if (!monthlyPaid) {
+      const existingMonthly = reporter.payments.find(p => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth);
+      outstanding.push({
+        type: 'MONTHLY_SUBSCRIPTION',
+        amount: reporter.monthlySubscriptionAmount,
+        currency: 'INR',
+        year: currentYear,
+        month: currentMonth,
+        status: existingMonthly ? existingMonthly.status : 'MISSING',
+        paymentId: existingMonthly?.id || null,
+      });
+    }
+  }
+
+  const hasOutstandingPayments = outstanding.length > 0;
+  const totalAmountRupees = outstanding.reduce((sum, o) => sum + (o.amount || 0), 0);
+
+  // Get Razorpay config
+  let razorpayKeyId: string | null = null;
+  try {
+    const razorpayConfig = await getRazorpayConfigForTenant(reporter.tenantId);
+    razorpayKeyId = razorpayConfig?.keyId || null;
+  } catch (e) {
+    console.error('[Auth] Failed to get Razorpay config:', e);
+  }
+
+  return {
+    verified: true,
+    isReporter: true,
+    userId: user.id,
+    reporter: {
+      id: reporterData.id,
+      tenantId: reporterData.tenantId,
+      name: reporterData.name,
+      mobileNumber: reporterData.mobileNumber,
+    },
+    tenant: {
+      id: tenantWithBranding?.id || reporterData.tenantId,
+      name: tenantWithBranding?.name || null,
+      slug: tenantWithBranding?.slug || null,
+      nativeName: tenantEntity?.nativeName || null,
+      logoUrl: tenantTheme?.logoUrl || null,
+      faviconUrl: tenantTheme?.faviconUrl || null,
+      primaryColor: tenantTheme?.primaryColor || null,
+    },
+    paymentRequired: hasOutstandingPayments,
+    outstanding,
+    breakdown: hasOutstandingPayments ? {
+      idCardCharge: {
+        label: 'ID Card / Onboarding Fee',
+        amount: outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0,
+        displayAmount: `₹${(outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0).toFixed(2)}`
+      },
+      monthlySubscription: {
+        label: 'Monthly Subscription',
+        amount: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0,
+        displayAmount: `₹${(outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0).toFixed(2)}`,
+        year: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
+        month: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.month
+      },
+      total: {
+        label: 'Total Amount',
+        amount: totalAmountRupees,
+        amountPaise: totalAmountRupees * 100,
+        displayAmount: `₹${totalAmountRupees.toFixed(2)}`
+      }
+    } : null,
+    razorpay: hasOutstandingPayments ? {
+      keyId: razorpayKeyId,
+      amount: totalAmountRupees * 100,
+      amountRupees: totalAmountRupees,
+      currency: 'INR',
+    } : null
+  };
+};
+
+/**
+ * Change MPIN using old MPIN for authentication.
+ */
+export const changeMpinWithOldMpin = async (mobileNumber: string, oldMpin: string, newMpin: string) => {
+  const user = await findUserByMobileNumber(mobileNumber);
+  if (!user || !user.mpin) {
+    return { success: false, message: 'User not found or MPIN not set' };
+  }
+
+  // Verify old MPIN
+  const isBcryptHash = typeof user.mpin === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(user.mpin);
+  let isOldMpinValid = false;
+  
+  if (isBcryptHash) {
+    try {
+      isOldMpinValid = await bcrypt.compare(oldMpin, user.mpin);
+    } catch (e) {
+      isOldMpinValid = false;
+    }
+  } else {
+    isOldMpinValid = oldMpin === user.mpin;
+  }
+
+  if (!isOldMpinValid) {
+    return { success: false, message: 'Old MPIN is incorrect' };
+  }
+
+  // Validate new MPIN format (4-6 digits)
+  if (!/^\d{4,6}$/.test(newMpin)) {
+    return { success: false, message: 'New MPIN must be 4-6 digits' };
+  }
+
+  // Check if new MPIN is same as old
+  if (oldMpin === newMpin) {
+    return { success: false, message: 'New MPIN cannot be same as old MPIN' };
+  }
+
+  // Hash and save new MPIN
+  const hashedNewMpin = await bcrypt.hash(newMpin, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { mpin: hashedNewMpin }
+  });
+
+  console.log('[Auth] MPIN changed successfully for user:', user.id);
+  return { success: true, message: 'MPIN changed successfully' };
+};

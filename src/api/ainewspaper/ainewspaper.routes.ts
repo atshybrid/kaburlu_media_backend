@@ -5,7 +5,7 @@ import { requireReporterOrAdmin } from '../middlewares/authz';
 import { aiGenerateText } from '../../lib/aiProvider';
 import { OPENAI_KEY } from '../../lib/aiConfig';
 
-const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL_REWRITE || 'gpt-4.1-mini');
+const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL_REWRITE || 'gpt-4o-mini');
 
 const router = Router();
 
@@ -80,7 +80,7 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
       if (!looksLikeModelOrFormatIssue) throw e;
 
       // Retry once with a safe, commonly available fallback and without strict JSON mode
-      const fallbackModel = DEFAULT_OPENAI_MODEL || 'gpt-4.1-mini';
+      const fallbackModel = DEFAULT_OPENAI_MODEL || 'gpt-4o-mini';
       const resp = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {

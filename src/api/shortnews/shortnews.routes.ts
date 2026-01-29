@@ -540,7 +540,7 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *         description: Optional longitude. If both latitude and longitude are provided, results are filtered to within ~30 km radius.
  *     responses:
  *       200:
- *         description: Approved short news list enriched with categoryName, author (object), authorName (legacy), place/address, lat/lon, canonicalUrl, jsonLd, primary media, and optional isOwner/isRead flags if bearer token supplied.
+ *         description: Approved short news list enriched with all SEO, tenant branding, and metadata fields.
  *         content:
  *           application/json:
  *             schema:
@@ -560,7 +560,34 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *                     properties:
  *                       id: { type: string }
  *                       title: { type: string }
- *                       slug: { type: string }
+ *                       content: { type: string }
+ *                       slug: { type: string, nullable: true }
+ *                       timestampUtc: { type: string, format: date-time }
+ *                       imageAlt: { type: string, nullable: true }
+ *                       featuredImage: { type: string, nullable: true }
+ *                       seo:
+ *                         type: object
+ *                         properties:
+ *                           title: { type: string }
+ *                           description: { type: string }
+ *                           keywords: { type: array, items: { type: string } }
+ *                           ogTitle: { type: string }
+ *                           ogDescription: { type: string }
+ *                           ogImage: { type: string, nullable: true }
+ *                       tenant:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id: { type: string }
+ *                           name: { type: string }
+ *                           slug: { type: string }
+ *                           domain: { type: string, nullable: true }
+ *                           language: { type: string }
+ *                           logoUrl: { type: string, nullable: true }
+ *                           faviconUrl: { type: string, nullable: true }
+ *                           nativeName: { type: string, nullable: true }
+ *                       source: { type: string, nullable: true }
+ *                       provider: { type: string, nullable: true }
  *                       authorName: { type: string, nullable: true }
  *                       author:
  *                         type: object
@@ -572,8 +599,18 @@ router.get('/:id/jsonld', shortNewsController.getShortNewsJsonLd);
  *                           mobileNumber: { type: string, nullable: true }
  *                           roleName: { type: string, nullable: true }
  *                           reporterType: { type: string, nullable: true }
+ *                       categoryName: { type: string, nullable: true }
+ *                       canonicalUrl: { type: string }
+ *                       jsonLd: { type: object }
+ *                       mediaUrls: { type: array, items: { type: string } }
+ *                       primaryImageUrl: { type: string, nullable: true }
+ *                       primaryVideoUrl: { type: string, nullable: true }
  *                       isOwner: { type: boolean }
  *                       isRead: { type: boolean }
+ *                       placeName: { type: string, nullable: true }
+ *                       address: { type: string, nullable: true }
+ *                       latitude: { type: number, nullable: true }
+ *                       longitude: { type: number, nullable: true }
  */
 router.get('/public', shortNewsController.listApprovedShortNews);
 
@@ -582,7 +619,7 @@ router.get('/public', shortNewsController.listApprovedShortNews);
  * /shortnews/public/{id}:
  *   get:
  *     summary: Get single approved short news by ID (PUBLIC - no auth required)
- *     description: Returns a single approved short news item with full enriched data including reactions, comments, and metadata. Only DESK_APPROVED and AI_APPROVED items are accessible. Perfect for URL sharing and deep linking.
+ *     description: Returns a single approved short news item with full enriched data including SEO, tenant branding, and metadata. Only DESK_APPROVED and AI_APPROVED items are accessible. Perfect for URL sharing and deep linking.
  *     tags: [ShortNews]
  *     parameters:
  *       - in: path
@@ -593,7 +630,7 @@ router.get('/public', shortNewsController.listApprovedShortNews);
  *         description: The ShortNews ID
  *     responses:
  *       200:
- *         description: Single approved short news item with enriched data
+ *         description: Single approved short news item with full enriched data
  *         content:
  *           application/json:
  *             schema:
@@ -606,8 +643,34 @@ router.get('/public', shortNewsController.listApprovedShortNews);
  *                     id: { type: string }
  *                     title: { type: string }
  *                     content: { type: string }
- *                     slug: { type: string }
+ *                     slug: { type: string, nullable: true }
  *                     status: { type: string }
+ *                     timestampUtc: { type: string, format: date-time }
+ *                     imageAlt: { type: string, nullable: true }
+ *                     featuredImage: { type: string, nullable: true }
+ *                     seo:
+ *                       type: object
+ *                       properties:
+ *                         title: { type: string }
+ *                         description: { type: string }
+ *                         keywords: { type: array, items: { type: string } }
+ *                         ogTitle: { type: string }
+ *                         ogDescription: { type: string }
+ *                         ogImage: { type: string, nullable: true }
+ *                     tenant:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id: { type: string }
+ *                         name: { type: string }
+ *                         slug: { type: string }
+ *                         domain: { type: string, nullable: true }
+ *                         language: { type: string }
+ *                         logoUrl: { type: string, nullable: true }
+ *                         faviconUrl: { type: string, nullable: true }
+ *                         nativeName: { type: string, nullable: true }
+ *                     source: { type: string, nullable: true }
+ *                     provider: { type: string, nullable: true }
  *                     authorName: { type: string, nullable: true }
  *                     author:
  *                       type: object

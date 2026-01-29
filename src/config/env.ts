@@ -151,15 +151,16 @@ export const config = {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY,
       models: {
-        seo: process.env.GEMINI_MODEL_SEO || 'gemini-2.0-flash',
-        moderation: process.env.GEMINI_MODEL_MODERATION || 'gemini-2.0-flash',
-        translation: process.env.GEMINI_MODEL_TRANSLATION || 'gemini-2.0-flash',
+        default: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        seo: process.env.GEMINI_MODEL_SEO || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        moderation: process.env.GEMINI_MODEL_MODERATION || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        translation: process.env.GEMINI_MODEL_TRANSLATION || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       }
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
       models: {
-        seo: process.env.OPENAI_MODEL_SEO || 'gpt-4o-mini',
+        seo: process.env.OPENAI_MODEL_SEO || 'gpt-4o',
         moderation: process.env.OPENAI_MODEL_MODERATION || 'gpt-4o-mini',
         translation: process.env.OPENAI_MODEL_TRANSLATION || 'gpt-4o-mini',
       }

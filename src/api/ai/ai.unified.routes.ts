@@ -3,23 +3,33 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { requireReporterOrAdmin } from '../middlewares/authz';
 import { aiGenerateText } from '../../lib/aiProvider';
-import { OPENAI_KEY } from '../../lib/aiConfig';
+import { OPENAI_KEY, GEMINI_KEY } from '../../lib/aiConfig';
 import { DEFAULT_PROMPTS } from '../../lib/defaultPrompts';
 
-const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL_REWRITE || 'gpt-4.1-mini');
+// Default temperature for news rewrite (lower = more factual)
+const DEFAULT_TEMPERATURE = 0.2;
+// Prefer Gemini for speed, fallback to OpenAI
+const AI_PROVIDER_PREFERENCE = process.env.AI_PROVIDER || 'gemini';
 
 const router = Router();
 
 function stripCodeFences(text: string): string {
-  const t = String(text || '');
-  return t
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
+  let t = String(text || '').trim();
+  
+  // Remove opening code fence: ```json or ``` at the start (with optional whitespace/newlines)
+  t = t.replace(/^```(?:json)?[\s\n]*/i, '');
+  
+  // Remove closing code fence: ``` at the end (with optional whitespace/newlines)
+  t = t.replace(/[\s\n]*```\s*$/i, '');
+  
+  return t.trim();
 }
 
 function tryParseJsonObject(text: string): any | null {
-  const cleaned = stripCodeFences(text);
+  // First, try to strip code fences
+  let cleaned = stripCodeFences(text);
+  
+  // Try direct parse
   try {
     const direct = JSON.parse(cleaned);
     if (direct && typeof direct === 'object') return direct;
@@ -27,6 +37,7 @@ function tryParseJsonObject(text: string): any | null {
     // ignore
   }
 
+  // Try to find JSON object within the text
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
   if (start >= 0 && end > start) {
@@ -80,7 +91,7 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
       if (!looksLikeModelOrFormatIssue) throw e;
 
       // Retry with fallback model
-      const fallbackModel = DEFAULT_OPENAI_MODEL || 'gpt-4.1-mini';
+      const fallbackModel = process.env.OPENAI_MODEL_REWRITE || 'gpt-4o';
       const resp = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
@@ -112,7 +123,7 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  *       Industrial-grade newsroom AI agent that generates THREE article formats from raw reporter input:
  *       1. **print_article** - For newspaper/ePaper PDF generation
  *       2. **web_article** - SEO-optimized for website CMS
- *       3. **short_mobile_article** - For mobile app (≤60 words)
+ *       3. **short_mobile_article** - For mobile app (50-60 words with mandatory h2)
  *       
  *       Also returns:
  *       - **images** - Image requirements and captions
@@ -125,6 +136,8 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  *       3. POST /api/v1/articles with all data to create all 3 articles
  *       
  *       Uses prompt key: `newsroom_ai_agent`
+ *       
+ *       **AI Provider:** Uses Gemini 2.5 Flash (primary) or OpenAI GPT-4o (fallback)
  *     tags: [News Room]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -144,41 +157,36 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  *             properties:
  *               rawText:
  *                 type: string
- *                 description: Raw reporter post text
- *                 example: "నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు..."
+ *                 description: Raw reporter post text (Telugu/Hindi/English)
  *               categories:
  *                 type: array
  *                 description: Your database category names. AI will pick ONE matching category.
  *                 items:
  *                   type: string
- *                 example: ["Crime", "Accident", "Politics", "Sports", "Health", "Education"]
  *               newspaperName:
  *                 type: string
- *                 description: Name of the newspaper
- *                 example: "Daily News"
+ *                 description: Name of the newspaper (optional, defaults to 'News')
  *               language:
  *                 type: object
- *                 description: Language configuration
+ *                 description: Language configuration (optional, defaults to Telugu)
  *                 properties:
  *                   code:
  *                     type: string
- *                     example: "te"
  *                   name:
  *                     type: string
- *                     example: "Telugu"
  *                   script:
  *                     type: string
- *                     example: "Telugu"
  *                   region:
  *                     type: string
- *                     example: "Telangana"
- *               temperature:
- *                 type: number
- *                 default: 0.2
- *                 description: AI temperature (0-1, lower = more factual)
- *               model:
- *                 type: string
- *                 description: Optional OpenAI model override
+ *           example:
+ *             rawText: "నగరంలో శుక్రవారం రాత్రి జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు. పోలీసులు కేసు నమోదు చేశారు."
+ *             categories: ["Crime", "Accident", "Politics", "Sports", "Health", "Education"]
+ *             newspaperName: "Daily News"
+ *             language:
+ *               code: "te"
+ *               name: "Telugu"
+ *               script: "Telugu"
+ *               region: "Telangana"
  *     responses:
  *       200:
  *         description: Newsroom AI output with all article formats
@@ -265,7 +273,7 @@ router.post(
       const rawText = String(req.body?.rawText ?? req.body?.raw ?? req.body?.text ?? req.body?.content ?? '').trim();
       const newspaperName = String(req.body?.newspaperName ?? '').trim() || 'News';
       const language = req.body?.language || { code: 'te', name: 'Telugu', script: 'Telugu', region: 'India' };
-      const temperature = Number(req.body?.temperature ?? 0.2);
+      // Temperature is handled internally - no need to pass from frontend
       
       if (!rawText) {
         return res.status(400).json({ error: 'rawText is required' });
@@ -375,35 +383,55 @@ ${JSON.stringify(language, null, 2)}
 
       let aiText = '';
       let usage: any = undefined;
-      let providerUsed: 'openai' | 'gemini' = 'openai';
+      let providerUsed: 'openai' | 'gemini' = 'gemini';
 
-      const outgoingPayload = {
-        model: String(req.body?.model || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL,
-        temperature,
-        messages,
-      };
+      // Use Gemini as primary (faster), OpenAI as fallback
+      const useGeminiFirst = AI_PROVIDER_PREFERENCE === 'gemini' && GEMINI_KEY;
+      
+      const combined = `${systemPrompt}\n\n${userMessage}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
 
-      if (OPENAI_KEY) {
+      if (useGeminiFirst) {
+        // Try Gemini first (primary)
         try {
-          const r = await openaiChatMessages(messages, outgoingPayload.model, temperature);
-          aiText = String(r?.content || '');
-          providerUsed = 'openai';
-          usage = r?.raw?.usage;
-        } catch (e: any) {
-          // Fallback to Gemini
-          const combined = `${systemPrompt}\n\n${userMessage}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
           const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
           aiText = String(r?.text || '');
           usage = r?.usage;
           providerUsed = 'gemini';
+        } catch (e: any) {
+          console.warn('[AI] Gemini failed, falling back to OpenAI:', e?.message);
+          // Fallback to OpenAI
+          if (OPENAI_KEY) {
+            const r = await openaiChatMessages(messages, process.env.OPENAI_MODEL_REWRITE || 'gpt-4o', DEFAULT_TEMPERATURE);
+            aiText = String(r?.content || '');
+            providerUsed = 'openai';
+            usage = r?.raw?.usage;
+          }
         }
-      } else {
-        // Use Gemini
-        const combined = `${systemPrompt}\n\n${userMessage}\n\nReturn ONLY valid JSON (no markdown, no commentary).`;
+      } else if (OPENAI_KEY) {
+        // Use OpenAI as primary
+        try {
+          const r = await openaiChatMessages(messages, process.env.OPENAI_MODEL_REWRITE || 'gpt-4o', DEFAULT_TEMPERATURE);
+          aiText = String(r?.content || '');
+          providerUsed = 'openai';
+          usage = r?.raw?.usage;
+        } catch (e: any) {
+          console.warn('[AI] OpenAI failed, falling back to Gemini:', e?.message);
+          // Fallback to Gemini
+          if (GEMINI_KEY) {
+            const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
+            aiText = String(r?.text || '');
+            usage = r?.usage;
+            providerUsed = 'gemini';
+          }
+        }
+      } else if (GEMINI_KEY) {
+        // Only Gemini available
         const r = await aiGenerateText({ prompt: combined, purpose: 'newspaper' as any });
         aiText = String(r?.text || '');
         usage = r?.usage;
         providerUsed = 'gemini';
+      } else {
+        return res.status(500).json({ error: 'No AI provider configured (set GEMINI_API_KEY or OPENAI_API_KEY)' });
       }
 
       if (!aiText.trim()) {
@@ -430,6 +458,8 @@ ${JSON.stringify(language, null, 2)}
           data: parsed,
         });
       }
+
+      // No word count validation - just accept AI output as-is
 
       // Match AI's detected_category to input category names
       const aiDetectedCategory = String(parsed.detected_category || '').trim();
@@ -482,7 +512,7 @@ ${JSON.stringify(language, null, 2)}
             promptKey,
             provider: providerUsed,
             usage,
-            model: outgoingPayload.model,
+            model: providerUsed === 'gemini' ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash') : (process.env.OPENAI_MODEL_REWRITE || 'gpt-4o'),
             inputCategories: categoryNames,
           }
         });
@@ -682,7 +712,7 @@ ${JSON.stringify(language, null, 2)}
       // Call AI
       let aiText = '';
       let providerUsed: 'openai' | 'gemini' = 'openai';
-      const model = String(req.body?.model || DEFAULT_OPENAI_MODEL).trim();
+      const model = String(req.body?.model || process.env.OPENAI_MODEL_REWRITE || 'gpt-4o').trim();
 
       if (OPENAI_KEY) {
         try {
