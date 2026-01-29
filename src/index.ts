@@ -25,15 +25,21 @@ async function start() {
           connected = true;
           console.log('Prisma connected');
           // Run core seeds only after successful DB connect (with timeout to prevent blocking startup)
-          try {
-            const seedTimeout = Number(process.env.SEED_TIMEOUT_MS || 30000);
-            await Promise.race([
-              ensureCoreSeeds(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Seed timeout')), seedTimeout))
-            ]);
-            console.log('[Bootstrap] Core seeds complete');
-          } catch (e: any) {
-            console.warn('[Bootstrap] Core seed issue (non-blocking):', e?.message || e);
+          // Skip seeding if SKIP_SEED=true (for production where data is already seeded)
+          const skipSeed = String(process.env.SKIP_SEED).toLowerCase() === 'true';
+          if (skipSeed) {
+            console.log('[Bootstrap] Skipping core seeds (SKIP_SEED=true)');
+          } else {
+            try {
+              const seedTimeout = Number(process.env.SEED_TIMEOUT_MS || 30000);
+              await Promise.race([
+                ensureCoreSeeds(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Seed timeout')), seedTimeout))
+              ]);
+              console.log('[Bootstrap] Core seeds complete');
+            } catch (e: any) {
+              console.warn('[Bootstrap] Core seed issue (non-blocking):', e?.message || e);
+            }
           }
         } catch (e) {
           console.warn(`Prisma connect failed (attempt ${attempt}/${maxAttempts}):`, (e as any)?.message || e);

@@ -3297,7 +3297,7 @@ router.get('/webarticle/:slug', async (req, res) => {
       author: {
         select: {
           id: true,
-          profile: { select: { fullName: true, photoUrl: true, bio: true } },
+          profile: { select: { fullName: true, profilePhotoUrl: true, bio: true } },
         },
       },
     },
@@ -3315,7 +3315,7 @@ router.get('/webarticle/:slug', async (req, res) => {
 
   // Author details
   const authorName = article.author?.profile?.fullName || 'Staff Reporter';
-  const authorPhotoUrl = article.author?.profile?.photoUrl || null;
+  const authorPhotoUrl = article.author?.profile?.profilePhotoUrl || null;
   const authorBio = article.author?.profile?.bio || null;
 
   // Dateline
@@ -3323,6 +3323,16 @@ router.get('/webarticle/:slug', async (req, res) => {
     place: (contentJson as any).placeName || null,
     published_at: article.publishedAt?.toISOString() || article.createdAt.toISOString(),
     updated_at: article.updatedAt.toISOString(),
+  };
+
+  // Helper: Convert WebP URL to JPG for better OG sharing compatibility
+  const getOgImageUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    // Replace .webp extension with .jpg for OG images (better platform compatibility)
+    if (url.toLowerCase().endsWith('.webp')) {
+      return url.replace(/\.webp$/i, '.jpg');
+    }
+    return url;
   };
 
   // Images
@@ -3341,22 +3351,27 @@ router.get('/webarticle/:slug', async (req, res) => {
     keywords: article.tags || [],
   };
 
-  // OG
+  // OG (use JPG for better sharing compatibility)
   const og = {
     title: article.seoTitle || article.title,
     description: article.metaDescription || subheadline || '',
-    image: article.coverImageUrl || null,
+    image: getOgImageUrl(article.coverImageUrl),
   };
 
   // Tenant branding
   const tenantEntity = await p.tenant.findUnique({
     where: { id: tenant.id },
-    select: { name: true, brandConfig: true },
+    select: { 
+      name: true, 
+      settings: { select: { data: true } },
+      theme: { select: { logoUrl: true } },
+      entity: { select: { nativeName: true } }
+    },
   });
-  const brandConfig = (tenantEntity?.brandConfig as any) || {};
-  const tenantDisplayName = brandConfig.displayName || tenantEntity?.name || 'News';
-  const tenantNativeName = brandConfig.nativeName || tenantDisplayName;
-  const brandLogoUrl = brandConfig.logoUrl || null;
+  const settingsData = (tenantEntity?.settings?.data as any) || {};
+  const tenantDisplayName = settingsData.displayName || tenantEntity?.name || 'News';
+  const tenantNativeName = tenantEntity?.entity?.nativeName || settingsData.nativeName || tenantDisplayName;
+  const brandLogoUrl = tenantEntity?.theme?.logoUrl || settingsData.logoUrl || null;
 
   // Related articles
   const relatedArticles = article.categoryId
