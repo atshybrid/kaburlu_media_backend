@@ -57,3 +57,4 @@ coverage/
 # IDX
 .IDX/
 secrets/.env.digitalocean
+.env.digitalocean
