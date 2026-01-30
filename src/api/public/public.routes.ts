@@ -2975,7 +2975,7 @@ router.get('/article/:slug', async (req, res) => {
               select: {
                 id: true,
                 profilePhotoUrl: true,
-                designation: { select: { id: true, title: true, nativeTitle: true } },
+                designation: { select: { id: true, name: true, nativeTitle: true } },
                 state: { select: { id: true, name: true } },
                 district: { select: { id: true, name: true } },
                 mandal: { select: { id: true, name: true } },
@@ -3032,7 +3032,7 @@ router.get('/article/:slug', async (req, res) => {
     authorDetails = {
       name: reporterName || `${tenantDisplayName} Reporter`,
       slug: reporterName ? reporterName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : 'staff-reporter',
-      designation: designation ? (designation.nativeTitle || designation.title) : null,
+      designation: designation ? (designation.nativeTitle || designation.name) : null,
       location: locationStr,
       photo_url: reporterPhoto || brandLogoUrl, // fallback to brand logo if no profile photo
     };
@@ -3558,7 +3558,7 @@ router.get('/category/:categorySlug/articles', async (req, res) => {
             reporterProfile: {
               select: {
                 profilePhotoUrl: true,
-                designation: { select: { title: true, nativeTitle: true } },
+                designation: { select: { name: true, nativeTitle: true } },
               }
             }
           }
@@ -3589,7 +3589,7 @@ router.get('/category/:categorySlug/articles', async (req, res) => {
       author: {
         name: reporterName || `${tenantDisplayName} Reporter`,
         photo_url: reporterPhoto,
-        designation: designation ? (designation.nativeTitle || designation.title) : null,
+        designation: designation ? (designation.nativeTitle || designation.name) : null,
       },
       view_count: a.viewCount || 0,
       is_breaking: a.isBreaking || false,
