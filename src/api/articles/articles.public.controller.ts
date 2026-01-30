@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
+import { notifyArticleStatusChange } from '../../lib/articleNotifications';
 
 export const getWebArticleByIdPublic = async (req: Request, res: Response) => {
   try {
@@ -230,12 +231,20 @@ export const listPublicArticles = async (req: Request, res: Response) => {
 export const updateWebArticleStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params as any;
-    const { status } = req.body as any;
+    const { status, rejectionReason } = req.body as any;
     if (!status) return res.status(400).json({ error: 'status is required' });
-    const allowed = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'PENDING'];
+    const allowed = ['DRAFT', 'PUBLISHED', 'ARCHIVED', 'PENDING', 'REJECTED', 'CHANGES_REQUESTED'];
     const next = String(status).toUpperCase();
     if (!allowed.includes(next)) return res.status(400).json({ error: 'Invalid status' });
 
+    // Get current article for notification
+    const current = await prisma.tenantWebArticle.findUnique({
+      where: { id },
+      select: { status: true, title: true, authorId: true, tenantId: true, domainId: true }
+    });
+    if (!current) return res.status(404).json({ error: 'Article not found' });
+
+    const previousStatus = current.status;
     const now = new Date();
     const data: any = { status: next };
     if (next === 'PUBLISHED') {
@@ -249,6 +258,19 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
       data,
       select: { id: true, status: true, publishedAt: true, updatedAt: true }
     });
+
+    // Send push notification for status change (fire and forget)
+    notifyArticleStatusChange({
+      id,
+      title: current.title,
+      authorId: current.authorId,
+      tenantId: current.tenantId,
+      domainId: current.domainId,
+      status: next,
+      previousStatus,
+      rejectionReason
+    }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+
     return res.json(updated);
   } catch (e) {
     console.error('updateWebArticleStatus error', e);

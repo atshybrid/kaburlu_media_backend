@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../../lib/sanitize';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+import { notifyArticleStatusChange } from '../../lib/articleNotifications';
 
 /**
  * UNIFIED ARTICLE CONTROLLER
@@ -512,6 +513,20 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     });
 
     // ========== RESPONSE ==========
+    
+    // Send push notification if article is PENDING (for admin review)
+    if (effectiveStatus === 'PENDING' && result.tenantWebArticle) {
+      notifyArticleStatusChange({
+        id: result.tenantWebArticle.id,
+        title: result.tenantWebArticle.title,
+        authorId,
+        tenantId,
+        domainId,
+        status: 'PENDING',
+        previousStatus: 'NEW'
+      }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+    }
+    
     return res.status(201).json({
       success: true,
       message: 'All articles created successfully',
@@ -827,7 +842,7 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
     } else if (articleType === 'web') {
       const existing = await (prisma as any).tenantWebArticle.findUnique({
         where: { id },
-        select: { tenantId: true, authorId: true }
+        select: { tenantId: true, authorId: true, status: true, title: true, domainId: true }
       });
 
       if (!existing) {
@@ -838,6 +853,7 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
         return res.status(403).json({ error: 'Not authorized to update this article' });
       }
 
+      const previousStatus = existing.status;
       const updateData: any = { updatedAt: new Date() };
       
       if (payload.title !== undefined) updateData.title = String(payload.title).trim();
@@ -866,6 +882,20 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
           updatedAt: true
         }
       });
+
+      // Send push notification for status change (fire and forget)
+      if (updateData.status && updateData.status !== previousStatus) {
+        notifyArticleStatusChange({
+          id,
+          title: updateData.title || existing.title,
+          authorId: existing.authorId,
+          tenantId: existing.tenantId,
+          domainId: existing.domainId,
+          status: updateData.status,
+          previousStatus,
+          rejectionReason: payload.rejectionReason
+        }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+      }
 
     } else if (articleType === 'shortnews') {
       // ShortNews does NOT have tenantId - only authorId
