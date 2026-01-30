@@ -179,6 +179,102 @@ router.post('/set-mpin', otpController.setMpin);
  *                   isRegistered: false
  *                   roleId: null
  *                   roleName: null
+ *       402:
+ *         description: Payment Required - Reporter has pending payment (same format as login 402)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 verified:
+ *                   type: boolean
+ *                   example: false
+ *                 code:
+ *                   type: string
+ *                   example: PAYMENT_REQUIRED
+ *                 message:
+ *                   type: string
+ *                   example: Reporter payments required before login
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     roleId:
+ *                       type: string
+ *                     roleName:
+ *                       type: string
+ *                     reporter:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         tenantId:
+ *                           type: string
+ *                     tenant:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         slug:
+ *                           type: string
+ *                     outstanding:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                             enum: [ONBOARDING, MONTHLY_SUBSCRIPTION]
+ *                           amount:
+ *                             type: integer
+ *                           currency:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                     breakdown:
+ *                       type: object
+ *                       properties:
+ *                         idCardCharge:
+ *                           type: object
+ *                           properties:
+ *                             label:
+ *                               type: string
+ *                             amount:
+ *                               type: integer
+ *                             amountPaise:
+ *                               type: integer
+ *                             displayAmount:
+ *                               type: string
+ *                         monthlySubscription:
+ *                           type: object
+ *                           properties:
+ *                             label:
+ *                               type: string
+ *                             amount:
+ *                               type: integer
+ *                             amountPaise:
+ *                               type: integer
+ *                             displayAmount:
+ *                               type: string
+ *                             year:
+ *                               type: integer
+ *                             month:
+ *                               type: integer
+ *                         total:
+ *                           type: object
+ *                           properties:
+ *                             label:
+ *                               type: string
+ *                             amount:
+ *                               type: integer
+ *                             amountPaise:
+ *                               type: integer
+ *                             displayAmount:
+ *                               type: string
  *       400:
  *         description: Invalid request
  */

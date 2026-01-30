@@ -40,6 +40,25 @@ export class OtpController {
         try {
             const { mobileNumber } = req.params;
             const result = await otpService.getMpinStatus(mobileNumber);
+            
+            // Return 402 Payment Required if pending payment exists - same format as login
+            if (result.paymentRequired) {
+                return res.status(402).json({ 
+                    success: false, 
+                    verified: false,  // MPIN not verified yet at this stage
+                    code: 'PAYMENT_REQUIRED', 
+                    message: result.message || 'Payment required before login', 
+                    data: {
+                        roleId: result.roleId,
+                        roleName: result.roleName,
+                        reporter: result.reporter,
+                        tenant: result.tenant,
+                        outstanding: result.outstanding,
+                        breakdown: result.breakdown
+                    }
+                });
+            }
+            
             res.json(result);
         } catch (error: any) {
             res.status(400).json({ message: error.message });

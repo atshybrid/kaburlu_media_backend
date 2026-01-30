@@ -108,7 +108,19 @@ export class OtpService {
     async getMpinStatus(mobileNumber: string) {
         const user = await prisma.user.findUnique({
             where: { mobileNumber },
-            include: { role: true },
+            include: { 
+                role: true,
+                reporterProfile: {
+                    include: {
+                        payments: {
+                            orderBy: { createdAt: 'desc' }
+                        },
+                        tenant: {
+                            select: { id: true, name: true, slug: true }
+                        }
+                    }
+                }
+            },
         });
 
         if (!user) {
@@ -117,6 +129,116 @@ export class OtpService {
 
         const roleId = user.roleId || null;
         const roleName = user.role?.name || null;
+        const reporter = user.reporterProfile;
+
+        // Check for pending payment (reporter with outstanding payments - same logic as login)
+        if (reporter && roleName !== 'SUPER_ADMIN') {
+            const now = new Date();
+            const currentYear = now.getUTCFullYear();
+            const currentMonth = now.getUTCMonth() + 1;
+            const outstanding: any[] = [];
+
+            // Onboarding fee requirement
+            if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+                const onboardingPaid = reporter.payments.find((p: any) => p.type === 'ONBOARDING' && p.status === 'PAID');
+                if (!onboardingPaid) {
+                    const existingOnboarding = reporter.payments.find((p: any) => p.type === 'ONBOARDING');
+                    outstanding.push({
+                        type: 'ONBOARDING',
+                        amount: reporter.idCardCharge,
+                        currency: 'INR',
+                        status: existingOnboarding ? existingOnboarding.status : 'MISSING',
+                        paymentId: existingOnboarding?.id || null,
+                        razorpayOrderId: (existingOnboarding as any)?.razorpayOrderId || null
+                    });
+                }
+            }
+
+            // Monthly subscription requirement
+            if (reporter.subscriptionActive && typeof reporter.monthlySubscriptionAmount === 'number' && reporter.monthlySubscriptionAmount > 0) {
+                const monthlyPaid = reporter.payments.find((p: any) => 
+                    p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth && p.status === 'PAID'
+                );
+                if (!monthlyPaid) {
+                    const existingMonthly = reporter.payments.find((p: any) => 
+                        p.type === 'MONTHLY_SUBSCRIPTION' && p.year === currentYear && p.month === currentMonth
+                    );
+                    outstanding.push({
+                        type: 'MONTHLY_SUBSCRIPTION',
+                        amount: reporter.monthlySubscriptionAmount,
+                        currency: 'INR',
+                        year: currentYear,
+                        month: currentMonth,
+                        status: existingMonthly ? existingMonthly.status : 'MISSING',
+                        paymentId: existingMonthly?.id || null,
+                        razorpayOrderId: (existingMonthly as any)?.razorpayOrderId || null
+                    });
+                }
+            }
+
+            if (outstanding.length > 0) {
+                // Fetch tenant branding (theme + entity) for payment screen - same as login
+                const [tenantTheme, tenantEntity] = await Promise.all([
+                    (prisma as any).tenantTheme?.findUnique?.({
+                        where: { tenantId: reporter.tenantId },
+                        select: { logoUrl: true, faviconUrl: true, primaryColor: true }
+                    }).catch(() => null),
+                    (prisma as any).tenantEntity?.findUnique?.({
+                        where: { tenantId: reporter.tenantId },
+                        select: { nativeName: true, registrationTitle: true, publisherName: true }
+                    }).catch(() => null),
+                ]);
+
+                // Calculate breakdown - same format as login 402 response
+                const idCardAmountRupees = outstanding.find(o => o.type === 'ONBOARDING')?.amount || 0;
+                const subscriptionAmountRupees = outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.amount || 0;
+                const totalAmountRupees = outstanding.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+                const totalAmountPaise = totalAmountRupees * 100;
+
+                return {
+                    paymentRequired: true,
+                    code: 'PAYMENT_REQUIRED',
+                    message: 'Reporter payments required before login',
+                    roleId,
+                    roleName,
+                    reporter: { id: reporter.id, tenantId: reporter.tenantId },
+                    tenant: {
+                        id: reporter.tenant?.id || reporter.tenantId,
+                        name: reporter.tenant?.name || null,
+                        slug: reporter.tenant?.slug || null,
+                        nativeName: tenantEntity?.nativeName || null,
+                        registrationTitle: tenantEntity?.registrationTitle || null,
+                        publisherName: tenantEntity?.publisherName || null,
+                        logoUrl: tenantTheme?.logoUrl || null,
+                        faviconUrl: tenantTheme?.faviconUrl || null,
+                        primaryColor: tenantTheme?.primaryColor || null
+                    },
+                    outstanding,
+                    breakdown: {
+                        idCardCharge: {
+                            label: 'ID Card / Onboarding Fee',
+                            amount: idCardAmountRupees,
+                            amountPaise: idCardAmountRupees * 100,
+                            displayAmount: `₹${idCardAmountRupees.toFixed(2)}`
+                        },
+                        monthlySubscription: {
+                            label: 'Monthly Subscription',
+                            amount: subscriptionAmountRupees,
+                            amountPaise: subscriptionAmountRupees * 100,
+                            displayAmount: `₹${subscriptionAmountRupees.toFixed(2)}`,
+                            year: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
+                            month: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.month
+                        },
+                        total: {
+                            label: 'Total Amount',
+                            amount: totalAmountRupees,
+                            amountPaise: totalAmountPaise,
+                            displayAmount: `₹${totalAmountRupees.toFixed(2)}`
+                        }
+                    }
+                };
+            }
+        }
 
         if (user.mpin) {
             return { mpinStatus: true, roleId, roleName };
