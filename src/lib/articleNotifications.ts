@@ -8,7 +8,7 @@
  * - CHANGES_REQUESTED: Notify article author (Reporter)
  */
 
-import { sendPush, sendPushToUser, PushResult } from './push';
+import { sendPush, sendPushToUser, broadcastPush, PushResult } from './push';
 import prisma from './prisma';
 
 // Admin roles that should receive pending article notifications
@@ -23,6 +23,8 @@ export interface ArticleInfo {
   status: string;
   previousStatus?: string;
   rejectionReason?: string;
+  isBreaking?: boolean;
+  coverImageUrl?: string;
 }
 
 /**
@@ -220,6 +222,10 @@ export async function notifyArticleStatusChange(
       return notifyArticlePending(article);
     
     case 'PUBLISHED':
+      // If breaking news, broadcast to all users
+      if (article.isBreaking) {
+        return notifyBreakingNews(article);
+      }
       return notifyArticlePublished(article);
     
     case 'REJECTED':
@@ -232,6 +238,48 @@ export async function notifyArticleStatusChange(
     default:
       console.log(`[ArticleNotify] No notification for status: ${status}`);
       return { successCount: 0, failureCount: 0, errors: [] };
+  }
+}
+
+/**
+ * Send BREAKING NEWS push to ALL users
+ * Triggered when isBreaking=true article is PUBLISHED
+ */
+export async function notifyBreakingNews(article: ArticleInfo): Promise<PushResult> {
+  console.log(`[ArticleNotify] 🔴 BREAKING NEWS: ${article.id} - "${article.title}"`);
+
+  try {
+    // Broadcast to all devices with push tokens
+    const result = await broadcastPush({
+      title: '🔴 BREAKING NEWS',
+      body: truncate(article.title, 100),
+      image: article.coverImageUrl,
+      data: {
+        type: 'breaking_news',
+        articleId: article.id,
+        action: 'view'
+      }
+    });
+
+    console.log(`[ArticleNotify] BREAKING notification: success=${result.successCount}, failure=${result.failureCount}`);
+    
+    // Also notify the author that their article is published
+    if (article.authorId) {
+      sendPushToUser(article.authorId, {
+        title: '🎉 Breaking News Published!',
+        body: `Your article "${truncate(article.title, 45)}" is now live as Breaking News!`,
+        data: {
+          type: 'article_published',
+          articleId: article.id,
+          action: 'view'
+        }
+      }).catch(err => console.error('[ArticleNotify] Author notification failed:', err));
+    }
+
+    return result;
+  } catch (e: any) {
+    console.error('[ArticleNotify] Error sending BREAKING notification:', e);
+    return { successCount: 0, failureCount: 1, errors: [e.message] };
   }
 }
 

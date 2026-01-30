@@ -240,7 +240,7 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
     // Get current article for notification
     const current = await prisma.tenantWebArticle.findUnique({
       where: { id },
-      select: { status: true, title: true, authorId: true, tenantId: true, domainId: true }
+      select: { status: true, title: true, authorId: true, tenantId: true, domainId: true, isBreaking: true, coverImageUrl: true }
     });
     if (!current) return res.status(404).json({ error: 'Article not found' });
 
@@ -268,7 +268,9 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
       domainId: current.domainId,
       status: next,
       previousStatus,
-      rejectionReason
+      rejectionReason,
+      isBreaking: (current as any).isBreaking || false,
+      coverImageUrl: current.coverImageUrl || undefined
     }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
 
     return res.json(updated);
