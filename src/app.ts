@@ -73,6 +73,7 @@ import reporterArticlesRoutes from './api/articles/reporter.routes';
 import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
 import analyticsRoutes from './api/analytics/analytics.routes';
 import gdprRoutes from './api/gdpr/gdpr.routes';
+import universalLinksRoutes from './api/universal-links/universal-links.routes';
 
 const app = express();
 
@@ -134,6 +135,10 @@ app.use(compression());
 // Root-level SEO endpoints (robots.txt/sitemap.xml) for domain-based public sites.
 // Best practice: these files should live at the domain root.
 app.use('/', rootSeoRoutes);
+
+// Universal Links / App Links verification and short URL redirects
+// MUST be at root level for Apple/Google verification
+app.use('/', universalLinksRoutes);
 
 // Compatibility: redirect versioned paths to the root equivalents.
 // (Some clients mistakenly call /api/v1/robots.txt and /api/v1/sitemap.xml.)

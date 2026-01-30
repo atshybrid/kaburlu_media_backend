@@ -879,15 +879,19 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
     const categoryIds = Array.from(new Set(slice.map((i: any) => i.categoryId).filter((x: any) => !!x)));
     const [catTranslations, cats] = await Promise.all([
       prisma.categoryTranslation.findMany({ where: { categoryId: { in: categoryIds }, language: { in: sliceLangCodes as any } } }),
-      prisma.category.findMany({ where: { id: { in: categoryIds } } }),
+      prisma.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true, slug: true } }),
     ]);
     const catNameById = new Map<string, string>();
     const catNameByCatLang = new Map<string, string>();
+    const catSlugById = new Map<string, string>();
     for (const ct of catTranslations) {
       catNameById.set(ct.categoryId, ct.name);
       catNameByCatLang.set(`${ct.categoryId}:${ct.language}`, ct.name);
     }
-    for (const c of cats) if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+    for (const c of cats) {
+      if (!catNameById.has(c.id)) catNameById.set(c.id, c.name);
+      if (c.slug) catSlugById.set(c.id, c.slug);
+    }
     // author locations
     const authorIds = Array.from(new Set(slice.map((i: any) => i.authorId).filter((x: any) => !!x)));
     const authorLocs = await prisma.userLocation.findMany({ where: { userId: { in: authorIds } } });
@@ -965,6 +969,19 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       // Image alt text
       const imageAlt = seoData?.imageAlt || (i.title ? `${i.title} - ${categoryName || 'News'}` : null);
 
+      // Build share/web URLs for mobile app
+      // Format: {domain}/{categorySlug}/{articleSlug}
+      const tenantDomain = tenantInfo?.domain || 'kaburlumedia.com';
+      const itemSlug = i.slug || i.id;
+      const categorySlug = i.categoryId ? (catSlugById.get(i.categoryId) || 'news') : 'news';
+      const webUrl = `https://${tenantDomain}/${categorySlug}/${itemSlug}`;
+      // Deep link for React Native app - format: kaburlu://shortnews/{id}
+      const appDeepLink = `kaburlu://shortnews/${i.id}`;
+      // Universal link (works for both web and app) - uses web URL with app association
+      const shareLink = webUrl;
+      // Short URL for sharing (compact format)
+      const shortUrl = `https://${tenantDomain}/s/${i.id.slice(-8)}`;
+
       return {
         ...i,
         // Ensure slug is always present
@@ -976,6 +993,11 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         featuredImage: i.featuredImage || primaryImageUrl || null,
         imageAlt,
         canonicalUrl,
+        // Share & Deep Link URLs
+        webUrl,
+        shareLink,
+        shortUrl,
+        appDeepLink,
         jsonLd,
         // SEO object
         seo,
@@ -984,8 +1006,12 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         languageId: l?.id ?? null,
         languageName: l?.name ?? null,
         languageCode: resolvedLangCode,
+        categoryId: i.categoryId || null,
+        categorySlug,
         categoryName,
         authorName,
+        // Breaking news flag
+        isBreaking: i.isBreaking ?? false,
         author: {
           id: author?.id || null,
           fullName: author?.profile?.fullName || null,
@@ -1069,16 +1095,21 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
 
     // Get category name (in the item's language if available)
     let categoryName: string | null = null;
+    let categorySlug: string = 'news';
     if (item.categoryId) {
-      const catTranslation = await prisma.categoryTranslation.findUnique({
-        where: { categoryId_language: { categoryId: item.categoryId, language: item.language as any } }
-      });
+      const [catTranslation, cat] = await Promise.all([
+        prisma.categoryTranslation.findUnique({
+          where: { categoryId_language: { categoryId: item.categoryId, language: item.language as any } }
+        }),
+        prisma.category.findUnique({ where: { id: item.categoryId }, select: { name: true, slug: true } })
+      ]);
       if (catTranslation) {
         categoryName = catTranslation.name;
       } else {
-        // Fallback to category default name
-        const cat = await prisma.category.findUnique({ where: { id: item.categoryId } });
         categoryName = cat?.name || null;
+      }
+      if (cat?.slug) {
+        categorySlug = cat.slug;
       }
     }
 
@@ -1159,6 +1190,18 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
     // Image alt text
     const imageAlt = seoData?.imageAlt || (item.title ? `${item.title} - ${categoryName || 'News'}` : null);
 
+    // Build share/web URLs for mobile app
+    // Format: {domain}/{categorySlug}/{articleSlug}
+    const tenantDomain = tenantInfo?.domain || 'kaburlumedia.com';
+    const itemSlug = item.slug || item.id;
+    const webUrl = `https://${tenantDomain}/${categorySlug}/${itemSlug}`;
+    // Deep link for React Native app - format: kaburlu://shortnews/{id}
+    const appDeepLink = `kaburlu://shortnews/${item.id}`;
+    // Universal link (works for both web and app) - uses web URL with app association
+    const shareLink = webUrl;
+    // Short URL for sharing (compact format)
+    const shortUrl = `https://${tenantDomain}/s/${item.id.slice(-8)}`;
+
     const data = {
       ...item,
       // Ensure slug is always present
@@ -1169,6 +1212,11 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       featuredImage: item.featuredImage || primaryImageUrl || null,
       imageAlt,
       canonicalUrl,
+      // Share & Deep Link URLs
+      webUrl,
+      shareLink,
+      shortUrl,
+      appDeepLink,
       jsonLd,
       // SEO object
       seo,
@@ -1177,8 +1225,12 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       languageId: lang?.id ?? null,
       languageName: lang?.name ?? null,
       languageCode: lang?.code ?? (typeof item.language === 'string' ? item.language : null),
+      categoryId: item.categoryId || null,
+      categorySlug,
       categoryName,
       authorName,
+      // Breaking news flag
+      isBreaking: item.isBreaking ?? false,
       author: {
         id: author?.id || null,
         fullName: author?.profile?.fullName || null,
