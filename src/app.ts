@@ -72,6 +72,7 @@ import articlesUnifiedRoutes from './api/articles/unified.routes';
 import reporterArticlesRoutes from './api/articles/reporter.routes';
 import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
 import analyticsRoutes from './api/analytics/analytics.routes';
+import gdprRoutes from './api/gdpr/gdpr.routes';
 
 const app = express();
 
@@ -242,6 +243,8 @@ app.use('/states', statesRoutes);
 app.use('/roles', rolesRoutes);
 app.use('/permissions', permissionsRoutes);
 app.use('/users', usersRoutes);
+// GDPR compliance routes (data export, account deletion)
+app.use('/users', gdprRoutes);
 app.use('/auth', authRoutes);
 app.use('/auth', otpRoutes);
 app.use('/locations', locationsRoutes);
@@ -302,6 +305,8 @@ apiV1.use('/states', statesRoutes);
 apiV1.use('/roles', rolesRoutes);
 apiV1.use('/permissions', permissionsRoutes);
 apiV1.use('/users', usersRoutes);
+// GDPR compliance routes (data export, account deletion)
+apiV1.use('/users', gdprRoutes);
 apiV1.use('/auth', authRoutes);
 apiV1.use('/auth', otpRoutes);
 apiV1.use('/locations', locationsRoutes);

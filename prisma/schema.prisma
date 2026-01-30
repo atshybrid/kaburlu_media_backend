@@ -1785,6 +1785,23 @@ model UserLocation {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+/// GDPR Account Deletion Request (Article 17 - Right to Erasure)
+model DeletionRequest {
+  id          String                  @id @default(cuid())
+  userId      String
+  reason      String                  @default("user_requested")
+  status      DeletionRequestStatus   @default(PENDING)
+  requestedAt DateTime                @default(now())
+  dueDate     DateTime                /// GDPR requires processing within 30 days
+  completedAt DateTime?
+  adminNotes  String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
 /// Reusable block templates for ePaper newspaper design.
 /// Templates define layout rules (columns, height) and component styles (title, image, body).
 /// Can be global (platform-wide) or tenant-specific.
@@ -2139,4 +2156,12 @@ enum ProofMediaType {
   IMAGE
   VIDEO
   DOCUMENT
+}
+
+/// Status for GDPR deletion requests
+enum DeletionRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
 }

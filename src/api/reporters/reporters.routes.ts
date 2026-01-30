@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { createUser, findUserByMobileNumber } from '../users/users.service';
+import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
 
 const router = Router();
 
@@ -16,6 +17,63 @@ function mapReporterContact(r: any) {
   const mobileNumber = r?.user?.mobileNumber || null;
   const { user, ...rest } = r;
   return { ...rest, fullName, mobileNumber };
+}
+
+/**
+ * Send ID card PDF to reporter via WhatsApp.
+ * Called after ID card generation/regeneration or on resend request.
+ */
+async function sendIdCardViaWhatsApp(params: {
+  reporterId: string;
+  tenantId: string;
+  pdfUrl: string;
+  cardNumber: string;
+}): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  try {
+    // Get reporter mobile number and tenant info
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id: params.reporterId, tenantId: params.tenantId },
+      include: {
+        user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } },
+      },
+    });
+
+    if (!reporter?.user?.mobileNumber) {
+      return { ok: false, error: 'Reporter mobile number not found' };
+    }
+
+    // Get tenant/organization name
+    const [tenant, tenantEntity] = await Promise.all([
+      (prisma as any).tenant.findUnique({ where: { id: params.tenantId }, select: { name: true } }),
+      (prisma as any).tenantEntity?.findUnique?.({ where: { tenantId: params.tenantId }, select: { nativeName: true, publisherName: true } }).catch(() => null),
+    ]);
+
+    const organizationName = tenantEntity?.nativeName || tenantEntity?.publisherName || tenant?.name || 'Kaburlu Media';
+    const reporterName = reporter.user.profile?.fullName || 'Reporter';
+    const pdfFilename = `${reporterName.replace(/\s+/g, '_')}_ID_Card_${params.cardNumber}.pdf`;
+
+    console.log(`[WhatsApp ID Card] Sending to ${reporter.user.mobileNumber} for reporter ${params.reporterId}`);
+
+    const result = await sendWhatsappIdCardTemplate({
+      toMobileNumber: reporter.user.mobileNumber,
+      pdfUrl: params.pdfUrl,
+      cardType: 'Reporter ID',
+      organizationName,
+      documentType: 'ID Card',
+      pdfFilename,
+    });
+
+    if (result.ok) {
+      console.log(`[WhatsApp ID Card] Sent successfully to ${reporter.user.mobileNumber}, messageId: ${result.messageId}`);
+      return { ok: true, messageId: result.messageId };
+    } else {
+      console.error(`[WhatsApp ID Card] Failed to send:`, result.error, result.details);
+      return { ok: false, error: result.error };
+    }
+  } catch (e: any) {
+    console.error('[WhatsApp ID Card] Error:', e);
+    return { ok: false, error: e.message || 'Failed to send WhatsApp message' };
+  }
 }
 
 type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'MANDAL' | 'ASSEMBLY';
@@ -589,6 +647,16 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
 
     console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${cardNumber}, by=${user?.id}, reason=${reason}`);
 
+    // Send ID card via WhatsApp if PDF URL exists (async, don't block response)
+    if (newIdCard.pdfUrl) {
+      sendIdCardViaWhatsApp({
+        reporterId: reporter.id,
+        tenantId,
+        pdfUrl: newIdCard.pdfUrl,
+        cardNumber: newIdCard.cardNumber,
+      }).catch(e => console.error('[WhatsApp ID Card] Background send error:', e));
+    }
+
     res.status(201).json({
       ...newIdCard,
       previousCardNumber,
@@ -598,6 +666,141 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
   } catch (e) {
     console.error('regenerate reporter id-card error', e);
     res.status(500).json({ error: 'Failed to regenerate reporter ID card' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/resend:
+ *   post:
+ *     summary: Resend reporter ID card PDF via WhatsApp
+ *     description: |
+ *       Resends the existing ID card PDF to the reporter's registered mobile number via WhatsApp.
+ *       The ID card must already be generated and have a valid PDF URL.
+ *       
+ *       **Access Control:**
+ *       - Super Admin: Can resend for any reporter
+ *       - Tenant Admin: Can resend for reporters in their tenant
+ *       - Reporter: Can resend their own ID card
+ *     tags: [ID Cards]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: Reporter ID
+ *     responses:
+ *       200:
+ *         description: WhatsApp message sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 messageId: { type: string }
+ *                 sentTo: { type: string }
+ *             example:
+ *               success: true
+ *               message: "ID card PDF sent via WhatsApp"
+ *               messageId: "wamid.xxx"
+ *               sentTo: "91XXXXXXXXXX"
+ *       400:
+ *         description: ID card not found or PDF not generated
+ *         content:
+ *           application/json:
+ *             examples:
+ *               noIdCard:
+ *                 value:
+ *                   error: "ID card not found. Please generate it first."
+ *               noPdf:
+ *                 value:
+ *                   error: "ID card PDF not generated yet"
+ *       403:
+ *         description: Not authorized
+ *       404:
+ *         description: Reporter not found
+ */
+router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    const user = req.user as any;
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: {
+        idCard: true,
+        user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } },
+      },
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access Control
+    const userRole = user?.role?.name?.toUpperCase() || '';
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
+    const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    const isOwnReporter = reporter.userId && reporter.userId === user?.id;
+
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      const adminReporter = await (prisma as any).reporter.findFirst({
+        where: { userId: user.id, tenantId },
+        select: { id: true },
+      }).catch(() => null);
+      isAdminOfTenant = !!adminReporter;
+    }
+
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+      return res.status(403).json({
+        error: 'Not authorized to resend ID card for this reporter',
+      });
+    }
+
+    // Check if ID card exists
+    if (!reporter.idCard) {
+      return res.status(400).json({ error: 'ID card not found. Please generate it first.' });
+    }
+
+    // Check if PDF URL exists
+    if (!reporter.idCard.pdfUrl) {
+      return res.status(400).json({ error: 'ID card PDF not generated yet. Please wait for PDF generation.' });
+    }
+
+    // Check if mobile number exists
+    if (!reporter.user?.mobileNumber) {
+      return res.status(400).json({ error: 'Reporter mobile number not found' });
+    }
+
+    // Send via WhatsApp
+    const result = await sendIdCardViaWhatsApp({
+      reporterId: reporter.id,
+      tenantId,
+      pdfUrl: reporter.idCard.pdfUrl,
+      cardNumber: reporter.idCard.cardNumber,
+    });
+
+    if (result.ok) {
+      return res.json({
+        success: true,
+        message: 'ID card PDF sent via WhatsApp',
+        messageId: result.messageId,
+        sentTo: reporter.user.mobileNumber.replace(/(\d{2})(\d+)(\d{4})/, '$1******$3'), // Mask middle digits
+      });
+    } else {
+      return res.status(500).json({
+        error: 'Failed to send WhatsApp message',
+        details: result.error,
+      });
+    }
+  } catch (e: any) {
+    console.error('resend reporter id-card error', e);
+    res.status(500).json({ error: 'Failed to resend reporter ID card' });
   }
 });
 

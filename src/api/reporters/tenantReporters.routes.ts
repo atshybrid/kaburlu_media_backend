@@ -3,8 +3,64 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
+import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
 
 const router = Router();
+
+/**
+ * Send ID card PDF to reporter via WhatsApp.
+ * Called after ID card PDF is uploaded or on resend request.
+ */
+async function sendIdCardViaWhatsApp(params: {
+  reporterId: string;
+  tenantId: string;
+  pdfUrl: string;
+  cardNumber: string;
+}): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  try {
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id: params.reporterId, tenantId: params.tenantId },
+      include: {
+        user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } },
+      },
+    });
+
+    if (!reporter?.user?.mobileNumber) {
+      return { ok: false, error: 'Reporter mobile number not found' };
+    }
+
+    const [tenant, tenantEntity] = await Promise.all([
+      (prisma as any).tenant.findUnique({ where: { id: params.tenantId }, select: { name: true } }),
+      (prisma as any).tenantEntity?.findUnique?.({ where: { tenantId: params.tenantId }, select: { nativeName: true, publisherName: true } }).catch(() => null),
+    ]);
+
+    const organizationName = tenantEntity?.nativeName || tenantEntity?.publisherName || tenant?.name || 'Kaburlu Media';
+    const reporterName = reporter.user.profile?.fullName || 'Reporter';
+    const pdfFilename = `${reporterName.replace(/\s+/g, '_')}_ID_Card_${params.cardNumber}.pdf`;
+
+    console.log(`[WhatsApp ID Card] Sending to ${reporter.user.mobileNumber} for reporter ${params.reporterId}`);
+
+    const result = await sendWhatsappIdCardTemplate({
+      toMobileNumber: reporter.user.mobileNumber,
+      pdfUrl: params.pdfUrl,
+      cardType: 'Reporter ID',
+      organizationName,
+      documentType: 'ID Card',
+      pdfFilename,
+    });
+
+    if (result.ok) {
+      console.log(`[WhatsApp ID Card] Sent successfully, messageId: ${result.messageId}`);
+      return { ok: true, messageId: result.messageId };
+    } else {
+      console.error(`[WhatsApp ID Card] Failed:`, result.error);
+      return { ok: false, error: result.error };
+    }
+  } catch (e: any) {
+    console.error('[WhatsApp ID Card] Error:', e);
+    return { ok: false, error: e.message || 'Failed to send WhatsApp message' };
+  }
+}
 
 const includeReporterContact = {
   designation: true,
@@ -36,12 +92,14 @@ function mapReporterContact(r: any) {
  * /reporters/me:
  *   get:
  *     summary: Get current reporter profile from JWT token
- *     description: Returns the reporter profile for the authenticated user without requiring reporter ID
+ *     description: |
+ *       Returns the reporter profile for the authenticated user without requiring reporter ID.
+ *       Includes accessStatus for frontend gating (payment required / access expired screens).
  *     tags: [TenantReporters]
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: Reporter profile with stats
+ *         description: Reporter profile with stats and access status
  *         content:
  *           application/json:
  *             schema:
@@ -71,6 +129,29 @@ function mapReporterContact(r: any) {
  *                 mandal: { type: object }
  *                 assemblyConstituency: { type: object }
  *                 stats: { type: object }
+ *                 accessStatus:
+ *                   type: object
+ *                   description: Frontend gating status - show overlay screens based on this
+ *                   properties:
+ *                     status: { type: string, enum: [ACTIVE, PAYMENT_REQUIRED, ACCESS_EXPIRED] }
+ *                     reason: { type: string }
+ *                     action: { type: string, enum: [NONE, PAY, CONTACT_PUBLISHER] }
+ *                 paymentStatus:
+ *                   type: object
+ *                   description: Payment details when payment is required
+ *                   properties:
+ *                     required: { type: boolean }
+ *                     outstanding: { type: array }
+ *                     razorpay: { type: object }
+ *                 manualLoginStatus:
+ *                   type: object
+ *                   description: Manual login access details
+ *                   properties:
+ *                     enabled: { type: boolean }
+ *                     expiresAt: { type: string, format: date-time }
+ *                     daysRemaining: { type: integer }
+ *                     expired: { type: boolean }
+ *                     publisherContact: { type: object }
  *       401: { description: Unauthorized }
  *       404: { description: Reporter profile not found for this user }
  */
@@ -89,6 +170,7 @@ router.get('/reporters/me', passport.authenticate('jwt', { session: false }), as
         mandal: { select: { id: true, name: true } },
         assemblyConstituency: { select: { id: true, name: true } },
         idCard: { select: { id: true, cardNumber: true, issuedAt: true, expiresAt: true, pdfUrl: true } },
+        payments: { select: { id: true, type: true, status: true, amount: true, currency: true, year: true, month: true, razorpayOrderId: true } },
       },
     });
     if (!r) return res.status(404).json({ error: 'Reporter profile not found for this user' });
@@ -107,6 +189,101 @@ router.get('/reporters/me', passport.authenticate('jwt', { session: false }), as
     const tenantId = r.tenantId;
     const authorId = r?.userId ? String(r.userId) : null;
 
+    // Fetch tenant info for publisher contact
+    const [tenantInfo, tenantEntity] = await Promise.all([
+      (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true, slug: true } }).catch(() => null),
+      (prisma as any).tenantEntity?.findUnique?.({ where: { tenantId }, select: { publisherName: true, nativeName: true, ownerName: true, editorName: true } }).catch(() => null),
+    ]);
+
+    // Calculate accessStatus, paymentStatus, manualLoginStatus
+    let accessStatus: { status: 'ACTIVE' | 'PAYMENT_REQUIRED' | 'ACCESS_EXPIRED'; reason: string; action: 'NONE' | 'PAY' | 'CONTACT_PUBLISHER' } = {
+      status: 'ACTIVE',
+      reason: '',
+      action: 'NONE',
+    };
+
+    // Manual login status
+    const manualLoginExpiresAt = r.manualLoginExpiresAt ? new Date(r.manualLoginExpiresAt) : null;
+    const manualLoginExpired = r.manualLoginEnabled && !r.subscriptionActive && manualLoginExpiresAt && manualLoginExpiresAt.getTime() <= now.getTime();
+    const daysRemaining = manualLoginExpiresAt ? Math.max(0, Math.ceil((manualLoginExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0;
+
+    const publisherContact = {
+      name: tenantEntity?.publisherName || tenantEntity?.nativeName || tenantInfo?.name || 'Publisher',
+      phone: process.env.WHATSAPP_SUPPORT_MOBILE || '',
+      message: 'Your access has expired. Please contact the publisher to extend your access.',
+    };
+
+    const manualLoginStatus = {
+      enabled: !!r.manualLoginEnabled,
+      expiresAt: manualLoginExpiresAt ? manualLoginExpiresAt.toISOString() : null,
+      daysRemaining,
+      expired: !!manualLoginExpired,
+      publisherContact,
+    };
+
+    // Check manual login expiry first
+    if (manualLoginExpired) {
+      accessStatus = {
+        status: 'ACCESS_EXPIRED',
+        reason: 'Your manual login access has expired. Please contact the publisher to renew.',
+        action: 'CONTACT_PUBLISHER',
+      };
+    }
+
+    // Payment status calculation
+    const outstanding: any[] = [];
+    let paymentRequired = false;
+
+    // Onboarding fee check
+    if (typeof r.idCardCharge === 'number' && r.idCardCharge > 0) {
+      const onboardingPaid = (r.payments || []).find((p: any) => p.type === 'ONBOARDING' && p.status === 'PAID');
+      if (!onboardingPaid) {
+        const existingOnboarding = (r.payments || []).find((p: any) => p.type === 'ONBOARDING');
+        outstanding.push({
+          type: 'ONBOARDING',
+          amount: r.idCardCharge,
+          currency: 'INR',
+          status: existingOnboarding ? existingOnboarding.status : 'MISSING',
+          paymentId: existingOnboarding?.id || null,
+          razorpayOrderId: existingOnboarding?.razorpayOrderId || null,
+        });
+      }
+    }
+
+    // Monthly subscription check (only if subscriptionActive=true)
+    if (r.subscriptionActive && typeof r.monthlySubscriptionAmount === 'number' && r.monthlySubscriptionAmount > 0) {
+      const monthlyPaid = (r.payments || []).find((p: any) => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === year && p.month === month && p.status === 'PAID');
+      if (!monthlyPaid) {
+        const existingMonthly = (r.payments || []).find((p: any) => p.type === 'MONTHLY_SUBSCRIPTION' && p.year === year && p.month === month);
+        outstanding.push({
+          type: 'MONTHLY_SUBSCRIPTION',
+          amount: r.monthlySubscriptionAmount,
+          currency: 'INR',
+          year,
+          month,
+          status: existingMonthly ? existingMonthly.status : 'MISSING',
+          paymentId: existingMonthly?.id || null,
+          razorpayOrderId: existingMonthly?.razorpayOrderId || null,
+        });
+      }
+    }
+
+    if (outstanding.length > 0 && accessStatus.status !== 'ACCESS_EXPIRED') {
+      paymentRequired = true;
+      accessStatus = {
+        status: 'PAYMENT_REQUIRED',
+        reason: outstanding.map(o => o.type === 'ONBOARDING' ? 'Onboarding fee pending' : `${month}/${year} subscription pending`).join(', '),
+        action: 'PAY',
+      };
+    }
+
+    const paymentStatus = {
+      required: paymentRequired,
+      outstanding,
+      razorpay: outstanding.length > 0 && outstanding[0].razorpayOrderId ? { orderId: outstanding[0].razorpayOrderId } : null,
+    };
+
+    // Stats calculation
     const makeEmptyNewspaperCounts = () => ({ submitted: 0, published: 0, rejected: 0 });
     let newspaperTotal = makeEmptyNewspaperCounts();
     let newspaperCurrentMonth = makeEmptyNewspaperCounts();
@@ -169,13 +346,17 @@ router.get('/reporters/me', passport.authenticate('jwt', { session: false }), as
       })
       .catch(() => null);
 
-    const { user: _user, ...rest } = r;
+    const { user: _user, payments: _payments, ...rest } = r;
     return res.json({
       ...rest,
       profilePhotoUrl: computedProfilePhotoUrl,
       autoPublish,
       fullName,
       mobileNumber,
+      // NEW: Access control fields for frontend overlay screens
+      accessStatus,
+      paymentStatus,
+      manualLoginStatus,
       stats: {
         newspaperArticles: {
           total: newspaperTotal,
@@ -2163,5 +2344,230 @@ router.patch('/tenants/:tenantId/reporters/:id/kyc/verify', passport.authenticat
   } catch (e) {
     console.error('tenant reporter kyc verify error', e);
     return res.status(500).json({ error: 'Failed to verify KYC' });
+  }
+});
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/pdf:
+ *   patch:
+ *     summary: Update ID card PDF URL and send via WhatsApp
+ *     description: |
+ *       Updates the PDF URL for an existing ID card and automatically sends it to the reporter via WhatsApp.
+ *       Call this after generating/uploading the ID card PDF.
+ *       
+ *       **Access Control:**
+ *       - Super Admin: Can update for any reporter
+ *       - Tenant Admin: Can update for reporters in their tenant
+ *       - Reporter: Can update their own ID card PDF
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pdfUrl]
+ *             properties:
+ *               pdfUrl: { type: string }
+ *               sendWhatsApp: { type: boolean, default: true, description: 'Send PDF via WhatsApp' }
+ *     responses:
+ *       200:
+ *         description: PDF URL updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 cardNumber: { type: string }
+ *                 pdfUrl: { type: string }
+ *                 whatsappSent: { type: boolean }
+ *                 whatsappMessageId: { type: string }
+ *       400: { description: ID card not found or pdfUrl missing }
+ *       403: { description: Not authorized }
+ *       404: { description: Reporter not found }
+ */
+router.patch('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    const user: any = (req as any).user;
+    const body = req.body || {};
+
+    const pdfUrl = typeof body.pdfUrl === 'string' ? body.pdfUrl.trim() : '';
+    const sendWhatsApp = body.sendWhatsApp !== false; // default true
+
+    if (!pdfUrl) {
+      return res.status(400).json({ error: 'pdfUrl is required' });
+    }
+
+    // Find reporter first to check ownership
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true },
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access control - allow reporter to update their own ID card PDF
+    const roleName = String(user?.role?.name || '').toUpperCase();
+    const isSuperAdmin = roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN';
+    const isTenantAdmin = roleName === 'TENANT_ADMIN' || roleName === 'ADMIN';
+    const isOwnReporter = reporter.userId && reporter.userId === user?.id;
+
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      const adminReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id, tenantId }, select: { id: true } })
+        .catch(() => null);
+      isAdminOfTenant = !!adminReporter;
+    }
+
+    // Allow: super admin, tenant admin of this tenant, or own reporter
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+      return res.status(403).json({ error: 'Not authorized to update ID card PDF' });
+    }
+    if (!reporter.idCard) return res.status(400).json({ error: 'ID card not found. Generate it first.' });
+
+    // Update PDF URL
+    const updated = await (prisma as any).reporterIDCard.update({
+      where: { id: reporter.idCard.id },
+      data: { pdfUrl },
+      select: { id: true, cardNumber: true, pdfUrl: true, issuedAt: true, expiresAt: true },
+    });
+
+    // Send via WhatsApp
+    let whatsappResult: { ok: boolean; messageId?: string; error?: string } = { ok: false };
+    if (sendWhatsApp) {
+      whatsappResult = await sendIdCardViaWhatsApp({
+        reporterId: id,
+        tenantId,
+        pdfUrl,
+        cardNumber: updated.cardNumber,
+      });
+    }
+
+    return res.json({
+      ...updated,
+      whatsappSent: whatsappResult.ok,
+      whatsappMessageId: whatsappResult.messageId || null,
+      whatsappError: whatsappResult.error || null,
+    });
+  } catch (e: any) {
+    console.error('update id-card pdf error', e);
+    return res.status(500).json({ error: 'Failed to update ID card PDF' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/resend:
+ *   post:
+ *     summary: Resend ID card PDF via WhatsApp
+ *     description: |
+ *       Resends the existing ID card PDF to the reporter's registered mobile number via WhatsApp.
+ *       The ID card must already have a valid PDF URL.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: WhatsApp message sent
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 messageId: { type: string }
+ *                 sentTo: { type: string }
+ *       400: { description: ID card or PDF not found }
+ *       403: { description: Not authorized }
+ *       404: { description: Reporter not found }
+ */
+router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    const user: any = (req as any).user;
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: {
+        idCard: true,
+        user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } },
+      },
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access control
+    const roleName = String(user?.role?.name || '').toUpperCase();
+    const isSuperAdmin = roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN';
+    const isTenantAdmin = roleName === 'TENANT_ADMIN' || roleName === 'ADMIN';
+    const isOwnReporter = reporter.userId && reporter.userId === user?.id;
+
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      const adminReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id, tenantId }, select: { id: true } })
+        .catch(() => null);
+      isAdminOfTenant = !!adminReporter;
+    }
+
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+      return res.status(403).json({ error: 'Not authorized to resend ID card' });
+    }
+
+    // Check ID card and PDF
+    if (!reporter.idCard) {
+      return res.status(400).json({ error: 'ID card not found. Generate it first.' });
+    }
+    if (!reporter.idCard.pdfUrl) {
+      return res.status(400).json({ error: 'ID card PDF not generated yet' });
+    }
+    if (!reporter.user?.mobileNumber) {
+      return res.status(400).json({ error: 'Reporter mobile number not found' });
+    }
+
+    // Send via WhatsApp
+    const result = await sendIdCardViaWhatsApp({
+      reporterId: id,
+      tenantId,
+      pdfUrl: reporter.idCard.pdfUrl,
+      cardNumber: reporter.idCard.cardNumber,
+    });
+
+    if (result.ok) {
+      return res.json({
+        success: true,
+        message: 'ID card PDF sent via WhatsApp',
+        messageId: result.messageId,
+        sentTo: reporter.user.mobileNumber.replace(/(\d{2})(\d+)(\d{4})/, '$1******$3'),
+      });
+    } else {
+      return res.status(500).json({
+        error: 'Failed to send WhatsApp message',
+        details: result.error,
+      });
+    }
+  } catch (e: any) {
+    console.error('resend id-card error', e);
+    return res.status(500).json({ error: 'Failed to resend ID card' });
   }
 });

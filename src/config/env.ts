@@ -255,6 +255,8 @@ export const config = {
     defaultCountryCode: process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91',
     otpTemplateName: process.env.WHATSAPP_OTP_TEMPLATE_NAME || 'kaburlu_app_otp',
     otpTemplateLang: process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en_US',
+    idCardTemplateName: process.env.WHATSAPP_IDCARD_TEMPLATE_NAME || 'send_idcard_reporter',
+    idCardTemplateLang: process.env.WHATSAPP_IDCARD_TEMPLATE_LANG || 'en_US',
     supportMobile: process.env.WHATSAPP_SUPPORT_MOBILE || '',
     ttlText: process.env.WHATSAPP_OTP_TTL_TEXT || '10 minutes',
   },
