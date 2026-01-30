@@ -708,6 +708,43 @@ router.get('/public/:id', shortNewsController.getApprovedShortNewsById);
 
 /**
  * @swagger
+ * /shortnews/resolve/{shortId}:
+ *   get:
+ *     summary: Resolve short ID to full article ID (for deep linking)
+ *     description: |
+ *       Given a short ID (last 6-8 chars of the full ID), returns the full article ID.
+ *       Used by mobile apps to resolve short URLs like s.kaburlumedia.com/{shortId}
+ *     tags: [ShortNews]
+ *     parameters:
+ *       - in: path
+ *         name: shortId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Last 6-8 characters of the full article ID
+ *     responses:
+ *       200:
+ *         description: Short ID resolved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     articleId: { type: string, description: "Full article ID" }
+ *                     type: { type: string, enum: [shortnews, article], description: "Content type" }
+ *       404:
+ *         description: Short ID not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/resolve/:shortId', shortNewsController.resolveShortId);
+
+/**
+ * @swagger
  * /shortnews/moderation:
  *   get:
  *     summary: Moderation queue/status-wise listing

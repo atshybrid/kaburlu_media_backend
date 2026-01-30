@@ -1262,6 +1262,71 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Resolve short ID to full article ID (for deep linking)
+ * Short ID is the last 6-8 characters of the full cuid
+ * Used by mobile apps to resolve s.kaburlumedia.com/{shortId}
+ */
+export const resolveShortId = async (req: Request, res: Response) => {
+  try {
+    const { shortId } = req.params;
+
+    if (!shortId || shortId.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid short ID. Must be at least 6 characters.' 
+      });
+    }
+
+    // Try ShortNews first
+    const shortNews = await prisma.shortNews.findFirst({
+      where: {
+        id: { endsWith: shortId },
+        status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] }
+      },
+      select: { id: true }
+    });
+
+    if (shortNews) {
+      return res.json({
+        success: true,
+        data: {
+          articleId: shortNews.id,
+          type: 'shortnews'
+        }
+      });
+    }
+
+    // Try Article if not found in ShortNews
+    const article = await prisma.article.findFirst({
+      where: {
+        id: { endsWith: shortId },
+        status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] }
+      },
+      select: { id: true }
+    });
+
+    if (article) {
+      return res.json({
+        success: true,
+        data: {
+          articleId: article.id,
+          type: 'article'
+        }
+      });
+    }
+
+    // Not found
+    return res.status(404).json({
+      success: false,
+      error: 'Article not found for the given short ID'
+    });
+  } catch (e) {
+    console.error('Failed to resolve short ID:', e);
+    return res.status(500).json({ success: false, error: 'Failed to resolve short ID' });
+  }
+};
+
 // Moderation/status-wise listing: citizens see their own by status; desk/admin see language-wide by status
 export const listShortNewsByStatus = async (req: Request, res: Response) => {
   try {
