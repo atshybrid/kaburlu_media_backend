@@ -9,7 +9,10 @@ function initFirebase() {
   if (initialized) return;
   if (initError) throw initError;
 
-  const { credsPath, projectId, clientEmail, privateKey } = config.firebase;
+  const { credsPath, projectId, clientEmail, privateKey: rawPrivateKey } = config.firebase;
+  
+  // Convert literal \n to actual newlines (common issue with env vars)
+  const privateKey = rawPrivateKey?.replace(/\\n/g, '\n');
 
   try {
     // Check if credsPath exists AND the file actually exists
@@ -22,7 +25,7 @@ function initFirebase() {
       console.log('[Firebase] init via inline service account');
       console.log('[Firebase] Project:', projectId);
       console.log('[Firebase] Client Email:', clientEmail);
-      console.log('[Firebase] Private Key:', privateKey ? `[${privateKey.length} chars, starts: ${privateKey.substring(0, 30)}...]` : 'MISSING');
+      console.log('[Firebase] Private Key:', privateKey ? `[${privateKey.length} chars, has newlines: ${privateKey.includes('\n')}]` : 'MISSING');
       admin.initializeApp({ credential: admin.credential.cert({ projectId, clientEmail, privateKey }) });
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       console.log('[Firebase] init via ADC');
