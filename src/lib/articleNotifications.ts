@@ -253,7 +253,8 @@ export async function notifyBreakingNews(article: ArticleInfo): Promise<PushResu
     const result = await broadcastPush({
       title: '🔴 BREAKING NEWS',
       body: truncate(article.title, 100),
-      image: article.coverImageUrl,
+      image: article.coverImageUrl, // Cover image in push notification
+      color: '#FF0000', // Red color for Android notification
       data: {
         type: 'breaking_news',
         articleId: article.id,
@@ -268,6 +269,7 @@ export async function notifyBreakingNews(article: ArticleInfo): Promise<PushResu
       sendPushToUser(article.authorId, {
         title: '🎉 Breaking News Published!',
         body: `Your article "${truncate(article.title, 45)}" is now live as Breaking News!`,
+        color: '#4CAF50', // Green for success
         data: {
           type: 'article_published',
           articleId: article.id,

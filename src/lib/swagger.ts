@@ -90,7 +90,10 @@ const swaggerDefinition = {
     { name: 'EPF ePaper PDF Issues - Admin', description: 'PDF-based ePaper issue upload and management - Upload PDFs, manage issues by date/edition (SUPER_ADMIN & DESK_EDITOR)' },
     { name: 'EPF ePaper Clips - Admin', description: 'Article clip management for PDF issues - Create, update, delete article regions with coordinates (SUPER_ADMIN & DESK_EDITOR)' },
     { name: 'EPF ePaper - Public', description: 'Public ePaper endpoints - Latest issues, editions list, and PDF page delivery' },
-    { name: 'Block ePaper - Admin', description: 'Block-based ePaper templates and layout generation (Admin only)' }
+    { name: 'Block ePaper - Admin', description: 'Block-based ePaper templates and layout generation (Admin only)' },
+    // Admin & WhatsApp
+    { name: 'Admin', description: 'Administrative operations - Tenant admin management, system configuration' },
+    { name: 'WhatsApp Templates', description: 'WhatsApp Business API template management - Sync, list, and manage message templates' }
   ],
   components: {
     securitySchemes: {

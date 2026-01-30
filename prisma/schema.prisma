@@ -9,6 +9,30 @@ datasource db {
   directUrl = env("DATABASE_URL_DIRECT")
 }
 
+/// WhatsApp message templates synced from Meta Business API
+model WhatsappTemplate {
+  id              String   @id @default(cuid())
+  templateId      String   @unique /// Meta template ID (e.g., "123456789")
+  name            String   @unique /// Template name (e.g., "send_idcard_reporter")
+  language        String   /// Language code (e.g., "en_US", "te")
+  category        String?  /// AUTHENTICATION, MARKETING, UTILITY
+  status          String   /// APPROVED, PENDING, REJECTED, DISABLED
+  headerType      String?  /// NONE, TEXT, IMAGE, VIDEO, DOCUMENT
+  headerText      String?  /// Header text if type is TEXT
+  bodyText        String?  /// Body template text with {{1}}, {{2}} placeholders
+  footerText      String?  /// Footer text
+  buttonsJson     Json?    /// Array of button configs
+  componentsJson  Json?    /// Full components array from Meta API
+  qualityScore    String?  /// GREEN, YELLOW, RED, UNKNOWN
+  rejectedReason  String?  /// Reason if rejected
+  lastSyncedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+}
+
 model OtpLog {
   id           String   @id @default(cuid())
   mobileNumber String

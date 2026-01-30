@@ -427,7 +427,27 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }
     });
 
-    res.status(201).json(idCard);
+    // Auto-send ID card via WhatsApp (async, don't block response)
+    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+    const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+    sendIdCardViaWhatsApp({
+      reporterId: reporter.id,
+      tenantId,
+      pdfUrl,
+      cardNumber,
+    }).then(result => {
+      if (result.ok) {
+        console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
+      } else {
+        console.error(`[ID Card] Auto-send WhatsApp failed for reporter ${reporter.id}:`, result.error);
+      }
+    }).catch(e => console.error('[ID Card] Auto-send WhatsApp error:', e));
+
+    res.status(201).json({
+      ...idCard,
+      whatsappSent: true,
+      message: 'ID card generated and sent via WhatsApp'
+    });
   } catch (e) {
     console.error('generate reporter id-card error', e);
     res.status(500).json({ error: 'Failed to generate reporter ID card' });
@@ -647,21 +667,29 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
 
     console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${cardNumber}, by=${user?.id}, reason=${reason}`);
 
-    // Send ID card via WhatsApp if PDF URL exists (async, don't block response)
-    if (newIdCard.pdfUrl) {
-      sendIdCardViaWhatsApp({
-        reporterId: reporter.id,
-        tenantId,
-        pdfUrl: newIdCard.pdfUrl,
-        cardNumber: newIdCard.cardNumber,
-      }).catch(e => console.error('[WhatsApp ID Card] Background send error:', e));
-    }
+    // Auto-send ID card via WhatsApp (async, don't block response)
+    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+    const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+    sendIdCardViaWhatsApp({
+      reporterId: reporter.id,
+      tenantId,
+      pdfUrl,
+      cardNumber: newIdCard.cardNumber,
+    }).then(result => {
+      if (result.ok) {
+        console.log(`[ID Card] Regenerate - sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
+      } else {
+        console.error(`[ID Card] Regenerate - WhatsApp send failed for reporter ${reporter.id}:`, result.error);
+      }
+    }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
 
     res.status(201).json({
       ...newIdCard,
       previousCardNumber,
       regeneratedBy: user?.id,
-      regenerationReason: reason || null
+      regenerationReason: reason || null,
+      whatsappSent: true,
+      message: 'ID card regenerated and sent via WhatsApp'
     });
   } catch (e) {
     console.error('regenerate reporter id-card error', e);

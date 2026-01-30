@@ -1,7 +1,7 @@
 import { getMessaging } from './firebase';
 import prisma from './prisma';
 
-export async function sendToTokens(tokens: string[], payload: { title: string; body: string; image?: string; data?: Record<string, string> }) {
+export async function sendToTokens(tokens: string[], payload: { title: string; body: string; image?: string; data?: Record<string, string>; color?: string }) {
   if (!tokens.length) {
     console.log('[FCM] sendToTokens: No tokens provided, skipping');
     return { successCount: 0, failureCount: 0, errors: [] as any[] };
@@ -12,12 +12,35 @@ export async function sendToTokens(tokens: string[], payload: { title: string; b
   
   try {
     const messaging = getMessaging();
+    
+    // Android notification config with color and image
+    const androidNotification: any = {
+      color: payload.color || '#FF0000', // Red by default for breaking news
+      priority: 'max' as const,
+      channelId: 'breaking_news', // High priority channel
+    };
+    if (payload.image) {
+      androidNotification.imageUrl = payload.image;
+    }
+    
     const response = await messaging.sendEachForMulticast({
       tokens,
-      notification: { title: payload.title, body: payload.body, image: payload.image },
+      notification: { title: payload.title, body: payload.body, imageUrl: payload.image },
       data: payload.data || {},
-      android: { priority: 'high', notification: payload.image ? { imageUrl: payload.image } as any : undefined },
-      apns: { headers: { 'apns-priority': '10' } },
+      android: { 
+        priority: 'high', 
+        notification: androidNotification
+      },
+      apns: { 
+        headers: { 'apns-priority': '10' },
+        payload: {
+          aps: {
+            'mutable-content': 1, // Allows image to show on iOS
+            sound: 'default'
+          }
+        },
+        fcmOptions: payload.image ? { imageUrl: payload.image } : undefined
+      },
     } as any);
 
     console.log(`[FCM] sendToTokens result: success=${response.successCount}, failure=${response.failureCount}`);

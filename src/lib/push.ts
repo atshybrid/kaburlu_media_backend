@@ -15,6 +15,7 @@ export interface PushPayload {
   body: string;
   image?: string;
   data?: Record<string, string>;
+  color?: string; // Android notification color (hex, e.g., '#FF0000')
 }
 
 export interface PushResult {

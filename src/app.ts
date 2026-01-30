@@ -54,6 +54,7 @@ import assemblyConstituenciesRoutes from './api/assembly/assemblyConstituencies.
 import adminRoutes from './api/admin/admin.routes';
 import webhooksRoutes from './api/webhooks/webhooks.routes';
 import idCardsRoutes from './api/idCards/idCards.routes';
+import whatsappRoutes from './api/whatsapp/whatsapp.routes';
 import reporterDesignationsPublicRoutes from './api/reporters/reporterDesignations.public.routes';
 import { Router } from 'express';
 import settingsRouter from './api/settings/settings.routes';
@@ -361,6 +362,8 @@ apiV1.use('/admin', adminRoutes);
 apiV1.use('/webhooks', webhooksRoutes);
 // Public ID Card render APIs (JSON/HTML/PDF)
 apiV1.use('/id-cards', idCardsRoutes);
+// WhatsApp template management
+apiV1.use('/whatsapp', whatsappRoutes);
 // Public reporter join (tenantId-based; does not rely on Host)
 apiV1.use('/public-join', publicReporterJoinRoutes);
 // Versioned public read-only routes (duplicate of /api/public for convenience in Swagger testing)
