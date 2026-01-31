@@ -652,26 +652,48 @@ router.get('/config', async (_req, res) => {
  * @swagger
  * /public/smart-homepage:
  *   get:
- *     summary: ⚡ Smart Homepage - Style1 Layout Optimized
+ *     summary: ⚡ Smart Homepage - Auto-detects Style1/Style2
  *     description: |
- *       🚀 **SMART HOMEPAGE API - Style1 Layout Structure**
+ *       🚀 **SMART HOMEPAGE API - Theme-aware Layout**
  *       
- *       Single endpoint that returns ALL homepage data structured for Style1 theme layout:
+ *       Single endpoint that returns ALL homepage data structured for the detected theme.
+ *       Theme is auto-detected from `DomainSettings.data.themeStyle` (defaults to style1).
  *       
- *       **Layout Sections:**
- *       1. **flashTicker** - 12 breaking news ticker items
- *       2. **heroSection** - 4-column grid (heroLead: 8, latest: 7, mostRead: 8, topViewed: 4)
- *       3. **horizontalAd1** - Ad slot below hero
- *       4. **categorySection1** - First 4 categories × 5 articles = 20
- *       5. **categorySection2** - Next 4 categories × 5 articles = 20
- *       6. **horizontalAd2** - Ad slot below categories
- *       7. **categoryHub** - Next 4 categories × 5 articles = 20
- *       8. **webStories** - Web stories placeholder
+ *       ---
+ *       
+ *       ## **Style1 Layout** (default)
+ *       | Section | Description | Articles |
+ *       |---------|-------------|----------|
+ *       | flashTicker | Breaking news ticker | 12 items |
+ *       | heroSection | 4-column grid | heroLead(8) + latest(7) + mostRead(8) + topViewed(4) |
+ *       | categorySection1 | First 4 categories | 4 × 5 = 20 |
+ *       | categorySection2 | Next 4 categories | 4 × 5 = 20 |
+ *       | categoryHub | Next 4 categories | 4 × 5 = 20 |
+ *       
+ *       ---
+ *       
+ *       ## **Style2 Layout** (TOI-style)
+ *       | Section | Style | Articles |
+ *       |---------|-------|----------|
+ *       | flashTicker | Ticker strip | 10 items |
+ *       | heroSection | TOI 3-column | left(10) + center(9) + right(11) |
+ *       | categoryColumns | 3-col grid | 6 cats × 5 = 30 |
+ *       | magazineGrid | Emerald | 1 cat × 6 |
+ *       | horizontalCards | Rose | 1 cat × 6 |
+ *       | spotlight | Amber | 1 cat × 6 |
+ *       | newspaperColumns | Blue | 1 cat × 6 |
+ *       | extraMagazineGrid | Violet | 1 cat × 6 |
+ *       | extraHorizontalCards | Cyan | 1 cat × 6 |
+ *       | photoGallery | Slate | 1 cat × 6 |
+ *       | timeline | Gray | 1 cat × 6 |
+ *       | compactLists | Green/Purple | 2 cats × 6 = 12 |
+ *       
+ *       ---
  *       
  *       **Smart Features:**
- *       - Categories auto-injected top-to-bottom from domain category order
+ *       - Theme auto-detected from domain settings
+ *       - Categories injected top-to-bottom by createdAt order
  *       - Section `visible: false` when no articles exist
- *       - Theme style auto-detected from domain settings
  *       
  *       **Cache:** ISR 180s (3 minutes)
  *     tags: [News Website API 2.0]
@@ -686,57 +708,18 @@ router.get('/config', async (_req, res) => {
  *         description: Language filter (optional)
  *     responses:
  *       200:
- *         description: Style1 structured homepage data
+ *         description: Theme-specific homepage data (style1 or style2)
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 version: { type: string, example: "2.0-smart-style1" }
- *                 themeStyle: { type: string, example: "style1" }
+ *                 version: { type: string, example: "2.0-smart-style1 or 2.0-smart-style2" }
+ *                 themeStyle: { type: string, enum: [style1, style2] }
  *                 timestamp: { type: string, format: date-time }
- *                 flashTicker:
- *                   type: object
- *                   properties:
- *                     visible: { type: boolean }
- *                     items: { type: array }
- *                 heroSection:
- *                   type: object
- *                   properties:
- *                     visible: { type: boolean }
- *                     columns:
- *                       type: object
- *                       properties:
- *                         heroLead: { type: object }
- *                         latest: { type: object }
- *                         mostRead: { type: object }
- *                         topViewed: { type: object }
- *                 categorySection1:
- *                   type: object
- *                   properties:
- *                     visible: { type: boolean }
- *                     label: { type: string }
- *                     categories: { type: array }
- *                 categorySection2:
- *                   type: object
- *                   properties:
- *                     visible: { type: boolean }
- *                     label: { type: string }
- *                     categories: { type: array }
- *                 categoryHub:
- *                   type: object
- *                   properties:
- *                     visible: { type: boolean }
- *                     label: { type: string }
- *                     categories: { type: array }
- *                 meta:
- *                   type: object
- *                   properties:
- *                     totalArticles: { type: integer }
- *                     totalCategories: { type: integer }
- *                     categoriesInSections: { type: integer }
- *                     lastUpdated: { type: string, format: date-time }
- *                     cacheAge: { type: integer }
+ *                 flashTicker: { type: object }
+ *                 heroSection: { type: object }
+ *                 meta: { type: object }
  *       500:
  *         description: Server error
  */
@@ -920,6 +903,174 @@ router.get('/smart-homepage', async (req, res) => {
     const heroLeadArticles = latestArticles.slice(0, 8);   // First 8 for hero lead
     const latestColumnArticles = latestArticles.slice(8, 15); // Next 7 for latest column
 
+    // ========================================
+    // STYLE2 RESPONSE
+    // ========================================
+    if (themeStyle === 'style2') {
+      // Style2 Layout Configuration:
+      // - flashTicker: 10 breaking news items
+      // - heroSection (TOI-style): Left (1 hero + 8 secondary = 9), Right (5 most read + 6 latest = 11)
+      // - categoryColumns: 6 main categories × 5 articles = 30
+      // - magazineGrid: 1 category × 6 articles
+      // - horizontalCards: 1 category × 6 articles
+      // - spotlight: 1 category × 6 articles
+      // - newspaperColumns: 1 category × 6 articles
+      // - extraMagazineGrid: 1 category × 6 articles
+      // - extraHorizontalCards: 1 category × 6 articles
+      // - photoGallery: 1 category × 6 articles
+      // - timeline: 1 category × 6 articles
+      // - featuredBanner: 1 featured article
+      // - compactLists: 2 categories × 6 articles each = 12
+      // Total categories needed: 6 (main columns) + 8 (styled sections) + 2 (compact) = 16
+
+      // Split categories for Style2
+      const mainCategories = allCategories.slice(0, 6);     // First 6 for main columns
+      const styledSectionCats = allCategories.slice(6, 14); // Next 8 for styled sections
+      const compactListCats = allCategories.slice(14, 16);  // Next 2 for compact lists
+
+      // Fetch main category columns (6 categories × 5 articles)
+      const mainColumnsData = await Promise.all(
+        mainCategories.map((cat: any) => fetchCategoryArticles(cat, 5))
+      );
+      const mainColumnsValid = mainColumnsData.filter((s: any) => s && s.visible);
+
+      // Fetch styled sections (8 categories × 6 articles each)
+      const styledSectionsData = await Promise.all(
+        styledSectionCats.map((cat: any) => fetchCategoryArticles(cat, 6))
+      );
+
+      // Fetch compact list categories (2 × 6 articles)
+      const compactListsData = await Promise.all(
+        compactListCats.map((cat: any) => fetchCategoryArticles(cat, 6))
+      );
+
+      // Section styles for Style2
+      const sectionStyles = [
+        { key: 'magazineGrid', style: 'magazine-grid', color: 'emerald' },
+        { key: 'horizontalCards', style: 'horizontal-cards', color: 'rose' },
+        { key: 'spotlight', style: 'spotlight', color: 'amber' },
+        { key: 'newspaperColumns', style: 'newspaper-columns', color: 'blue' },
+        { key: 'extraMagazineGrid', style: 'magazine-grid', color: 'violet' },
+        { key: 'extraHorizontalCards', style: 'horizontal-cards', color: 'cyan' },
+        { key: 'photoGallery', style: 'photo-gallery', color: 'slate' },
+        { key: 'timeline', style: 'timeline', color: 'gray' }
+      ];
+
+      // Build styled sections
+      const styledSections: any = {};
+      sectionStyles.forEach((ss, idx) => {
+        const catData = styledSectionsData[idx];
+        styledSections[ss.key] = {
+          visible: catData && catData.visible,
+          style: ss.style,
+          color: ss.color,
+          ...(catData || { categoryId: null, categoryName: null, categorySlug: null, articles: [], articlesCount: 0 })
+        };
+      });
+
+      // Build Style2 response
+      const style2Response = {
+        version: '2.0-smart-style2',
+        themeStyle: 'style2',
+        timestamp: new Date().toISOString(),
+
+        // Section 1: Flash Ticker
+        flashTicker: {
+          visible: tickerItems.length > 0,
+          items: tickerItems.slice(0, 10)
+        },
+
+        // Section 2: Hero Section (TOI-style 3 columns)
+        heroSection: {
+          visible: latestArticles.length > 0,
+          layout: 'toi-grid-3',
+          columns: {
+            // Left: In The News (10 items)
+            leftRail: {
+              label: 'వార్తల్లో',
+              articles: latestArticles.slice(15, 25).map(formatArticle)
+            },
+            // Center: Hero Lead (1 hero + 2 medium + 6 small = 9)
+            centerLead: {
+              hero: latestArticles[0] ? formatArticle(latestArticles[0]) : null,
+              medium: latestArticles.slice(1, 3).map(formatArticle),
+              small: latestArticles.slice(3, 9).map(formatArticle)
+            },
+            // Right: Latest + Most Read (6 + 5 = 11)
+            rightRail: {
+              latest: {
+                label: 'తాజా వార్తలు',
+                articles: latestArticles.slice(9, 15).map(formatArticle)
+              },
+              mostRead: {
+                label: 'ఎక్కువగా చదివినవి',
+                articles: mostReadArticles.slice(0, 5).map(formatArticle)
+              }
+            }
+          }
+        },
+
+        // Section 3: Ad Banner (Leaderboard)
+        adLeaderboard1: {
+          visible: true,
+          slot: 'homepage_leaderboard_1'
+        },
+
+        // Section 4: Category Columns Grid (6 main categories × 5 articles)
+        categoryColumns: {
+          visible: mainColumnsValid.length > 0,
+          label: 'వార్తా విభాగాలు',
+          columnsPerRow: 3,
+          categories: mainColumnsValid
+        },
+
+        // Styled sections (dynamically built)
+        ...styledSections,
+
+        // Ad between sections
+        adHorizontal1: {
+          visible: true,
+          slot: 'homepage_horizontal_1'
+        },
+
+        // Featured Banner (single featured article)
+        featuredBanner: {
+          visible: latestArticles.length > 0,
+          article: latestArticles[0] ? formatArticle(latestArticles[0]) : null
+        },
+
+        // Compact Lists (2 categories side by side)
+        compactLists: {
+          visible: compactListsData.some((d: any) => d && d.visible),
+          sections: compactListsData.filter((d: any) => d && d.visible).map((d: any, idx: number) => ({
+            ...d,
+            color: idx === 0 ? 'green' : 'purple'
+          }))
+        },
+
+        // Ad footer
+        adFooter: {
+          visible: true,
+          slots: ['homepage_footer_1', 'homepage_footer_2', 'homepage_footer_3']
+        },
+
+        // Meta information
+        meta: {
+          totalArticles: totalArticlesCount,
+          totalCategories: allCategories.length,
+          mainCategoriesCount: mainColumnsValid.length,
+          styledSectionsCount: styledSectionsData.filter((s: any) => s && s.visible).length,
+          lastUpdated: new Date().toISOString(),
+          cacheAge: 180
+        }
+      };
+
+      return res.json(style2Response);
+    }
+
+    // ========================================
+    // STYLE1 RESPONSE (default)
+    // ========================================
     // Build Style1 structured response
     const response = {
       version: '2.0-smart-style1',
