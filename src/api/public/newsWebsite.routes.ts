@@ -913,11 +913,19 @@ router.get('/smart-homepage', async (req, res) => {
         const cat = dc.category;
         if (!cat) return null;
 
+        // Build category-specific where clause properly
+        const categoryWhere: any = {
+          tenantId: tenant.id,
+          status: 'PUBLISHED',
+          categoryId: cat.id,
+          OR: [{ domainId: domain.id }, { domainId: null }]
+        };
+        if (languageFilter.languageId) {
+          categoryWhere.languageId = languageFilter.languageId;
+        }
+
         const articles = await p.tenantWebArticle.findMany({
-          where: {
-            ...baseWhere,
-            categoryId: cat.id
-          },
+          where: categoryWhere,
           orderBy: [{ publishedAt: 'desc' }],
           take: articlesPerSection,
           select: {
@@ -932,7 +940,7 @@ router.get('/smart-homepage', async (req, res) => {
         });
 
         const articleCount = await p.tenantWebArticle.count({
-          where: { ...baseWhere, categoryId: cat.id }
+          where: categoryWhere
         });
 
         return {
@@ -1010,9 +1018,16 @@ router.get('/smart-homepage', async (req, res) => {
     };
 
     return res.json(response);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in /smart-homepage:', error);
-    return res.status(500).json({ error: 'Failed to load smart homepage data' });
+    // Return detailed error in development/staging for debugging
+    const isDev = process.env.NODE_ENV !== 'production';
+    return res.status(500).json({ 
+      error: 'Failed to load smart homepage data',
+      ...(isDev ? { details: error?.message, stack: error?.stack } : {}),
+      // Always include error code/name for debugging
+      code: error?.code || error?.name || 'UNKNOWN_ERROR'
+    });
   }
 });
 
