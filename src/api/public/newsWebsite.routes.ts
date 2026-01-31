@@ -718,6 +718,18 @@ router.get('/config', async (_req, res) => {
  *               properties:
  *                 version: { type: string, example: "2.0-smart" }
  *                 timestamp: { type: string, format: date-time }
+ *                 ticker:
+ *                   type: array
+ *                   description: Scrolling news ticker items (first 10 latest articles)
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       title: { type: string }
+ *                       slug: { type: string }
+ *                       categorySlug: { type: string }
+ *                       publishedAt: { type: string, format: date-time }
+ *                       isBreaking: { type: boolean }
  *                 latestNews:
  *                   type: array
  *                   description: Latest published articles
@@ -997,9 +1009,20 @@ router.get('/smart-homepage', async (req, res) => {
     };
 
     // Format response
+    // Ticker: Use first 10 latest news items for scrolling ticker
+    const tickerItems = latestArticles.slice(0, 10).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      slug: a.slug,
+      categorySlug: a.categorySlug,
+      publishedAt: a.publishedAt,
+      isBreaking: (a as any).isBreaking || false
+    }));
+
     const response = {
       version: '2.0-smart',
       timestamp: new Date().toISOString(),
+      ticker: tickerItems,
       latestNews: latestArticles.map((a: any) => ({
         id: a.id,
         title: a.title,

@@ -155,7 +155,7 @@ export async function sendToUserExpo(
     select: { pushToken: true, deviceId: true }
   });
   
-  const tokens = devices.map(d => d.pushToken!).filter(isExpoPushToken);
+  const tokens = devices.map((d: { pushToken: string | null }) => d.pushToken!).filter(isExpoPushToken);
   console.log(`[ExpoPush] Found ${devices.length} device(s), ${tokens.length} with Expo tokens`);
   
   if (!tokens.length) {
@@ -181,7 +181,7 @@ export async function broadcastExpo(
     take: options?.limit || 1000,
   });
   
-  const tokens = devices.map(d => d.pushToken!).filter(Boolean);
+  const tokens = devices.map((d: { pushToken: string | null }) => d.pushToken!).filter(Boolean);
   console.log(`[ExpoPush] Broadcasting to ${tokens.length} device(s)`);
   
   if (!tokens.length) {

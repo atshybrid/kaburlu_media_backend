@@ -88,7 +88,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     select: { pushToken: true }
   });
   
-  const tokens = devices.map(d => d.pushToken!).filter(Boolean);
+  const tokens = devices.map((d: { pushToken: string | null }) => d.pushToken!).filter(Boolean);
   
   if (!tokens.length) {
     console.log(`[Push] User ${userId} has no push tokens`);
@@ -113,7 +113,7 @@ export async function broadcastPush(
     take: options?.limit || 1000,
   });
   
-  const tokens = devices.map(d => d.pushToken!).filter(Boolean);
+  const tokens = devices.map((d: { pushToken: string | null }) => d.pushToken!).filter(Boolean);
   console.log(`[Push] Broadcasting to ${tokens.length} device(s)`);
   
   return sendPush(tokens, payload);
