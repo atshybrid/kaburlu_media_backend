@@ -15,7 +15,6 @@ export async function ensureCoreSeeds() {
     { name: 'SUPER_ADMIN', permissions: { all: true } },
     { name: 'NEWS_MODERATOR', permissions: { moderation: ['ai_review', 'manual_review'] } },
     { name: 'ADMIN_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
-    { name: 'GUEST_REPORTER', permissions: { shortNews: ['create_limited'] } },
     { name: 'CITIZEN_REPORTER', permissions: { shortNews: ['create', 'edit_own'] } },
     { name: 'PUBLIC_FIGURE', permissions: { shortNews: ['create', 'edit_own'] } },
 
@@ -28,16 +27,10 @@ export async function ensureCoreSeeds() {
     { name: 'DESK_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
     { name: 'REPORTER', permissions: { articles: ['create', 'edit_own'], webArticles: ['create', 'edit_own'] } },
 
-    // --- Reporter hierarchy / onboarding roles (kept for compatibility) ---
-    { name: 'PARENT_REPORTER', permissions: { reporters: ['create_child', 'review'] } },
-
     // --- Other roles referenced in code ---
     { name: 'LANGUAGE_ADMIN', permissions: { languages: ['manage'], prompts: ['manage'] } },
-    { name: 'GUEST', permissions: { guest: true } },
     { name: 'NEWS_DESK', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
     { name: 'NEWS_DESK_ADMIN', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'], prompts: ['manage'] } },
-    // Legacy aliases used by some routes (older spelling)
-    { name: 'SUPERADMIN', permissions: { all: true } },
   ];
 
   // IMPORTANT: non-destructive seeding.

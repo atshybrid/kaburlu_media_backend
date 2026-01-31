@@ -47,6 +47,60 @@ export const createUser = async (data: any) => {
         throw new Error(`Invalid languageId: '${languageId}'`);
     }
 
+    // Check if mobile number already exists and return detailed info
+    if (mobileNumber) {
+        const existingUser = await prisma.user.findUnique({
+            where: { mobileNumber: String(mobileNumber) },
+            include: {
+                role: { select: { id: true, name: true } },
+                profile: { select: { fullName: true, profilePhotoUrl: true } },
+            },
+        });
+
+        if (existingUser) {
+            // Check if this user is a reporter or tenant admin
+            const reporter = await prisma.reporter.findFirst({
+                where: { userId: existingUser.id },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    profilePhotoUrl: true,
+                    designation: { select: { id: true, name: true } },
+                    tenant: { select: { id: true, name: true, slug: true } },
+                },
+            });
+
+            const errorDetails: any = {
+                error: 'MOBILE_NUMBER_EXISTS',
+                message: `Mobile number ${mobileNumber} is already registered`,
+                existingUser: {
+                    id: existingUser.id,
+                    mobileNumber: existingUser.mobileNumber,
+                    email: existingUser.email,
+                    status: existingUser.status,
+                    createdAt: existingUser.createdAt,
+                    role: existingUser.role,
+                    fullName: existingUser.profile?.fullName || null,
+                    profilePhotoUrl: existingUser.profile?.profilePhotoUrl || null,
+                },
+            };
+
+            if (reporter) {
+                errorDetails.existingUser.tenantId = reporter.tenantId;
+                errorDetails.existingUser.tenant = reporter.tenant;
+                errorDetails.existingUser.designation = reporter.designation;
+                errorDetails.existingUser.reporterId = reporter.id;
+                errorDetails.existingUser.reporterProfilePhotoUrl = reporter.profilePhotoUrl;
+            }
+
+            const err = new Error(JSON.stringify(errorDetails));
+            (err as any).code = 'MOBILE_NUMBER_EXISTS';
+            (err as any).statusCode = 409;
+            (err as any).details = errorDetails;
+            throw err;
+        }
+    }
+
     let finalMpinHash: string | undefined;
     if (typeof mpin === 'string' && mpin.trim()) {
         finalMpinHash = await bcrypt.hash(mpin, 10);
@@ -74,11 +128,123 @@ export const createUser = async (data: any) => {
 };
 
 export const findAllUsers = async () => {
-  return prisma.user.findMany({ include: { role: true } });
+  const users = await prisma.user.findMany({
+    include: {
+      role: true,
+      profile: { select: { fullName: true, profilePhotoUrl: true } },
+    },
+  });
+
+  // Fetch reporter and tenant admin data for enrichment
+  const userIds = users.map((u) => u.id);
+
+  const [reporters] = await Promise.all([
+    prisma.reporter.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        userId: true,
+        tenantId: true,
+        profilePhotoUrl: true,
+        designation: { select: { id: true, name: true } },
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    }),
+  ]);
+
+  // Build lookup maps
+  const reporterByUserId: Record<string, any> = {};
+  for (const r of reporters) {
+    if (r.userId) reporterByUserId[r.userId] = r;
+  }
+
+  // Enrich users with reporter/tenant admin data
+  return users.map((user) => {
+    const roleName = user.role?.name?.toUpperCase() || '';
+    const reporter = reporterByUserId[user.id];
+
+    let enrichment: any = {};
+
+    if (roleName === 'REPORTER' && reporter) {
+      enrichment = {
+        tenantId: reporter.tenantId,
+        tenant: reporter.tenant,
+        fullName: user.profile?.fullName || null,
+        profilePhotoUrl: reporter.profilePhotoUrl || user.profile?.profilePhotoUrl || null,
+        designation: reporter.designation,
+      };
+    } else if (roleName === 'TENANT_ADMIN' && reporter) {
+      // Tenant admins are stored as reporters with TENANT_ADMIN role
+      enrichment = {
+        tenantId: reporter.tenantId,
+        tenant: reporter.tenant,
+        fullName: user.profile?.fullName || null,
+        profilePhotoUrl: reporter.profilePhotoUrl || user.profile?.profilePhotoUrl || null,
+        designation: reporter.designation,
+      };
+    } else {
+      // Regular users - just profile data
+      enrichment = {
+        fullName: user.profile?.fullName || null,
+        profilePhotoUrl: user.profile?.profilePhotoUrl || null,
+      };
+    }
+
+    const { profile: _profile, ...userWithoutProfile } = user;
+    return {
+      ...userWithoutProfile,
+      ...enrichment,
+    };
+  });
 };
 
 export const findUserById = async (id: string) => {
-    return prisma.user.findUnique({ where: { id }, include: { role: true, language: true } });
+    const user = await prisma.user.findUnique({
+        where: { id },
+        include: {
+            role: true,
+            language: true,
+            profile: { select: { fullName: true, profilePhotoUrl: true } },
+        },
+    });
+
+    if (!user) return null;
+
+    // Check if user is a reporter or tenant admin
+    const reporter = await prisma.reporter.findFirst({
+        where: { userId: user.id },
+        select: {
+            id: true,
+            tenantId: true,
+            profilePhotoUrl: true,
+            designation: { select: { id: true, name: true } },
+            tenant: { select: { id: true, name: true, slug: true } },
+        },
+    });
+
+    const roleName = user.role?.name?.toUpperCase() || '';
+    let enrichment: any = {};
+
+    if ((roleName === 'REPORTER' || roleName === 'TENANT_ADMIN') && reporter) {
+        enrichment = {
+            tenantId: reporter.tenantId,
+            tenant: reporter.tenant,
+            fullName: user.profile?.fullName || null,
+            profilePhotoUrl: reporter.profilePhotoUrl || user.profile?.profilePhotoUrl || null,
+            designation: reporter.designation,
+            reporterId: reporter.id,
+        };
+    } else {
+        enrichment = {
+            fullName: user.profile?.fullName || null,
+            profilePhotoUrl: user.profile?.profilePhotoUrl || null,
+        };
+    }
+
+    const { profile: _profile, ...userWithoutProfile } = user;
+    return {
+        ...userWithoutProfile,
+        ...enrichment,
+    };
 };
 
 export const findUserByMobileNumber = async (mobileNumber: string) => {

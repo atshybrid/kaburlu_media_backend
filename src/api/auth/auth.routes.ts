@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { logoutController, checkUserExistsController, loginController, refreshController, registerGuestController, upgradeGuestController, upsertDeviceController, loginWithGoogleController, createCitizenReporterByMobileController, upgradeCitizenReporterGoogleController, verifyMpinForPaymentController, changeMpinController } from './auth.controller';
+import { logoutController, checkUserExistsController, loginController, refreshController, registerGuestController, upgradeGuestController, upsertDeviceController, loginWithGoogleController, createCitizenReporterByMobileController, upgradeCitizenReporterGoogleController, verifyMpinForPaymentController, changeMpinController, sessionHeartbeatController, endSessionController } from './auth.controller';
 import { validationMiddleware } from '../middlewares/validation.middleware';
 import { GuestRegistrationDto } from './guest-registration.dto';
 
@@ -151,6 +151,64 @@ router.post('/refresh', refreshController);
  *         description: Unauthorized
  */
 router.post('/logout', logoutController);
+
+/**
+ * @swagger
+ * /auth/session/heartbeat:
+ *   post:
+ *     summary: Update session activity (heartbeat) for tracking working hours
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [sessionId]
+ *             properties:
+ *               sessionId:
+ *                 type: string
+ *                 example: "clxyz123abc"
+ *     responses:
+ *       200:
+ *         description: Success
+ *       400:
+ *         description: Missing sessionId
+ */
+router.post('/session/heartbeat', sessionHeartbeatController);
+
+/**
+ * @swagger
+ * /auth/session/end:
+ *   post:
+ *     summary: End a session manually (e.g., app background, timeout)
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [sessionId]
+ *             properties:
+ *               sessionId:
+ *                 type: string
+ *                 example: "clxyz123abc"
+ *     responses:
+ *       200:
+ *         description: Session ended
+ *         content:
+ *           application/json:
+ *             example:
+ *               ok: true
+ *               closed: true
+ *               durationMinutes: 125
+ *       400:
+ *         description: Missing sessionId
+ */
+router.post('/session/end', endSessionController);
 
 // (removed) /auth/upgrade-guest route
 

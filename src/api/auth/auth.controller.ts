@@ -1,15 +1,47 @@
 export const logoutController = async (req: Request, res: Response) => {
   try {
-    const { refreshToken, deviceId } = req.body;
-    // Call service to invalidate token (scaffold)
-    await logout(refreshToken, deviceId);
+    const { refreshToken, deviceId, sessionId } = req.body;
+    // Call service to invalidate token and close session
+    await logout(refreshToken, deviceId, sessionId);
     res.status(200).json({ ok: true });
   } catch (error) {
     res.status(500).json({ ok: false, message: 'Internal server error' });
   }
 };
-import { logout } from './auth.service';
+
+import { logout, updateSessionActivity, endSession } from './auth.service';
 import { checkUserExists } from './auth.service';
+
+/** POST /auth/session/heartbeat - Update session activity timestamp */
+export const sessionHeartbeatController = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, message: 'sessionId is required' });
+    }
+    const result = await updateSessionActivity(sessionId);
+    res.status(200).json({ ok: result });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+};
+
+/** POST /auth/session/end - Manually end a session */
+export const endSessionController = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, message: 'sessionId is required' });
+    }
+    const result = await endSession(sessionId);
+    if (!result) {
+      return res.status(500).json({ ok: false, message: 'Failed to end session' });
+    }
+    res.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+};
 
 
 
@@ -33,7 +65,11 @@ import { GuestRegistrationDto } from './guest-registration.dto';
 
 export const loginController = async (req: Request, res: Response) => {
   try {
-    const loginDto = new MpinLoginDto(req.body.mobileNumber, req.body.mpin);
+    // Extract device info and IP for session tracking
+    const deviceInfo = req.body.deviceInfo || req.headers['user-agent'] || null;
+    const ipAddress = req.body.ipAddress || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    
+    const loginDto = new MpinLoginDto(req.body.mobileNumber, req.body.mpin, deviceInfo, typeof ipAddress === 'string' ? ipAddress : undefined);
     console.log("loginDto", loginDto);
     const errors = await validate(loginDto);
     if (errors.length > 0) {

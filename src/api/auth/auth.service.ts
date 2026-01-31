@@ -1,8 +1,60 @@
-export const logout = async (refreshToken: string, deviceId: string) => {
-  // TODO: Implement token invalidation and device/session tracking if needed
-  // For now, just scaffold (no-op)
+export const logout = async (refreshToken: string, deviceId: string, sessionId?: string) => {
+  // Close the session if provided
+  if (sessionId) {
+    try {
+      const session = await prisma.userLoginSession.findUnique({ where: { id: sessionId } });
+      if (session && !session.logoutAt) {
+        const logoutAt = new Date();
+        const durationMinutes = Math.round((logoutAt.getTime() - session.loginAt.getTime()) / 60000);
+        await prisma.userLoginSession.update({
+          where: { id: sessionId },
+          data: {
+            logoutAt,
+            durationMinutes,
+          },
+        });
+      }
+    } catch (e) {
+      console.error('[Auth] Failed to close session on logout', sessionId, e);
+    }
+  }
   return true;
 };
+
+/** Update session's lastActivityAt (for heartbeat / activity tracking) */
+export const updateSessionActivity = async (sessionId: string) => {
+  try {
+    await prisma.userLoginSession.update({
+      where: { id: sessionId },
+      data: { lastActivityAt: new Date() },
+    });
+    return true;
+  } catch (e) {
+    console.error('[Auth] Failed to update session activity', sessionId, e);
+    return false;
+  }
+};
+
+/** End a session (e.g., manual logout or session timeout) */
+export const endSession = async (sessionId: string) => {
+  try {
+    const session = await prisma.userLoginSession.findUnique({ where: { id: sessionId } });
+    if (session && !session.logoutAt) {
+      const logoutAt = new Date();
+      const durationMinutes = Math.round((logoutAt.getTime() - session.loginAt.getTime()) / 60000);
+      await prisma.userLoginSession.update({
+        where: { id: sessionId },
+        data: { logoutAt, durationMinutes },
+      });
+      return { closed: true, durationMinutes };
+    }
+    return { closed: false, durationMinutes: session?.durationMinutes || null };
+  } catch (e) {
+    console.error('[Auth] Failed to end session', sessionId, e);
+    return null;
+  }
+};
+
 export const checkUserExists = async (mobile: string) => {
   const user = await prisma.user.findUnique({ where: { mobileNumber: mobile } });
   return !!user;
@@ -674,20 +726,48 @@ export const login = async (loginDto: MpinLoginDto) => {
     console.error('[Auth] Failed reporter payment gating check', e);
   }
 
+  // Track login time and increment login count
+  let sessionId: string | null = null;
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        loginCount: { increment: 1 },
+      },
+    });
+    
+    // Create login session for working hours tracking
+    const session = await prisma.userLoginSession.create({
+      data: {
+        userId: user.id,
+        loginAt: new Date(),
+        lastActivityAt: new Date(),
+        deviceInfo: loginDto.deviceInfo || null,
+        ipAddress: loginDto.ipAddress || null,
+      },
+    });
+    sessionId = session.id;
+  } catch (e) {
+    console.error('[Auth] Failed to update lastLoginAt for user', user.id, e);
+  }
+
   const payload = {
     sub: user.id,
     role: role?.name,
     permissions: role?.permissions,
+    sessionId: sessionId, // for session tracking
   };
 
   // Access token: 1 hour; Refresh token: 30 days
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET || 'your-default-secret', { expiresIn: '1d' });
-  const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
+  const refreshToken = jwt.sign({ sub: user.id, sessionId }, process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret', { expiresIn: '30d' });
 
   const result =  {
     jwt: accessToken,
     refreshToken: refreshToken,
   expiresIn: 86400, // seconds (1 day)
+    sessionId: sessionId, // expose session for logout
     user: {
       userId: user.id,
       role: role?.name,

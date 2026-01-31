@@ -187,7 +187,7 @@ router.post('/templates/sync', passport.authenticate('jwt', { session: false }),
     // Check admin role
     const user = req.user as any;
     const role = user?.role?.name?.toUpperCase() || '';
-    if (!['SUPER_ADMIN', 'SUPERADMIN', 'ADMIN', 'TENANT_ADMIN'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'TENANT_ADMIN'].includes(role)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

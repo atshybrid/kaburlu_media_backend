@@ -97,6 +97,8 @@ model User {
   status                 String                 @default("PENDING")
   upgradedAt             DateTime?
   firebaseUid            String?
+  lastLoginAt            DateTime?
+  loginCount             Int                    @default(0)
   articles               Article[]
   proofEvidenceUploaded  ArticleProofEvidence[] @relation("ProofEvidence_UploadedBy")
   proofRequestsAssigned  ArticleProofRequest[]  @relation("ProofRequest_AssignedTo")
@@ -128,6 +130,25 @@ model User {
   userEncryptionKey      UserEncryptionKey?
   location               UserLocation?
   profile                UserProfile?
+  loginSessions          UserLoginSession[]
+}
+
+/// Tracks user login sessions for working hours calculation
+model UserLoginSession {
+  id             String    @id @default(cuid())
+  userId         String
+  loginAt        DateTime  @default(now())
+  logoutAt       DateTime?
+  lastActivityAt DateTime  @default(now())
+  durationMinutes Int?
+  deviceInfo     String?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([loginAt])
+  @@index([userId, loginAt])
 }
 
 /// Stores editable AI prompts by key. Allows changing prompts without code changes.

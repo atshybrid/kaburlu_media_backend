@@ -32,7 +32,6 @@ const roles = [
     'REPORTER',
     'ADMIN',
     'CITIZEN_REPORTER',
-    'GUEST',
     // Added best-practice granular roles
     'EDITOR',           // Create & edit articles, submit for review
     'REVIEWER',         // Review and approve/reject submitted articles
@@ -194,7 +193,6 @@ const defaultPermissions: Record<string, string[]> = {
     REPORTER: [],
     ADMIN: [],
     CITIZEN_REPORTER: [],
-    GUEST: [],
     // Granular editorial workflow roles
     EDITOR: [
         'articles:create',

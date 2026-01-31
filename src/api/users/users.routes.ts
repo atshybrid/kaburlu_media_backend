@@ -53,11 +53,37 @@ router.post('/', userController.createUser);
  * @swagger
  * /users:
  *   get:
- *     summary: Get all users
+ *     summary: Get all users with enriched profile data
+ *     description: |
+ *       Returns all users. For REPORTER and TENANT_ADMIN roles, includes:
+ *       - tenantId, tenant details
+ *       - fullName, profilePhotoUrl
+ *       - designation (id, name)
  *     tags: [Users]
  *     responses:
  *       200:
- *         description: List of users
+ *         description: List of users with profile enrichment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       mobileNumber: { type: string }
+ *                       email: { type: string }
+ *                       status: { type: string }
+ *                       role: { type: object, properties: { id: { type: string }, name: { type: string } } }
+ *                       tenantId: { type: string, description: "Only for REPORTER/TENANT_ADMIN" }
+ *                       tenant: { type: object, properties: { id: { type: string }, name: { type: string }, slug: { type: string } } }
+ *                       fullName: { type: string }
+ *                       profilePhotoUrl: { type: string }
+ *                       designation: { type: object, properties: { id: { type: string }, name: { type: string } } }
  */
 router.get('/', userController.getAllUsers);
 
@@ -65,7 +91,13 @@ router.get('/', userController.getAllUsers);
  * @swagger
  * /users/{id}:
  *   get:
- *     summary: Get user by ID
+ *     summary: Get user by ID with enriched profile data
+ *     description: |
+ *       Returns user details. For REPORTER and TENANT_ADMIN roles, includes:
+ *       - tenantId, tenant details (id, name, slug)
+ *       - fullName, profilePhotoUrl
+ *       - designation (id, name)
+ *       - reporterId
  *     tags:
  *       - Users
  *     parameters:
@@ -74,9 +106,31 @@ router.get('/', userController.getAllUsers);
  *         required: true
  *         schema:
  *           type: string
+ *         description: User ID
  *     responses:
  *       200:
- *         description: User details
+ *         description: User details with profile enrichment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: string }
+ *                     mobileNumber: { type: string }
+ *                     email: { type: string }
+ *                     status: { type: string }
+ *                     role: { type: object, properties: { id: { type: string }, name: { type: string } } }
+ *                     language: { type: object }
+ *                     tenantId: { type: string, description: "Only for REPORTER/TENANT_ADMIN" }
+ *                     tenant: { type: object, properties: { id: { type: string }, name: { type: string }, slug: { type: string } } }
+ *                     fullName: { type: string }
+ *                     profilePhotoUrl: { type: string }
+ *                     designation: { type: object, properties: { id: { type: string }, name: { type: string } } }
+ *                     reporterId: { type: string, description: "Reporter ID if user is REPORTER/TENANT_ADMIN" }
  *       404:
  *         description: User not found
  */

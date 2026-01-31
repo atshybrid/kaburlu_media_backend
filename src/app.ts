@@ -41,6 +41,7 @@ import tenantsRoutes from './api/tenants/tenants.routes';
 import domainsRoutes from './api/domains/domains.routes';
 import billingRoutes from './api/billing/billing.routes';
 import reportersRoutes from './api/reporters/reporters.routes';
+import reportersMeIdCardRoutes from './api/reporters/reporters.me.idcard.routes';
 import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
 import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
 import tenantThemeRoutes from './api/tenantTheme/tenantTheme.routes';
@@ -350,6 +351,7 @@ apiV1.use('/health', aiHealthRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);
+apiV1.use('/reporters/me', reportersMeIdCardRoutes);
 // Public helper: used by public join to list designation options
 apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);
 apiV1.use('/reporter-payments', reporterPaymentsRoutes);

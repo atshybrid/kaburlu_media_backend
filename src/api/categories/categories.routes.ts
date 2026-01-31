@@ -14,7 +14,7 @@ const router = Router();
 // Role guard: only SUPER_ADMIN can create/update categories
 function requireSuperAdmin(req: any, res: any, next: any) {
   const roleName = (req.user?.role?.name || '').toUpperCase();
-  if (roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN') return next();
+  if (roleName === 'SUPER_ADMIN') return next();
   return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN only' });
 }
 

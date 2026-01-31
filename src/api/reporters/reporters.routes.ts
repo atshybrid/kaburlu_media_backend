@@ -312,6 +312,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const userRole = user?.role?.name?.toUpperCase() || '';
     const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
     const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    const isReporter = userRole === 'REPORTER';
     
     // Check if user is the reporter themselves
     const isOwnReporter = reporter.userId && reporter.userId === user?.id;
@@ -327,8 +328,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       isAdminOfTenant = !!adminReporter;
     }
     
-    // Allow if: super admin, tenant admin of this tenant, or own reporter
-    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+    // Allow if: super admin, tenant admin of this tenant, or reporter generating their own card
+    if (!isSuperAdmin && !isAdminOfTenant && !(isReporter && isOwnReporter)) {
       return res.status(403).json({ 
         error: 'Not authorized to generate ID card for this reporter',
         details: 'Only the reporter themselves or tenant admin can generate ID cards'
@@ -609,10 +610,19 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     const keepCardNumber = body.keepCardNumber === true;
     const reason = String(body.reason || '').trim();
 
-    // Access Control: Only admin can regenerate
+    // Fetch reporter first for ownership check
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true }
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access Control: Admin or own reporter can regenerate
     const userRole = user?.role?.name?.toUpperCase() || '';
     const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
     const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    const isReporter = userRole === 'REPORTER';
+    const isOwnReporter = isReporter && reporter.userId && reporter.userId === user?.id;
     
     let isAdminOfTenant = isSuperAdmin;
     if (!isAdminOfTenant && isTenantAdmin) {
@@ -623,18 +633,13 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       isAdminOfTenant = !!adminReporter;
     }
     
-    if (!isSuperAdmin && !isAdminOfTenant) {
+    // Allow if: super admin, tenant admin of this tenant, or reporter regenerating own card
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
       return res.status(403).json({ 
-        error: 'Only admin can regenerate ID cards',
-        details: 'Reporters cannot regenerate their own ID cards. Contact your tenant admin.'
+        error: 'Not authorized to regenerate ID card',
+        details: 'Only the reporter themselves or tenant admin can regenerate ID cards'
       });
     }
-
-    const reporter = await (prisma as any).reporter.findFirst({
-      where: { id, tenantId },
-      include: { idCard: true }
-    });
-    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
 
     const previousCardNumber = reporter.idCard?.cardNumber || null;
 

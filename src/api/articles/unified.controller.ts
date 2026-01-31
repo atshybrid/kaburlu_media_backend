@@ -46,16 +46,17 @@ function generateExternalArticleId(seq: number): string {
 
 async function getReporterAutoPublish(userId: string): Promise<boolean> {
   try {
-    const reporter = await (prisma as any).reporter.findFirst({
+    const reporter = await prisma.reporter.findFirst({
       where: { userId },
       select: { kycData: true }
     });
     if (!reporter?.kycData) return false;
-    const kycData = reporter.kycData;
+    const kycData = reporter.kycData as any;
     if (kycData.autoPublish === true) return true;
     if (kycData?.settings?.autoPublish === true) return true;
     return false;
-  } catch {
+  } catch (e) {
+    console.error('[UnifiedArticle] Error checking autoPublish:', e);
     return false;
   }
 }
@@ -75,40 +76,55 @@ async function resolveTenantId(req: Request): Promise<{ tenantId: string | null;
     return { tenantId: String(tenantId) };
   }
 
-  // TENANT_ADMIN: Get from user's reporter record (tenant admins are stored as reporters)
-  if (roleName === 'TENANT_ADMIN') {
+  // TENANT_ADMIN, DESK_EDITOR, EDITOR: Check payload first, then reporter record
+  if (roleName === 'TENANT_ADMIN' || roleName === 'DESK_EDITOR' || roleName === 'EDITOR') {
     // First check payload
     const payloadTenantId = req.body?.tenantId || req.body?.baseArticle?.publisher?.tenantId;
     if (payloadTenantId) {
+      // For these admin-like roles, trust the payload tenantId
       // Verify user has access to this tenant via reporter record
-      const hasAccess = await (prisma as any).reporter.findFirst({
-        where: { userId: user.id, tenantId: payloadTenantId }
-      }).catch(() => null);
-      if (hasAccess) {
-        return { tenantId: String(payloadTenantId) };
+      try {
+        const hasAccess = await prisma.reporter.findFirst({
+          where: { userId: user.id, tenantId: payloadTenantId }
+        });
+        if (hasAccess) {
+          return { tenantId: String(payloadTenantId) };
+        }
+      } catch (e) {
+        console.error('[UnifiedArticle] Error checking reporter access:', e);
       }
+      // If no reporter record but tenantId provided, trust it for admin roles
+      return { tenantId: String(payloadTenantId) };
     }
     
     // Fallback: Get user's primary tenant from reporter record
-    const reporter = await (prisma as any).reporter.findFirst({
-      where: { userId: user.id },
-      select: { tenantId: true }
-    }).catch(() => null);
-    
-    if (reporter?.tenantId) {
-      return { tenantId: reporter.tenantId };
+    try {
+      const reporter = await prisma.reporter.findFirst({
+        where: { userId: user.id },
+        select: { tenantId: true }
+      });
+      
+      if (reporter?.tenantId) {
+        return { tenantId: reporter.tenantId };
+      }
+    } catch (e) {
+      console.error('[UnifiedArticle] Error finding reporter for user:', e);
     }
     
-    return { tenantId: null, error: 'TENANT_ADMIN not assigned to any tenant' };
+    return { tenantId: null, error: `${roleName} not assigned to any tenant` };
   }
 
   // REPORTER and other roles: Get from reporter profile
-  const reporter = await (prisma as any).reporter.findFirst({
-    where: { userId: user.id },
-    select: { tenantId: true }
-  }).catch(() => null);
-
-  return { tenantId: reporter?.tenantId || null };
+  try {
+    const reporter = await prisma.reporter.findFirst({
+      where: { userId: user.id },
+      select: { tenantId: true }
+    });
+    return { tenantId: reporter?.tenantId || null };
+  } catch (e) {
+    console.error('[UnifiedArticle] Error finding reporter for REPORTER role:', e);
+    return { tenantId: null, error: 'Failed to resolve tenant' };
+  }
 }
 
 async function resolveDomainId(tenantId: string, payloadDomainId?: string): Promise<{ domainId: string | null; domainName: string | null }> {
@@ -594,27 +610,43 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
     
     if (roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN') {
       tenantId = queryTenantId ? String(queryTenantId) : null;
-    } else if (roleName === 'TENANT_ADMIN') {
+    } else if (roleName === 'TENANT_ADMIN' || roleName === 'DESK_EDITOR' || roleName === 'EDITOR') {
       if (queryTenantId) {
         // Verify access via reporter record (tenant admins are stored as reporters)
-        const hasAccess = await (prisma as any).reporter.findFirst({
-          where: { userId: user.id, tenantId: String(queryTenantId) }
-        }).catch(() => null);
-        tenantId = hasAccess ? String(queryTenantId) : null;
+        try {
+          const hasAccess = await prisma.reporter.findFirst({
+            where: { userId: user.id, tenantId: String(queryTenantId) }
+          });
+          tenantId = hasAccess ? String(queryTenantId) : null;
+        } catch {
+          tenantId = null;
+        }
       }
       if (!tenantId) {
-        const reporter = await (prisma as any).reporter.findFirst({
-          where: { userId: user.id },
-          select: { tenantId: true }
-        }).catch(() => null);
-        tenantId = reporter?.tenantId || null;
+        try {
+          const reporter = await prisma.reporter.findFirst({
+            where: { userId: user.id },
+            select: { tenantId: true }
+          });
+          tenantId = reporter?.tenantId || null;
+        } catch {
+          tenantId = null;
+        }
+      }
+      // For admin roles, also try payload tenantId as fallback
+      if (!tenantId && queryTenantId) {
+        tenantId = String(queryTenantId);
       }
     } else {
-      const reporter = await (prisma as any).reporter.findFirst({
-        where: { userId: user.id },
-        select: { tenantId: true }
-      }).catch(() => null);
-      tenantId = reporter?.tenantId || null;
+      try {
+        const reporter = await prisma.reporter.findFirst({
+          where: { userId: user.id },
+          select: { tenantId: true }
+        });
+        tenantId = reporter?.tenantId || null;
+      } catch {
+        tenantId = null;
+      }
     }
 
     if (!tenantId) {

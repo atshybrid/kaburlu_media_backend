@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export const assignPermissionToRole = async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { module, actions, permissions: incomingPermissions } = req.body as any;
 
     if (!incomingPermissions && (!module || !actions)) {
@@ -65,7 +65,7 @@ export const assignPermissionToRole = async (req: Request, res: Response) => {
 };
 
 export const getPermissionsForRole = async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = String(req.params.id);
     try {
         const role = await prisma.role.findUnique({
             where: { id },

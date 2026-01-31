@@ -2010,12 +2010,12 @@ router.get('/homepage', async (_req, res) => {
   // AI Approval filter: include articles that are:
   // 1. Not yet reviewed (aiApprovalStatus = null) - superadmin/editor manual posts
   // 2. Approved by AI (aiApprovalStatus = 'AI_APPROVED')
-  // 3. Posted by SUPERADMIN/ADMIN/EDITOR (auto-approve their posts)
+  // 3. Posted by SUPER_ADMIN/ADMIN/EDITOR (auto-approve their posts)
   baseAnd.push({
     OR: [
       { aiApprovalStatus: null },
       { aiApprovalStatus: 'AI_APPROVED' },
-      { author: { role: { name: { in: ['SUPERADMIN', 'ADMIN', 'EDITOR'] } } } }
+      { author: { role: { name: { in: ['SUPER_ADMIN', 'ADMIN', 'EDITOR'] } } } }
     ]
   });
   const baseWhere: any = { tenantId: tenant.id, status: 'PUBLISHED' };
