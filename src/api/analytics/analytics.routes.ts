@@ -156,12 +156,12 @@ router.get('/tenant', passport.authenticate('jwt', { session: false }), async (r
       }
       tenantId = String(queryTenantId);
     } else if (roleName === 'TENANT_ADMIN') {
-      // Get from user's tenant admin record
-      const tenantAdmin = await (prisma as any).tenantAdmin.findFirst({
+      // Get from user's reporter record (tenant admins are stored as reporters)
+      const reporter = await (prisma as any).reporter.findFirst({
         where: { userId: user.id },
         select: { tenantId: true }
       });
-      tenantId = tenantAdmin?.tenantId || (queryTenantId ? String(queryTenantId) : null);
+      tenantId = reporter?.tenantId || (queryTenantId ? String(queryTenantId) : null);
     } else if (roleName === 'REPORTER') {
       // Get from reporter profile
       const reporter = await (prisma as any).reporter.findFirst({

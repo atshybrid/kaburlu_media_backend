@@ -75,13 +75,13 @@ async function resolveTenantId(req: Request): Promise<{ tenantId: string | null;
     return { tenantId: String(tenantId) };
   }
 
-  // TENANT_ADMIN: Get from user's tenantAdmins or payload
+  // TENANT_ADMIN: Get from user's reporter record (tenant admins are stored as reporters)
   if (roleName === 'TENANT_ADMIN') {
     // First check payload
     const payloadTenantId = req.body?.tenantId || req.body?.baseArticle?.publisher?.tenantId;
     if (payloadTenantId) {
-      // Verify user has access to this tenant
-      const hasAccess = await (prisma as any).tenantAdmin.findFirst({
+      // Verify user has access to this tenant via reporter record
+      const hasAccess = await (prisma as any).reporter.findFirst({
         where: { userId: user.id, tenantId: payloadTenantId }
       }).catch(() => null);
       if (hasAccess) {
@@ -89,14 +89,14 @@ async function resolveTenantId(req: Request): Promise<{ tenantId: string | null;
       }
     }
     
-    // Fallback: Get user's primary tenant
-    const tenantAdmin = await (prisma as any).tenantAdmin.findFirst({
+    // Fallback: Get user's primary tenant from reporter record
+    const reporter = await (prisma as any).reporter.findFirst({
       where: { userId: user.id },
       select: { tenantId: true }
     }).catch(() => null);
     
-    if (tenantAdmin?.tenantId) {
-      return { tenantId: tenantAdmin.tenantId };
+    if (reporter?.tenantId) {
+      return { tenantId: reporter.tenantId };
     }
     
     return { tenantId: null, error: 'TENANT_ADMIN not assigned to any tenant' };
@@ -596,17 +596,18 @@ export const listUnifiedArticles = async (req: Request, res: Response) => {
       tenantId = queryTenantId ? String(queryTenantId) : null;
     } else if (roleName === 'TENANT_ADMIN') {
       if (queryTenantId) {
-        const hasAccess = await (prisma as any).tenantAdmin.findFirst({
+        // Verify access via reporter record (tenant admins are stored as reporters)
+        const hasAccess = await (prisma as any).reporter.findFirst({
           where: { userId: user.id, tenantId: String(queryTenantId) }
         }).catch(() => null);
         tenantId = hasAccess ? String(queryTenantId) : null;
       }
       if (!tenantId) {
-        const ta = await (prisma as any).tenantAdmin.findFirst({
+        const reporter = await (prisma as any).reporter.findFirst({
           where: { userId: user.id },
           select: { tenantId: true }
         }).catch(() => null);
-        tenantId = ta?.tenantId || null;
+        tenantId = reporter?.tenantId || null;
       }
     } else {
       const reporter = await (prisma as any).reporter.findFirst({
