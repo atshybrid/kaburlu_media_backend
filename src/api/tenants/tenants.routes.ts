@@ -1300,6 +1300,9 @@ router.put('/:tenantId/entity/business', auth, requireSuperOrTenantAdminScoped, 
  *               printingMandalId: { type: string, description: "Mandal id" }
  *               printingCityName: { type: string, example: "KAMAREDDY" }
  *               address: { type: string }
+ *               contactMobile: { type: string, example: "9876543210", description: "Primary contact mobile number" }
+ *               contactEmail: { type: string, example: "contact@kaburlumedia.com", description: "Primary contact email" }
+ *               contactPerson: { type: string, example: "Srinivas Rao", description: "Contact person name" }
  *     description: prgiNumber is immutable and cannot be updated.
  *     responses:
  *       200: { description: Updated }
