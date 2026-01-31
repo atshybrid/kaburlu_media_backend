@@ -932,7 +932,7 @@ router.get('/smart-homepage', async (req, res) => {
             id: true,
             title: true,
             slug: true,
-            excerpt: true,
+            metaDescription: true,
             coverImageUrl: true,
             publishedAt: true,
             isBreaking: true
@@ -953,7 +953,7 @@ router.get('/smart-homepage', async (req, res) => {
             id: a.id,
             title: a.title,
             slug: a.slug,
-            excerpt: a.excerpt,
+            excerpt: a.metaDescription,
             imageUrl: a.coverImageUrl,
             publishedAt: a.publishedAt,
             isBreaking: a.isBreaking || false
@@ -991,7 +991,7 @@ router.get('/smart-homepage', async (req, res) => {
         id: a.id,
         title: a.title,
         slug: a.slug,
-        excerpt: a.excerpt,
+        excerpt: a.metaDescription,
         imageUrl: a.coverImageUrl,
         categoryId: a.category?.id || null,
         categoryName: a.category?.name || null,

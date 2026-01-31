@@ -1,4 +1,4 @@
-import { AI_CHECK_KEYS_ON_STARTUP, OPENAI_KEY, GEMINI_KEY, DEFAULT_OPENAI_MODEL_SEO, DEFAULT_GEMINI_MODEL_SEO, AI_TIMEOUT_MS } from './aiConfig';
+import { AI_CHECK_KEYS_ON_STARTUP, AI_USE_GEMINI, AI_USE_OPENAI, OPENAI_KEY, GEMINI_KEY, DEFAULT_OPENAI_MODEL_SEO, DEFAULT_GEMINI_MODEL_SEO, AI_TIMEOUT_MS } from './aiConfig';
 
 type ProviderStatus = {
   provider: 'openai' | 'gemini';
@@ -6,6 +6,7 @@ type ProviderStatus = {
   reachable?: boolean;
   model?: string;
   error?: string;
+  skipped?: boolean;
 };
 
 async function checkOpenAI(): Promise<ProviderStatus> {
@@ -38,6 +39,11 @@ async function checkOpenAI(): Promise<ProviderStatus> {
 
 async function checkGemini(): Promise<ProviderStatus> {
   const status: ProviderStatus = { provider: 'gemini', keyPresent: !!GEMINI_KEY, model: DEFAULT_GEMINI_MODEL_SEO };
+  // Skip Gemini check if AI_USE_GEMINI is false
+  if (!AI_USE_GEMINI) {
+    status.skipped = true;
+    return status;
+  }
   if (!GEMINI_KEY) return status;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -58,14 +64,26 @@ async function checkGemini(): Promise<ProviderStatus> {
 export async function runAIStartupDiagnostics(): Promise<void> {
   if (!AI_CHECK_KEYS_ON_STARTUP) return;
   try {
-    const [openai, gemini] = await Promise.all([checkOpenAI(), checkGemini()]);
+    const results: ProviderStatus[] = [];
+    
+    // Only check OpenAI if enabled
+    if (AI_USE_OPENAI) {
+      results.push(await checkOpenAI());
+    }
+    
+    // Only check Gemini if enabled
+    if (AI_USE_GEMINI) {
+      results.push(await checkGemini());
+    }
+    
     const summarize = (s: ProviderStatus) => {
+      if (s.skipped) return `[AI][diag] ${s.provider} skipped (disabled)`;
       const base = `[AI][diag] ${s.provider} key=${s.keyPresent ? 'present' : 'missing'} model=${s.model ?? '-'} reachable=${s.reachable === true ? 'yes' : s.reachable === false ? 'no' : 'n/a'}`;
       if (s.error) return `${base} error="${s.error}"`;
       return base;
     };
-    console.log(summarize(openai));
-    console.log(summarize(gemini));
+    
+    results.forEach(r => console.log(summarize(r)));
   } catch (e) {
     console.warn('[AI][diag] startup diagnostics error:', e);
   }

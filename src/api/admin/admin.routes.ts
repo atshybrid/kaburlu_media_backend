@@ -445,7 +445,7 @@ router.get('/tenants/:tenantId/ai-billing/status', auth, requireSuperAdmin, asyn
  *                 example: "Tenant Admin Name"
  *               mpin:
  *                 type: string
- *                 description: 4-digit MPIN for login (default: last 4 digits of mobile)
+ *                 description: "4-digit MPIN for login (default is last 4 digits of mobile)"
  *                 example: "1234"
  *               designationId:
  *                 type: string
