@@ -652,184 +652,91 @@ router.get('/config', async (_req, res) => {
  * @swagger
  * /public/smart-homepage:
  *   get:
- *     summary: ⚡ Smart Homepage - Ultra-fast optimized data collection
+ *     summary: ⚡ Smart Homepage - Style1 Layout Optimized
  *     description: |
- *       🚀 **SMART, LIGHTWEIGHT, FAST-LOADING HOMEPAGE API**
+ *       🚀 **SMART HOMEPAGE API - Style1 Layout Structure**
  *       
- *       Single endpoint that intelligently collects all homepage data in one call:
- *       - ✅ Latest news (configurable limit, default 10)
- *       - ✅ Most read news (trending articles)
- *       - ✅ Section-wise categories with auto-linked articles
- *       - ✅ Smart category filtering (auto-detects parent categories)
- *       - ✅ Minimal payload (only essential fields for fast loading)
+ *       Single endpoint that returns ALL homepage data structured for Style1 theme layout:
  *       
- *       **Performance Benefits:**
- *       - Single database query with parallel execution
- *       - Optimized data structure (no duplicate fields)
- *       - Automatic category-article linking
- *       - Response size < 50KB for instant loading
+ *       **Layout Sections:**
+ *       1. **flashTicker** - 12 breaking news ticker items
+ *       2. **heroSection** - 4-column grid (heroLead: 8, latest: 7, mostRead: 8, topViewed: 4)
+ *       3. **horizontalAd1** - Ad slot below hero
+ *       4. **categorySection1** - First 4 categories × 5 articles = 20
+ *       5. **categorySection2** - Next 4 categories × 5 articles = 20
+ *       6. **horizontalAd2** - Ad slot below categories
+ *       7. **categoryHub** - Next 4 categories × 5 articles = 20
+ *       8. **webStories** - Web stories placeholder
  *       
- *       **Cache:** ISR 180s (3 minutes) - Fresh data without database load
+ *       **Smart Features:**
+ *       - Categories auto-injected top-to-bottom from domain category order
+ *       - Section `visible: false` when no articles exist
+ *       - Theme style auto-detected from domain settings
  *       
- *       **Query Parameters:**
- *       - `latestCount` (default: 10) - Number of latest articles
- *       - `mostReadCount` (default: 5) - Number of trending articles
- *       - `sectionsCount` (default: 6) - Number of section categories
- *       - `articlesPerSection` (default: 4) - Articles per category section
- *       - `lang` (optional) - Language filter (e.g., 'te' for Telugu)
- *       
- *       **Perfect for:**
- *       - Mobile apps (minimal data transfer)
- *       - PWA homepage (instant load)
- *       - Next.js ISR pages (automatic revalidation)
+ *       **Cache:** ISR 180s (3 minutes)
  *     tags: [News Website API 2.0]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
  *         required: false
- *         schema: { type: string, example: "telangana.kaburlu.com" }
- *       - in: query
- *         name: latestCount
- *         schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
- *         description: Number of latest articles to return
- *       - in: query
- *         name: mostReadCount
- *         schema: { type: integer, default: 5, minimum: 1, maximum: 20 }
- *         description: Number of most read articles to return
- *       - in: query
- *         name: sectionsCount
- *         schema: { type: integer, default: 6, minimum: 1, maximum: 20 }
- *         description: Number of category sections to return
- *       - in: query
- *         name: articlesPerSection
- *         schema: { type: integer, default: 4, minimum: 1, maximum: 10 }
- *         description: Articles per category section
+ *         schema: { type: string, example: "aksharamvoice.com" }
  *       - in: query
  *         name: lang
  *         schema: { type: string, example: "te" }
  *         description: Language filter (optional)
  *     responses:
  *       200:
- *         description: Smart homepage data collection
+ *         description: Style1 structured homepage data
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 version: { type: string, example: "2.0-smart" }
+ *                 version: { type: string, example: "2.0-smart-style1" }
+ *                 themeStyle: { type: string, example: "style1" }
  *                 timestamp: { type: string, format: date-time }
- *                 ticker:
- *                   type: array
- *                   description: Scrolling news ticker items (first 10 latest articles)
- *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: string }
- *                       title: { type: string }
- *                       slug: { type: string }
- *                       categorySlug: { type: string }
- *                       publishedAt: { type: string, format: date-time }
- *                       isBreaking: { type: boolean }
- *                 latestNews:
- *                   type: array
- *                   description: Latest published articles
- *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: string }
- *                       title: { type: string }
- *                       slug: { type: string }
- *                       excerpt: { type: string }
- *                       imageUrl: { type: string, nullable: true }
- *                       categoryId: { type: string }
- *                       categoryName: { type: string }
- *                       categorySlug: { type: string }
- *                       publishedAt: { type: string, format: date-time }
- *                       readTime: { type: integer, description: "Estimated read time in minutes" }
- *                 mostRead:
- *                   type: array
- *                   description: Trending/Most read articles
- *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: string }
- *                       title: { type: string }
- *                       slug: { type: string }
- *                       imageUrl: { type: string, nullable: true }
- *                       categoryName: { type: string }
- *                       publishedAt: { type: string, format: date-time }
- *                       viewCount: { type: integer }
- *                 sections:
- *                   type: array
- *                   description: Section-wise categories with auto-linked articles
- *                   items:
- *                     type: object
- *                     properties:
- *                       categoryId: { type: string }
- *                       categoryName: { type: string }
- *                       categorySlug: { type: string }
- *                       categoryIcon: { type: string, nullable: true }
- *                       articlesCount: { type: integer, description: "Total articles in this category" }
- *                       articles:
- *                         type: array
- *                         items:
- *                           type: object
- *                           properties:
- *                             id: { type: string }
- *                             title: { type: string }
- *                             slug: { type: string }
- *                             excerpt: { type: string, nullable: true }
- *                             imageUrl: { type: string, nullable: true }
- *                             publishedAt: { type: string, format: date-time }
- *                             isBreaking: { type: boolean }
+ *                 flashTicker:
+ *                   type: object
+ *                   properties:
+ *                     visible: { type: boolean }
+ *                     items: { type: array }
+ *                 heroSection:
+ *                   type: object
+ *                   properties:
+ *                     visible: { type: boolean }
+ *                     columns:
+ *                       type: object
+ *                       properties:
+ *                         heroLead: { type: object }
+ *                         latest: { type: object }
+ *                         mostRead: { type: object }
+ *                         topViewed: { type: object }
+ *                 categorySection1:
+ *                   type: object
+ *                   properties:
+ *                     visible: { type: boolean }
+ *                     label: { type: string }
+ *                     categories: { type: array }
+ *                 categorySection2:
+ *                   type: object
+ *                   properties:
+ *                     visible: { type: boolean }
+ *                     label: { type: string }
+ *                     categories: { type: array }
+ *                 categoryHub:
+ *                   type: object
+ *                   properties:
+ *                     visible: { type: boolean }
+ *                     label: { type: string }
+ *                     categories: { type: array }
  *                 meta:
  *                   type: object
  *                   properties:
  *                     totalArticles: { type: integer }
  *                     totalCategories: { type: integer }
+ *                     categoriesInSections: { type: integer }
  *                     lastUpdated: { type: string, format: date-time }
- *                     cacheAge: { type: integer, description: "Recommended cache TTL in seconds" }
- *             example:
- *               version: "2.0-smart"
- *               timestamp: "2026-01-25T10:30:00Z"
- *               latestNews:
- *                 - id: "abc123"
- *                   title: "హైదరాబాద్ మెట్రో విస్తరణ పనులు వేగవంతం"
- *                   slug: "hyderabad-metro-expansion-speeds-up"
- *                   excerpt: "హైదరాబాద్‌లో మెట్రో రైలు విస్తరణ పనులు వేగంగా జరుగుతున్నాయి..."
- *                   imageUrl: "https://cdn.example.com/metro.jpg"
- *                   categoryId: "cat1"
- *                   categoryName: "తెలంగాణ"
- *                   categorySlug: "telangana"
- *                   publishedAt: "2026-01-25T10:00:00Z"
- *                   readTime: 3
- *               mostRead:
- *                 - id: "xyz789"
- *                   title: "రాజకీయాల్లో కీలక మార్పులు"
- *                   slug: "key-political-changes"
- *                   imageUrl: "https://cdn.example.com/politics.jpg"
- *                   categoryName: "రాజకీయాలు"
- *                   publishedAt: "2026-01-24T15:00:00Z"
- *                   viewCount: 15420
- *               sections:
- *                 - categoryId: "cat1"
- *                   categoryName: "తెలంగాణ"
- *                   categorySlug: "telangana"
- *                   categoryIcon: "🏛️"
- *                   articlesCount: 45
- *                   articles:
- *                     - id: "art1"
- *                       title: "హైదరాబాద్‌లో కొత్త IT పార్క్"
- *                       slug: "new-it-park-hyderabad"
- *                       excerpt: "హైదరాబాద్‌లో కొత్త IT పార్క్ ప్రారంభం..."
- *                       imageUrl: "https://cdn.example.com/it-park.jpg"
- *                       publishedAt: "2026-01-25T09:00:00Z"
- *                       isBreaking: false
- *               meta:
- *                 totalArticles: 1250
- *                 totalCategories: 12
- *                 lastUpdated: "2026-01-25T10:30:00Z"
- *                 cacheAge: 180
+ *                     cacheAge: { type: integer }
  *       500:
  *         description: Server error
  */
@@ -839,11 +746,12 @@ router.get('/smart-homepage', async (req, res) => {
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
 
   try {
+    // Get domain settings for theme style detection
+    const domainSettings = await p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null);
+    const effectiveDomainSettings = (domainSettings as any)?.data || {};
+    const themeStyle = effectiveDomainSettings?.themeStyle || 'style1';
+
     // Parse query parameters with defaults
-    const latestCount = Math.min(Math.max(parseInt(String(req.query.latestCount || '10'), 10) || 10, 1), 50);
-    const mostReadCount = Math.min(Math.max(parseInt(String(req.query.mostReadCount || '5'), 10) || 5, 1), 20);
-    const sectionsCount = Math.min(Math.max(parseInt(String(req.query.sectionsCount || '6'), 10) || 6, 1), 20);
-    const articlesPerSection = Math.min(Math.max(parseInt(String(req.query.articlesPerSection || '4'), 10) || 4, 1), 10);
     const langCode = req.query.lang ? String(req.query.lang).toLowerCase().trim() : null;
 
     // Build language filter
@@ -866,33 +774,61 @@ router.get('/smart-homepage', async (req, res) => {
       ...languageFilter
     };
 
-    // Parallel data fetching for maximum performance
+    // Style1 Layout Configuration:
+    // - flashTicker: 12 breaking news items
+    // - heroSection: 4 columns (heroLead: 8, latest: 7, mostRead: 8, topViewed: 4 = 27 total)
+    // - categorySection1: 4 categories × 5 articles = 20
+    // - categorySection2: 4 categories × 5 articles = 20
+    // - categoryHub: 4 categories × 5 articles = 20
+    // Total categories needed: 12
+
+    // Get ALL domain categories ordered by createdAt (no position field)
+    const domainCategories = await p.domainCategory.findMany({
+      where: { domainId: domain.id },
+      include: { category: { select: { id: true, slug: true, name: true, iconUrl: true } } },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Parallel data fetching for hero section
     const [
       latestArticles,
       mostReadArticles,
+      topViewedArticles,
       totalArticlesCount
     ] = await Promise.all([
-      // Latest news - published articles ordered by date
+      // Latest news for heroLead + latest column (15 articles: 8 for lead, 7 for latest)
       p.tenantWebArticle.findMany({
         where: baseWhere,
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: latestCount,
+        take: 27, // heroLead(8) + latest(7) + ticker backup
         include: {
           category: { select: { id: true, slug: true, name: true, iconUrl: true } },
           language: { select: { code: true } }
         }
       }),
       
-      // Most read articles - using viewCount
+      // Most read articles for mostRead column (8 articles)
       p.tenantWebArticle.findMany({
         where: baseWhere,
-        orderBy: [
-          { viewCount: 'desc' },
-          { publishedAt: 'desc' }
-        ],
-        take: mostReadCount,
+        orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+        take: 8,
         include: {
           category: { select: { id: true, slug: true, name: true } }
+        }
+      }),
+
+      // Top viewed for sidebar (4 articles)
+      p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ viewCount: 'desc' }],
+        take: 4,
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          coverImageUrl: true,
+          viewCount: true,
+          publishedAt: true
         }
       }),
 
@@ -900,81 +836,78 @@ router.get('/smart-homepage', async (req, res) => {
       p.tenantWebArticle.count({ where: baseWhere })
     ]);
 
-    // Get domain categories for sections
-    const domainCategories = await p.domainCategory.findMany({
-      where: { domainId: domain.id },
-      include: { category: { select: { id: true, slug: true, name: true, iconUrl: true } } },
-      take: sectionsCount
+    // Helper: Format article for response
+    const formatArticle = (a: any) => ({
+      id: a.id,
+      title: a.title,
+      slug: a.slug,
+      excerpt: a.metaDescription || null,
+      imageUrl: a.coverImageUrl || null,
+      categoryId: a.category?.id || null,
+      categoryName: a.category?.name || null,
+      categorySlug: a.category?.slug || null,
+      publishedAt: a.publishedAt,
+      isBreaking: a.isBreaking || false,
+      viewCount: a.viewCount || 0
     });
 
-    // Fetch articles for each category section in parallel
-    const sectionsWithArticles = await Promise.all(
-      domainCategories.slice(0, sectionsCount).map(async (dc: any) => {
-        const cat = dc.category;
-        if (!cat) return null;
+    // Helper: Fetch articles for a category
+    const fetchCategoryArticles = async (cat: any, limit: number = 5) => {
+      if (!cat) return null;
 
-        // Build category-specific where clause properly
-        const categoryWhere: any = {
-          tenantId: tenant.id,
-          status: 'PUBLISHED',
-          categoryId: cat.id,
-          OR: [{ domainId: domain.id }, { domainId: null }]
-        };
-        if (languageFilter.languageId) {
-          categoryWhere.languageId = languageFilter.languageId;
-        }
+      const categoryWhere: any = {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        categoryId: cat.id,
+        OR: [{ domainId: domain.id }, { domainId: null }]
+      };
+      if (languageFilter.languageId) {
+        categoryWhere.languageId = languageFilter.languageId;
+      }
 
-        const articles = await p.tenantWebArticle.findMany({
+      const [articles, count] = await Promise.all([
+        p.tenantWebArticle.findMany({
           where: categoryWhere,
           orderBy: [{ publishedAt: 'desc' }],
-          take: articlesPerSection,
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            metaDescription: true,
-            coverImageUrl: true,
-            publishedAt: true,
-            isBreaking: true
+          take: limit,
+          include: {
+            category: { select: { id: true, slug: true, name: true, iconUrl: true } }
           }
-        });
+        }),
+        p.tenantWebArticle.count({ where: categoryWhere })
+      ]);
 
-        const articleCount = await p.tenantWebArticle.count({
-          where: categoryWhere
-        });
-
-        return {
-          categoryId: cat.id,
-          categoryName: cat.name,
-          categorySlug: cat.slug,
-          categoryIcon: cat.iconUrl || null,
-          articlesCount: articleCount,
-          articles: articles.map((a: any) => ({
-            id: a.id,
-            title: a.title,
-            slug: a.slug,
-            excerpt: a.metaDescription,
-            imageUrl: a.coverImageUrl,
-            publishedAt: a.publishedAt,
-            isBreaking: a.isBreaking || false
-          }))
-        };
-      })
-    );
-
-    // Filter out null sections
-    const validSections = sectionsWithArticles.filter(Boolean);
-
-    // Calculate read time (words / 200 wpm)
-    const calculateReadTime = (content: string | null) => {
-      if (!content) return 1;
-      const words = String(content).split(/\s+/).length;
-      return Math.max(1, Math.ceil(words / 200));
+      return {
+        categoryId: cat.id,
+        categoryName: cat.name,
+        categorySlug: cat.slug,
+        categoryIcon: cat.iconUrl || null,
+        articlesCount: count,
+        articles: articles.map(formatArticle),
+        visible: articles.length > 0
+      };
     };
 
-    // Format response
-    // Ticker: Use first 10 latest news items for scrolling ticker
-    const tickerItems = latestArticles.slice(0, 10).map((a: any) => ({
+    // Split categories into 3 groups of 4 each for Style1 sections
+    const allCategories = domainCategories.map((dc: any) => dc.category).filter(Boolean);
+    const section1Categories = allCategories.slice(0, 4);   // First 4 categories
+    const section2Categories = allCategories.slice(4, 8);   // Next 4 categories  
+    const hubCategories = allCategories.slice(8, 12);       // Next 4 categories
+
+    // Fetch articles for all category sections in parallel
+    const [section1Data, section2Data, hubData] = await Promise.all([
+      Promise.all(section1Categories.map((cat: any) => fetchCategoryArticles(cat, 5))),
+      Promise.all(section2Categories.map((cat: any) => fetchCategoryArticles(cat, 5))),
+      Promise.all(hubCategories.map((cat: any) => fetchCategoryArticles(cat, 5)))
+    ]);
+
+    // Filter out null/empty categories
+    const section1Valid = section1Data.filter((s: any) => s && s.visible);
+    const section2Valid = section2Data.filter((s: any) => s && s.visible);
+    const hubValid = hubData.filter((s: any) => s && s.visible);
+
+    // Build flashTicker from first 12 latest articles (or breaking news)
+    const tickerItems = latestArticles.slice(0, 12).map((a: any) => ({
       id: a.id,
       title: a.title,
       slug: a.slug,
@@ -983,35 +916,101 @@ router.get('/smart-homepage', async (req, res) => {
       isBreaking: a.isBreaking || false
     }));
 
+    // Build heroSection columns
+    const heroLeadArticles = latestArticles.slice(0, 8);   // First 8 for hero lead
+    const latestColumnArticles = latestArticles.slice(8, 15); // Next 7 for latest column
+
+    // Build Style1 structured response
     const response = {
-      version: '2.0-smart',
+      version: '2.0-smart-style1',
+      themeStyle,
       timestamp: new Date().toISOString(),
-      ticker: tickerItems,
-      latestNews: latestArticles.map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        slug: a.slug,
-        excerpt: a.metaDescription,
-        imageUrl: a.coverImageUrl,
-        categoryId: a.category?.id || null,
-        categoryName: a.category?.name || null,
-        categorySlug: a.category?.slug || null,
-        publishedAt: a.publishedAt,
-        readTime: calculateReadTime(a.contentHtml || a.content)
-      })),
-      mostRead: mostReadArticles.map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        slug: a.slug,
-        imageUrl: a.coverImageUrl,
-        categoryName: a.category?.name || null,
-        publishedAt: a.publishedAt,
-        viewCount: a.viewCount || 0
-      })),
-      sections: validSections,
+      
+      // Section 1: Flash Ticker (Breaking News)
+      flashTicker: {
+        visible: tickerItems.length > 0,
+        items: tickerItems
+      },
+
+      // Section 2: Hero Section (4 Column Grid)
+      heroSection: {
+        visible: heroLeadArticles.length > 0,
+        columns: {
+          // Column 1: Hero Lead (1 hero + 2 medium + 5 small = 8 articles)
+          heroLead: {
+            hero: heroLeadArticles[0] ? formatArticle(heroLeadArticles[0]) : null,
+            medium: heroLeadArticles.slice(1, 3).map(formatArticle),
+            small: heroLeadArticles.slice(3, 8).map(formatArticle)
+          },
+          // Column 2: Latest Articles (7 articles)
+          latest: {
+            label: 'తాజా వార్తలు',
+            articles: latestColumnArticles.map(formatArticle)
+          },
+          // Column 3: Most Read (8 articles)
+          mostRead: {
+            label: 'ఎక్కువగా చదివినవి',
+            articles: mostReadArticles.map(formatArticle)
+          },
+          // Column 4: Top Viewed (4 articles)
+          topViewed: {
+            label: 'టాప్ వీక్షణలు',
+            articles: topViewedArticles.map((a: any) => ({
+              id: a.id,
+              title: a.title,
+              slug: a.slug,
+              imageUrl: a.coverImageUrl,
+              viewCount: a.viewCount || 0,
+              publishedAt: a.publishedAt
+            }))
+          }
+        }
+      },
+
+      // Section 3: Horizontal Ad 1
+      horizontalAd1: {
+        visible: true,
+        slot: 'homepage_below_hero'
+      },
+
+      // Section 4: Category Section 1 (First 4 categories × 5 articles)
+      categorySection1: {
+        visible: section1Valid.length > 0,
+        label: 'వార్తా విభాగాలు',
+        categories: section1Valid
+      },
+
+      // Section 5: Category Section 2 (Next 4 categories × 5 articles)
+      categorySection2: {
+        visible: section2Valid.length > 0,
+        label: 'మరిన్ని విభాగాలు',
+        categories: section2Valid
+      },
+
+      // Section 6: Horizontal Ad 2
+      horizontalAd2: {
+        visible: true,
+        slot: 'homepage_below_categories'
+      },
+
+      // Section 7: Category Hub (Next 4 categories × 5 articles)
+      categoryHub: {
+        visible: hubValid.length > 0,
+        label: 'ఇతర విభాగాలు',
+        categories: hubValid
+      },
+
+      // Section 8: Web Stories placeholder
+      webStories: {
+        visible: false,
+        stories: []
+      },
+
+      // Meta information
       meta: {
         totalArticles: totalArticlesCount,
-        totalCategories: validSections.length,
+        totalCategories: allCategories.length,
+        categoriesInSections: section1Valid.length + section2Valid.length + hubValid.length,
         lastUpdated: new Date().toISOString(),
         cacheAge: 180 // 3 minutes recommended cache
       }
