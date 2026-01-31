@@ -847,7 +847,7 @@ router.get('/smart-homepage', async (req, res) => {
     const langCode = req.query.lang ? String(req.query.lang).toLowerCase().trim() : null;
 
     // Build language filter
-    let languageFilter = {};
+    let languageFilter: any = {};
     if (langCode) {
       const language = await p.language.findUnique({ where: { code: langCode } }).catch(() => null);
       if (language) {
@@ -855,145 +855,98 @@ router.get('/smart-homepage', async (req, res) => {
       }
     }
 
+    // Build domain scope - include both domain-specific and shared (domainId=null) articles
+    const domainScope = { OR: [{ domainId: domain.id }, { domainId: null }] };
+
+    // Base where clause for published articles
+    const baseWhere = {
+      tenantId: tenant.id,
+      status: 'PUBLISHED',
+      ...domainScope,
+      ...languageFilter
+    };
+
     // Parallel data fetching for maximum performance
     const [
       latestArticles,
       mostReadArticles,
-      topCategories,
-      totalArticlesCount,
-      totalCategoriesCount
+      totalArticlesCount
     ] = await Promise.all([
       // Latest news - published articles ordered by date
-      p.tenantWebArticleView.findMany({
-        where: {
-          tenantId: tenant.id,
-          domainId: domain.id,
-          status: 'PUBLISHED',
-          publishedAt: { lte: new Date() },
-          ...languageFilter
-        },
-        orderBy: { publishedAt: 'desc' },
+      p.tenantWebArticle.findMany({
+        where: baseWhere,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
         take: latestCount,
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          excerpt: true,
-          imageUrl: true,
-          categoryId: true,
-          categoryName: true,
-          categorySlug: true,
-          publishedAt: true,
-          content: true
+        include: {
+          category: { select: { id: true, slug: true, name: true, iconUrl: true } },
+          language: { select: { code: true } }
         }
       }),
       
-      // Most read articles - using viewCount or random if not available
-      p.tenantWebArticleView.findMany({
-        where: {
-          tenantId: tenant.id,
-          domainId: domain.id,
-          status: 'PUBLISHED',
-          publishedAt: { lte: new Date() },
-          ...languageFilter
-        },
+      // Most read articles - using viewCount
+      p.tenantWebArticle.findMany({
+        where: baseWhere,
         orderBy: [
           { viewCount: 'desc' },
           { publishedAt: 'desc' }
         ],
         take: mostReadCount,
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          imageUrl: true,
-          categoryName: true,
-          publishedAt: true,
-          viewCount: true
+        include: {
+          category: { select: { id: true, slug: true, name: true } }
         }
       }),
 
-      // Top categories - by article count
-      p.tenantWebArticleView.groupBy({
-        by: ['categoryId', 'categoryName', 'categorySlug'],
-        where: {
-          tenantId: tenant.id,
-          domainId: domain.id,
-          status: 'PUBLISHED',
-          publishedAt: { lte: new Date() },
-          categoryId: { not: null },
-          ...languageFilter
-        },
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: sectionsCount
-      }),
-
-      // Total counts for meta
-      p.tenantWebArticleView.count({
-        where: {
-          tenantId: tenant.id,
-          domainId: domain.id,
-          status: 'PUBLISHED',
-          ...languageFilter
-        }
-      }),
-
-      p.category.count({
-        where: {
-          tenantId: tenant.id,
-          domainLanguages: {
-            some: { domainId: domain.id }
-          }
-        }
-      })
+      // Total count for meta
+      p.tenantWebArticle.count({ where: baseWhere })
     ]);
 
-    // Get category icons
-    const categoryIds = topCategories.map((c: any) => c.categoryId).filter(Boolean) as string[];
-    const categoryDetails = await p.category.findMany({
-      where: { id: { in: categoryIds } },
-      select: { id: true, iconUrl: true }
+    // Get domain categories for sections
+    const domainCategories = await p.domainCategory.findMany({
+      where: { domainId: domain.id },
+      include: { category: { select: { id: true, slug: true, name: true, iconUrl: true } } },
+      take: sectionsCount
     });
-    const categoryIconMap = new Map(categoryDetails.map((c: any) => [c.id, c.iconUrl]));
 
-    // Fetch articles for each section in parallel
+    // Fetch articles for each category section in parallel
     const sectionsWithArticles = await Promise.all(
-      topCategories.map(async (cat: any) => {
-        const articles = await p.tenantWebArticleView.findMany({
+      domainCategories.slice(0, sectionsCount).map(async (dc: any) => {
+        const cat = dc.category;
+        if (!cat) return null;
+
+        const articles = await p.tenantWebArticle.findMany({
           where: {
-            tenantId: tenant.id,
-            domainId: domain.id,
-            status: 'PUBLISHED',
-            publishedAt: { lte: new Date() },
-            categoryId: cat.categoryId,
-            ...languageFilter
+            ...baseWhere,
+            categoryId: cat.id
           },
-          orderBy: { publishedAt: 'desc' },
+          orderBy: [{ publishedAt: 'desc' }],
           take: articlesPerSection,
           select: {
             id: true,
             title: true,
             slug: true,
             excerpt: true,
-            imageUrl: true,
+            coverImageUrl: true,
             publishedAt: true,
             isBreaking: true
           }
         });
 
+        const articleCount = await p.tenantWebArticle.count({
+          where: { ...baseWhere, categoryId: cat.id }
+        });
+
         return {
-          categoryId: cat.categoryId,
-          categoryName: cat.categoryName,
-          categorySlug: cat.categorySlug,
-          categoryIcon: categoryIconMap.get(cat.categoryId!) || null,
-          articlesCount: cat._count.id,
+          categoryId: cat.id,
+          categoryName: cat.name,
+          categorySlug: cat.slug,
+          categoryIcon: cat.iconUrl || null,
+          articlesCount: articleCount,
           articles: articles.map((a: any) => ({
             id: a.id,
             title: a.title,
             slug: a.slug,
             excerpt: a.excerpt,
-            imageUrl: a.imageUrl,
+            imageUrl: a.coverImageUrl,
             publishedAt: a.publishedAt,
             isBreaking: a.isBreaking || false
           }))
@@ -1001,10 +954,13 @@ router.get('/smart-homepage', async (req, res) => {
       })
     );
 
+    // Filter out null sections
+    const validSections = sectionsWithArticles.filter(Boolean);
+
     // Calculate read time (words / 200 wpm)
     const calculateReadTime = (content: string | null) => {
       if (!content) return 1;
-      const words = content.split(/\s+/).length;
+      const words = String(content).split(/\s+/).length;
       return Math.max(1, Math.ceil(words / 200));
     };
 
@@ -1014,9 +970,9 @@ router.get('/smart-homepage', async (req, res) => {
       id: a.id,
       title: a.title,
       slug: a.slug,
-      categorySlug: a.categorySlug,
+      categorySlug: a.category?.slug || null,
       publishedAt: a.publishedAt,
-      isBreaking: (a as any).isBreaking || false
+      isBreaking: a.isBreaking || false
     }));
 
     const response = {
@@ -1028,26 +984,26 @@ router.get('/smart-homepage', async (req, res) => {
         title: a.title,
         slug: a.slug,
         excerpt: a.excerpt,
-        imageUrl: a.imageUrl,
-        categoryId: a.categoryId,
-        categoryName: a.categoryName,
-        categorySlug: a.categorySlug,
+        imageUrl: a.coverImageUrl,
+        categoryId: a.category?.id || null,
+        categoryName: a.category?.name || null,
+        categorySlug: a.category?.slug || null,
         publishedAt: a.publishedAt,
-        readTime: calculateReadTime(a.content)
+        readTime: calculateReadTime(a.contentHtml || a.content)
       })),
       mostRead: mostReadArticles.map((a: any) => ({
         id: a.id,
         title: a.title,
         slug: a.slug,
-        imageUrl: a.imageUrl,
-        categoryName: a.categoryName,
+        imageUrl: a.coverImageUrl,
+        categoryName: a.category?.name || null,
         publishedAt: a.publishedAt,
         viewCount: a.viewCount || 0
       })),
-      sections: sectionsWithArticles,
+      sections: validSections,
       meta: {
         totalArticles: totalArticlesCount,
-        totalCategories: totalCategoriesCount,
+        totalCategories: validSections.length,
         lastUpdated: new Date().toISOString(),
         cacheAge: 180 // 3 minutes recommended cache
       }
