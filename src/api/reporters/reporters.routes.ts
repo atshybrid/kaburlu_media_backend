@@ -3,6 +3,7 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { createUser, findUserByMobileNumber } from '../users/users.service';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
+import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdf';
 
 const router = Router();
 
@@ -427,26 +428,54 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }
     });
 
-    // Auto-send ID card via WhatsApp (async, don't block response)
-    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-    const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
-    sendIdCardViaWhatsApp({
-      reporterId: reporter.id,
-      tenantId,
-      pdfUrl,
-      cardNumber,
-    }).then(result => {
-      if (result.ok) {
-        console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
-      } else {
-        console.error(`[ID Card] Auto-send WhatsApp failed for reporter ${reporter.id}:`, result.error);
-      }
-    }).catch(e => console.error('[ID Card] Auto-send WhatsApp error:', e));
+    // Generate PDF and upload to Bunny CDN (async, don't block response)
+    let pdfUrl: string | null = null;
+    if (isBunnyCdnConfigured()) {
+      generateAndUploadIdCardPdf(reporter.id).then(result => {
+        if (result.ok) {
+          console.log(`[ID Card] PDF generated and uploaded: ${result.pdfUrl}`);
+          // Send WhatsApp with Bunny CDN URL
+          sendIdCardViaWhatsApp({
+            reporterId: reporter.id,
+            tenantId,
+            pdfUrl: result.pdfUrl!,
+            cardNumber,
+          }).then(waResult => {
+            if (waResult.ok) {
+              console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${waResult.messageId}`);
+            } else {
+              console.error(`[ID Card] Auto-send WhatsApp failed:`, waResult.error);
+            }
+          }).catch(e => console.error('[ID Card] Auto-send WhatsApp error:', e));
+        } else {
+          console.error(`[ID Card] PDF generation failed:`, result.error);
+        }
+      }).catch(e => console.error('[ID Card] PDF generation error:', e));
+    } else {
+      // Fallback: Use dynamic PDF URL
+      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      sendIdCardViaWhatsApp({
+        reporterId: reporter.id,
+        tenantId,
+        pdfUrl,
+        cardNumber,
+      }).then(result => {
+        if (result.ok) {
+          console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
+        } else {
+          console.error(`[ID Card] Auto-send WhatsApp failed for reporter ${reporter.id}:`, result.error);
+        }
+      }).catch(e => console.error('[ID Card] Auto-send WhatsApp error:', e));
+    }
 
     res.status(201).json({
       ...idCard,
+      pdfGenerating: isBunnyCdnConfigured(),
       whatsappSent: true,
-      message: 'ID card generated and sent via WhatsApp'
+      message: isBunnyCdnConfigured() 
+        ? 'ID card generated, PDF uploading to CDN and will be sent via WhatsApp' 
+        : 'ID card generated and sent via WhatsApp'
     });
   } catch (e) {
     console.error('generate reporter id-card error', e);
@@ -667,29 +696,56 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
 
     console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${cardNumber}, by=${user?.id}, reason=${reason}`);
 
-    // Auto-send ID card via WhatsApp (async, don't block response)
-    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-    const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
-    sendIdCardViaWhatsApp({
-      reporterId: reporter.id,
-      tenantId,
-      pdfUrl,
-      cardNumber: newIdCard.cardNumber,
-    }).then(result => {
-      if (result.ok) {
-        console.log(`[ID Card] Regenerate - sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
-      } else {
-        console.error(`[ID Card] Regenerate - WhatsApp send failed for reporter ${reporter.id}:`, result.error);
-      }
-    }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
+    // Generate PDF and upload to Bunny CDN (async, don't block response)
+    if (isBunnyCdnConfigured()) {
+      generateAndUploadIdCardPdf(reporter.id).then(result => {
+        if (result.ok) {
+          console.log(`[ID Card] Regenerate - PDF uploaded: ${result.pdfUrl}`);
+          // Send WhatsApp with Bunny CDN URL
+          sendIdCardViaWhatsApp({
+            reporterId: reporter.id,
+            tenantId,
+            pdfUrl: result.pdfUrl!,
+            cardNumber: newIdCard.cardNumber,
+          }).then(waResult => {
+            if (waResult.ok) {
+              console.log(`[ID Card] Regenerate - sent via WhatsApp, messageId: ${waResult.messageId}`);
+            } else {
+              console.error(`[ID Card] Regenerate - WhatsApp failed:`, waResult.error);
+            }
+          }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
+        } else {
+          console.error(`[ID Card] Regenerate - PDF generation failed:`, result.error);
+        }
+      }).catch(e => console.error('[ID Card] Regenerate - PDF error:', e));
+    } else {
+      // Fallback: Use dynamic PDF URL
+      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+      const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      sendIdCardViaWhatsApp({
+        reporterId: reporter.id,
+        tenantId,
+        pdfUrl,
+        cardNumber: newIdCard.cardNumber,
+      }).then(result => {
+        if (result.ok) {
+          console.log(`[ID Card] Regenerate - sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
+        } else {
+          console.error(`[ID Card] Regenerate - WhatsApp send failed for reporter ${reporter.id}:`, result.error);
+        }
+      }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
+    }
 
     res.status(201).json({
       ...newIdCard,
       previousCardNumber,
       regeneratedBy: user?.id,
       regenerationReason: reason || null,
+      pdfGenerating: isBunnyCdnConfigured(),
       whatsappSent: true,
-      message: 'ID card regenerated and sent via WhatsApp'
+      message: isBunnyCdnConfigured()
+        ? 'ID card regenerated, PDF uploading to CDN and will be sent via WhatsApp'
+        : 'ID card regenerated and sent via WhatsApp'
     });
   } catch (e) {
     console.error('regenerate reporter id-card error', e);
@@ -795,21 +851,40 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
       return res.status(400).json({ error: 'ID card not found. Please generate it first.' });
     }
 
-    // Check if PDF URL exists
-    if (!reporter.idCard.pdfUrl) {
-      return res.status(400).json({ error: 'ID card PDF not generated yet. Please wait for PDF generation.' });
-    }
-
     // Check if mobile number exists
     if (!reporter.user?.mobileNumber) {
       return res.status(400).json({ error: 'Reporter mobile number not found' });
+    }
+
+    // Get PDF URL - either from DB or generate on demand
+    let pdfUrl = reporter.idCard.pdfUrl;
+    
+    if (!pdfUrl) {
+      // PDF not in DB - try to generate and upload now
+      if (isBunnyCdnConfigured()) {
+        console.log(`[ID Card Resend] No pdfUrl found, generating for reporter ${reporter.id}`);
+        const genResult = await generateAndUploadIdCardPdf(reporter.id);
+        if (genResult.ok && genResult.pdfUrl) {
+          pdfUrl = genResult.pdfUrl;
+          console.log(`[ID Card Resend] Generated PDF: ${pdfUrl}`);
+        } else {
+          console.error(`[ID Card Resend] PDF generation failed:`, genResult.error);
+          // Fallback to dynamic URL
+          const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+        }
+      } else {
+        // Fallback to dynamic URL
+        const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      }
     }
 
     // Send via WhatsApp
     const result = await sendIdCardViaWhatsApp({
       reporterId: reporter.id,
       tenantId,
-      pdfUrl: reporter.idCard.pdfUrl,
+      pdfUrl,
       cardNumber: reporter.idCard.cardNumber,
     });
 
