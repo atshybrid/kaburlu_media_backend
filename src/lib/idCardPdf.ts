@@ -5,14 +5,8 @@
  * Returns the public URL of the uploaded PDF.
  */
 
-import https from 'https';
 import prisma from './prisma';
-
-// Bunny CDN config from env
-const BUNNY_STORAGE_ZONE_NAME = process.env.BUNNY_STORAGE_ZONE_NAME || 'kaburlu-news';
-const BUNNY_STORAGE_API_KEY = process.env.BUNNY_STORAGE_API_KEY || '';
-const BUNNY_STORAGE_PUBLIC_BASE_URL = process.env.BUNNY_STORAGE_PUBLIC_BASE_URL || 'kaburlu-news.b-cdn.net';
-const BUNNY_STORAGE_HOST = 'storage.bunnycdn.com';
+import { bunnyStoragePutObject, isBunnyStorageConfigured } from './bunnyStorage';
 
 export interface IdCardPdfResult {
   ok: boolean;
@@ -22,52 +16,10 @@ export interface IdCardPdfResult {
 }
 
 /**
- * Upload PDF buffer to Bunny CDN
+ * Check if Bunny CDN is configured
  */
-async function uploadToBunny(pdfBuffer: Buffer, filename: string): Promise<string> {
-  if (!BUNNY_STORAGE_API_KEY) {
-    throw new Error('BUNNY_STORAGE_API_KEY not configured');
-  }
-
-  const bunnyPath = `/id-cards/${filename}`;
-  
-  return new Promise((resolve, reject) => {
-    const options: https.RequestOptions = {
-      hostname: BUNNY_STORAGE_HOST,
-      method: 'PUT',
-      path: `/${BUNNY_STORAGE_ZONE_NAME}${bunnyPath}`,
-      headers: {
-        'AccessKey': BUNNY_STORAGE_API_KEY,
-        'Content-Type': 'application/pdf',
-        'Content-Length': pdfBuffer.length.toString(),
-      },
-    };
-
-    console.log(`[ID Card PDF] Uploading to Bunny Storage: ${bunnyPath}`);
-
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          const url = `https://${BUNNY_STORAGE_PUBLIC_BASE_URL}${bunnyPath}`;
-          console.log(`[ID Card PDF] Upload success: ${url}`);
-          resolve(url);
-        } else {
-          console.error(`[ID Card PDF] Upload failed: ${res.statusCode}`, body);
-          reject(new Error(`Bunny upload failed: ${res.statusCode} - ${body}`));
-        }
-      });
-    });
-
-    req.on('error', (e) => {
-      console.error('[ID Card PDF] Upload error:', e);
-      reject(e);
-    });
-
-    req.write(pdfBuffer);
-    req.end();
-  });
+export function isBunnyCdnConfigured(): boolean {
+  return isBunnyStorageConfigured();
 }
 
 /**
@@ -378,10 +330,17 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
     const pdfBuffer = await generatePdfBuffer(html);
     console.log(`[ID Card PDF] PDF generated, size: ${pdfBuffer.length} bytes`);
 
-    // 5. Upload to Bunny CDN
+    // 5. Upload to Bunny CDN using existing bunnyStorage lib
     const timestamp = Date.now();
-    const filename = `${data.reporter.cardNumber}_${timestamp}.pdf`;
-    const pdfUrl = await uploadToBunny(pdfBuffer, filename);
+    const key = `id-cards/${data.reporter.cardNumber}_${timestamp}.pdf`;
+    console.log(`[ID Card PDF] Uploading to Bunny: ${key}`);
+    
+    const { publicUrl: pdfUrl } = await bunnyStoragePutObject({
+      key,
+      body: pdfBuffer,
+      contentType: 'application/pdf',
+    });
+    console.log(`[ID Card PDF] Upload success: ${pdfUrl}`);
 
     // 6. Update database with PDF URL
     await (prisma as any).reporterIDCard.update({
@@ -402,11 +361,4 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
       error: e.message || 'Failed to generate ID card PDF'
     };
   }
-}
-
-/**
- * Check if Bunny CDN is configured
- */
-export function isBunnyCdnConfigured(): boolean {
-  return !!BUNNY_STORAGE_API_KEY && !!BUNNY_STORAGE_ZONE_NAME;
 }
