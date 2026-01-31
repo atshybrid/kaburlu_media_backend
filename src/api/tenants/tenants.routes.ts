@@ -966,6 +966,9 @@ async function autoGenerateTenantNativeName(params: {
  *               printingMandalId: { type: string, description: "Mandal id" }
  *               printingCityName: { type: string, example: "KAMAREDDY" }
  *               address: { type: string }
+ *               contactMobile: { type: string, example: "9876543210", description: "Primary contact mobile number" }
+ *               contactEmail: { type: string, example: "contact@kaburlumedia.com", description: "Primary contact email" }
+ *               contactPerson: { type: string, example: "Srinivas Rao", description: "Contact person name" }
  *     responses:
  *       200: { description: Upserted }
  */
@@ -1017,6 +1020,10 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
       printingMandalId,
       printingCityName: body.printingCityName || body.printingCity || null,
       address: body.address || null,
+      // Contact details
+      contactMobile: body.contactMobile || body.mobile || null,
+      contactEmail: body.contactEmail || body.email || null,
+      contactPerson: body.contactPerson || null,
     };
 
     // Upsert on tenantId (unique)
@@ -1349,6 +1356,10 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
       printingMandalId: printingMandalId ?? existing.printingMandalId,
       printingCityName: body.printingCityName ?? body.printingCity ?? existing.printingCityName,
       address: body.address ?? existing.address,
+      // Contact details
+      contactMobile: body.contactMobile ?? body.mobile ?? existing.contactMobile,
+      contactEmail: body.contactEmail ?? body.email ?? existing.contactEmail,
+      contactPerson: body.contactPerson ?? existing.contactPerson,
     };
     // Do not allow updating prgiNumber
 

@@ -962,6 +962,10 @@ model TenantEntity {
   printingMandalId      String?
   printingCityName      String?
   address               String?
+  // Contact details
+  contactMobile         String?
+  contactEmail          String?
+  contactPerson         String?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
   nativeName            String?
