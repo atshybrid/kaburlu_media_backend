@@ -979,6 +979,7 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
     const body = req.body || {};
+  const contactMobileInput = body.contactMobile || body.mobile || body.contactPersonNumber || body.contactPersonMobile || body.contactPhone || null;
     const prgiNumber = body.prgiNumber || tenant.prgiNumber;
     if (!prgiNumber) return res.status(400).json({ error: 'prgiNumber missing on request and tenant' });
     // Accept only IDs for language and locations. Names/codes are ignored by design.
@@ -1021,7 +1022,7 @@ router.post('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (r
       printingCityName: body.printingCityName || body.printingCity || null,
       address: body.address || null,
       // Contact details
-      contactMobile: body.contactMobile || body.mobile || null,
+      contactMobile: contactMobileInput,
       contactEmail: body.contactEmail || body.email || null,
       contactPerson: body.contactPerson || null,
     };
@@ -1315,6 +1316,7 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
     if (!existing) return res.status(404).json({ error: 'Entity details not found for tenant' });
 
     const body = req.body || {};
+    const contactMobileInput = body.contactMobile ?? body.mobile ?? body.contactPersonNumber ?? body.contactPersonMobile ?? body.contactPhone;
     // Enforce immutability of prgiNumber on update
     if (typeof body.prgiNumber === 'string' && body.prgiNumber.trim() && body.prgiNumber.trim() !== existing.prgiNumber) {
       return res.status(400).json({ error: 'prgiNumber cannot be updated once created' });
@@ -1360,7 +1362,7 @@ router.put('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (re
       printingCityName: body.printingCityName ?? body.printingCity ?? existing.printingCityName,
       address: body.address ?? existing.address,
       // Contact details
-      contactMobile: body.contactMobile ?? body.mobile ?? existing.contactMobile,
+      contactMobile: (contactMobileInput ?? existing.contactMobile) as any,
       contactEmail: body.contactEmail ?? body.email ?? existing.contactEmail,
       contactPerson: body.contactPerson ?? existing.contactPerson,
     };
@@ -2094,6 +2096,12 @@ router.patch('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (
     if (!existing) return res.status(404).json({ error: 'Entity details not found for tenant' });
 
     const body = req.body || {};
+
+    // Backward/alternate naming support
+    if (body.contactMobile === undefined) {
+      const alias = body.contactPersonNumber ?? body.contactPersonMobile ?? body.contactPhone;
+      if (alias !== undefined) body.contactMobile = alias;
+    }
 
     // Enforce immutability of prgiNumber
     if (typeof body.prgiNumber === 'string' && body.prgiNumber.trim() && body.prgiNumber.trim() !== existing.prgiNumber) {

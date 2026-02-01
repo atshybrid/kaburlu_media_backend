@@ -348,6 +348,7 @@ export async function ensureCoreSeeds() {
   // IMPORTANT: Keep this list minimal and aligned with clean_and_seed_designations.ts
   try {
     const defaults: { level: string; code: string; name: string; nativeName: string; levelOrder: number }[] = [
+      { level: 'STATE', code: 'TENANT_ADMIN', name: 'Tenant Admin', nativeName: 'టెనెంట్ అడ్మిన్', levelOrder: 0 },
       { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief', nativeName: 'రాష్ట్ర బ్యూరో చీఫ్', levelOrder: 1 },
       { level: 'DISTRICT', code: 'STAFF_REPORTER', name: 'Staff Reporter', nativeName: 'స్టాఫ్ రిపోర్టర్', levelOrder: 2 },
       { level: 'ASSEMBLY', code: 'RC_INCHARGE', name: 'RC In-charge', nativeName: 'ఆర్సీ ఇన్‌చార్జ్', levelOrder: 3 },
@@ -388,7 +389,7 @@ export async function ensureCoreSeeds() {
   } catch {
     // best-effort; designations can be seeded later via tenant seed endpoint
   }
-  console.log('[Bootstrap] 7. Reporter designations done (4 clean designations)');
+  console.log('[Bootstrap] 7. Reporter designations done (5 clean designations including TENANT_ADMIN)');
 
   // 8. Default AI Prompts (create missing + update existing)
   // Ensures critical prompt keys exist and are up-to-date after DB reset/new DB.

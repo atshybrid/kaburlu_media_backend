@@ -28,12 +28,38 @@ export const getLocation = async (userId: string) => {
 import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
 
+const isTenantAdminRoleName = (roleName: unknown) => {
+    const name = String(roleName || '').toUpperCase();
+    return name === 'TENANT_ADMIN' || name === 'ADMIN';
+};
+
+const ensureReporterTenantLink = async (tx: any, userId: string, tenantId: string) => {
+    const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+    if (!tenant) {
+        const err: any = new Error('Invalid tenantId');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    return tx.reporter.upsert({
+        where: { userId },
+        update: { tenantId, active: true },
+        create: {
+            tenantId,
+            userId,
+            level: 'STATE',
+            active: true,
+        },
+    });
+};
+
 export const createUser = async (data: any) => {
     const {
         mobileNumber,
         mpin,
         languageId,
         roleId,
+        tenantId,
         skipMpinDefault,
         ...rest
     } = data || {};
@@ -114,16 +140,33 @@ export const createUser = async (data: any) => {
         throw new Error('mpin is required when mobileNumber is missing or too short to derive last 4 digits');
     }
 
-    return prisma.user.create({
-        data: {
-            ...rest,
-            mobileNumber: mobileNumber ?? null,
-            mpin: finalMpinHash || null,
-            languageId: String(languageId),
-            roleId: roleId,
-            status: data?.status || 'ACTIVE'
-        },
-        include: { role: true }
+    return prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+            data: {
+                ...rest,
+                mobileNumber: mobileNumber ?? null,
+                mpin: finalMpinHash || null,
+                languageId: String(languageId),
+                roleId: roleId,
+                status: data?.status || 'ACTIVE'
+            },
+            include: { role: true }
+        });
+
+        if (roleId) {
+            const role = await tx.role.findUnique({ where: { id: String(roleId) }, select: { name: true } });
+            if (isTenantAdminRoleName(role?.name)) {
+                const tid = String(tenantId || '').trim();
+                if (!tid) {
+                    const err: any = new Error('tenantId is required when creating a TENANT_ADMIN user');
+                    err.statusCode = 400;
+                    throw err;
+                }
+                await ensureReporterTenantLink(tx, created.id, tid);
+            }
+        }
+
+        return created;
     });
 };
 
@@ -252,7 +295,7 @@ export const findUserByMobileNumber = async (mobileNumber: string) => {
 };
 
 export const updateUser = async (id: string, data: any) => {
-    const { roleId, languageId, ...rest } = data;
+    const { roleId, languageId, tenantId, ...rest } = data;
     const updateData: any = { ...rest };
 
     if (roleId) {
@@ -267,9 +310,34 @@ export const updateUser = async (id: string, data: any) => {
         };
     }
 
-    return prisma.user.update({
-        where: { id },
-        data: updateData,
+    return prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+            where: { id },
+            data: updateData,
+        });
+
+        const tid = String(tenantId || '').trim();
+
+        // If caller explicitly sets TENANT_ADMIN role, require tenantId.
+        if (roleId) {
+            const role = await tx.role.findUnique({ where: { id: String(roleId) }, select: { name: true } });
+            if (isTenantAdminRoleName(role?.name)) {
+                if (!tid) {
+                    const err: any = new Error('tenantId is required when setting TENANT_ADMIN role');
+                    err.statusCode = 400;
+                    throw err;
+                }
+                await ensureReporterTenantLink(tx, id, tid);
+            }
+        } else if (tid) {
+            // Repair flow: if user is already TENANT_ADMIN and tenantId is provided, link/upsert reporter.
+            const currentRole = await tx.role.findUnique({ where: { id: updated.roleId }, select: { name: true } });
+            if (isTenantAdminRoleName(currentRole?.name)) {
+                await ensureReporterTenantLink(tx, id, tid);
+            }
+        }
+
+        return updated;
     });
 };
 

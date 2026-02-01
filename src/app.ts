@@ -76,6 +76,7 @@ import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
 import analyticsRoutes from './api/analytics/analytics.routes';
 import gdprRoutes from './api/gdpr/gdpr.routes';
 import universalLinksRoutes from './api/universal-links/universal-links.routes';
+import tenantAdminsRoutes from './api/tenantAdmins/tenantAdmins.routes';
 
 const app = express();
 
@@ -317,6 +318,8 @@ app.use('/health', aiHealthRoutes);
 app.use('/leaderboard', leaderboardRoutes);
 // Analytics endpoints
 app.use('/analytics', analyticsRoutes);
+// Tenant Admins - simplified CRUD
+app.use('/tenant-admins', tenantAdminsRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -378,6 +381,8 @@ apiV1.use('/health', aiHealthRoutes);
 apiV1.use('/tenants', tenantsRoutes);
 apiV1.use('/domains', domainsRoutes);
 apiV1.use('/reporters', reportersRoutes);
+// Tenant Admins - simplified CRUD (also under /api/v1)
+apiV1.use('/tenant-admins', tenantAdminsRoutes);
 apiV1.use('/reporters/me', reportersMeIdCardRoutes);
 // Public helper: used by public join to list designation options
 apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);

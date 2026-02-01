@@ -156,6 +156,12 @@ router.get('/:id', userController.getUserById);
  *           schema:
  *             type: object
  *             properties:
+ *               roleId:
+ *                 type: string
+ *                 description: "When setting role to TENANT_ADMIN, also provide tenantId to link the user to that tenant"
+ *               tenantId:
+ *                 type: string
+ *                 description: "Required when assigning TENANT_ADMIN role via roleId"
  *               name:
  *                 type: string
  *                 example: "John Doe"
