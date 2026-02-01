@@ -26,6 +26,22 @@ const router = Router();
  *       - Homepage: 2 API calls (instead of 5+)
  *       - ISR/SSG friendly responses
  *       - Optimized for Next.js App Router
+ *   - name: Digital Daily Newspaper
+ *     description: |
+ *       📰 **Digital Daily Newspaper APIs** - ePaper for Mobile Apps
+ *       
+ *       **Features:**
+ *       - Swipeable newspaper gallery (cover images)
+ *       - Full page viewer (all pages of an issue)
+ *       - Multi-tenant paper gallery
+ *       - Edition & sub-edition filtering
+ *       - Date-based filtering (today, date range)
+ *       - WebP optimized images
+ *       
+ *       **Use Cases:**
+ *       - Mobile app newspaper reader
+ *       - Digital edition viewer
+ *       - Multi-newspaper aggregator app
  */
 
 /**
@@ -1306,7 +1322,7 @@ router.get('/seo/homepage', async (_req, res) => {
  *       - User taps on cover → navigate to /public/digital-papers/:issueId
  *       
  *       **Cache:** ISR 300s (5 minutes)
- *     tags: [News Website API 2.0]
+ *     tags: [Digital Daily Newspaper]
  *     parameters:
  *       - in: header
  *         name: X-Tenant-Domain
@@ -1540,7 +1556,7 @@ router.get('/digital-papers', async (req, res) => {
  *       - Download PDF option
  *       
  *       **Cache:** ISR 600s (10 minutes)
- *     tags: [News Website API 2.0]
+ *     tags: [Digital Daily Newspaper]
  *     parameters:
  *       - in: path
  *         name: issueId
@@ -1714,7 +1730,7 @@ router.get('/digital-papers/:issueId', async (req, res) => {
  *       - User can swipe through different newspaper brands
  *       
  *       **Cache:** ISR 300s (5 minutes)
- *     tags: [News Website API 2.0]
+ *     tags: [Digital Daily Newspaper]
  *     parameters:
  *       - in: query
  *         name: date
