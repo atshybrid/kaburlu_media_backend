@@ -1772,19 +1772,16 @@ router.get('/digital-papers/all-tenants', async (req, res) => {
  *         description: Server error
  */
 router.get('/digital-papers/:issueId', async (req, res) => {
-  const tenant = (res.locals as any).tenant;
-  if (!tenant) return res.status(500).json({ error: 'Tenant context missing' });
+  // Note: Tenant context is NOT required for this endpoint since issue ID is globally unique
+  // This allows mobile apps to fetch any issue without knowing the tenant domain
 
   const issueId = req.params.issueId;
   if (!issueId) return res.status(400).json({ error: 'Issue ID required' });
 
   try {
-    // Fetch issue with pages
+    // Fetch issue with pages - no tenant filtering since issue ID is unique
     const issue = await p.epaperPdfIssue.findFirst({
-      where: {
-        id: issueId,
-        tenantId: tenant.id
-      },
+      where: { id: issueId },
       include: {
         edition: {
           select: {
