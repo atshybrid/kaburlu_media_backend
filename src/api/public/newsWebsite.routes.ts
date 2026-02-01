@@ -1534,6 +1534,164 @@ router.get('/digital-papers', async (req, res) => {
 
 /**
  * @swagger
+ * /public/digital-papers/all-tenants:
+ *   get:
+ *     summary: 📚 Get ePaper issues from ALL tenants (App Gallery)
+ *     description: |
+ *       🗞️ **DIGITAL DAILY NEWSPAPER - Multi-Tenant Gallery**
+ *       
+ *       Returns ePaper issues from ALL tenants for app-wide newspaper gallery.
+ *       Perfect for "All Papers" section in mobile app.
+ *       
+ *       **Features:**
+ *       - Issues from all active tenants
+ *       - Cover images for swipe gallery
+ *       - Tenant branding (name, logo)
+ *       - Filter by date
+ *       
+ *       **Use Case:**
+ *       - App home screen showing all available newspapers
+ *       - User can swipe through different newspaper brands
+ *       
+ *       **Cache:** ISR 300s (5 minutes)
+ *     tags: [Digital Daily Newspaper]
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema: { type: string, format: date }
+ *         description: Filter by date (default is today)
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *     responses:
+ *       200:
+ *         description: List of ePaper issues from all tenants
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 papers:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       tenant: { type: object }
+ *                       issueDate: { type: string }
+ *                       coverImageUrl: { type: string }
+ *                       pageCount: { type: integer }
+ *                       edition: { type: object }
+ */
+router.get('/digital-papers/all-tenants', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+
+    // Date filter
+    let dateFilter: any = {};
+    if (req.query.date) {
+      const targetDate = new Date(String(req.query.date));
+      targetDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(targetDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      dateFilter = { issueDate: { gte: targetDate, lt: nextDay } };
+    } else {
+      // Default: today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      dateFilter = { issueDate: { gte: today, lt: tomorrow } };
+    }
+
+    // Fetch issues from all tenants
+    const issues = await p.epaperPdfIssue.findMany({
+      where: dateFilter,
+      orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+      include: {
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            entity: { select: { nativeName: true } },
+            theme: {
+              select: { logoUrl: true, faviconUrl: true }
+            }
+          }
+        },
+        edition: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            coverImageUrl: true,
+            state: { select: { name: true } }
+          }
+        },
+        subEdition: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            coverImageUrl: true,
+            district: { select: { name: true } },
+            edition: { select: { id: true, name: true, slug: true } }
+          }
+        }
+      }
+    });
+
+    // Format response
+    const papers = issues.map((issue: any) => ({
+      id: issue.id,
+      tenant: {
+        id: issue.tenant.id,
+        name: issue.tenant.name,
+        nativeName: issue.tenant.entity?.nativeName || null,
+        logoUrl: issue.tenant.theme?.logoUrl || null
+      },
+      issueDate: issue.issueDate,
+      coverImageUrl: issue.coverImageUrlWebp || issue.coverImageUrl || issue.edition?.coverImageUrl || issue.subEdition?.coverImageUrl || null,
+      pdfUrl: issue.pdfUrl,
+      pageCount: issue.pageCount,
+      edition: issue.edition ? {
+        id: issue.edition.id,
+        name: issue.edition.name,
+        slug: issue.edition.slug,
+        stateName: issue.edition.state?.name || null
+      } : (issue.subEdition?.edition ? {
+        id: issue.subEdition.edition.id,
+        name: issue.subEdition.edition.name,
+        slug: issue.subEdition.edition.slug
+      } : null),
+      subEdition: issue.subEdition ? {
+        id: issue.subEdition.id,
+        name: issue.subEdition.name,
+        districtName: issue.subEdition.district?.name || null
+      } : null
+    }));
+
+    return res.json({
+      papers,
+      meta: {
+        total: papers.length,
+        filterDate: req.query.date || 'today',
+        timestamp: new Date().toISOString(),
+        cacheAge: 300
+      }
+    });
+  } catch (error: any) {
+    console.error('Error in /digital-papers/all-tenants:', error);
+    return res.status(500).json({
+      error: 'Failed to load all tenant papers',
+      code: error?.code || error?.name || 'UNKNOWN_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
  * /public/digital-papers/{issueId}:
  *   get:
  *     summary: 📄 Get all pages of an ePaper issue (Digital Paper Detail)
@@ -1703,164 +1861,6 @@ router.get('/digital-papers/:issueId', async (req, res) => {
     console.error('Error in /digital-papers/:issueId:', error);
     return res.status(500).json({
       error: 'Failed to load digital paper pages',
-      code: error?.code || error?.name || 'UNKNOWN_ERROR'
-    });
-  }
-});
-
-/**
- * @swagger
- * /public/digital-papers/all-tenants:
- *   get:
- *     summary: 📚 Get ePaper issues from ALL tenants (App Gallery)
- *     description: |
- *       🗞️ **DIGITAL DAILY NEWSPAPER - Multi-Tenant Gallery**
- *       
- *       Returns ePaper issues from ALL tenants for app-wide newspaper gallery.
- *       Perfect for "All Papers" section in mobile app.
- *       
- *       **Features:**
- *       - Issues from all active tenants
- *       - Cover images for swipe gallery
- *       - Tenant branding (name, logo)
- *       - Filter by date
- *       
- *       **Use Case:**
- *       - App home screen showing all available newspapers
- *       - User can swipe through different newspaper brands
- *       
- *       **Cache:** ISR 300s (5 minutes)
- *     tags: [Digital Daily Newspaper]
- *     parameters:
- *       - in: query
- *         name: date
- *         schema: { type: string, format: date }
- *         description: Filter by date (default is today)
- *       - in: query
- *         name: limit
- *         schema: { type: integer, default: 50, maximum: 200 }
- *     responses:
- *       200:
- *         description: List of ePaper issues from all tenants
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 papers:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: string }
- *                       tenant: { type: object }
- *                       issueDate: { type: string }
- *                       coverImageUrl: { type: string }
- *                       pageCount: { type: integer }
- *                       edition: { type: object }
- */
-router.get('/digital-papers/all-tenants', async (req, res) => {
-  try {
-    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
-
-    // Date filter
-    let dateFilter: any = {};
-    if (req.query.date) {
-      const targetDate = new Date(String(req.query.date));
-      targetDate.setHours(0, 0, 0, 0);
-      const nextDay = new Date(targetDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-      dateFilter = { issueDate: { gte: targetDate, lt: nextDay } };
-    } else {
-      // Default: today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      dateFilter = { issueDate: { gte: today, lt: tomorrow } };
-    }
-
-    // Fetch issues from all tenants
-    const issues = await p.epaperPdfIssue.findMany({
-      where: dateFilter,
-      orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
-      include: {
-        tenant: {
-          select: {
-            id: true,
-            name: true,
-            nativeName: true,
-            tenantTheme: {
-              select: { logoUrl: true, faviconUrl: true }
-            }
-          }
-        },
-        edition: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            coverImageUrl: true,
-            state: { select: { name: true } }
-          }
-        },
-        subEdition: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            coverImageUrl: true,
-            district: { select: { name: true } },
-            edition: { select: { id: true, name: true, slug: true } }
-          }
-        }
-      }
-    });
-
-    // Format response
-    const papers = issues.map((issue: any) => ({
-      id: issue.id,
-      tenant: {
-        id: issue.tenant.id,
-        name: issue.tenant.name,
-        nativeName: issue.tenant.nativeName,
-        logoUrl: issue.tenant.tenantTheme?.logoUrl || null
-      },
-      issueDate: issue.issueDate,
-      coverImageUrl: issue.coverImageUrlWebp || issue.coverImageUrl || issue.edition?.coverImageUrl || issue.subEdition?.coverImageUrl || null,
-      pdfUrl: issue.pdfUrl,
-      pageCount: issue.pageCount,
-      edition: issue.edition ? {
-        id: issue.edition.id,
-        name: issue.edition.name,
-        slug: issue.edition.slug,
-        stateName: issue.edition.state?.name || null
-      } : (issue.subEdition?.edition ? {
-        id: issue.subEdition.edition.id,
-        name: issue.subEdition.edition.name,
-        slug: issue.subEdition.edition.slug
-      } : null),
-      subEdition: issue.subEdition ? {
-        id: issue.subEdition.id,
-        name: issue.subEdition.name,
-        districtName: issue.subEdition.district?.name || null
-      } : null
-    }));
-
-    return res.json({
-      papers,
-      meta: {
-        total: papers.length,
-        filterDate: req.query.date || 'today',
-        timestamp: new Date().toISOString(),
-        cacheAge: 300
-      }
-    });
-  } catch (error: any) {
-    console.error('Error in /digital-papers/all-tenants:', error);
-    return res.status(500).json({
-      error: 'Failed to load all tenant papers',
       code: error?.code || error?.name || 'UNKNOWN_ERROR'
     });
   }
