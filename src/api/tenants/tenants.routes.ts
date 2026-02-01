@@ -2023,4 +2023,395 @@ router.delete('/:tenantId/clear-bootstrap-content', auth, requireSuperOrTenantAd
  *       403: { description: Forbidden }
  */
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANT ENTITY PATCH API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/entity:
+ *   patch:
+ *     summary: Partially update PRGI/entity details for a Tenant
+ *     description: |
+ *       PATCH endpoint for partial updates to TenantEntity. Only provided fields are updated.
+ *       prgiNumber is immutable and cannot be updated.
+ *     tags: [Tenants]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               registrationTitle: { type: string }
+ *               nativeName: { type: string, nullable: true }
+ *               periodicity: { type: string, enum: [DAILY, WEEKLY, FORTNIGHTLY, MONTHLY] }
+ *               registrationDate: { type: string, description: "DD/MM/YYYY format" }
+ *               languageId: { type: string }
+ *               ownerName: { type: string }
+ *               publisherName: { type: string }
+ *               editorName: { type: string }
+ *               publicationCountryId: { type: string }
+ *               publicationStateId: { type: string }
+ *               publicationDistrictId: { type: string }
+ *               publicationMandalId: { type: string }
+ *               printingPressName: { type: string }
+ *               printingDistrictId: { type: string }
+ *               printingMandalId: { type: string }
+ *               printingCityName: { type: string }
+ *               address: { type: string }
+ *               contactMobile: { type: string }
+ *               contactEmail: { type: string }
+ *               contactPerson: { type: string }
+ *           examples:
+ *             updateContact:
+ *               summary: Update contact details only
+ *               value:
+ *                 contactMobile: "9876543210"
+ *                 contactEmail: "contact@example.com"
+ *             updateEditor:
+ *               summary: Update editor name
+ *               value:
+ *                 editorName: "SRINIVAS RAO"
+ *     responses:
+ *       200:
+ *         description: Updated TenantEntity with relations
+ *       400:
+ *         description: Validation error (e.g., prgiNumber update attempted)
+ *       404:
+ *         description: Entity not found for tenant
+ */
+router.patch('/:tenantId/entity', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const existing = await (prisma as any).tenantEntity.findUnique({ where: { tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Entity details not found for tenant' });
+
+    const body = req.body || {};
+
+    // Enforce immutability of prgiNumber
+    if (typeof body.prgiNumber === 'string' && body.prgiNumber.trim() && body.prgiNumber.trim() !== existing.prgiNumber) {
+      return res.status(400).json({ error: 'prgiNumber cannot be updated once created' });
+    }
+
+    // Build update data - only include fields that are provided
+    const updateData: any = {};
+
+    // String fields
+    const stringFields = [
+      'registrationTitle', 'nativeName', 'ownerName', 'publisherName', 'editorName',
+      'printingPressName', 'printingCityName', 'address',
+      'contactMobile', 'contactEmail', 'contactPerson'
+    ];
+    for (const field of stringFields) {
+      if (body[field] !== undefined) {
+        updateData[field] = typeof body[field] === 'string' ? body[field].trim() || null : null;
+      }
+    }
+
+    // ID reference fields
+    const idFields = [
+      'languageId', 'publicationCountryId', 'publicationStateId', 'publicationDistrictId',
+      'publicationMandalId', 'printingDistrictId', 'printingMandalId'
+    ];
+    for (const field of idFields) {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field] || null;
+      }
+    }
+
+    // Periodicity enum
+    if (body.periodicity !== undefined) {
+      const val = String(body.periodicity || 'DAILY').toUpperCase();
+      if (['DAILY', 'WEEKLY', 'FORTNIGHTLY', 'MONTHLY'].includes(val)) {
+        updateData.periodicity = val;
+      }
+    }
+
+    // Registration date
+    if (body.registrationDate !== undefined) {
+      const parsed = parseDateDDMMYYYY(body.registrationDate);
+      updateData.registrationDate = parsed || null;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided to update' });
+    }
+
+    const row = await (prisma as any).tenantEntity.update({
+      where: { tenantId },
+      data: updateData,
+      include: {
+        language: true,
+        publicationCountry: true,
+        publicationState: true,
+        publicationDistrict: true,
+        publicationMandal: true,
+        printingDistrict: true,
+        printingMandal: true,
+        tenant: { select: { id: true, name: true, slug: true, prgiNumber: true, prgiStatus: true } },
+      }
+    });
+    return res.json(row);
+  } catch (e: any) {
+    console.error('entity patch error', e);
+    return res.status(500).json({ error: 'Failed to patch entity details' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRGI CERTIFICATE/DOCUMENTS UPLOAD APIs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/prgi-documents:
+ *   get:
+ *     summary: Get PRGI documents/certificates for a tenant
+ *     description: Returns the prgiDocuments JSON field from Tenant model containing certificate URLs
+ *     tags: [PRGI Verification]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: PRGI documents info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 tenantId: { type: string }
+ *                 prgiDocuments:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     certificateUrl: { type: string }
+ *                     certificateUploadedAt: { type: string }
+ *                     additionalDocs: { type: array, items: { type: object } }
+ *       404:
+ *         description: Tenant not found
+ */
+router.get('/:tenantId/prgi-documents', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const tenant = await (prisma as any).tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, prgiNumber: true, prgiStatus: true, prgiDocuments: true }
+    });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    return res.json({
+      tenantId: tenant.id,
+      prgiNumber: tenant.prgiNumber,
+      prgiStatus: tenant.prgiStatus,
+      prgiDocuments: tenant.prgiDocuments || null
+    });
+  } catch (e: any) {
+    console.error('prgi-documents get error', e);
+    return res.status(500).json({ error: 'Failed to fetch PRGI documents' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/prgi-documents:
+ *   put:
+ *     summary: Update PRGI documents/certificates for a tenant
+ *     description: |
+ *       Sets or updates the prgiDocuments JSON field. Provide already-uploaded URLs.
+ *       For uploading files, use /media/upload first, then pass the URL here.
+ *     tags: [PRGI Verification]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               certificateUrl:
+ *                 type: string
+ *                 description: Main PRGI certificate URL (uploaded via /media/upload)
+ *               additionalDocs:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name: { type: string }
+ *                     url: { type: string }
+ *                 description: Additional supporting documents
+ *           examples:
+ *             setCertificate:
+ *               summary: Set main certificate
+ *               value:
+ *                 certificateUrl: "https://cdn.example.com/prgi/tenant123/certificate.pdf"
+ *             withAdditionalDocs:
+ *               summary: Certificate with additional docs
+ *               value:
+ *                 certificateUrl: "https://cdn.example.com/prgi/tenant123/certificate.pdf"
+ *                 additionalDocs:
+ *                   - name: "ID Proof"
+ *                     url: "https://cdn.example.com/prgi/tenant123/id-proof.pdf"
+ *                   - name: "Address Proof"
+ *                     url: "https://cdn.example.com/prgi/tenant123/address.pdf"
+ *     responses:
+ *       200:
+ *         description: Updated tenant with prgiDocuments
+ *       404:
+ *         description: Tenant not found
+ */
+router.put('/:tenantId/prgi-documents', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const body = req.body || {};
+    const existingDocs = (tenant.prgiDocuments as Record<string, any>) || {};
+
+    const updatedDocs: Record<string, any> = { ...existingDocs };
+
+    if (body.certificateUrl !== undefined) {
+      updatedDocs.certificateUrl = body.certificateUrl || null;
+      updatedDocs.certificateUploadedAt = body.certificateUrl ? new Date().toISOString() : null;
+    }
+
+    if (body.additionalDocs !== undefined) {
+      updatedDocs.additionalDocs = Array.isArray(body.additionalDocs) ? body.additionalDocs : [];
+    }
+
+    const updated = await (prisma as any).tenant.update({
+      where: { id: tenantId },
+      data: { prgiDocuments: updatedDocs },
+      select: { id: true, prgiNumber: true, prgiStatus: true, prgiDocuments: true }
+    });
+
+    return res.json({
+      tenantId: updated.id,
+      prgiNumber: updated.prgiNumber,
+      prgiStatus: updated.prgiStatus,
+      prgiDocuments: updated.prgiDocuments
+    });
+  } catch (e: any) {
+    console.error('prgi-documents update error', e);
+    return res.status(500).json({ error: 'Failed to update PRGI documents' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/prgi-documents:
+ *   patch:
+ *     summary: Partially update PRGI documents (add/update individual fields)
+ *     description: |
+ *       Merges provided fields into existing prgiDocuments JSON.
+ *       Use this to add a single document without overwriting everything.
+ *     tags: [PRGI Verification]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               certificateUrl: { type: string }
+ *               addDoc:
+ *                 type: object
+ *                 description: Add a single document to additionalDocs array
+ *                 properties:
+ *                   name: { type: string }
+ *                   url: { type: string }
+ *               removeDocUrl:
+ *                 type: string
+ *                 description: URL of document to remove from additionalDocs
+ *           examples:
+ *             addCertificate:
+ *               summary: Add/update certificate
+ *               value:
+ *                 certificateUrl: "https://cdn.example.com/prgi/cert.pdf"
+ *             addAdditionalDoc:
+ *               summary: Add an additional document
+ *               value:
+ *                 addDoc:
+ *                   name: "GST Certificate"
+ *                   url: "https://cdn.example.com/prgi/gst.pdf"
+ *     responses:
+ *       200:
+ *         description: Updated prgiDocuments
+ *       404:
+ *         description: Tenant not found
+ */
+router.patch('/:tenantId/prgi-documents', auth, requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const body = req.body || {};
+    const existingDocs = (tenant.prgiDocuments as Record<string, any>) || {};
+
+    const updatedDocs: Record<string, any> = { ...existingDocs };
+
+    // Update certificate URL
+    if (body.certificateUrl !== undefined) {
+      updatedDocs.certificateUrl = body.certificateUrl || null;
+      updatedDocs.certificateUploadedAt = body.certificateUrl ? new Date().toISOString() : null;
+    }
+
+    // Add a single document to additionalDocs
+    if (body.addDoc && typeof body.addDoc === 'object' && body.addDoc.url) {
+      const docs = Array.isArray(updatedDocs.additionalDocs) ? [...updatedDocs.additionalDocs] : [];
+      docs.push({
+        name: body.addDoc.name || 'Document',
+        url: body.addDoc.url,
+        addedAt: new Date().toISOString()
+      });
+      updatedDocs.additionalDocs = docs;
+    }
+
+    // Remove a document by URL
+    if (body.removeDocUrl && typeof body.removeDocUrl === 'string') {
+      const docs = Array.isArray(updatedDocs.additionalDocs) ? updatedDocs.additionalDocs : [];
+      updatedDocs.additionalDocs = docs.filter((d: any) => d.url !== body.removeDocUrl);
+    }
+
+    const updated = await (prisma as any).tenant.update({
+      where: { id: tenantId },
+      data: { prgiDocuments: updatedDocs },
+      select: { id: true, prgiNumber: true, prgiStatus: true, prgiDocuments: true }
+    });
+
+    return res.json({
+      tenantId: updated.id,
+      prgiNumber: updated.prgiNumber,
+      prgiStatus: updated.prgiStatus,
+      prgiDocuments: updated.prgiDocuments
+    });
+  } catch (e: any) {
+    console.error('prgi-documents patch error', e);
+    return res.status(500).json({ error: 'Failed to patch PRGI documents' });
+  }
+});
+
 export default router;
