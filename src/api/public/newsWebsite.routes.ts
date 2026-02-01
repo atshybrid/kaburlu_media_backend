@@ -1617,6 +1617,14 @@ router.get('/digital-papers/all-tenants', async (req, res) => {
             entity: { select: { nativeName: true } },
             theme: {
               select: { logoUrl: true, faviconUrl: true }
+            },
+            // Include primary domain settings for logo fallback
+            domains: {
+              where: { isPrimary: true },
+              take: 1,
+              select: {
+                settings: { select: { data: true } }
+              }
             }
           }
         },
@@ -1643,34 +1651,42 @@ router.get('/digital-papers/all-tenants', async (req, res) => {
     });
 
     // Format response
-    const papers = issues.map((issue: any) => ({
-      id: issue.id,
-      tenant: {
-        id: issue.tenant.id,
-        name: issue.tenant.name,
-        nativeName: issue.tenant.entity?.nativeName || null,
-        logoUrl: issue.tenant.theme?.logoUrl || null
-      },
-      issueDate: issue.issueDate,
-      coverImageUrl: issue.coverImageUrlWebp || issue.coverImageUrl || issue.edition?.coverImageUrl || issue.subEdition?.coverImageUrl || null,
-      pdfUrl: issue.pdfUrl,
-      pageCount: issue.pageCount,
-      edition: issue.edition ? {
-        id: issue.edition.id,
-        name: issue.edition.name,
-        slug: issue.edition.slug,
-        stateName: issue.edition.state?.name || null
-      } : (issue.subEdition?.edition ? {
-        id: issue.subEdition.edition.id,
-        name: issue.subEdition.edition.name,
-        slug: issue.subEdition.edition.slug
-      } : null),
-      subEdition: issue.subEdition ? {
-        id: issue.subEdition.id,
-        name: issue.subEdition.name,
-        districtName: issue.subEdition.district?.name || null
-      } : null
-    }));
+    const papers = issues.map((issue: any) => {
+      // Get logo from TenantTheme first, fallback to primary domain settings
+      const themeLogoUrl = issue.tenant.theme?.logoUrl;
+      const domainSettings = issue.tenant.domains?.[0]?.settings?.data as Record<string, any> | null;
+      const domainLogoUrl = domainSettings?.logoUrl || domainSettings?.branding?.logoUrl;
+      const logoUrl = themeLogoUrl || domainLogoUrl || null;
+
+      return {
+        id: issue.id,
+        tenant: {
+          id: issue.tenant.id,
+          name: issue.tenant.name,
+          nativeName: issue.tenant.entity?.nativeName || null,
+          logoUrl
+        },
+        issueDate: issue.issueDate,
+        coverImageUrl: issue.coverImageUrlWebp || issue.coverImageUrl || issue.edition?.coverImageUrl || issue.subEdition?.coverImageUrl || null,
+        pdfUrl: issue.pdfUrl,
+        pageCount: issue.pageCount,
+        edition: issue.edition ? {
+          id: issue.edition.id,
+          name: issue.edition.name,
+          slug: issue.edition.slug,
+          stateName: issue.edition.state?.name || null
+        } : (issue.subEdition?.edition ? {
+          id: issue.subEdition.edition.id,
+          name: issue.subEdition.edition.name,
+          slug: issue.subEdition.edition.slug
+        } : null),
+        subEdition: issue.subEdition ? {
+          id: issue.subEdition.id,
+          name: issue.subEdition.name,
+          districtName: issue.subEdition.district?.name || null
+        } : null
+      };
+    });
 
     return res.json({
       papers,
