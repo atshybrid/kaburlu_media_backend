@@ -2,6 +2,16 @@
 import swaggerJSDoc from 'swagger-jsdoc';
 import { userSwagger } from '../api/users/users.swagger';
 
+/**
+ * ⚠️ IMPORTANT: Swagger Spec Generation
+ * 
+ * The Swagger spec is generated ONCE at application startup when this module is imported.
+ * Any changes to API routes, JSDoc comments, or Swagger annotations require a full process restart.
+ * 
+ * Production deployment MUST include: pm2 restart kaburlu-api
+ * Never use: pm2 reload (keeps old process in memory)
+ */
+
 function toPosixPath(p: string) {
   return p.replace(/\\/g, '/');
 }

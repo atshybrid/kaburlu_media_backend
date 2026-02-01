@@ -35,5 +35,6 @@ jobs:
             npx prisma generate
             npm run build
             
-            pm2 reload kaburlu-api || pm2 start npm --name kaburlu-api -- start
+            # CRITICAL: Always restart to reload Swagger spec and new APIs
+            pm2 restart kaburlu-api || pm2 start dist/index.js --name kaburlu-api
             pm2 save
