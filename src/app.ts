@@ -79,6 +79,14 @@ import universalLinksRoutes from './api/universal-links/universal-links.routes';
 
 const app = express();
 
+// Swagger helpers
+const noStore = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+
 /**
  * CORS configuration
  *
@@ -226,10 +234,29 @@ try {
 }
 
 // Swagger UI
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Serve Swagger JSON (useful for clients and avoids stale cached UI/spec in production)
+app.get('/api/docs-json', noStore, (_req, res) => res.json(swaggerSpec));
+app.get('/api/v1/docs-json', noStore, (_req, res) => res.json(swaggerSpec));
+
+// Swagger UI (always loads live spec from the JSON endpoints)
+app.use(
+  '/api/docs',
+  noStore,
+  swaggerUi.serve,
+  swaggerUi.setup(undefined, {
+    swaggerOptions: { url: '/api/docs-json' }
+  })
+);
 // Also expose docs under the versioned base for convenience
 app.use('/api/v1', settingsRouter);
-app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use(
+  '/api/v1/docs',
+  noStore,
+  swaggerUi.serve,
+  swaggerUi.setup(undefined, {
+    swaggerOptions: { url: '/api/v1/docs-json' }
+  })
+);
 
 // API Routes (no version prefix) - legacy support
 app.use('/articles', articlesRoutes);
