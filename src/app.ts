@@ -63,6 +63,7 @@ import aiUnifiedRoutes from './api/ai/ai.unified.routes';
 import dashboardRoutes from './api/dashboard/dashboard.routes';
 import aiNewspaperRewriteRoutes from './api/ainewspaper/ainewspaper.routes';
 import locationAiRoutes from './api/locationAi/locationAi.routes';
+import locationManualRoutes from './api/locationAi/locationManual.routes';
 import locationStatusRoutes from './api/locationStatus/locationStatus.routes';
 import metaRoutes from './api/meta/meta.routes';
 import familyRoutes from './api/family/family.routes';
@@ -307,6 +308,7 @@ app.use('/prompts', promptsRoutes);
 app.use('/ai', aiTestRoutes);
 app.use('/', aiNewspaperRewriteRoutes);
 app.use('/location', locationAiRoutes);
+app.use('/location', locationManualRoutes);
 app.use('/location', locationStatusRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/shortnews-options', shortnewsOptionsRouter);
@@ -371,6 +373,7 @@ apiV1.use('/ai', aiTestRoutes);
 apiV1.use('/ai', aiUnifiedRoutes);  // NEW: Unified Newsroom AI Agent
 apiV1.use('/', aiNewspaperRewriteRoutes);  // DEPRECATED: Use /ai/rewrite/unified instead
 apiV1.use('/location', locationAiRoutes);
+apiV1.use('/location', locationManualRoutes);
 apiV1.use('/location', locationStatusRoutes);
 apiV1.use('/preferences', preferencesRoutes);
 apiV1.use('/shortnews-options', shortnewsOptionsRouter);
