@@ -45,7 +45,11 @@ function httpError(status: number, payload: any) {
 function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId'; id: string } {
   if (level === 'STATE') return { field: 'stateId', id: String(body?.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body?.districtId || '') };
-  if (level === 'ASSEMBLY') return { field: 'assemblyConstituencyId', id: String(body?.assemblyConstituencyId || '') };
+  if (level === 'ASSEMBLY') {
+    // Accept assemblyConstituencyId directly, or fall back to mandalId for backward compatibility
+    const assemblyId = String(body?.assemblyConstituencyId || body?.mandalId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId };
+  }
   return { field: 'mandalId', id: String(body?.mandalId || '') };
 }
 
