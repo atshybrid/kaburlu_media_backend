@@ -311,6 +311,37 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
       }
     });
 
+    // Auto-create or update TenantEntity with admin contact info
+    let tenantEntity = await prisma.tenantEntity.findUnique({
+      where: { tenantId }
+    });
+    if (!tenantEntity) {
+      // Create new TenantEntity with admin contact info
+      // Generate temporary PRGI number (will be updated later via PATCH)
+      const tempPrgiNumber = `TEMP-${tenantId.slice(0, 8)}`;
+      tenantEntity = await prisma.tenantEntity.create({
+        data: {
+          tenantId,
+          prgiNumber: tempPrgiNumber,
+          contactPerson: fullName,
+          contactMobile: cleanMobile,
+          contactEmail: email || null,
+        }
+      });
+      console.log(`[TenantAdmins] Auto-created TenantEntity for tenant=${tenant.name}`);
+    } else if (!tenantEntity.contactMobile || !tenantEntity.contactPerson) {
+      // Update existing TenantEntity if contact info is missing
+      tenantEntity = await prisma.tenantEntity.update({
+        where: { tenantId },
+        data: {
+          contactPerson: tenantEntity.contactPerson || fullName,
+          contactMobile: tenantEntity.contactMobile || cleanMobile,
+          contactEmail: tenantEntity.contactEmail || email || null,
+        }
+      });
+      console.log(`[TenantAdmins] Updated TenantEntity contact info for tenant=${tenant.name}`);
+    }
+
     console.log(`[TenantAdmins] Created: userId=${user.id}, reporterId=${reporter.id}, tenant=${tenant.name}`);
 
     res.status(201).json({
