@@ -742,7 +742,7 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *         application/json:
  *           schema:
  *             type: object
- *             required: [areaName, stateId]
+ *             required: [areaName]
  *             properties:
  *               areaName:
  *                 type: string
@@ -750,7 +750,7 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *                 description: Name of area to add (English)
  *               stateId:
  *                 type: string
- *                 description: State ID (required)
+ *                 description: State ID (required for districts, optional for mandals if parentDistrictName provided)
  *               stateName:
  *                 type: string
  *                 description: State name (alternative to stateId)
@@ -792,26 +792,51 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
       return res.status(400).json({ error: 'areaName is required' });
     }
 
-    if (!stateId && !stateName) {
-      return res.status(400).json({ error: 'Either stateId or stateName is required' });
-    }
-
-    // Get state
+    // Get state (can be inferred from parentDistrictName for mandals)
     let state;
-    if (stateId) {
-      state = await prisma.state.findUnique({
-        where: { id: stateId },
-        include: { translations: true }
+    
+    if (stateId || stateName) {
+      // State provided directly
+      if (stateId) {
+        state = await prisma.state.findUnique({
+          where: { id: stateId },
+          include: { translations: true }
+        });
+      } else {
+        state = await prisma.state.findFirst({
+          where: { name: { equals: stateName.trim(), mode: 'insensitive' } },
+          include: { translations: true }
+        });
+      }
+      
+      if (!state) {
+        return res.status(404).json({ error: 'State not found' });
+      }
+    } else if (parentDistrictName) {
+      // For mandals: infer state from parent district
+      const parentDistrict = await prisma.district.findFirst({
+        where: {
+          name: { equals: parentDistrictName.trim(), mode: 'insensitive' },
+          isDeleted: false
+        },
+        include: { 
+          state: { include: { translations: true } }
+        }
       });
+      
+      if (!parentDistrict) {
+        return res.status(404).json({ 
+          error: 'Parent district not found',
+          hint: 'Provide stateId/stateName along with parentDistrictName'
+        });
+      }
+      
+      state = parentDistrict.state;
     } else {
-      state = await prisma.state.findFirst({
-        where: { name: { equals: stateName.trim(), mode: 'insensitive' } },
-        include: { translations: true }
+      return res.status(400).json({ 
+        error: 'Either stateId/stateName or parentDistrictName is required',
+        hint: 'For districts: provide stateId/stateName. For mandals: provide parentDistrictName (state will be inferred)'
       });
-    }
-
-    if (!state) {
-      return res.status(404).json({ error: 'State not found' });
     }
 
     const stateName_actual = state.name;
