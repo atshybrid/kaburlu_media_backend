@@ -871,7 +871,11 @@ Respond ONLY with valid JSON in this exact format:
       });
 
       try {
-        const detection = JSON.parse(aiResponse.text.trim());
+        // Strip markdown code blocks if present
+        let cleanResponse = aiResponse.text.trim();
+        cleanResponse = cleanResponse.replace(/^```json\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+        
+        const detection = JSON.parse(cleanResponse);
         locationType = detection.type;
         
         if (!['district', 'mandal'].includes(locationType)) {
@@ -936,7 +940,11 @@ Respond ONLY with valid JSON:
         });
 
         try {
-          const districtResult = JSON.parse(districtAI.text.trim());
+          // Strip markdown code blocks if present
+          let cleanResponse = districtAI.text.trim();
+          cleanResponse = cleanResponse.replace(/^```json\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+          
+          const districtResult = JSON.parse(cleanResponse);
           const foundDistrict = districts.find(d => 
             d.name.toLowerCase() === districtResult.districtName.toLowerCase()
           );
