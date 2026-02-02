@@ -53,6 +53,54 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
   return { field: 'mandalId', id: String(body?.mandalId || '') };
 }
 
+async function validateLocationExists(level: ReporterLevelInput, locationId: string): Promise<{ valid: boolean; error?: string }> {
+  if (!locationId) return { valid: false, error: 'Location ID is required' };
+
+  try {
+    if (level === 'STATE') {
+      const state = await p.state.findUnique({ where: { id: locationId } });
+      if (!state) return { valid: false, error: 'State not found' };
+      return { valid: true };
+    }
+
+    if (level === 'DISTRICT') {
+      const district = await p.district.findUnique({ 
+        where: { id: locationId, isDeleted: false } 
+      });
+      if (!district) return { valid: false, error: 'District not found' };
+      return { valid: true };
+    }
+
+    if (level === 'ASSEMBLY') {
+      // For ASSEMBLY, check if it's a valid district OR mandal (backward compatibility)
+      const district = await p.district.findUnique({ 
+        where: { id: locationId, isDeleted: false } 
+      });
+      if (district) return { valid: true };
+
+      const mandal = await p.mandal.findUnique({ 
+        where: { id: locationId, isDeleted: false } 
+      });
+      if (mandal) return { valid: true };
+
+      return { valid: false, error: 'District or Mandal not found for ASSEMBLY level' };
+    }
+
+    if (level === 'MANDAL') {
+      const mandal = await p.mandal.findUnique({ 
+        where: { id: locationId, isDeleted: false } 
+      });
+      if (!mandal) return { valid: false, error: 'Mandal not found' };
+      return { valid: true };
+    }
+
+    return { valid: false, error: 'Invalid level' };
+  } catch (error) {
+    console.error('[validateLocationExists] Error:', error);
+    return { valid: false, error: 'Failed to validate location' };
+  }
+}
+
 function pickReporterLimitMax(settingsData: any, input: { designationId: string; level: ReporterLevelInput; location: { field: string; id: string } }): number | undefined {
   const limits = settingsData?.reporterLimits;
   // Limits are always enforced.
@@ -388,6 +436,17 @@ router.post('/tenants/:tenantId/reporters/availability', async (req, res) => {
 
     const loc = getLocationKeyFromLevel(level, body);
     if (!loc.id) return res.status(400).json({ error: `${loc.field} is required for level ${level}` });
+
+    // Validate location exists in database
+    const locationValidation = await validateLocationExists(level, loc.id);
+    if (!locationValidation.valid) {
+      return res.status(404).json({ 
+        error: locationValidation.error,
+        field: loc.field,
+        value: loc.id,
+        level
+      });
+    }
 
     const { effectiveDesignationId, designationIds } = await resolveTenantDesignationContext({ tenantId, designationId, level });
 
