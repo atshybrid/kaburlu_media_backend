@@ -742,15 +742,24 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *         application/json:
  *           schema:
  *             type: object
- *             required: [areaName, tenantId]
+ *             required: [areaName, stateId]
  *             properties:
  *               areaName:
  *                 type: string
  *                 example: "Kamareddy"
  *                 description: Name of area to add (English)
- *               tenantId:
+ *               stateId:
  *                 type: string
- *                 description: Tenant ID for state context
+ *                 description: State ID (required)
+ *               stateName:
+ *                 type: string
+ *                 description: State name (alternative to stateId)
+ *                 example: "Telangana"
+ *               languageCode:
+ *                 type: string
+ *                 description: Language code for translation (default 'en')
+ *                 example: "te"
+ *                 enum: [en, te, hi, kn, ta, ml]
  *               forceType:
  *                 type: string
  *                 enum: [district, mandal]
@@ -777,52 +786,52 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  */
 router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
   try {
-    const { areaName, tenantId, forceType, parentDistrictName } = req.body;
+    const { areaName, stateId, stateName, languageCode, forceType, parentDistrictName } = req.body;
 
-    if (!areaName || !tenantId) {
-      return res.status(400).json({ error: 'areaName and tenantId are required' });
+    if (!areaName) {
+      return res.status(400).json({ error: 'areaName is required' });
     }
 
-    // Get tenant with state info
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: {
-        state: {
-          include: { translations: true }
-        }
-      }
-    });
-
-    if (!tenant || !tenant.state) {
-      return res.status(404).json({ error: 'Tenant or state not found' });
+    if (!stateId && !stateName) {
+      return res.status(400).json({ error: 'Either stateId or stateName is required' });
     }
 
-    const state = tenant.state;
-    const stateName = state.name;
+    // Get state
+    let state;
+    if (stateId) {
+      state = await prisma.state.findUnique({
+        where: { id: stateId },
+        include: { translations: true }
+      });
+    } else {
+      state = await prisma.state.findFirst({
+        where: { name: { equals: stateName.trim(), mode: 'insensitive' } },
+        include: { translations: true }
+      });
+    }
 
-    // Check tenant language (get from primary domain)
-    const primaryDomain = await prisma.domain.findFirst({
-      where: { tenantId, isPrimary: true },
-      include: { 
-        languages: {
-          include: { language: true }
-        }
-      }
-    });
-    const needsTeluguTranslation = primaryDomain?.languages?.[0]?.language?.code === 'te';
+    if (!state) {
+      return res.status(404).json({ error: 'State not found' });
+    }
+
+    const stateName_actual = state.name;
+
+    // Determine translation language (default to English)
+    const targetLanguage = languageCode?.toLowerCase() || 'en';
+    const needsTranslation = targetLanguage !== 'en';
 
     // Step 1: AI detection - is it district or mandal?
     let locationType = forceType;
     let parentDistrictId: string | null = null;
-    let teluguName: string | null = null;
+    let translatedName: string | null = null;
 
     if (!locationType) {
       const detectionPrompt = `You are a location classifier for Indian administrative divisions.
       
-State: ${stateName}
+State: ${stateName_actual}
 Area Name: ${areaName}
 
-Determine if "${areaName}" is a DISTRICT or MANDAL (sub-district) in ${stateName} state.
+Determine if "${areaName}" is a DISTRICT or MANDAL (sub-district) in ${stateName_actual} state.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -884,7 +893,7 @@ Respond ONLY with valid JSON in this exact format:
 
         const districtDetectionPrompt = `You are helping identify which district a mandal belongs to.
 
-State: ${stateName}
+State: ${stateName_actual}
 Mandal Name: ${areaName}
 Available Districts: ${districts.map(d => d.name).join(', ')}
 
@@ -924,22 +933,32 @@ Respond ONLY with valid JSON:
       }
     }
 
-    // Step 3: Get Telugu translation if needed
-    if (needsTeluguTranslation) {
-      const translationPrompt = `Translate this location name to Telugu script:
+    // Step 3: Get translation if needed
+    if (needsTranslation) {
+      const languageMap: { [key: string]: string } = {
+        'te': 'Telugu',
+        'hi': 'Hindi',
+        'kn': 'Kannada',
+        'ta': 'Tamil',
+        'ml': 'Malayalam'
+      };
+      
+      const targetLanguageName = languageMap[targetLanguage] || targetLanguage.toUpperCase();
+      
+      const translationPrompt = `Translate this location name to ${targetLanguageName} script:
 
 English: ${areaName}
 Location Type: ${locationType}
-State: ${stateName}
+State: ${stateName_actual}
 
-Provide ONLY the Telugu translation, nothing else. Use proper Telugu script (తెలుగు).`;
+Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${targetLanguageName} script.`;
 
       const translationAI = await aiGenerateText({
         prompt: translationPrompt,
         purpose: 'translation'
       });
 
-      teluguName = translationAI.text.trim().replace(/['"]/g, '');
+      translatedName = translationAI.text.trim().replace(/['"]/g, '');
     }
 
     // Step 4: Create location
@@ -968,14 +987,14 @@ Provide ONLY the Telugu translation, nothing else. Use proper Telugu script (త
         }
       });
 
-      // Add Telugu translation
+      // Add translation
       let translation = null;
-      if (teluguName) {
+      if (translatedName) {
         translation = await prisma.districtTranslation.create({
           data: {
             districtId: district.id,
-            language: 'te',
-            name: teluguName
+            language: targetLanguage,
+            name: translatedName
           }
         });
       }
@@ -1018,14 +1037,14 @@ Provide ONLY the Telugu translation, nothing else. Use proper Telugu script (త
         }
       });
 
-      // Add Telugu translation
+      // Add translation
       let translation = null;
-      if (teluguName) {
+      if (translatedName) {
         translation = await prisma.mandalTranslation.create({
           data: {
             mandalId: mandal.id,
-            language: 'te',
-            name: teluguName
+            language: targetLanguage,
+            name: translatedName
           }
         });
       }
