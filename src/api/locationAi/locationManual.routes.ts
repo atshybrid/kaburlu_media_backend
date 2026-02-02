@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdmin } from '../middlewares/authz';
+import { aiGenerateText } from '../../lib/aiProvider';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -719,6 +720,336 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
     });
   } catch (error: any) {
     return res.status(500).json({ error: 'Failed to delete translations', message: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /location/smart-add:
+ *   post:
+ *     summary: AI-powered location creation (auto-detects district/mandal)
+ *     description: |
+ *       Smart endpoint that uses AI to:
+ *       - Identify if area is district or mandal
+ *       - Find correct parent (state/district)
+ *       - Auto-translate to tenant language if Telugu
+ *       - Create location with translations
+ *     tags: [Location AI]
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [areaName, tenantId]
+ *             properties:
+ *               areaName:
+ *                 type: string
+ *                 example: "Kamareddy"
+ *                 description: Name of area to add (English)
+ *               tenantId:
+ *                 type: string
+ *                 description: Tenant ID for state context
+ *               forceType:
+ *                 type: string
+ *                 enum: [district, mandal]
+ *                 description: Override AI detection (optional)
+ *               parentDistrictName:
+ *                 type: string
+ *                 description: For mandals - specify parent district name (optional, AI will detect if not provided)
+ *     responses:
+ *       201:
+ *         description: Location created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 type: {type: string, example: "district"}
+ *                 location: {type: object}
+ *                 translation: {type: object}
+ *       400:
+ *         description: Validation error or AI detection failed
+ *       409:
+ *         description: Location already exists
+ */
+router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
+  try {
+    const { areaName, tenantId, forceType, parentDistrictName } = req.body;
+
+    if (!areaName || !tenantId) {
+      return res.status(400).json({ error: 'areaName and tenantId are required' });
+    }
+
+    // Get tenant with state info
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        state: {
+          include: { translations: true }
+        }
+      }
+    });
+
+    if (!tenant || !tenant.state) {
+      return res.status(404).json({ error: 'Tenant or state not found' });
+    }
+
+    const state = tenant.state;
+    const stateName = state.name;
+
+    // Check tenant language (get from primary domain)
+    const primaryDomain = await prisma.domain.findFirst({
+      where: { tenantId, isPrimary: true },
+      include: { 
+        languages: {
+          include: { language: true }
+        }
+      }
+    });
+    const needsTeluguTranslation = primaryDomain?.languages?.[0]?.language?.code === 'te';
+
+    // Step 1: AI detection - is it district or mandal?
+    let locationType = forceType;
+    let parentDistrictId: string | null = null;
+    let teluguName: string | null = null;
+
+    if (!locationType) {
+      const detectionPrompt = `You are a location classifier for Indian administrative divisions.
+      
+State: ${stateName}
+Area Name: ${areaName}
+
+Determine if "${areaName}" is a DISTRICT or MANDAL (sub-district) in ${stateName} state.
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "type": "district" or "mandal",
+  "confidence": "high" or "medium" or "low",
+  "reasoning": "brief explanation"
+}`;
+
+      const aiResponse = await aiGenerateText({
+        prompt: detectionPrompt,
+        purpose: 'translation'
+      });
+
+      try {
+        const detection = JSON.parse(aiResponse.text.trim());
+        locationType = detection.type;
+        
+        if (!['district', 'mandal'].includes(locationType)) {
+          return res.status(400).json({ 
+            error: 'AI could not determine location type',
+            aiResponse: detection 
+          });
+        }
+
+        if (detection.confidence === 'low') {
+          return res.status(400).json({
+            error: 'Low confidence in AI detection. Please specify forceType manually.',
+            suggestion: detection
+          });
+        }
+      } catch (e) {
+        return res.status(500).json({ 
+          error: 'Failed to parse AI response',
+          aiResponse: aiResponse.text 
+        });
+      }
+    }
+
+    // Step 2: If mandal, find parent district
+    if (locationType === 'mandal') {
+      if (parentDistrictName) {
+        const district = await prisma.district.findFirst({
+          where: {
+            stateId: state.id,
+            name: { equals: parentDistrictName.trim(), mode: 'insensitive' },
+            isDeleted: false
+          }
+        });
+        if (!district) {
+          return res.status(404).json({ error: 'Parent district not found', district: parentDistrictName });
+        }
+        parentDistrictId = district.id;
+      } else {
+        // AI detection of parent district
+        const districts = await prisma.district.findMany({
+          where: { stateId: state.id, isDeleted: false },
+          select: { id: true, name: true }
+        });
+
+        const districtDetectionPrompt = `You are helping identify which district a mandal belongs to.
+
+State: ${stateName}
+Mandal Name: ${areaName}
+Available Districts: ${districts.map(d => d.name).join(', ')}
+
+Which district does "${areaName}" mandal belong to?
+
+Respond ONLY with valid JSON:
+{
+  "districtName": "exact district name from the list",
+  "confidence": "high" or "medium" or "low"
+}`;
+
+        const districtAI = await aiGenerateText({
+          prompt: districtDetectionPrompt,
+          purpose: 'translation'
+        });
+
+        try {
+          const districtResult = JSON.parse(districtAI.text.trim());
+          const foundDistrict = districts.find(d => 
+            d.name.toLowerCase() === districtResult.districtName.toLowerCase()
+          );
+
+          if (!foundDistrict) {
+            return res.status(400).json({
+              error: 'Could not auto-detect parent district. Please provide parentDistrictName.',
+              aiSuggestion: districtResult
+            });
+          }
+
+          parentDistrictId = foundDistrict.id;
+        } catch (e) {
+          return res.status(400).json({
+            error: 'Parent district detection failed. Please provide parentDistrictName.',
+            aiResponse: districtAI.text
+          });
+        }
+      }
+    }
+
+    // Step 3: Get Telugu translation if needed
+    if (needsTeluguTranslation) {
+      const translationPrompt = `Translate this location name to Telugu script:
+
+English: ${areaName}
+Location Type: ${locationType}
+State: ${stateName}
+
+Provide ONLY the Telugu translation, nothing else. Use proper Telugu script (తెలుగు).`;
+
+      const translationAI = await aiGenerateText({
+        prompt: translationPrompt,
+        purpose: 'translation'
+      });
+
+      teluguName = translationAI.text.trim().replace(/['"]/g, '');
+    }
+
+    // Step 4: Create location
+    if (locationType === 'district') {
+      // Check if exists
+      const existing = await prisma.district.findFirst({
+        where: {
+          name: { equals: areaName.trim(), mode: 'insensitive' },
+          stateId: state.id,
+          isDeleted: false
+        }
+      });
+
+      if (existing) {
+        return res.status(409).json({ 
+          error: 'District already exists',
+          districtId: existing.id 
+        });
+      }
+
+      const district = await prisma.district.create({
+        data: { 
+          name: areaName.trim(),
+          stateId: state.id,
+          isDeleted: false 
+        }
+      });
+
+      // Add Telugu translation
+      let translation = null;
+      if (teluguName) {
+        translation = await prisma.districtTranslation.create({
+          data: {
+            districtId: district.id,
+            language: 'te',
+            name: teluguName
+          }
+        });
+      }
+
+      const result = await prisma.district.findUnique({
+        where: { id: district.id },
+        include: { translations: true, state: true }
+      });
+
+      return res.status(201).json({
+        success: true,
+        type: 'district',
+        location: result,
+        translation: translation,
+        aiDetected: !forceType
+      });
+
+    } else {
+      // Create mandal
+      const existing = await prisma.mandal.findFirst({
+        where: {
+          name: { equals: areaName.trim(), mode: 'insensitive' },
+          districtId: parentDistrictId!,
+          isDeleted: false
+        }
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: 'Mandal already exists',
+          mandalId: existing.id
+        });
+      }
+
+      const mandal = await prisma.mandal.create({
+        data: {
+          name: areaName.trim(),
+          districtId: parentDistrictId!,
+          isDeleted: false
+        }
+      });
+
+      // Add Telugu translation
+      let translation = null;
+      if (teluguName) {
+        translation = await prisma.mandalTranslation.create({
+          data: {
+            mandalId: mandal.id,
+            language: 'te',
+            name: teluguName
+          }
+        });
+      }
+
+      const result = await prisma.mandal.findUnique({
+        where: { id: mandal.id },
+        include: { translations: true, district: true }
+      });
+
+      return res.status(201).json({
+        success: true,
+        type: 'mandal',
+        location: result,
+        translation: translation,
+        aiDetected: !forceType
+      });
+    }
+
+  } catch (error: any) {
+    console.error('Smart location add error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to create location',
+      message: error.message 
+    });
   }
 });
 
