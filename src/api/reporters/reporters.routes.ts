@@ -85,7 +85,11 @@ function getLocationKeyFromLevel(
 ): { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId'; id: string } {
   if (level === 'STATE') return { field: 'stateId', id: String(body?.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body?.districtId || '') };
-  if (level === 'ASSEMBLY') return { field: 'assemblyConstituencyId', id: String(body?.assemblyConstituencyId || '') };
+  // ASSEMBLY level accepts assemblyConstituencyId OR mandalId (backward compatibility)
+  if (level === 'ASSEMBLY') {
+    const assemblyId = String(body?.assemblyConstituencyId || body?.mandalId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId };
+  }
   return { field: 'mandalId', id: String(body?.mandalId || '') };
 }
 

@@ -500,6 +500,11 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
   if (level === 'STATE') return { field: 'stateId', id: String(body.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body.districtId || '') };
   if (level === 'MANDAL') return { field: 'mandalId', id: String(body.mandalId || '') };
+  // ASSEMBLY level accepts assemblyConstituencyId OR mandalId (backward compatibility)
+  if (level === 'ASSEMBLY') {
+    const assemblyId = String(body.assemblyConstituencyId || body.mandalId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId };
+  }
   return { field: 'assemblyConstituencyId', id: String(body.assemblyConstituencyId || '') };
 }
 
