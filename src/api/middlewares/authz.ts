@@ -53,11 +53,12 @@ export function requireReporterOrAdmin(req: Request, res: Response, next: NextFu
   try {
     const user: any = (req as any).user;
     if (!user || !user.role) return res.status(401).json({ error: 'Unauthorized' });
-    const roleName = user.role.name;
+    const roleName = (user.role.name || '').toUpperCase();
     if (
       roleName === 'SUPER_ADMIN' ||
       roleName === 'SUPERADMIN' ||
       roleName === 'TENANT_ADMIN' ||
+      roleName === 'ADMIN' || // ← Added for backward compatibility
       roleName === 'TENANT_EDITOR' ||
       roleName === 'CHIEF_EDITOR' ||
       roleName === 'DESK_EDITOR' ||
@@ -69,7 +70,8 @@ export function requireReporterOrAdmin(req: Request, res: Response, next: NextFu
     ) {
       return next();
     }
-    return res.status(403).json({ error: 'Forbidden: Reporter or Admin only' });
+    console.warn('[Auth] 403 for role:', user.role.name, 'userId:', user.id);
+    return res.status(403).json({ error: 'Forbidden: Reporter or Admin only', role: user.role.name });
   } catch {
     return res.status(500).json({ error: 'Authorization check failed' });
   }
