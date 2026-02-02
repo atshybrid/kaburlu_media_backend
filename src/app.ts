@@ -7,7 +7,6 @@ import passport from 'passport';
 import cors, { CorsOptions } from 'cors';
 import jwtStrategy from './api/auth/jwt.strategy';
 import swaggerUi from 'swagger-ui-express';
-import swaggerSpec from './lib/swagger';
 
 import categoriesRoutes from './api/categories/categories.routes';
 import languagesRoutes from './api/languages/languages.routes';
@@ -236,8 +235,16 @@ try {
 
 // Swagger UI
 // Serve Swagger JSON (useful for clients and avoids stale cached UI/spec in production)
-app.get('/api/docs-json', noStore, (_req, res) => res.json(swaggerSpec));
-app.get('/api/v1/docs-json', noStore, (_req, res) => res.json(swaggerSpec));
+app.get('/api/docs-json', noStore, (_req, res) => {
+  const swaggerSpec = require('./lib/swagger').default;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(swaggerSpec);
+});
+app.get('/api/v1/docs-json', noStore, (_req, res) => {
+  const swaggerSpec = require('./lib/swagger').default;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(swaggerSpec);
+});
 
 // Swagger UI (always loads live spec from the JSON endpoints)
 app.use(
