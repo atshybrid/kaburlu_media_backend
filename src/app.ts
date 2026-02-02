@@ -256,7 +256,7 @@ app.use(
   })
 );
 // Also expose docs under the versioned base for convenience
-app.use('/api/v1', settingsRouter);
+// IMPORTANT: Swagger routes MUST come BEFORE settings router to avoid 404
 app.use(
   '/api/v1/docs',
   noStore,
@@ -265,6 +265,7 @@ app.use(
     swaggerOptions: { url: '/api/v1/docs-json' }
   })
 );
+app.use('/api/v1', settingsRouter);
 
 // API Routes (no version prefix) - legacy support
 app.use('/articles', articlesRoutes);
