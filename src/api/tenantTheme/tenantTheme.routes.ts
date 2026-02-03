@@ -613,11 +613,12 @@ const STYLE1_AD_SIZES = {
  * @swagger
  * /tenant-theme/{tenantId}/homepage/style1/smart:
  *   get:
- *     summary: Get Style1 homepage layout configuration
+ *     summary: 🔥 Smart Homepage Config - Auto-detects Style1/Style2
  *     description: |
- *       Returns the complete Style1 homepage layout with sections, ads, and category config.
+ *       Returns homepage layout configuration based on domain's theme style.
+ *       Theme is auto-detected from `DomainSettings.data.themeStyle` (defaults to style1).
  *       
- *       ## Sections Summary
+ *       ## Style1 Layout (default)
  *       | # | Section | Articles | Description |
  *       |---|---------|----------|-------------|
  *       | 1 | flashTicker | 12 | Breaking news ticker |
@@ -627,13 +628,9 @@ const STYLE1_AD_SIZES = {
  *       | 5 | categoryAd1 | - | Horizontal ad (728×90/970×250) |
  *       | 6 | webStories | 10 | Web stories (optional) |
  *       
- *       ## Hero Section Columns (26 articles)
- *       | Column | Name | Articles | Layout |
- *       |--------|------|----------|--------|
- *       | col-1 | Latest Hero | 6 | 1 hero + 2 medium + 3 small |
- *       | col-2 | Latest List | 8 | Vertical list |
- *       | col-3 | Must Read | 8 | Labeled section |
- *       | col-4 | Top Articles | 4 | Compact list |
+ *       ## Style2 Layout (TOI-style)
+ *       Returns Style2 configuration with magazine grid, spotlight, timeline sections etc.
+ *       
  *     tags: [Smart Theme Management]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -642,6 +639,11 @@ const STYLE1_AD_SIZES = {
  *         required: true
  *         schema: { type: string }
  *         example: cmk7e7tg401ezlp22wkz5rxky
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: true
+ *         description: Domain name to detect theme style from (e.g., aksharamvoice.com)
+ *         schema: { type: string, example: "aksharamvoice.com" }
  *     responses:
  *       200:
  *         description: Style1 layout configuration
@@ -755,14 +757,56 @@ router.get(
   async (req, res) => {
     try {
       const { tenantId } = req.params;
+      
+      // Get domain from X-Tenant-Domain header
+      const domainName = req.headers['x-tenant-domain'] as string;
+      if (!domainName) {
+        return res.status(400).json({ error: 'X-Tenant-Domain header required' });
+      }
+
+      // Find domain and get its settings
+      const domain = await (prisma as any).domain.findFirst({
+        where: { domain: domainName, tenantId }
+      }).catch(() => null);
+
+      if (!domain) {
+        return res.status(404).json({ error: 'Domain not found for this tenant' });
+      }
+
+      // Get domain settings to detect theme style
+      const domainSettings = await (prisma as any).domainSettings?.findUnique?.({ 
+        where: { domainId: domain.id } 
+      }).catch(() => null);
+      
+      const effectiveDomainSettings = (domainSettings as any)?.data || {};
+      const themeStyle = effectiveDomainSettings?.themeStyle || 'style1';
+
+      // Get tenant theme for homepage config
       const theme = await (prisma as any).tenantTheme.findUnique({ where: { tenantId } }).catch(() => null);
       const homepageConfig = isPlainObject((theme as any)?.homepageConfig) ? (theme as any).homepageConfig : {};
       
-      // Get stored style1 config or use defaults
+      // Return configuration based on detected style
+      if (themeStyle === 'style2') {
+        // Get Style2 config or return empty object (client should fetch from style2-config API)
+        const storedStyle2 = isPlainObject(homepageConfig.style2Config) ? homepageConfig.style2Config : null;
+
+        return res.json({
+          themeStyle: 'style2',
+          message: 'Style2 detected. Please use /tenant-theme/{tenantId}/style2-config API for Style2 configuration',
+          layout: storedStyle2,
+          summary: {
+            detectedFromDomain: domainName,
+            configuredSections: storedStyle2?.sections?.length || 0
+          }
+        });
+      }
+
+      // Default: Style1
       const storedStyle1 = isPlainObject(homepageConfig.style1Layout) ? homepageConfig.style1Layout : null;
       const layout = storedStyle1 || getDefaultStyle1Layout();
 
       return res.json({
+        themeStyle: 'style1',
         layout,
         summary: {
           totalArticles: 58,
@@ -772,13 +816,14 @@ router.get(
             flashTicker: 12,
             heroSection: 26,
             categorySection: 20
-          }
+          },
+          detectedFromDomain: domainName
         },
         adSizes: STYLE1_AD_SIZES
       });
     } catch (e: any) {
-      console.error('get style1 layout error', e);
-      return res.status(500).json({ error: 'Failed to get style1 layout' });
+      console.error('get smart homepage layout error', e);
+      return res.status(500).json({ error: 'Failed to get homepage layout' });
     }
   }
 );
