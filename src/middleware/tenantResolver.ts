@@ -72,6 +72,16 @@ async function fetchDomain(host: string): Promise<CachedDomain | null> {
 export async function tenantResolver(req: Request, res: Response, next: NextFunction) {
   if (process.env.MULTI_TENANCY !== 'true') return next();
 
+  // Skip tenant resolution for specific public APIs that aggregate data from all tenants
+  const skipPaths = [
+    '/public/digital-papers/all-tenants',
+    '/api/public/digital-papers/all-tenants',
+    '/api/v1/public/digital-papers/all-tenants'
+  ];
+  if (skipPaths.some(path => req.path === path || req.path.endsWith(path))) {
+    return next();
+  }
+
   // Allow explicit override via custom header when calling cross-origin without a reverse proxy
   const overrideHost =
     normalizeHost(req.headers['x-tenant-domain'] as any) ||
