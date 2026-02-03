@@ -1234,6 +1234,10 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
  *               subscriptionActive:
  *                 type: boolean
  *                 description: Enable or disable subscription
+ *               subscriptionActivationDate:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Optional - Schedule subscription activation for future date
  *               monthlySubscriptionAmount:
  *                 type: integer
  *                 description: Monthly subscription amount (optional, defaults to tenant settings)
@@ -1246,6 +1250,12 @@ router.get('/tenants/:tenantId/reporters', async (req, res) => {
  *               summary: Enable subscription with custom amount
  *               value:
  *                 subscriptionActive: true
+ *                 monthlySubscriptionAmount: 5000
+ *             scheduleActivation:
+ *               summary: Schedule subscription for future date
+ *               value:
+ *                 subscriptionActive: false
+ *                 subscriptionActivationDate: "2026-03-01T00:00:00.000Z"
  *                 monthlySubscriptionAmount: 5000
  *             disable:
  *               summary: Disable subscription
@@ -1280,7 +1290,24 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.a
     if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
 
     const { tenantId, reporterId } = req.params;
-    const { subscriptionActive, monthlySubscriptionAmount } = req.body || {};
+    const { subscriptionActive, monthlySubscriptionAmount, subscriptionActivationDate } = req.body || {};
+
+    if (typeof subscriptionActive !== 'boolean') {
+      return res.status(400).json({ error: 'subscriptionActive (boolean) is required' });
+    }
+
+    // Parse activation date if provided
+    let activationDate: Date | null = null;
+    if (subscriptionActivationDate) {
+      try {
+        activationDate = new Date(subscriptionActivationDate);
+        if (isNaN(activationDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid subscriptionActivationDate format' });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid subscriptionActivationDate' });
+      }
+    }
 
     if (typeof subscriptionActive !== 'boolean') {
       return res.status(400).json({ error: 'subscriptionActive (boolean) is required' });
@@ -1315,12 +1342,14 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.a
       where: { id: reporterId },
       data: {
         subscriptionActive,
+        subscriptionActivationDate: activationDate,
         monthlySubscriptionAmount: finalAmount
       },
       select: {
         id: true,
         tenantId: true,
         subscriptionActive: true,
+        subscriptionActivationDate: true,
         monthlySubscriptionAmount: true
       }
     });
@@ -1330,11 +1359,51 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.a
       reporterId: updated.id,
       tenantId: updated.tenantId,
       subscriptionActive: updated.subscriptionActive,
+      subscriptionActivationDate: updated.subscriptionActivationDate,
       monthlySubscriptionAmount: updated.monthlySubscriptionAmount
     });
   } catch (e: any) {
     console.error('set reporter subscription error', e);
     return res.status(500).json({ error: 'Failed to update subscription status' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/activate-subscriptions:
+ *   post:
+ *     summary: Manually activate scheduled reporter subscriptions
+ *     description: |
+ *       Activates all reporter subscriptions where subscriptionActivationDate <= now.
+ *       Normally runs via cron, but can be triggered manually.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Activation results
+ *         content:
+ *           application/json:
+ *             example:
+ *               activated: 3
+ *               failed: 0
+ */
+router.post('/tenants/:tenantId/reporters/activate-subscriptions', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const { activateReporterSubscriptions } = require('../../lib/activateReporterSubscriptions');
+    const result = await activateReporterSubscriptions();
+    
+    return res.json(result);
+  } catch (e: any) {
+    console.error('activate reporter subscriptions error', e);
+    return res.status(500).json({ error: 'Failed to activate subscriptions' });
   }
 });
 

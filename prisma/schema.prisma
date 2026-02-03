@@ -1173,6 +1173,7 @@ model Reporter {
   kycStatus                 KycStatus             @default(PENDING)
   monthlySubscriptionAmount Int?
   subscriptionActive        Boolean               @default(false)
+  subscriptionActivationDate DateTime?            // Scheduled activation date
   assemblyConstituencyId    String?
   idCardCharge              Int?
   profilePhotoUrl           String?
@@ -1335,6 +1336,7 @@ model ReporterOnboardingOrder {
   assemblyConstituencyId    String?
   subscriptionEnabled       Boolean             @default(true)
   monthlySubscriptionAmount Int?
+  subscriptionActivationDate DateTime?           // When subscription should activate
   idCardCharge              Int?
   amount                    Int
   currency                  String              @default("INR")
