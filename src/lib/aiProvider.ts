@@ -142,6 +142,15 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
 
   const tryOpenAI = async () => {
     if (!openaiAllowed) return { text: '' as string, usage: undefined as any };
+    
+    // Support fallback API key for quota/rate limit resilience
+    const { OPENAI_KEY_FALLBACK } = require('./aiConfig');
+    const keysToTry = [OPENAI_KEY, OPENAI_KEY_FALLBACK].filter(Boolean);
+    
+    if (keysToTry.length === 0) {
+      return { text: '' };
+    }
+    
     try {
       // Lazy import to avoid bundling
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -155,7 +164,8 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
             : (purpose === 'newspaper' ? DEFAULT_OPENAI_MODEL_NEWSPAPER : DEFAULT_OPENAI_MODEL_SEO)));
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-      const callOpenAIChat = async (m: string) => {
+      
+      const callOpenAIChat = async (m: string, apiKey: string) => {
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
           model: m,
           messages: [
@@ -164,7 +174,7 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
           ],
           temperature: DEFAULT_TEMPERATURE,
         }, {
-          headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           signal: ctrl.signal,
         });
         const data = response?.data;
@@ -174,31 +184,57 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
 
       let data: any;
       let content = '';
+      let usedFallback = false;
+      
+      // Try primary key first
       try {
-        const r1 = await callOpenAIChat(model);
+        const r1 = await callOpenAIChat(model, keysToTry[0]);
         data = r1.data;
         content = r1.content;
       } catch (e: any) {
         const status = e?.response?.status;
         const errMsg = e?.response?.data?.error?.message || e?.message || '';
-        // Common fix: env points to a model not available on the account.
-        // Retry once with a safe fallback.
-        const looksLikeModelIssue = status === 400 && /model/i.test(String(errMsg));
-        if (looksLikeModelIssue) {
+        
+        // If primary key failed with quota/auth/rate limit, try fallback key
+        const shouldTryFallback = keysToTry.length > 1 && 
+          (status === 429 || status === 401 || status === 403 || 
+           /quota|rate.?limit|insufficient/i.test(String(errMsg)));
+        
+        if (shouldTryFallback) {
+          console.warn(`[AI][openai] Primary key failed (${status}), trying fallback key...`);
           try {
-            const fallbackModel = 'gpt-4.1-mini';
-            const r2 = await callOpenAIChat(fallbackModel);
+            const r2 = await callOpenAIChat(model, keysToTry[1]);
             data = r2.data;
             content = r2.content;
+            usedFallback = true;
+            console.log(`[AI][openai] ✓ Fallback key succeeded for ${purpose}`);
           } catch (e2: any) {
+            const status2 = e2?.response?.status;
+            const errMsg2 = e2?.response?.data?.error?.message || e2?.message || '';
+            console.warn(`[AI][openai] Fallback key also failed (${status2}):`, errMsg2);
             throw e2;
           }
         } else {
-          throw e;
+          // Common fix: env points to a model not available on the account.
+          // Retry once with a safe fallback model.
+          const looksLikeModelIssue = status === 400 && /model/i.test(String(errMsg));
+          if (looksLikeModelIssue) {
+            try {
+              const fallbackModel = 'gpt-4.1-mini';
+              const r2 = await callOpenAIChat(fallbackModel, keysToTry[0]);
+              data = r2.data;
+              content = r2.content;
+            } catch (e2: any) {
+              throw e2;
+            }
+          } else {
+            throw e;
+          }
         }
       } finally {
         clearTimeout(t);
       }
+      
       const usage = {
         provider: 'openai',
         purpose,
@@ -208,6 +244,7 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         promptChars: prompt.length,
         responseChars: content.length,
         model,
+        usedFallback,
       };
       if (content) return { text: content, usage };
     } catch (e: any) {

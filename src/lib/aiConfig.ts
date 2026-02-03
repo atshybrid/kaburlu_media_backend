@@ -27,6 +27,7 @@ export const AI_ENABLE_TRANSLATION = parseBool(process.env.AI_ENABLE_TRANSLATION
 
 export const GEMINI_KEY = process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY || '';
 export const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
+export const OPENAI_KEY_FALLBACK = process.env.OPENAI_API_KEY_FALLBACK || '';
 
 // Default Gemini model (can be overridden per-purpose)
 const GEMINI_MODEL_FALLBACK = process.env.GEMINI_MODEL || 'gemini-2.5-flash';

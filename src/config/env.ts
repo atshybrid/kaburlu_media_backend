@@ -159,6 +159,7 @@ export const config = {
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
+      apiKeyFallback: process.env.OPENAI_API_KEY_FALLBACK,
       models: {
         seo: process.env.OPENAI_MODEL_SEO || 'gpt-4o',
         moderation: process.env.OPENAI_MODEL_MODERATION || 'gpt-4o-mini',
