@@ -766,15 +766,17 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     const autoPublish: boolean | undefined = typeof body.autoPublish === 'boolean' ? body.autoPublish : undefined;
 
     // Parse subscription activation date if provided
+    // Support both subscriptionActivationDate and subscriptionStartDate (frontend compatibility)
     let subscriptionActivationDate: Date | null = null;
-    if (body.subscriptionActivationDate) {
+    const dateInput = body.subscriptionActivationDate || body.subscriptionStartDate;
+    if (dateInput) {
       try {
-        subscriptionActivationDate = new Date(body.subscriptionActivationDate);
+        subscriptionActivationDate = new Date(dateInput);
         if (isNaN(subscriptionActivationDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid subscriptionActivationDate format' });
+          return res.status(400).json({ error: 'Invalid subscriptionActivationDate/subscriptionStartDate format' });
         }
       } catch (e) {
-        return res.status(400).json({ error: 'Invalid subscriptionActivationDate' });
+        return res.status(400).json({ error: 'Invalid subscriptionActivationDate/subscriptionStartDate' });
       }
     }
 
@@ -1321,22 +1323,23 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.a
     if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
 
     const { tenantId, reporterId } = req.params;
-    const { subscriptionActive, monthlySubscriptionAmount, subscriptionActivationDate } = req.body || {};
+    const { subscriptionActive, monthlySubscriptionAmount, subscriptionActivationDate, subscriptionStartDate } = req.body || {};
 
     if (typeof subscriptionActive !== 'boolean') {
       return res.status(400).json({ error: 'subscriptionActive (boolean) is required' });
     }
 
-    // Parse activation date if provided
+    // Parse activation date if provided (support both field names for frontend compatibility)
+    const dateInput = subscriptionActivationDate || subscriptionStartDate;
     let activationDate: Date | null = null;
-    if (subscriptionActivationDate) {
+    if (dateInput) {
       try {
-        activationDate = new Date(subscriptionActivationDate);
+        activationDate = new Date(dateInput);
         if (isNaN(activationDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid subscriptionActivationDate format' });
+          return res.status(400).json({ error: 'Invalid subscriptionActivationDate/subscriptionStartDate format' });
         }
       } catch (e) {
-        return res.status(400).json({ error: 'Invalid subscriptionActivationDate' });
+        return res.status(400).json({ error: 'Invalid subscriptionActivationDate/subscriptionStartDate' });
       }
     }
 
@@ -1369,10 +1372,22 @@ router.patch('/tenants/:tenantId/reporters/:reporterId/subscription', passport.a
       }
     }
 
+    // Handle scheduled activation logic
+    let actualSubscriptionActive = subscriptionActive;
+    
+    // If enabling subscription with future activation date, schedule it (not active yet)
+    if (subscriptionActive && activationDate) {
+      const now = new Date();
+      if (activationDate.getTime() > now.getTime()) {
+        // Future date - schedule activation (set active=false until date arrives)
+        actualSubscriptionActive = false;
+      }
+    }
+
     const updated = await (prisma as any).reporter.update({
       where: { id: reporterId },
       data: {
-        subscriptionActive,
+        subscriptionActive: actualSubscriptionActive,
         subscriptionActivationDate: activationDate,
         monthlySubscriptionAmount: finalAmount
       },
