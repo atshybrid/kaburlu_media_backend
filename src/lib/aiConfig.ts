@@ -17,8 +17,8 @@ export const AI_PROVIDER: AIProvider = (() => {
   return 'openai';
 })();
 
-export const AI_USE_GEMINI = parseBool(process.env.AI_USE_GEMINI, false); // Default false for speed
-export const AI_USE_OPENAI = parseBool(process.env.AI_USE_OPENAI, true);  // Default true
+export const AI_USE_GEMINI = parseBool(process.env.AI_USE_GEMINI, true);  // Enable Gemini by default when key exists
+export const AI_USE_OPENAI = parseBool(process.env.AI_USE_OPENAI, true);  // Enable both providers
 
 // Feature flags (allow toggling without code changes)
 export const AI_ENABLE_SEO = parseBool(process.env.AI_ENABLE_SEO, true);
@@ -30,7 +30,7 @@ export const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 export const OPENAI_KEY_FALLBACK = process.env.OPENAI_API_KEY_FALLBACK || '';
 
 // Default Gemini model (can be overridden per-purpose)
-const GEMINI_MODEL_FALLBACK = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_MODEL_FALLBACK = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';  // Ultra-fast lite version
 export const DEFAULT_GEMINI_MODEL_SEO = process.env.GEMINI_MODEL_SEO || GEMINI_MODEL_FALLBACK;
 export const DEFAULT_GEMINI_MODEL_MODERATION = process.env.GEMINI_MODEL_MODERATION || GEMINI_MODEL_FALLBACK;
 export const DEFAULT_GEMINI_MODEL_TRANSLATION = process.env.GEMINI_MODEL_TRANSLATION || GEMINI_MODEL_FALLBACK;
