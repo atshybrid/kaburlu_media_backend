@@ -253,7 +253,7 @@ app.use(
   noStore,
   swaggerUi.serve,
   swaggerUi.setup(undefined, {
-    swaggerOptions: { url: '/api/docs-json' }
+    swaggerOptions: { url: '/api/docs/swagger.json' }
   })
 );
 // Also expose docs under the versioned base for convenience
@@ -263,7 +263,7 @@ app.use(
   noStore,
   swaggerUi.serve,
   swaggerUi.setup(undefined, {
-    swaggerOptions: { url: '/api/v1/docs-json' }
+    swaggerOptions: { url: '/api/v1/docs/swagger.json' }
   })
 );
 app.use('/api/v1', settingsRouter);
