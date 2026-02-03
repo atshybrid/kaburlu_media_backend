@@ -1548,10 +1548,20 @@ router.get('/digital-papers', async (req, res) => {
  *       - Cover images for swipe gallery
  *       - Tenant branding (name, logo)
  *       - Filter by date
+ *       - **No authentication or tenant header required**
  *       
  *       **Use Case:**
  *       - App home screen showing all available newspapers
  *       - User can swipe through different newspaper brands
+ *       
+ *       **React Native Example:**
+ *       ```javascript
+ *       const response = await fetch(
+ *         'https://api.kaburlumedia.com/api/v1/public/digital-papers/all-tenants?date=2026-02-02'
+ *       );
+ *       const { papers } = await response.json();
+ *       // papers array contains all tenants' issues with cover images
+ *       ```
  *       
  *       **Cache:** ISR 300s (5 minutes)
  *     tags: [Digital Daily Newspaper]
@@ -1559,10 +1569,12 @@ router.get('/digital-papers', async (req, res) => {
  *       - in: query
  *         name: date
  *         schema: { type: string, format: date }
- *         description: Filter by date (default is today)
+ *         description: Filter by date (YYYY-MM-DD format, default is today)
+ *         example: "2026-02-02"
  *       - in: query
  *         name: limit
  *         schema: { type: integer, default: 50, maximum: 200 }
+ *         description: Maximum number of issues to return
  *     responses:
  *       200:
  *         description: List of ePaper issues from all tenants
@@ -1576,12 +1588,36 @@ router.get('/digital-papers', async (req, res) => {
  *                   items:
  *                     type: object
  *                     properties:
- *                       id: { type: string }
- *                       tenant: { type: object }
- *                       issueDate: { type: string }
- *                       coverImageUrl: { type: string }
- *                       pageCount: { type: integer }
- *                       edition: { type: object }
+ *                       id: { type: string, description: "Issue ID - use this to fetch all pages" }
+ *                       tenant: 
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string }
+ *                           name: { type: string, example: "Kaburlu Today" }
+ *                           nativeName: { type: string, example: "కబుర్లు టుడే" }
+ *                           logoUrl: { type: string, example: "https://r2.../logo.png" }
+ *                       issueDate: { type: string, format: date, example: "2026-02-02" }
+ *                       coverImageUrl: { type: string, example: "https://r2.../cover.webp" }
+ *                       pdfUrl: { type: string, nullable: true }
+ *                       pageCount: { type: integer, example: 12 }
+ *                       edition: 
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id: { type: string }
+ *                           name: { type: string, example: "Main Edition" }
+ *                           slug: { type: string }
+ *                           stateName: { type: string, nullable: true }
+ *                       subEdition:
+ *                         type: object
+ *                         nullable: true
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     total: { type: integer }
+ *                     filterDate: { type: string }
+ *                     timestamp: { type: string, format: date-time }
+ *                     cacheAge: { type: integer, example: 300 }
  */
 router.get('/digital-papers/all-tenants', async (req, res) => {
   try {
