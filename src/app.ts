@@ -235,25 +235,30 @@ try {
 }
 
 // Swagger UI
-// Serve Swagger JSON (useful for clients and avoids stale cached UI/spec in production)
-app.get('/api/docs-json', noStore, (_req, res) => {
+// Serve Swagger JSON at /api/docs/swagger.json (standard swagger-ui path)
+app.get('/api/docs/swagger.json', noStore, (_req, res) => {
   const swaggerSpec = require('./lib/swagger').default;
   res.setHeader('Cache-Control', 'no-store');
   res.json(swaggerSpec);
 });
-app.get('/api/v1/docs-json', noStore, (_req, res) => {
+app.get('/api/v1/docs/swagger.json', noStore, (_req, res) => {
   const swaggerSpec = require('./lib/swagger').default;
   res.setHeader('Cache-Control', 'no-store');
   res.json(swaggerSpec);
 });
 
-// Swagger UI (always loads live spec from the JSON endpoints)
+// Swagger UI (loads spec from swagger.json)
+const swaggerSpec = require('./lib/swagger').default;
 app.use(
   '/api/docs',
   noStore,
   swaggerUi.serve,
-  swaggerUi.setup(undefined, {
-    swaggerOptions: { url: '/api/docs/swagger.json' }
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      url: '/api/docs/swagger.json',
+      docExpansion: 'none',
+      persistAuthorization: false
+    }
   })
 );
 // Also expose docs under the versioned base for convenience
@@ -262,8 +267,12 @@ app.use(
   '/api/v1/docs',
   noStore,
   swaggerUi.serve,
-  swaggerUi.setup(undefined, {
-    swaggerOptions: { url: '/api/v1/docs/swagger.json' }
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      url: '/api/v1/docs/swagger.json',
+      docExpansion: 'none',
+      persistAuthorization: false
+    }
   })
 );
 app.use('/api/v1', settingsRouter);
