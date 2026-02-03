@@ -1,23 +1,14 @@
 name: Deploy to DigitalOcean
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Type "deploy" to confirm production deployment'
-        required: true
-        default: ''
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    steps:
-      - name: Validate deployment confirmation
-        if: ${{ github.event.inputs.confirm != 'deploy' }}
-        run: |
-          echo "❌ Deployment cancelled. You must type 'deploy' to confirm."
-          exit 1
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
