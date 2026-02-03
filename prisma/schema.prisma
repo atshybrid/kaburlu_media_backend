@@ -2148,6 +2148,7 @@ enum BillingComponent {
 }
 
 enum SubscriptionStatus {
+  SCHEDULED   // Subscription scheduled for future activation
   ACTIVE
   TRIALING
   PAST_DUE

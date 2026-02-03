@@ -7,6 +7,9 @@ import { getRazorpayClientForTenant } from '../reporterPayments/razorpay.service
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 
+// Import subscription activator
+import { activateScheduledSubscriptions } from '../../lib/activateScheduledSubscriptions';
+
 function asInt(value: any, fallback: number): number {
   const n = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
   return Number.isFinite(n) ? n : fallback;
@@ -436,7 +439,7 @@ router.get('/tenants/:tenantId/billing/subscription', auth, requireSuperOrTenant
  *               planId: { type: string }
  *               currentPeriodStart: { type: string, format: date-time }
  *               currentPeriodEnd: { type: string, format: date-time }
- *               status: { type: string, enum: [ACTIVE, TRIALING, PAST_DUE, CANCELED], default: ACTIVE }
+ *               status: { type: string, enum: [SCHEDULED, ACTIVE, TRIALING, PAST_DUE, CANCELED], default: ACTIVE }
  *               cancelAtPeriodEnd: { type: boolean, default: false }
  *           examples:
  *             startNow:
@@ -444,6 +447,13 @@ router.get('/tenants/:tenantId/billing/subscription', auth, requireSuperOrTenant
  *               value:
  *                 planId: "cplan123"
  *                 status: "ACTIVE"
+ *             scheduleFuture:
+ *               summary: Schedule subscription for future date
+ *               value:
+ *                 planId: "cplan123"
+ *                 currentPeriodStart: "2026-03-01T00:00:00.000Z"
+ *                 currentPeriodEnd: "2026-04-01T00:00:00.000Z"
+ *                 status: "SCHEDULED"
  *     responses:
  *       200:
  *         description: Updated subscription
@@ -482,7 +492,7 @@ router.put('/tenants/:tenantId/billing/subscription', auth, requireSuperAdmin, a
     if (!plan) return res.status(400).json({ error: 'Invalid planId' });
 
     const statusNorm = String(status || 'ACTIVE').toUpperCase();
-    if (!['ACTIVE', 'TRIALING', 'PAST_DUE', 'CANCELED'].includes(statusNorm)) {
+    if (!['SCHEDULED', 'ACTIVE', 'TRIALING', 'PAST_DUE', 'CANCELED'].includes(statusNorm)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
@@ -494,6 +504,10 @@ router.put('/tenants/:tenantId/billing/subscription', auth, requireSuperAdmin, a
     const end = parseIsoDate(currentPeriodEnd) || addCycle(start, cycle);
     if (end.getTime() <= start.getTime()) return res.status(400).json({ error: 'currentPeriodEnd must be after currentPeriodStart' });
 
+    // Auto-determine status: SCHEDULED if start date is in future, otherwise ACTIVE
+    const now = new Date();
+    const autoStatus = start.getTime() > now.getTime() ? 'SCHEDULED' : statusNorm;
+    
     const cancelFlag = asBool(cancelAtPeriodEnd, false);
 
     const existing = await getTenantActiveSubscription(tenantId).catch(() => null);
@@ -503,7 +517,7 @@ router.put('/tenants/:tenantId/billing/subscription', auth, requireSuperAdmin, a
       create: {
         tenantId,
         planId: String(planId),
-        status: statusNorm,
+        status: autoStatus,
         currentPeriodStart: start,
         currentPeriodEnd: end,
         cancelAtPeriodEnd: cancelFlag,
@@ -511,7 +525,7 @@ router.put('/tenants/:tenantId/billing/subscription', auth, requireSuperAdmin, a
       },
       update: {
         planId: String(planId),
-        status: statusNorm,
+        status: autoStatus,
         currentPeriodStart: start,
         currentPeriodEnd: end,
         cancelAtPeriodEnd: cancelFlag,
@@ -1484,6 +1498,41 @@ router.post('/tenants/:tenantId/billing/invoices/:invoiceId/void', auth, require
   } catch (e: any) {
     console.error('billing invoice void error', e);
     return res.status(500).json({ error: 'Failed to void invoice' });
+  }
+});
+
+/**
+ * @swagger
+ * /billing/subscriptions/activate-scheduled:
+ *   post:
+ *     summary: Manually activate scheduled subscriptions (SUPER_ADMIN)
+ *     description: |
+ *       Activates all SCHEDULED subscriptions where currentPeriodStart <= now.
+ *       Normally runs via cron job, but can be triggered manually for testing.
+ *     tags: [Billing]
+ *     security: [ { bearerAuth: [] } ]
+ *     responses:
+ *       200:
+ *         description: Activation results
+ *         content:
+ *           application/json:
+ *             examples:
+ *               success:
+ *                 value:
+ *                   activated: 3
+ *                   failed: 0
+ *               partial:
+ *                 value:
+ *                   activated: 2
+ *                   failed: 1
+ */
+router.post('/billing/subscriptions/activate-scheduled', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await activateScheduledSubscriptions();
+    return res.json(result);
+  } catch (e: any) {
+    console.error('activate scheduled subscriptions error', e);
+    return res.status(500).json({ error: 'Failed to activate scheduled subscriptions' });
   }
 });
 
