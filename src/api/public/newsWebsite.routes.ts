@@ -2377,7 +2377,9 @@ router.get('/homepage/smart', async (req, res) => {
       select: { id: true, slug: true, name: true }
     });
     
-    const categoryMap = new Map(allCategories.map((c: any) => [c.slug, c]));
+    const categoryMap = new Map<string, { id: string; slug: string; name: string }>(
+      allCategories.map((c: any) => [c.slug, c])
+    );
 
     // Build article query filter
     const articleWhere: any = {
