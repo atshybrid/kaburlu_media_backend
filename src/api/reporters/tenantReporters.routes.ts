@@ -628,6 +628,10 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *               mandalId: { type: string }
  *               assemblyConstituencyId: { type: string }
  *               subscriptionActive: { type: boolean }
+ *               subscriptionActivationDate:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Optional - Schedule subscription activation for future date
  *               monthlySubscriptionAmount: { type: integer, description: 'Smallest currency unit' }
  *               idCardCharge: { type: integer, description: 'Smallest currency unit' }
  *               manualLoginEnabled:
@@ -680,6 +684,18 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 autoPublish: true
  *                 fullName: District Reporter Subscribed
  *                 mobileNumber: '9502000001'
+ *             scheduledSubscription:
+ *               summary: Reporter with scheduled subscription activation
+ *               value:
+ *                 designationId: cmit7cpar0001ugkojh66y6ww
+ *                 level: DISTRICT
+ *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: false
+ *                 subscriptionActivationDate: '2026-03-01T00:00:00.000Z'
+ *                 monthlySubscriptionAmount: 5000
+ *                 idCardCharge: 1000
+ *                 fullName: Scheduled Reporter
+ *                 mobileNumber: '9502000002'
  *     responses:
  *       201:
  *         description: Created
@@ -697,6 +713,7 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 mandalId: { type: string, nullable: true }
  *                 assemblyConstituencyId: { type: string, nullable: true }
  *                 subscriptionActive: { type: boolean }
+ *                 subscriptionActivationDate: { type: string, format: date-time, nullable: true }
  *                 monthlySubscriptionAmount: { type: integer, nullable: true }
  *                 idCardCharge: { type: integer, nullable: true }
  *                 manualLoginEnabled:
@@ -747,6 +764,19 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
 
     // Optional editorial setting for reporter-created articles
     const autoPublish: boolean | undefined = typeof body.autoPublish === 'boolean' ? body.autoPublish : undefined;
+
+    // Parse subscription activation date if provided
+    let subscriptionActivationDate: Date | null = null;
+    if (body.subscriptionActivationDate) {
+      try {
+        subscriptionActivationDate = new Date(body.subscriptionActivationDate);
+        if (isNaN(subscriptionActivationDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid subscriptionActivationDate format' });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid subscriptionActivationDate' });
+      }
+    }
 
     // Manual login can be enabled only when subscriptionActive=false.
     if (manualLoginEnabled) {
@@ -889,6 +919,7 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
               // Best-practice: snapshot pricing into the reporter row. If amounts are not provided,
               // default from TenantSettings.data.reporterPricing (tenant-managed).
               subscriptionActive: typeof body.subscriptionActive === 'boolean' ? body.subscriptionActive : pricingResolved.subscriptionEnabled,
+              subscriptionActivationDate: subscriptionActivationDate,
               monthlySubscriptionAmount:
                 typeof body.monthlySubscriptionAmount === 'number'
                   ? body.monthlySubscriptionAmount
