@@ -55,7 +55,7 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
     if (!geminiAllowed) return { text: '' as string, usage: undefined as any };
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(GEMINI_KEY);
       // Pick model based on purpose
       const modelName = (() => {
@@ -64,7 +64,32 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         if (purpose === 'moderation') return DEFAULT_GEMINI_MODEL_MODERATION;
         return DEFAULT_GEMINI_MODEL_SEO;
       })();
-      const model = genAI.getGenerativeModel({ model: modelName });
+      
+      // Configure safety settings to be less restrictive for news content
+      const safetySettings = [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+      ];
+      
+      const model = genAI.getGenerativeModel({ 
+        model: modelName,
+        safetySettings 
+      });
+      
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
       // Keep outputs bounded to reduce latency; callers expect plain text or JSON in text form
@@ -78,6 +103,28 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig,
       }, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+      
+      // Check for safety blocks
+      const response = res?.response;
+      const promptFeedback = response?.promptFeedback;
+      
+      if (promptFeedback?.blockReason) {
+        console.warn(`[AI][gemini] Content blocked - ${promptFeedback.blockReason}:`, promptFeedback);
+        return { text: '' };
+      }
+      
+      // Check if response was blocked
+      if (!response?.candidates || response.candidates.length === 0) {
+        console.warn('[AI][gemini] No candidates returned - possible safety filter');
+        return { text: '' };
+      }
+      
+      const candidate = response.candidates[0];
+      if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+        console.warn(`[AI][gemini] Response finished with reason: ${candidate.finishReason}`);
+        // Try to get partial text anyway
+      }
+      
       const text = res?.response?.text?.() || '';
       const usage = {
         provider: 'gemini',
@@ -88,9 +135,7 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       };
       if (text) return { text, usage };
     } catch (e: any) {
-      if (purpose === 'translation') {
-        console.warn('[AI][gemini] translation call failed:', e?.message || e);
-      }
+      console.warn(`[AI][gemini] ${purpose} call failed:`, e?.message || e);
     }
     return { text: '' };
   };

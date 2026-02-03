@@ -1915,4 +1915,740 @@ router.get('/digital-papers/:issueId', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /public/homepage/config:
+ *   get:
+ *     summary: 🎨 Get smart homepage layout configuration (domain-based)
+ *     description: |
+ *       **Domain-based multi-tenant homepage config** - Auto-detects theme style from domain settings
+ *       
+ *       Returns homepage layout configuration based on the domain's theme style (style1 or style2).
+ *       Theme is auto-detected from `DomainSettings.data.themeStyle` (defaults to style1).
+ *       
+ *       ## Style1 Layout (default)
+ *       | # | Section | Articles | Description |
+ *       |---|---------|----------|-------------|
+ *       | 1 | flashTicker | 12 | Breaking news ticker |
+ *       | 2 | heroSection | 26 | 4-column hero grid |
+ *       | 3 | heroAd1 | - | Horizontal ad (728×90/970×250) |
+ *       | 4 | categorySection | 20 | 4 categories × 5 articles |
+ *       | 5 | categoryAd1 | - | Horizontal ad (728×90/970×250) |
+ *       | 6 | webStories | 10 | Web stories (optional) |
+ *       
+ *       ## Style2 Layout (TOI-style)
+ *       Returns Style2 configuration with magazine grid, spotlight, timeline sections etc.
+ *       
+ *       **Tenant Resolution:** Uses domain from Host header or X-Tenant-Domain override (for local testing).
+ *       No tenantId required in URL path - follows public API pattern.
+ *       
+ *     tags: [News Website API 2.0]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Domain name to detect theme style from (e.g., aksharamvoice.com). Uses Host header if not provided.
+ *         schema: { type: string, example: "telangana.kaburlu.com" }
+ *     responses:
+ *       200:
+ *         description: Homepage layout configuration based on detected theme style
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 themeStyle:
+ *                   type: string
+ *                   enum: [style1, style2]
+ *                   description: Detected theme style from domain settings
+ *                 layout:
+ *                   type: object
+ *                   description: Theme-specific layout configuration
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalArticles:
+ *                       type: number
+ *                       example: 58
+ *                     sections:
+ *                       type: number
+ *                       example: 6
+ *                     ads:
+ *                       type: number
+ *                       example: 2
+ *                     detectedFromDomain:
+ *                       type: string
+ *                       example: "telangana.kaburlu.com"
+ *                 adSizes:
+ *                   type: object
+ *                   description: Ad size reference (style1 only)
+ *             examples:
+ *               style1Response:
+ *                 summary: Style1 homepage configuration
+ *                 value:
+ *                   themeStyle: style1
+ *                   layout:
+ *                     themeKey: style1
+ *                     sections:
+ *                       - id: section-1
+ *                         key: flashTicker
+ *                         name: Flash News Ticker
+ *                         isActive: true
+ *                         position: 1
+ *                         config:
+ *                           articlesLimit: 12
+ *                           autoScroll: true
+ *                           scrollSpeed: 5000
+ *                       - id: section-2
+ *                         key: heroSection
+ *                         name: Hero Grid
+ *                         isActive: true
+ *                         position: 2
+ *                         layout:
+ *                           type: grid
+ *                           columns:
+ *                             - key: col-1
+ *                               position: 1
+ *                               name: Latest Hero
+ *                               articlesLimit: 6
+ *                             - key: col-2
+ *                               position: 2
+ *                               name: Latest List
+ *                               articlesLimit: 8
+ *                   summary:
+ *                     totalArticles: 58
+ *                     sections: 6
+ *                     ads: 2
+ *                     detectedFromDomain: "telangana.kaburlu.com"
+ *                   adSizes:
+ *                     horizontal:
+ *                       desktop: "970x250"
+ *                       mobile: "728x90"
+ *               style2Response:
+ *                 summary: Style2 detected - use dedicated API
+ *                 value:
+ *                   themeStyle: style2
+ *                   message: "Style2 detected. Please use /public/homepage for Style2 content or backend Style2 config API"
+ *                   summary:
+ *                     detectedFromDomain: "telangana.kaburlu.com"
+ *       500:
+ *         description: Domain context missing or internal error
+ */
+router.get('/homepage/config', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  
+  if (!tenant || !domain) {
+    return res.status(500).json({ 
+      error: 'Domain context missing',
+      hint: 'Ensure Host header or X-Tenant-Domain header is set for tenant resolution'
+    });
+  }
+
+  try {
+    // Get domain settings to detect theme style
+    const domainSettings = await p.domainSettings?.findUnique?.({ 
+      where: { domainId: domain.id } 
+    }).catch(() => null);
+    
+    const effectiveDomainSettings = (domainSettings as any)?.data || {};
+    const themeStyle = effectiveDomainSettings?.themeStyle || 'style1';
+
+    // Get tenant theme for homepage config
+    const theme = await p.tenantTheme?.findUnique?.({ 
+      where: { tenantId: tenant.id } 
+    }).catch(() => null);
+    
+    const homepageConfig = (theme as any)?.homepageConfig || {};
+    
+    // Helper function to check if value is plain object
+    const isPlainObject = (value: any) => !!value && typeof value === 'object' && !Array.isArray(value);
+    
+    // Default Style1 layout structure
+    const getDefaultStyle1Layout = () => ({
+      themeKey: 'style1',
+      sections: [
+        {
+          id: 'section-1',
+          key: 'flashTicker',
+          name: 'Flash News Ticker',
+          isActive: true,
+          position: 1,
+          config: {
+            articlesLimit: 12,
+            autoScroll: true,
+            scrollSpeed: 5000
+          }
+        },
+        {
+          id: 'section-2',
+          key: 'heroSection',
+          name: 'Hero Grid',
+          isActive: true,
+          position: 2,
+          layout: {
+            type: 'grid',
+            columns: [
+              { key: 'col-1', position: 1, name: 'Latest Hero', articlesLimit: 6 },
+              { key: 'col-2', position: 2, name: 'Latest List', articlesLimit: 8 },
+              { key: 'col-3', position: 3, name: 'Must Read', articlesLimit: 8, label: 'Must Read' },
+              { key: 'col-4', position: 4, name: 'Top Articles', articlesLimit: 4, label: 'Top Articles' }
+            ]
+          }
+        },
+        {
+          id: 'section-3',
+          key: 'heroAd1',
+          name: 'Ad After Hero',
+          isActive: true,
+          position: 3,
+          type: 'ad',
+          config: {
+            adType: 'horizontal',
+            sizes: ['728x90', '970x250'],
+            provider: 'google',
+            google: { slot: null, format: 'auto', responsive: true },
+            local: { enabled: false, imageUrl: null, clickUrl: null }
+          }
+        },
+        {
+          id: 'section-4',
+          key: 'categorySection',
+          name: '4-Column Categories',
+          isActive: true,
+          position: 4,
+          config: {
+            categoriesCount: 4,
+            articlesPerCategory: 5,
+            categories: ['national', 'entertainment', 'politics', 'sports']
+          }
+        },
+        {
+          id: 'section-5',
+          key: 'categoryAd1',
+          name: 'Ad After Categories',
+          isActive: true,
+          position: 5,
+          type: 'ad',
+          config: {
+            adType: 'horizontal',
+            sizes: ['728x90', '970x250'],
+            provider: 'google',
+            google: { slot: null, format: 'auto', responsive: true },
+            local: { enabled: false, imageUrl: null, clickUrl: null }
+          }
+        },
+        {
+          id: 'section-6',
+          key: 'webStories',
+          name: 'Web Stories',
+          isActive: false,
+          position: 6,
+          config: {
+            storiesLimit: 10
+          }
+        }
+      ]
+    });
+
+    const STYLE1_AD_SIZES = {
+      horizontal: { desktop: '970x250', mobile: '728x90' },
+      sidebar: { desktop: '300x600', mobile: 'hidden' },
+      inArticle: { desktop: '728x90', mobile: '320x100' }
+    };
+    
+    // Return configuration based on detected style
+    if (themeStyle === 'style2') {
+      // Get Style2 config or return empty object (client should fetch from /public/homepage)
+      const storedStyle2 = isPlainObject(homepageConfig.style2Config) ? homepageConfig.style2Config : null;
+
+      return res.json({
+        themeStyle: 'style2',
+        message: 'Style2 detected. Please use /public/homepage for Style2 content or backend Style2 config API',
+        layout: storedStyle2,
+        summary: {
+          detectedFromDomain: domain.domain,
+          configuredSections: storedStyle2?.sections?.length || 0
+        }
+      });
+    }
+
+    // Default: Style1
+    const storedStyle1 = isPlainObject(homepageConfig.style1Layout) ? homepageConfig.style1Layout : null;
+    const layout = storedStyle1 || getDefaultStyle1Layout();
+
+    return res.json({
+      themeStyle: 'style1',
+      layout,
+      summary: {
+        totalArticles: 58,
+        sections: 6,
+        ads: 2,
+        breakdown: {
+          flashTicker: 12,
+          heroSection: 26,
+          categorySection: 20
+        },
+        detectedFromDomain: domain.domain
+      },
+      adSizes: STYLE1_AD_SIZES
+    });
+  } catch (e: any) {
+    console.error('get smart homepage layout error', e);
+    return res.status(500).json({ error: 'Failed to get homepage layout' });
+  }
+});
+
+/**
+ * @swagger
+ * /public/homepage/smart:
+ *   get:
+ *     summary: 🚀 Smart Homepage - Auto-detects theme & returns articles (Single API)
+ *     description: |
+ *       **ONE API CALL - Complete Homepage with Articles**
+ *       
+ *       This smart endpoint does everything:
+ *       1. Auto-detects theme style from domain settings (style1 or style2)
+ *       2. Returns SEO metadata
+ *       3. Returns homepage sections with actual articles
+ *       4. Auto-fills sections based on limits (publishedAt or viewCount)
+ *       5. Injects categories into each section
+ *       6. Auto-hides sections if categories not available (visible: false)
+ *       
+ *       **Response includes:**
+ *       - `config`: Theme detection & layout structure
+ *       - `seo`: Meta tags, OG tags, JSON-LD
+ *       - `sections`: All homepage sections with articles
+ *       - Each section has `visible: true/false` based on category availability
+ *       
+ *       **Theme Detection:**
+ *       - Checks `DomainSettings.data.themeStyle`
+ *       - Defaults to `style1` if not set
+ *       - Returns appropriate sections for detected theme
+ *       
+ *       **Article Selection:**
+ *       - Top articles by `publishedAt DESC` (latest first)
+ *       - Can use `viewCount DESC` for trending (if enabled)
+ *       - Respects section limits from config
+ *       
+ *       **Category Handling:**
+ *       - Checks if required categories exist for tenant
+ *       - Sets `visible: false` if categories missing
+ *       - UI can hide invisible sections
+ *       
+ *     tags: [News Website API 2.0]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Domain name (or uses Host header in production)
+ *         schema: { type: string, example: "telangana.kaburlu.com" }
+ *       - in: query
+ *         name: lang
+ *         required: false
+ *         description: Language filter for articles
+ *         schema: { type: string, example: "te" }
+ *       - in: query
+ *         name: sortBy
+ *         required: false
+ *         description: Sort articles by publishedAt or viewCount
+ *         schema: { type: string, enum: [publishedAt, viewCount], default: publishedAt }
+ *     responses:
+ *       200:
+ *         description: Complete homepage with config, SEO, and articles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 config:
+ *                   type: object
+ *                   properties:
+ *                     themeStyle: { type: string, enum: [style1, style2] }
+ *                     detectedFromDomain: { type: string }
+ *                 seo:
+ *                   type: object
+ *                   properties:
+ *                     title: { type: string }
+ *                     description: { type: string }
+ *                     ogImageUrl: { type: string }
+ *                     jsonLd: { type: object }
+ *                 sections:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       visible: { type: boolean }
+ *                       articles: { type: array }
+ *             examples:
+ *               style1Response:
+ *                 summary: Style1 smart homepage with articles
+ *                 value:
+ *                   config:
+ *                     themeStyle: style1
+ *                     detectedFromDomain: telangana.kaburlu.com
+ *                   seo:
+ *                     title: తెలంగాణ వార్తలు - Kaburlu
+ *                     description: తెలంగాణ రాష్ట్ర తాజా వార్తలు
+ *                     ogImageUrl: https://cdn.kaburlu.com/og-image.jpg
+ *                   sections:
+ *                     - id: section-1
+ *                       key: flashTicker
+ *                       name: Flash News Ticker
+ *                       visible: true
+ *                       limit: 12
+ *                       articles: []
+ *                     - id: section-4
+ *                       key: categorySection
+ *                       name: 4-Column Categories
+ *                       visible: true
+ *                       categories:
+ *                         - slug: జాతీయం
+ *                           name: జాతీయం
+ *                           articles: []
+ *       500:
+ *         description: Error fetching homepage
+ */
+router.get('/homepage/smart', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  
+  if (!tenant || !domain) {
+    return res.status(500).json({ 
+      error: 'Domain context missing',
+      hint: 'Ensure Host header or X-Tenant-Domain header is set'
+    });
+  }
+
+  try {
+    const lang = req.query.lang as string | undefined;
+    const sortBy = (req.query.sortBy as string) === 'viewCount' ? 'viewCount' : 'publishedAt';
+
+    // Get domain settings to detect theme style
+    const domainSettings = await p.domainSettings?.findUnique?.({ 
+      where: { domainId: domain.id } 
+    }).catch(() => null);
+    
+    const effectiveDomainSettings = (domainSettings as any)?.data || {};
+    const themeStyle = effectiveDomainSettings?.themeStyle || 'style1';
+
+    // Get tenant theme for homepage config
+    const theme = await p.tenantTheme?.findUnique?.({ 
+      where: { tenantId: tenant.id } 
+    }).catch(() => null);
+    
+    const homepageConfig = (theme as any)?.homepageConfig || {};
+    
+    // Helper functions
+    const isPlainObject = (value: any) => !!value && typeof value === 'object' && !Array.isArray(value);
+    
+    // Get SEO data
+    const seoBase = effectiveDomainSettings?.seo || (theme as any)?.seoConfig || {};
+    const baseUrl = `https://${domain.domain}`;
+    
+    const seoData = {
+      title: seoBase?.defaultMetaTitle || `${tenant.name} - Latest News`,
+      description: seoBase?.defaultMetaDescription || `Latest news from ${tenant.name}`,
+      keywords: seoBase?.keywords || null,
+      ogImageUrl: seoBase?.ogImageUrl || null,
+      ogUrl: baseUrl,
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        'name': tenant.name,
+        'url': baseUrl,
+        'publisher': {
+          '@type': 'Organization',
+          'name': tenant.name,
+          'logo': {
+            '@type': 'ImageObject',
+            'url': (theme as any)?.logoUrl || null
+          }
+        }
+      }
+    };
+
+    // Get all categories for tenant
+    const allCategories = await p.category.findMany({
+      where: { tenantId: tenant.id, isActive: true },
+      select: { id: true, slug: true, name: true }
+    });
+    
+    const categoryMap = new Map(allCategories.map((c: any) => [c.slug, c]));
+
+    // Build article query filter
+    const articleWhere: any = {
+      tenantId: tenant.id,
+      status: 'PUBLISHED',
+      isActive: true
+    };
+    if (lang) {
+      articleWhere.languageCode = lang;
+    }
+
+    // Response sections array
+    const sections: any[] = [];
+
+    // STYLE1 PROCESSING
+    if (themeStyle === 'style1') {
+      const storedStyle1 = isPlainObject(homepageConfig.style1Layout) ? homepageConfig.style1Layout : null;
+      const layoutSections = storedStyle1?.sections || [];
+
+      for (const section of layoutSections) {
+        const sectionKey = section.key;
+        const sectionConfig = section.config || {};
+        const isActive = section.isActive !== false;
+
+        // Skip ads and inactive sections
+        if (section.type === 'ad' || !isActive) {
+          sections.push({
+            id: section.id,
+            key: sectionKey,
+            name: section.name,
+            visible: false,
+            type: section.type || 'content',
+            reason: section.type === 'ad' ? 'Ad section' : 'Inactive'
+          });
+          continue;
+        }
+
+        // FLASH TICKER
+        if (sectionKey === 'flashTicker') {
+          const limit = sectionConfig.articlesLimit || 12;
+          const articles = await p.tenantWebArticle.findMany({
+            where: articleWhere,
+            orderBy: { [sortBy]: 'desc' },
+            take: limit,
+            select: {
+              id: true,
+              slug: true,
+              title: true,
+              excerpt: true,
+              coverImageUrl: true,
+              publishedAt: true,
+              viewCount: true,
+              category: { select: { slug: true, name: true } }
+            }
+          });
+
+          sections.push({
+            id: section.id,
+            key: sectionKey,
+            name: section.name,
+            visible: articles.length > 0,
+            limit,
+            config: sectionConfig,
+            articles
+          });
+        }
+
+        // HERO SECTION
+        else if (sectionKey === 'heroSection') {
+          const columns = section.layout?.columns || [];
+          const heroColumns: any[] = [];
+
+          for (const col of columns) {
+            const colLimit = col.articlesLimit || 6;
+            const colArticles = await p.tenantWebArticle.findMany({
+              where: articleWhere,
+              orderBy: { [sortBy]: 'desc' },
+              take: colLimit,
+              select: {
+                id: true,
+                slug: true,
+                title: true,
+                excerpt: true,
+                coverImageUrl: true,
+                publishedAt: true,
+                viewCount: true,
+                category: { select: { slug: true, name: true } }
+              }
+            });
+
+            heroColumns.push({
+              key: col.key,
+              position: col.position,
+              name: col.name,
+              label: col.label || col.name,
+              limit: colLimit,
+              articles: colArticles
+            });
+          }
+
+          sections.push({
+            id: section.id,
+            key: sectionKey,
+            name: section.name,
+            visible: heroColumns.some(c => c.articles.length > 0),
+            columns: heroColumns
+          });
+        }
+
+        // CATEGORY SECTION
+        else if (sectionKey === 'categorySection') {
+          const categorySlugs = sectionConfig.categories || ['national', 'entertainment', 'politics', 'sports'];
+          const articlesPerCategory = sectionConfig.articlesPerCategory || 5;
+          const categoryData: any[] = [];
+
+          for (const slug of categorySlugs) {
+            const category = categoryMap.get(slug);
+            if (!category) {
+              categoryData.push({
+                slug,
+                name: slug,
+                visible: false,
+                articles: [],
+                reason: 'Category not found'
+              });
+              continue;
+            }
+
+            const catArticles = await p.tenantWebArticle.findMany({
+              where: { ...articleWhere, categoryId: category.id },
+              orderBy: { [sortBy]: 'desc' },
+              take: articlesPerCategory,
+              select: {
+                id: true,
+                slug: true,
+                title: true,
+                excerpt: true,
+                coverImageUrl: true,
+                publishedAt: true,
+                viewCount: true,
+                category: { select: { slug: true, name: true } }
+              }
+            });
+
+            categoryData.push({
+              slug: category.slug,
+              name: category.name,
+              visible: catArticles.length > 0,
+              articles: catArticles
+            });
+          }
+
+          sections.push({
+            id: section.id,
+            key: sectionKey,
+            name: section.name,
+            visible: categoryData.some(c => c.visible),
+            config: sectionConfig,
+            categories: categoryData
+          });
+        }
+
+        // WEB STORIES
+        else if (sectionKey === 'webStories') {
+          sections.push({
+            id: section.id,
+            key: sectionKey,
+            name: section.name,
+            visible: false,
+            config: sectionConfig,
+            reason: 'Web stories not implemented'
+          });
+        }
+      }
+
+      return res.json({
+        config: {
+          themeStyle: 'style1',
+          detectedFromDomain: domain.domain,
+          sortBy
+        },
+        seo: seoData,
+        sections,
+        meta: {
+          timestamp: new Date().toISOString(),
+          totalSections: sections.length,
+          visibleSections: sections.filter((s: any) => s.visible).length
+        }
+      });
+    }
+
+    // STYLE2 PROCESSING
+    else if (themeStyle === 'style2') {
+      const storedStyle2 = isPlainObject(homepageConfig.style2Config) ? homepageConfig.style2Config : null;
+      const style2Sections = storedStyle2?.sections || [];
+
+      for (const section of style2Sections) {
+        const sectionType = section.section_type;
+        const categories = section.categories || [];
+        
+        // Check if categories exist
+        const validCategories = categories.filter((slug: string) => categoryMap.has(slug));
+        
+        if (validCategories.length === 0) {
+          sections.push({
+            id: section.id,
+            section_type: sectionType,
+            position: section.position,
+            visible: false,
+            reason: 'No valid categories'
+          });
+          continue;
+        }
+
+        // Get articles for section categories
+        const sectionArticles = await p.tenantWebArticle.findMany({
+          where: {
+            ...articleWhere,
+            categoryId: { in: validCategories.map((slug: string) => categoryMap.get(slug)!.id) }
+          },
+          orderBy: { [sortBy]: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            slug: true,
+            title: true,
+            excerpt: true,
+            coverImageUrl: true,
+            publishedAt: true,
+            viewCount: true,
+            category: { select: { slug: true, name: true } }
+          }
+        });
+
+        sections.push({
+          id: section.id,
+          section_type: sectionType,
+          position: section.position,
+          theme_color: section.theme_color,
+          categories: validCategories.map((slug: string) => ({
+            slug,
+            name: categoryMap.get(slug)!.name
+          })),
+          visible: sectionArticles.length > 0,
+          articles: sectionArticles
+        });
+      }
+
+      return res.json({
+        config: {
+          themeStyle: 'style2',
+          detectedFromDomain: domain.domain,
+          sortBy
+        },
+        seo: seoData,
+        sections,
+        meta: {
+          timestamp: new Date().toISOString(),
+          totalSections: sections.length,
+          visibleSections: sections.filter((s: any) => s.visible).length
+        }
+      });
+    }
+
+    // Fallback
+    return res.status(400).json({ error: 'Unknown theme style' });
+
+  } catch (e: any) {
+    console.error('Smart homepage error:', e);
+    return res.status(500).json({ error: 'Failed to fetch smart homepage' });
+  }
+});
+
 export default router;

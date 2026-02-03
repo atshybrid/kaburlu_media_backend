@@ -76,9 +76,12 @@ export async function tenantResolver(req: Request, res: Response, next: NextFunc
   const skipPaths = [
     '/public/digital-papers/all-tenants',
     '/api/public/digital-papers/all-tenants',
-    '/api/v1/public/digital-papers/all-tenants'
+    '/api/v1/public/digital-papers/all-tenants',
+    '/digital-papers/all-tenants' // Relative path when mounted in router
   ];
-  if (skipPaths.some(path => req.path === path || req.path.endsWith(path))) {
+  // Check both full URL and path (handles both app-level and router-level middleware)
+  const fullPath = req.baseUrl + req.path;
+  if (skipPaths.some(path => req.path === path || fullPath === path || req.path.endsWith(path) || fullPath.endsWith(path))) {
     return next();
   }
 
