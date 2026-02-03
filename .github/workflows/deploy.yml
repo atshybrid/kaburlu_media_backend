@@ -26,15 +26,38 @@ jobs:
           username: deploy
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
-            cd ~/kaburlu_media_backend
+            set -e
+
+            echo "▶ Move to home directory"
+            cd ~
+
+            if [ ! -d "kaburlu_media_backend" ]; then
+              echo "▶ Fresh clone repository"
+              git clone https://github.com/atshybrid/kaburlu_media_backend.git
+            fi
+
+            echo "▶ Enter project directory"
+            cd kaburlu_media_backend
+
+            echo "▶ Pull latest code"
             git pull origin main
-            
+
+            echo "▶ Write ENV file from GitHub Secrets"
             echo "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
-            
+
+            echo "▶ Clean install dependencies"
+            rm -rf node_modules dist
             npm install
+
+            echo "▶ Generate Prisma client"
             npx prisma generate
+
+            echo "▶ Build production dist"
             npm run build
-            
-            # CRITICAL: Always restart to reload Swagger spec and new APIs
-            pm2 restart kaburlu-api || pm2 start dist/index.js --name kaburlu-api
+
+            echo "▶ Restart PM2 cleanly"
+            pm2 delete kaburlu-api || true
+            pm2 start dist/index.js --name kaburlu-api
             pm2 save
+
+            echo "✅ Deployment completed successfully"
