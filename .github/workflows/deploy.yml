@@ -15,7 +15,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_SERVER_IP }}
-          username: root  # Changed from 'deploy' to 'root'
+          username: deploy
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
             set -e
