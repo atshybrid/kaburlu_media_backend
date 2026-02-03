@@ -11,14 +11,14 @@ function parseBool(v: string | undefined, def = false): boolean {
 export const AI_PROVIDER: AIProvider = (() => {
   const p = (process.env.AI_PROVIDER || '').trim().toLowerCase();
   if (p === 'openai' || p === 'gemini') return p as AIProvider;
-  // default to gemini if key exists, else openai if key exists
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY) return 'gemini';
+  // Default to OpenAI when available (faster for production)
   if (process.env.OPENAI_API_KEY) return 'openai';
-  return 'gemini';
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY) return 'gemini';
+  return 'openai';
 })();
 
-export const AI_USE_GEMINI = parseBool(process.env.AI_USE_GEMINI, true);
-export const AI_USE_OPENAI = parseBool(process.env.AI_USE_OPENAI, false);
+export const AI_USE_GEMINI = parseBool(process.env.AI_USE_GEMINI, false); // Default false for speed
+export const AI_USE_OPENAI = parseBool(process.env.AI_USE_OPENAI, true);  // Default true
 
 // Feature flags (allow toggling without code changes)
 export const AI_ENABLE_SEO = parseBool(process.env.AI_ENABLE_SEO, true);
