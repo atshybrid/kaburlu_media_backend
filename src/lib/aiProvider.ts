@@ -166,13 +166,19 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
       const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
       
       const callOpenAIChat = async (m: string, apiKey: string) => {
+        // Optimize for long articles (6000+ words)
+        const maxTokens = purpose === 'rewrite' || purpose === 'newspaper' || purpose === 'shortnews_ai_article' 
+          ? 10000  // Allow up to 10K tokens output for long articles
+          : undefined;
+        
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
           model: m,
           messages: [
-            { role: 'system', content: 'You are a helpful assistant.' },
+            // Skip generic system prompt - all instructions in user prompt for efficiency
             { role: 'user', content: prompt }
           ],
           temperature: DEFAULT_TEMPERATURE,
+          max_tokens: maxTokens,
         }, {
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           signal: ctrl.signal,
