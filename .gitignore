@@ -54,6 +54,9 @@ coverage/
 *.tgz
 *.tmp
 
+# Local style-lock snapshots (restore points)
+tmp/style-lock/
+
 # IDX
 .IDX/
 secrets/.env.digitalocean

@@ -3,28 +3,28 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Create CONSTITUENCY designation
-  const constituency = await prisma.reporterDesignation.upsert({
-    where: {
-      id: 'constituency-reporter-global',
-    },
-    update: {
-      level: 'CONSTITUENCY',
-      levelOrder: 3,
-      code: 'CONSTITUENCY_REPORTER',
-      name: 'Constituency Reporter',
-      nativeName: 'నియోజకవర్గ రిపోర్టర్',
-    },
-    create: {
-      id: 'constituency-reporter-global',
-      tenantId: null,
-      level: 'CONSTITUENCY',
-      levelOrder: 3,
-      code: 'CONSTITUENCY_REPORTER',
-      name: 'Constituency Reporter',
-      nativeName: 'నియోజకవర్గ రిపోర్టర్',
-    },
+  const desired = {
+    tenantId: null,
+    level: 'CONSTITUENCY' as const,
+    levelOrder: 3,
+    code: 'CONSTITUENCY_REPORTER',
+    name: 'Constituency Reporter',
+    nativeName: 'నియోజకవర్గ రిపోర్టర్',
+  };
+
+  const existingConstituency = await prisma.reporterDesignation.findFirst({
+    where: { tenantId: null, code: desired.code },
+    select: { id: true },
   });
+
+  const constituency = existingConstituency
+    ? await prisma.reporterDesignation.update({
+        where: { id: existingConstituency.id },
+        data: desired,
+      })
+    : await prisma.reporterDesignation.create({
+        data: desired,
+      });
 
   console.log('✓ Created/Updated CONSTITUENCY designation:', constituency);
 

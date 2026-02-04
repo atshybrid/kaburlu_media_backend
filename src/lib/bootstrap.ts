@@ -348,11 +348,11 @@ export async function ensureCoreSeeds() {
   // IMPORTANT: Keep this list minimal and aligned with clean_and_seed_designations.ts
   try {
     const defaults: { level: string; code: string; name: string; nativeName: string; levelOrder: number }[] = [
+      { level: 'CONSTITUENCY', code: 'CONSTITUENCY_REPORTER', name: 'Constituency Reporter', nativeName: 'నియోజకవర్గ రిపోర్టర్', levelOrder: 3 },
+      { level: 'STATE', code: 'PUBLISHER', name: 'Publisher', nativeName: 'ప్రచురణకర్త', levelOrder: 0 },
+      { level: 'STATE', code: 'CHIEF_EDITOR', name: 'Chief Editor', nativeName: 'ప్రధాన సంపాదకుడు', levelOrder: 0 },
+      { level: 'STATE', code: 'EDITOR', name: 'Editor', nativeName: 'సంపాదకుడు', levelOrder: 0 },
       { level: 'STATE', code: 'TENANT_ADMIN', name: 'Tenant Admin', nativeName: 'టెనెంట్ అడ్మిన్', levelOrder: 0 },
-      { level: 'STATE', code: 'STATE_BUREAU_CHIEF', name: 'State Bureau Chief', nativeName: 'రాష్ట్ర బ్యూరో చీఫ్', levelOrder: 1 },
-      { level: 'DISTRICT', code: 'STAFF_REPORTER', name: 'Staff Reporter', nativeName: 'స్టాఫ్ రిపోర్టర్', levelOrder: 2 },
-      { level: 'ASSEMBLY', code: 'RC_INCHARGE', name: 'RC In-charge', nativeName: 'ఆర్సీ ఇన్‌చార్జ్', levelOrder: 3 },
-      { level: 'MANDAL', code: 'MANDAL_REPORTER', name: 'Mandal Reporter', nativeName: 'మండల రిపోర్టర్', levelOrder: 4 },
     ];
 
     const existing = await (prisma as any).reporterDesignation.findMany({

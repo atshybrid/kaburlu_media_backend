@@ -44,44 +44,23 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   const entity = reporter.tenant?.entity;
   const profile = reporter.user?.profile;
 
-  // Build location string based on level
+  // Build "Work Place" string based on selected location (mandal/assembly/district/state).
+  // This is intentionally tolerant: some records have mismatched/missing `level`, but still have a location selected.
   const locationParts: string[] = [];
-  const level = reporter.level;
 
-  if (level === 'STATE') {
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (level === 'DISTRICT') {
+  if (reporter.mandal?.name) {
+    locationParts.push(reporter.mandal.name);
     if (reporter.district?.name) locationParts.push(reporter.district.name);
     if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (level === 'DIVISION') {
-    if (reporter.district?.name) {
-      locationParts.push(`${reporter.district.name} Division`);
-    } else if (reporter.mandal?.name) {
-      locationParts.push(`${reporter.mandal.name} Division`);
-    }
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (level === 'CONSTITUENCY') {
-    if (reporter.assemblyConstituency?.name) {
-      locationParts.push(`${reporter.assemblyConstituency.name} Constituency`);
-    } else if (reporter.district?.name) {
-      locationParts.push(`${reporter.district.name} Constituency`);
-    } else if (reporter.mandal?.name) {
-      locationParts.push(`${reporter.mandal.name} Constituency`);
-    }
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (level === 'ASSEMBLY') {
-    if (reporter.assemblyConstituency?.name) locationParts.push(reporter.assemblyConstituency.name);
+  } else if (reporter.assemblyConstituency?.name) {
+    locationParts.push(reporter.assemblyConstituency.name);
     if (reporter.district?.name) locationParts.push(reporter.district.name);
     if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (level === 'MANDAL') {
-    if (reporter.mandal?.name) locationParts.push(reporter.mandal.name);
-    if (reporter.district?.name) locationParts.push(reporter.district.name);
+  } else if (reporter.district?.name) {
+    locationParts.push(reporter.district.name);
     if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else {
-    if (reporter.mandal?.name) locationParts.push(reporter.mandal?.name);
-    if (reporter.assemblyConstituency?.name) locationParts.push(reporter.assemblyConstituency.name);
-    if (reporter.district?.name) locationParts.push(reporter.district.name);
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (reporter.state?.name) {
+    locationParts.push(reporter.state.name);
   }
 
   const workplaceLocation = locationParts.join(', ');

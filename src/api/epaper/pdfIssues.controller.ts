@@ -3,6 +3,8 @@ import prisma from '../../lib/prisma';
 import { resolveAdminTenantContext } from './adminTenantContext';
 import { convertPdfToPngPages } from '../../lib/pdfToPng';
 import { convertPngToWebp } from '../../lib/pngToWebp';
+import { convertPngToJpeg } from '../../lib/pngToJpeg';
+import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
 import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
 import { config } from '../../config/env';
 import axios from 'axios';
@@ -159,11 +161,14 @@ async function upsertPdfIssueFromBuffer(params: {
   // 2) Convert to PNG pages (lossless masters)
   const pageBuffers = await convertPdfToPngPages(pdfBuffer);
 
+  const jpegSupported = await hasEpaperJpegColumns(prisma);
+
   // 3) Upload PNG pages (masters) AND generate WebP versions for delivery
   const pages = await mapWithConcurrency(pageBuffers, 4, async (pngBuf, idx) => {
     const pageNumber = idx + 1;
     const pageKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.png`;
     const webpKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.webp`;
+    const jpegKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.jpg`;
 
     // Upload PNG master (archive quality, never deleted)
     const pngUpload = await putPublicObject({ key: pageKey, body: pngBuf, contentType: 'image/png' });
@@ -179,11 +184,25 @@ async function upsertPdfIssueFromBuffer(params: {
       console.warn(`⚠️  WebP conversion failed for page ${pageNumber}:`, webpErr);
     }
 
-    return { pageNumber, imageUrl: pngUpload.publicUrl, imageUrlWebp: webpUrl };
+    // Convert PNG to JPEG for social sharing (OG tags)
+    let jpegUrl: string | null = null;
+    if (jpegSupported) {
+      try {
+        const jpegBuf = await convertPngToJpeg(pngBuf);
+        const jpegUpload = await putPublicObject({ key: jpegKey, body: jpegBuf, contentType: 'image/jpeg' });
+        jpegUrl = jpegUpload.publicUrl;
+      } catch (jpegErr) {
+        // JPEG generation is non-critical; log and continue with PNG/WebP only
+        console.warn(`⚠️  JPEG conversion failed for page ${pageNumber}:`, jpegErr);
+      }
+    }
+
+    return { pageNumber, imageUrl: pngUpload.publicUrl, imageUrlWebp: webpUrl, imageUrlJpeg: jpegUrl };
   });
 
   const coverImageUrl = pages[0]?.imageUrl || null;
   const coverImageUrlWebp = pages[0]?.imageUrlWebp || null;
+  const coverImageUrlJpeg = jpegSupported ? (pages[0]?.imageUrlJpeg || null) : null;
 
   // 4) Upsert/replace DB record
   const existing = await p.epaperPdfIssue.findFirst({
@@ -208,8 +227,10 @@ async function upsertPdfIssueFromBuffer(params: {
     for (let n = pages.length + 1; n <= existing.pageCount; n++) {
       const oldPngKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.png`;
       const oldWebpKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.webp`;
+      const oldJpegKey = `${keys.pagePrefix}/page-${String(n).padStart(4, '0')}.jpg`;
       deletes.push(deletePublicObject({ key: oldPngKey }).catch(() => undefined as any));
       deletes.push(deletePublicObject({ key: oldWebpKey }).catch(() => undefined as any));
+      deletes.push(deletePublicObject({ key: oldJpegKey }).catch(() => undefined as any));
     }
     await Promise.allSettled(deletes);
   }
@@ -225,6 +246,7 @@ async function upsertPdfIssueFromBuffer(params: {
           pdfUrl: pdfUpload.publicUrl,
           coverImageUrl,
           coverImageUrlWebp,
+          ...(jpegSupported ? { coverImageUrlJpeg } : {}),
           pageCount: pages.length,
           uploadedByUserId: userId || null,
           editionId: editionId || null,
@@ -237,6 +259,7 @@ async function upsertPdfIssueFromBuffer(params: {
           pageNumber: p.pageNumber,
           imageUrl: p.imageUrl,
           imageUrlWebp: p.imageUrlWebp,
+          ...(jpegSupported ? { imageUrlJpeg: p.imageUrlJpeg } : {}),
         })),
       });
       return updated;
@@ -251,6 +274,7 @@ async function upsertPdfIssueFromBuffer(params: {
         pdfUrl: pdfUpload.publicUrl,
         coverImageUrl,
         coverImageUrlWebp,
+        ...(jpegSupported ? { coverImageUrlJpeg } : {}),
         pageCount: pages.length,
         uploadedByUserId: userId || null,
       },
@@ -262,6 +286,7 @@ async function upsertPdfIssueFromBuffer(params: {
         pageNumber: p.pageNumber,
         imageUrl: p.imageUrl,
         imageUrlWebp: p.imageUrlWebp,
+        ...(jpegSupported ? { imageUrlJpeg: p.imageUrlJpeg } : {}),
       })),
     });
 
@@ -284,6 +309,7 @@ async function upsertPdfIssueFromBuffer(params: {
       pageCount: pages.length,
       coverImageUrl,
       coverImageUrlWebp,
+      coverImageUrlJpeg,
     },
   };
 }
@@ -462,6 +488,26 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
   return results;
 }
 
+async function downloadPublicImageToBuffer(url: string, maxBytes: number): Promise<Buffer> {
+  const resp = await axios.get<ArrayBuffer>(String(url || '').trim(), {
+    responseType: 'arraybuffer',
+    timeout: Number(process.env.EPAPER_IMAGE_FETCH_TIMEOUT_MS || 45000),
+    maxRedirects: 5,
+    maxContentLength: maxBytes,
+    maxBodyLength: maxBytes,
+    validateStatus: (s) => s >= 200 && s < 300,
+    headers: {
+      'User-Agent': 'KaburluMediaBackend/epaper-image-fetch',
+      Accept: 'image/png,image/*;q=0.9,*/*;q=0.1',
+    },
+  });
+
+  const buf = Buffer.from(resp.data);
+  if (!buf.length) throw new Error('Downloaded image is empty');
+  if (buf.length > maxBytes) throw new Error('Image too large');
+  return buf;
+}
+
 export const uploadPdfIssue = async (req: Request, res: Response) => {
   try {
     const ctx = await getTenantContext(req);
@@ -555,6 +601,89 @@ export const uploadPdfIssueByUrl = async (req: Request, res: Response) => {
     return res.status(201).json({ ok: true, issue: result.issue, uploaded: result.uploaded, source: { pdfUrl } });
   } catch (e: any) {
     return sendHttpError(res, e, 'Failed to upload PDF issue by URL');
+  }
+};
+
+/**
+ * Backfill JPEG page/cover URLs for an existing legacy (generateImages=true) issue.
+ * This is useful when JPEG support is added after issues already exist.
+ */
+export const backfillPdfIssueJpeg = async (req: Request, res: Response) => {
+  try {
+    const ctx = await getTenantContext(req);
+    if (!ctx.isAdmin) return res.status(403).json({ error: 'Admin only' });
+    if (!ctx.tenantId) return res.status(400).json({ error: 'Tenant context required' });
+
+    const jpegSupported = await hasEpaperJpegColumns(prisma);
+    if (!jpegSupported) {
+      return res.status(409).json({
+        error: 'JPEG columns not available in DB. Run Prisma migrations first.',
+        code: 'EPAPER_JPEG_MIGRATION_REQUIRED',
+      });
+    }
+
+    const id = asString((req.params as any).id);
+    const issue = await p.epaperPdfIssue.findFirst({
+      where: { id, tenantId: ctx.tenantId },
+      include: { pages: { orderBy: { pageNumber: 'asc' } } },
+    });
+    if (!issue) return res.status(404).json({ error: 'Not found' });
+
+    if (!issue.pages || issue.pages.length === 0) {
+      return res.status(400).json({
+        error: 'This issue has no stored page images to backfill (PDF-only mode or missing pages).',
+        code: 'NO_PAGES_TO_BACKFILL',
+      });
+    }
+
+    const tenantId = ctx.tenantId;
+    const issueDateStr = new Date(issue.issueDate).toISOString().slice(0, 10);
+
+    let targetType: 'edition' | 'sub-edition' = 'edition';
+    let targetId = String(issue.editionId || '');
+    if (issue.subEditionId) {
+      targetType = 'sub-edition';
+      targetId = String(issue.subEditionId);
+    }
+    if (!targetId) {
+      return res.status(400).json({ error: 'Issue target (edition/sub-edition) missing', code: 'INVALID_ISSUE_TARGET' });
+    }
+
+    const keys = buildIssueKey({ tenantId, targetType, targetId, date: issueDateStr });
+    const maxBytes = Number(process.env.EPAPER_IMAGE_MAX_BYTES || 30 * 1024 * 1024);
+
+    const work = await mapWithConcurrency(issue.pages, 4, async (pg: any) => {
+      if (pg.imageUrlJpeg) return { pageId: pg.id, pageNumber: pg.pageNumber, imageUrlJpeg: pg.imageUrlJpeg, didWork: false };
+      const pageNumber = Number(pg.pageNumber);
+      const jpegKey = `${keys.pagePrefix}/page-${String(pageNumber).padStart(4, '0')}.jpg`;
+      const pngBuf = await downloadPublicImageToBuffer(pg.imageUrl, maxBytes);
+      const jpegBuf = await convertPngToJpeg(pngBuf);
+      const upload = await putPublicObject({ key: jpegKey, body: jpegBuf, contentType: 'image/jpeg' });
+      return { pageId: pg.id, pageNumber, imageUrlJpeg: upload.publicUrl, didWork: true };
+    });
+
+    const first = work.find((x) => x.pageNumber === 1) || work[0];
+    const coverJpeg = first?.imageUrlJpeg || null;
+
+    await prisma.$transaction(async (tx) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t: any = tx;
+      await t.epaperPdfIssue.update({ where: { id: issue.id }, data: { coverImageUrlJpeg: coverJpeg } });
+      for (const item of work) {
+        if (!item.didWork) continue;
+        await t.epaperPdfPage.update({ where: { id: item.pageId }, data: { imageUrlJpeg: item.imageUrlJpeg } });
+      }
+    });
+
+    return res.json({
+      ok: true,
+      issueId: issue.id,
+      coverImageUrlJpeg: coverJpeg,
+      updatedPages: work.filter((x) => x.didWork).length,
+      totalPages: work.length,
+    });
+  } catch (e: any) {
+    return sendHttpError(res, e, 'Failed to backfill issue JPEGs');
   }
 };
 

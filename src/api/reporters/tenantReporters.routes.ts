@@ -752,7 +752,7 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *             constituencyReporter:
  *               summary: CONSTITUENCY level reporter
  *               value:
- *                 designationId: constituency-reporter-global
+ *                 designationId: cm_designation_constituency_reporter_id
  *                 level: CONSTITUENCY
  *                 districtId: cmit7pjf30001ugaov86j0abc
  *                 subscriptionActive: false
@@ -787,7 +787,7 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *             editorialPublisher:
  *               summary: Publisher (STATE level - Editorial Management)
  *               value:
- *                 designationId: publisher-global
+ *                 designationId: cm_designation_publisher_id
  *                 level: STATE
  *                 stateId: cmit7pjf30001ugaov86j0ed5
  *                 subscriptionActive: false
@@ -799,7 +799,7 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *             editorialChiefEditor:
  *               summary: Chief Editor (STATE level - Editorial Management)
  *               value:
- *                 designationId: chief-editor-global
+ *                 designationId: cm_designation_chief_editor_id
  *                 level: STATE
  *                 stateId: cmit7pjf30001ugaov86j0ed5
  *                 subscriptionActive: false
@@ -811,7 +811,7 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *             editorialEditor:
  *               summary: Editor (STATE level - Editorial Management)
  *               value:
- *                 designationId: editor-global
+ *                 designationId: cm_designation_editor_id
  *                 level: STATE
  *                 stateId: cmit7pjf30001ugaov86j0ed5
  *                 subscriptionActive: false
@@ -2314,7 +2314,9 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const scope = await requireTenantEditorialScope(req, res);
     if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
 
-    const { tenantId, id } = req.params;
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
 
     const reporter = await (prisma as any).reporter.findFirst({
       where: { id, tenantId },
@@ -2444,8 +2446,19 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
  */
 router.get('/tenants/:tenantId/reporters/:id/id-card', async (req, res) => {
   try {
-    const { tenantId, id } = req.params;
-    const card = await (prisma as any).reporterIDCard.findFirst({ where: { reporterId: id, reporter: { tenantId } } }).catch(() => null);
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+
+    // Distinguish "no card" from "wrong reporter id" (common when Swagger copy adds a leading space like %20)
+    const reporterExists = await (prisma as any).reporter
+      .findFirst({ where: { id, tenantId }, select: { id: true } })
+      .catch(() => null);
+    if (!reporterExists) return res.status(404).json({ error: 'Reporter not found' });
+
+    const card = await (prisma as any).reporterIDCard
+      .findFirst({ where: { reporterId: id, reporter: { tenantId } } })
+      .catch(() => null);
     return res.status(200).json(card || null);
   } catch (e) {
     console.error('tenant reporter get id-card error', e);
@@ -2693,7 +2706,9 @@ router.patch('/tenants/:tenantId/reporters/:id/kyc/verify', passport.authenticat
  */
 router.patch('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const { tenantId, id } = req.params;
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
     const user: any = (req as any).user;
     const body = req.body || {};
 
@@ -2850,7 +2865,9 @@ router.patch('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authentica
  */
 router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const { tenantId, id } = req.params;
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
     const user: any = (req as any).user;
 
     const reporter = await (prisma as any).reporter.findFirst({
@@ -2970,7 +2987,9 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
  */
 router.delete('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const { tenantId, id } = req.params;
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
     
     // Check reporter exists
     const reporter = await (prisma as any).reporter.findFirst({

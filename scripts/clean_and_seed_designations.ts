@@ -18,39 +18,47 @@
 
 import prisma from '../src/lib/prisma';
 
-// Standard Indian print newspaper reporter designations
+// Clean seed set (global). Keep aligned with src/lib/bootstrap.ts.
 const CLEAN_DESIGNATIONS = [
   {
-    code: 'STATE_BUREAU_CHIEF',
-    name: 'State Bureau Chief',
-    nativeName: 'రాష్ట్ర బ్యూరో చీఫ్',
+    code: 'PUBLISHER',
+    name: 'Publisher',
+    nativeName: 'ప్రచురణకర్త',
     level: 'STATE',
-    levelOrder: 1, // Highest hierarchy
-    description: 'State-level head reporter managing all district bureaus'
+    levelOrder: 0,
+    description: 'Publisher role (editorial head)'
   },
   {
-    code: 'STAFF_REPORTER',
-    name: 'Staff Reporter',
-    nativeName: 'స్టాఫ్ రిపోర్టర్',
-    level: 'DISTRICT',
-    levelOrder: 2,
-    description: 'District-level senior reporter with full coverage rights'
+    code: 'CHIEF_EDITOR',
+    name: 'Chief Editor',
+    nativeName: 'ప్రధాన సంపాదకుడు',
+    level: 'STATE',
+    levelOrder: 0,
+    description: 'Chief Editor (state-level editorial)'
   },
   {
-    code: 'RC_INCHARGE',
-    name: 'RC In-charge',
-    nativeName: 'ఆర్సీ ఇన్‌చార్జ్',
-    level: 'ASSEMBLY',
+    code: 'EDITOR',
+    name: 'Editor',
+    nativeName: 'సంపాదకుడు',
+    level: 'STATE',
+    levelOrder: 0,
+    description: 'Editor (state-level editorial)'
+  },
+  {
+    code: 'TENANT_ADMIN',
+    name: 'Tenant Admin',
+    nativeName: 'టెనెంట్ అడ్మిన్',
+    level: 'STATE',
+    levelOrder: 0,
+    description: 'Tenant Admin (product admin role)'
+  },
+  {
+    code: 'CONSTITUENCY_REPORTER',
+    name: 'Constituency Reporter',
+    nativeName: 'నియోజకవర్గ రిపోర్టర్',
+    level: 'CONSTITUENCY',
     levelOrder: 3,
-    description: 'Assembly constituency reporter (Reddy Club in-charge)'
-  },
-  {
-    code: 'MANDAL_REPORTER',
-    name: 'Mandal Reporter',
-    nativeName: 'మండల రిపోర్టర్',
-    level: 'MANDAL',
-    levelOrder: 4, // Lowest hierarchy (most localized)
-    description: 'Mandal/Tehsil level reporter covering local news'
+    description: 'Constituency-level reporter'
   }
 ] as const;
 

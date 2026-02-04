@@ -4,6 +4,7 @@ import { config } from '../../config/env';
 import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
+import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
 import newsWebsiteRouter from './newsWebsite.routes';
 // NEW: Public crop session imports
 import {
@@ -911,6 +912,8 @@ router.get('/epaper/issues', requireVerifiedEpaperDomain, async (req, res) => {
 router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
   const tenant = (res.locals as any).tenant;
 
+  const jpegSupported = await hasEpaperJpegColumns(prisma);
+
   const includePages = String((req.query as any).includePages ?? 'false').toLowerCase() === 'true';
   const includeEmpty = String((req.query as any).includeEmpty ?? 'true').toLowerCase() === 'true';
   const issueDateStr = (req.query as any).issueDate ? String((req.query as any).issueDate).trim() : '';
@@ -938,8 +941,33 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
     },
   });
 
-  const issueInclude: any = {
-    pages: includePages ? { orderBy: { pageNumber: 'asc' } } : false,
+  const pageSelect: any = {
+    id: true,
+    issueId: true,
+    pageNumber: true,
+    imageUrl: true,
+    imageUrlWebp: true,
+    createdAt: true,
+    ...(jpegSupported ? { imageUrlJpeg: true } : {}),
+  };
+
+  const issueSelectBase: any = {
+    id: true,
+    tenantId: true,
+    issueDate: true,
+    editionId: true,
+    subEditionId: true,
+    pdfUrl: true,
+    coverImageUrl: true,
+    coverImageUrlWebp: true,
+    ...(jpegSupported ? { coverImageUrlJpeg: true } : {}),
+    pageCount: true,
+    updatedAt: true,
+    createdAt: true,
+    pdfOnlyMode: true,
+    pages: includePages
+      ? { orderBy: { pageNumber: 'asc' }, select: pageSelect }
+      : false,
   };
 
   let editionIssues: any[] = [];
@@ -948,10 +976,10 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
   if (hasDate) {
     const issues = await p.epaperPdfIssue.findMany({
       where: { tenantId: tenant.id, issueDate: issueDate as any },
-      include: {
+      select: {
+        ...issueSelectBase,
         edition: { select: { id: true, slug: true } },
         subEdition: { select: { id: true, slug: true } },
-        ...issueInclude,
       },
     });
     editionIssues = issues.filter((it: any) => it.editionId && !it.subEditionId);
@@ -961,9 +989,9 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
       where: { tenantId: tenant.id, editionId: { not: null }, subEditionId: null },
       orderBy: [{ issueDate: 'desc' }],
       distinct: ['editionId'],
-      include: {
+      select: {
+        ...issueSelectBase,
         edition: { select: { id: true, slug: true } },
-        ...issueInclude,
       },
     });
 
@@ -971,15 +999,27 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
       where: { tenantId: tenant.id, subEditionId: { not: null }, editionId: null },
       orderBy: [{ issueDate: 'desc' }],
       distinct: ['subEditionId'],
-      include: {
+      select: {
+        ...issueSelectBase,
         subEdition: { select: { id: true, slug: true, edition: { select: { slug: true } } } },
-        ...issueInclude,
       },
     });
   }
 
   const domain = (res.locals as any).domain;
   const baseUrl = `https://${domain?.domain || 'epaper.kaburlutoday.com'}`;
+
+  // Prefer a non-WebP URL that actually exists. In our storage, coverImageUrl is typically PNG.
+  // Prefer stored JPEG variants (generated at upload time) for social sharing.
+  const pickOgImageJpeg = (issue: any): string | null => {
+    if (!issue) return null;
+    return issue.coverImageUrlJpeg || issue.coverImageUrl || issue.coverImageUrlWebp || null;
+  };
+
+  const pickPageImageJpeg = (pg: any): string | null => {
+    if (!pg) return null;
+    return pg.imageUrlJpeg || pg.imageUrl || pg.imageUrlWebp || null;
+  };
 
   const byEditionId = new Map<string, any>();
   for (const it of editionIssues) if (it.editionId) byEditionId.set(String(it.editionId), it);
@@ -1013,19 +1053,20 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
             const displayDate = formatIssueDate(subIssue.issueDate);
             // Build ogImage with both WebP and JPEG formats
             const ogImageWebp = subIssue.coverImageUrlWebp || subIssue.coverImageUrl;
-            const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : subIssue.coverImageUrl;
+            const ogImageJpeg = pickOgImageJpeg(subIssue);
             issueMeta = {
               id: subIssue.id,
               issueDate: subIssue.issueDate,
               pdfUrl: subIssue.pdfUrl,
               coverImageUrl: subIssue.coverImageUrl,
               coverImageUrlWebp: subIssue.coverImageUrlWebp || null,
+              coverImageUrlJpeg: subIssue.coverImageUrlJpeg || null,
               pageCount: subIssue.pageCount,
               pages: includePages
                 ? (subIssue.pages || []).map((pg: any) => ({
                     ...pg,
                     imageUrlWebp: pg.imageUrlWebp || null,
-                    imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
+                    imageUrlJpeg: pickPageImageJpeg(pg),
                   }))
                 : undefined,
               updatedAt: subIssue.updatedAt,
@@ -1054,19 +1095,20 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
         const displayDate = formatIssueDate(edIssue.issueDate);
         // Build ogImage with both WebP and JPEG formats
         const ogImageWebp = edIssue.coverImageUrlWebp || edIssue.coverImageUrl;
-        const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : edIssue.coverImageUrl;
+        const ogImageJpeg = pickOgImageJpeg(edIssue);
         editionIssueMeta = {
           id: edIssue.id,
           issueDate: edIssue.issueDate,
           pdfUrl: edIssue.pdfUrl,
           coverImageUrl: edIssue.coverImageUrl,
           coverImageUrlWebp: edIssue.coverImageUrlWebp || null,
+          coverImageUrlJpeg: edIssue.coverImageUrlJpeg || null,
           pageCount: edIssue.pageCount,
           pages: includePages
             ? (edIssue.pages || []).map((pg: any) => ({
                 ...pg,
                 imageUrlWebp: pg.imageUrlWebp || null,
-                imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
+                imageUrlJpeg: pickPageImageJpeg(pg),
               }))
             : undefined,
           updatedAt: edIssue.updatedAt,
@@ -1081,6 +1123,9 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
 
       return {
         ...ed,
+        // Edition-level cover images can be null in DB; fall back to issue cover image so clients always have a cover.
+        coverImageUrl: ed.coverImageUrl || editionIssueMeta?.coverImageUrl || null,
+        coverImageUrlWebp: (ed as any).coverImageUrlWebp || editionIssueMeta?.coverImageUrlWebp || null,
         issue: editionIssueMeta,
         subEditions: mappedSub,
       };
@@ -1150,6 +1195,8 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
 router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
   const tenant = (res.locals as any).tenant;
 
+  const jpegSupported = await hasEpaperJpegColumns(prisma);
+
   const issueDateStr = (req.query as any).issueDate ? String((req.query as any).issueDate).trim() : undefined;
   const editionSlug = (req.query as any).editionSlug ? String((req.query as any).editionSlug).trim() : '';
   const subEditionSlug = (req.query as any).subEditionSlug ? String((req.query as any).subEditionSlug).trim() : undefined;
@@ -1175,19 +1222,46 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
     ? { tenantId: tenant.id, subEditionId: subEdition.id, editionId: null }
     : { tenantId: tenant.id, editionId: edition.id, subEditionId: null };
 
+  const pageSelect: any = {
+    id: true,
+    issueId: true,
+    pageNumber: true,
+    imageUrl: true,
+    imageUrlWebp: true,
+    createdAt: true,
+    ...(jpegSupported ? { imageUrlJpeg: true } : {}),
+  };
+
+  const issueSelect: any = {
+    id: true,
+    tenantId: true,
+    issueDate: true,
+    editionId: true,
+    subEditionId: true,
+    pdfUrl: true,
+    coverImageUrl: true,
+    coverImageUrlWebp: true,
+    ...(jpegSupported ? { coverImageUrlJpeg: true } : {}),
+    pageCount: true,
+    updatedAt: true,
+    createdAt: true,
+    pdfOnlyMode: true,
+    pages: { orderBy: { pageNumber: 'asc' }, select: pageSelect },
+  };
+
   let issue: any = null;
   if (issueDateStr) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDateStr)) return res.status(400).json({ error: 'issueDate must be YYYY-MM-DD' });
     const issueDate = new Date(`${issueDateStr}T00:00:00.000Z`);
     issue = await p.epaperPdfIssue.findFirst({
       where: { ...whereTarget, issueDate },
-      include: { pages: { orderBy: { pageNumber: 'asc' } } },
+      select: issueSelect,
     });
   } else {
     issue = await p.epaperPdfIssue.findFirst({
       where: { ...whereTarget },
       orderBy: { issueDate: 'desc' },
-      include: { pages: { orderBy: { pageNumber: 'asc' } } },
+      select: issueSelect,
     });
   }
 
@@ -1208,9 +1282,10 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
     ? `${baseUrl}/epaper/${edition.slug}/${subEdition.slug}/${dateStr}/1`
     : `${baseUrl}/epaper/${edition.slug}/${dateStr}/1`;
 
-  // Build ogImage with both WebP and JPEG formats
+  // Build ogImage with both WebP and "JPEG" fallback.
+  // Avoid synthesizing .jpg URLs from .webp; JPEG variants may not exist. Prefer the PNG coverImageUrl.
   const ogImageWebp = issue.coverImageUrlWebp || issue.coverImageUrl;
-  const ogImageJpeg = ogImageWebp ? ogImageWebp.replace(/\.webp$/i, '.jpg') : issue.coverImageUrl;
+  const ogImageJpeg = issue.coverImageUrlJpeg || issue.coverImageUrl || ogImageWebp;
 
   return res.json({
     tenant: { id: tenant.id, slug: tenant.slug },
@@ -1222,11 +1297,12 @@ router.get('/epaper/issue', requireVerifiedEpaperDomain, async (req, res) => {
       pdfUrl: issue.pdfUrl,
       coverImageUrl: issue.coverImageUrl,
       coverImageUrlWebp: issue.coverImageUrlWebp || null,
+      coverImageUrlJpeg: issue.coverImageUrlJpeg || null,
       pageCount: issue.pageCount,
       pages: (issue.pages || []).map((pg: any) => ({
         ...pg,
         imageUrlWebp: pg.imageUrlWebp || null,
-        imageUrlJpeg: pg.imageUrl ? pg.imageUrl.replace(/\.webp$/i, '.jpg') : pg.imageUrl,
+        imageUrlJpeg: pg.imageUrlJpeg || pg.imageUrl || pg.imageUrlWebp || null,
       })),
       // SEO / Sharing metadata
       canonicalUrl,

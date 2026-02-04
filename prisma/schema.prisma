@@ -546,6 +546,8 @@ model EpaperPdfIssue {
   updatedAt         DateTime                     @updatedAt
   /// WebP version of cover image for optimized delivery (frontend prefers this)
   coverImageUrlWebp String?
+  /// JPEG version of cover image for social sharing/OG tags (most platforms prefer JPEG)
+  coverImageUrlJpeg String?
   /// Whether this issue uses the new PDF-only mode (no pre-generated page images)
   pdfOnlyMode       Boolean                      @default(false)
   clips             EpaperArticleClip[]
@@ -571,6 +573,8 @@ model EpaperPdfPage {
   createdAt    DateTime       @default(now())
   /// WebP optimized image URL for frontend delivery (~80% smaller)
   imageUrlWebp String?
+  /// JPEG version for social sharing/OG tags (platform compatibility)
+  imageUrlJpeg String?
   issue        EpaperPdfIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@unique([issueId, pageNumber])

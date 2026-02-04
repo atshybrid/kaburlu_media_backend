@@ -316,7 +316,7 @@ To test ID card generation:
 curl -X POST http://localhost:3001/api/v1/tenants/{tenantId}/reporters \
   -H "Authorization: Bearer {token}" \
   -d '{
-    "designationId": "publisher-global",
+    "designationId": "<publisherDesignationId>",
     "level": "STATE",
     "stateId": "...",
     "fullName": "Test Publisher",

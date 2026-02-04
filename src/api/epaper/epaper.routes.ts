@@ -39,6 +39,7 @@ import {
   uploadPdfIssueByUrl,
   getPdfIssue,
   findPdfIssue,
+  backfillPdfIssueJpeg,
 } from './pdfIssues.controller';
 import {
   getEpaperPublicConfig,
@@ -1958,6 +1959,9 @@ router.get('/pdf-issues', auth, findPdfIssue);
  *                   ogImage: "https://kaburlu-news.b-cdn.net/epaper/pdf-issues/.../pages/page-0001.png"
  */
 router.get('/pdf-issues/:id', auth, getPdfIssue);
+
+// Backfill JPEG URLs for existing legacy issues (share/OG image compatibility)
+router.post('/pdf-issues/:id/backfill-jpeg', auth, backfillPdfIssueJpeg);
 
 // ============================================================================
 // BLOCK SUGGESTION

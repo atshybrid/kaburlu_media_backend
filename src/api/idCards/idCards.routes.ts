@@ -97,20 +97,39 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
   const anyDomainRec = primaryDomainRec || await (prisma as any).domain.findFirst({ where: { tenantId: reporter.tenantId, status: 'ACTIVE' } }).catch(()=>null);
   const domainBase = anyDomainRec?.domain ? `https://${anyDomainRec.domain}` : null;
 
-  // Resolve place of work names (state/district/mandal)
+  // Resolve place of work names based on what is selected (mandal/assembly/district/state)
+  // RC In-charge / Constituency designations often pick either mandal or district; show whichever is available.
   let placeOfWork: string | null = null;
+  const stateName = reporter.stateId
+    ? await (prisma as any).state.findUnique({ where: { id: reporter.stateId } }).then((s: any) => s?.name || null).catch(() => null)
+    : null;
+  const districtName = reporter.districtId
+    ? await (prisma as any).district.findUnique({ where: { id: reporter.districtId } }).then((d: any) => d?.name || null).catch(() => null)
+    : null;
+  const mandalName = reporter.mandalId
+    ? await (prisma as any).mandal.findUnique({ where: { id: reporter.mandalId } }).then((m: any) => m?.name || null).catch(() => null)
+    : null;
+  const assemblyName = reporter.assemblyConstituencyId
+    ? await (prisma as any).assemblyConstituency
+        .findUnique({ where: { id: reporter.assemblyConstituencyId } })
+        .then((a: any) => a?.name || null)
+        .catch(() => null)
+    : null;
+
   const parts: string[] = [];
-  if (reporter.stateId) {
-    const s = await (prisma as any).state.findUnique({ where: { id: reporter.stateId } }).catch(() => null);
-    if (s?.name) parts.push(s.name);
-  }
-  if (reporter.districtId) {
-    const d = await (prisma as any).district.findUnique({ where: { id: reporter.districtId } }).catch(() => null);
-    if (d?.name) parts.push(d.name);
-  }
-  if (reporter.mandalId) {
-    const m = await (prisma as any).mandal.findUnique({ where: { id: reporter.mandalId } }).catch(() => null);
-    if (m?.name) parts.push(m.name);
+  if (mandalName) {
+    parts.push(mandalName);
+    if (districtName) parts.push(districtName);
+    if (stateName) parts.push(stateName);
+  } else if (assemblyName) {
+    parts.push(assemblyName);
+    if (districtName) parts.push(districtName);
+    if (stateName) parts.push(stateName);
+  } else if (districtName) {
+    parts.push(districtName);
+    if (stateName) parts.push(stateName);
+  } else if (stateName) {
+    parts.push(stateName);
   }
   placeOfWork = parts.length ? parts.join(', ') : null;
 
@@ -237,10 +256,22 @@ async function resolvePuppeteerLaunchOptions(puppeteer: any): Promise<{ args: st
   // Prefer an explicit, existing system chrome path if provided.
   const systemExecutablePath = resolveChromeExecutablePath();
 
-  // If no system path exists, try @sparticuz/chromium (good for Render-like hosts).
+  // If we're using full Puppeteer (not core), prefer its bundled executable.
+  // This is especially important on macOS/Windows where @sparticuz/chromium is not applicable.
+  const puppeteerBundledPath = (() => {
+    try {
+      const p = typeof puppeteer?.executablePath === 'function' ? String(puppeteer.executablePath()) : undefined;
+      if (p && fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+    return undefined;
+  })();
+
+  // If no system/bundled path exists, try @sparticuz/chromium (Linux/serverless only).
   let chromium: any;
   try {
-    chromium = require('@sparticuz/chromium');
+    chromium = process.platform === 'linux' ? require('@sparticuz/chromium') : undefined;
   } catch {
     chromium = undefined;
   }
@@ -252,6 +283,14 @@ async function resolvePuppeteerLaunchOptions(puppeteer: any): Promise<{ args: st
       args: baseArgs,
       headless: 'new',
       executablePath: systemExecutablePath
+    };
+  }
+
+  if (puppeteerBundledPath) {
+    return {
+      args: baseArgs,
+      headless: 'new',
+      executablePath: puppeteerBundledPath
     };
   }
 
@@ -345,11 +384,13 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     .front .details .label{width:15mm;font-weight:700}
     .front .details .colon{width:2mm;text-align:center}
     .front .details .value{width:auto}
-    .front .signature{position:absolute;right:2mm;bottom:5mm;width:15mm}
-    .front .signature img{width:100%}
+    .front .signature{position:absolute;right:2mm;bottom:9mm;width:18mm;z-index:2;text-align:center}
+    .front .signature img{width:100%;display:block}
+    .front .signature .sig-line{height:0.35mm;background:rgba(0,0,0,0.35);margin:4.2mm auto 0 auto;width:16mm}
+    .front .signature .sig-label{margin-top:0.8mm;font-size:1.6mm;font-weight:800;color:#111;letter-spacing:0.2px}
     .front .photo .stamp{position:absolute;right:-1mm;bottom:-1mm;width:11mm;height:11mm;pointer-events:none;opacity:0.95}
     .front .photo .stamp img{width:100%;height:100%;object-fit:contain}
-    .front .footer{position:absolute;left:0;right:0;bottom:0;background:${primary};height:7mm;color:#fff;display:flex;justify-content:center;align-items:center;font-size:2.5mm;font-weight:700}
+    .front .footer{position:absolute;left:0;right:0;bottom:0;background:${primary};height:7mm;color:#fff;display:flex;justify-content:center;align-items:center;font-size:2.5mm;font-weight:700;z-index:1}
     /* BACK */
     .back .header{height:12mm;background:${primary};color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 3mm;box-sizing:border-box}
     .back .header h1{font-family:'Archivo Black',sans-serif;font-size:6.5mm;margin:0;line-height:1}
@@ -391,7 +432,10 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
         </table>
       </div>
     </div>
-    <div class="signature">${sign ? `<img src="${sign}" alt="signature" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+    <div class="signature">
+      ${sign ? `<img src="${sign}" alt="signature" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : `<div class="sig-line"></div>`}
+      <div class="sig-label">Authorized Signature</div>
+    </div>
     <div class="footer">PRGI No : ${prgi || '-'}</div>
   </div>
   <div class="page-break"></div>
@@ -446,12 +490,14 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
     .front .details .label{width:15mm;font-weight:700}
     .front .details .colon{width:2mm;text-align:center}
     .front .details .value{width:auto}
-    .front .signature{position:absolute;right:2mm;bottom:5mm;width:15mm}
-    .front .signature img{width:100%}
+    .front .signature{position:absolute;right:2mm;bottom:9mm;width:18mm;z-index:2;text-align:center}
+    .front .signature img{width:100%;display:block}
+    .front .signature .sig-line{height:0.35mm;background:rgba(0,0,0,0.35);margin:4.2mm auto 0 auto;width:16mm}
+    .front .signature .sig-label{margin-top:0.8mm;font-size:1.6mm;font-weight:800;color:#111;letter-spacing:0.2px}
     /* Stamp overlay anchored to photo bottom-right */
     .front .photo .stamp{position:absolute;right:-1mm;bottom:-1mm;width:11mm;height:11mm;pointer-events:none;opacity:0.95}
     .front .photo .stamp img{width:100%;height:100%;object-fit:contain}
-    .front .footer{position:absolute;left:0;right:0;bottom:0;background:${primary};height:7mm;color:#fff;display:flex;justify-content:center;align-items:center;font-size:2.5mm;font-weight:700}
+    .front .footer{position:absolute;left:0;right:0;bottom:0;background:${primary};height:7mm;color:#fff;display:flex;justify-content:center;align-items:center;font-size:2.5mm;font-weight:700;z-index:1}
     /* BACK */
     .back .header{height:12mm;background:${primary};color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 3mm;box-sizing:border-box}
     .back .header h1{font-family:'Archivo Black',sans-serif;font-size:6.5mm;margin:0;line-height:1}
@@ -494,7 +540,10 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
           </table>
         </div>
       </div>
-      <div class="signature">${sign ? `<img src="${sign}" alt="signature" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : ''}</div>
+      <div class="signature">
+        ${sign ? `<img src="${sign}" alt="signature" crossorigin="anonymous" referrerpolicy="no-referrer"/>` : `<div class="sig-line"></div>`}
+        <div class="sig-label">Authorized Signature</div>
+      </div>
       <div class="footer">PRGI No : ${prgi || '-'}</div>
     </div>
 
@@ -689,13 +738,14 @@ router.get('/pdf', async (req, res) => {
 
     const html = buildIdCardHtml(data, { print: true });
     let puppeteer: any;
+    // Prefer full puppeteer first (bundled Chromium) to avoid platform mismatches.
     try {
-      puppeteer = require('puppeteer-core');
+      puppeteer = require('puppeteer');
     } catch (_e) {
       try {
-        puppeteer = require('puppeteer');
+        puppeteer = require('puppeteer-core');
       } catch {
-        return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer-core)' });
+        return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer)' });
       }
     }
 

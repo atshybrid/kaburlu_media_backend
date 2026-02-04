@@ -5,75 +5,51 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Adding STATE level editorial designations...\n');
 
+  async function upsertGlobalDesignation(data: {
+    level: 'STATE';
+    levelOrder: number;
+    code: string;
+    name: string;
+    nativeName: string;
+  }) {
+    const existing = await prisma.reporterDesignation.findFirst({
+      where: { tenantId: null, code: data.code },
+      select: { id: true },
+    });
+
+    const desired = { tenantId: null as string | null, ...data };
+    return existing
+      ? prisma.reporterDesignation.update({ where: { id: existing.id }, data: desired })
+      : prisma.reporterDesignation.create({ data: desired });
+  }
+
   // 1. Publisher (Highest - levelOrder: 0)
-  const publisher = await prisma.reporterDesignation.upsert({
-    where: {
-      id: 'publisher-global',
-    },
-    update: {
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'PUBLISHER',
-      name: 'Publisher',
-      nativeName: 'ప్రచురణకర్త',
-    },
-    create: {
-      id: 'publisher-global',
-      tenantId: null,
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'PUBLISHER',
-      name: 'Publisher',
-      nativeName: 'ప్రచురణకర్త',
-    },
+  const publisher = await upsertGlobalDesignation({
+    level: 'STATE',
+    levelOrder: 0,
+    code: 'PUBLISHER',
+    name: 'Publisher',
+    nativeName: 'ప్రచురణకర్త',
   });
   console.log('✓ Created PUBLISHER designation:', publisher);
 
   // 2. Chief Editor (levelOrder: 0)
-  const chiefEditor = await prisma.reporterDesignation.upsert({
-    where: {
-      id: 'chief-editor-global',
-    },
-    update: {
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'CHIEF_EDITOR',
-      name: 'Chief Editor',
-      nativeName: 'ప్రధాన సంపాదకుడు',
-    },
-    create: {
-      id: 'chief-editor-global',
-      tenantId: null,
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'CHIEF_EDITOR',
-      name: 'Chief Editor',
-      nativeName: 'ప్రధాన సంపాదకుడు',
-    },
+  const chiefEditor = await upsertGlobalDesignation({
+    level: 'STATE',
+    levelOrder: 0,
+    code: 'CHIEF_EDITOR',
+    name: 'Chief Editor',
+    nativeName: 'ప్రధాన సంపాదకుడు',
   });
   console.log('✓ Created CHIEF_EDITOR designation:', chiefEditor);
 
   // 3. Editor (levelOrder: 0)
-  const editor = await prisma.reporterDesignation.upsert({
-    where: {
-      id: 'editor-global',
-    },
-    update: {
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'EDITOR',
-      name: 'Editor',
-      nativeName: 'సంపాదకుడు',
-    },
-    create: {
-      id: 'editor-global',
-      tenantId: null,
-      level: 'STATE',
-      levelOrder: 0,
-      code: 'EDITOR',
-      name: 'Editor',
-      nativeName: 'సంపాదకుడు',
-    },
+  const editor = await upsertGlobalDesignation({
+    level: 'STATE',
+    levelOrder: 0,
+    code: 'EDITOR',
+    name: 'Editor',
+    nativeName: 'సంపాదకుడు',
   });
   console.log('✓ Created EDITOR designation:', editor);
 

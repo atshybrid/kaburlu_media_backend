@@ -8,12 +8,12 @@ The reporter system now supports **6 levels** with flexible location ID handling
 ### STATE Level (levelOrder: 0-1)
 Editorial and administrative roles at the state level:
 
-| Designation ID | Code | Name | Native Name | Level Order |
-|---------------|------|------|-------------|-------------|
-| `publisher-global` | PUBLISHER | Publisher | ప్రచురణకర్త | 0 |
-| `chief-editor-global` | CHIEF_EDITOR | Chief Editor | ప్రధాన సంపాదకుడు | 0 |
-| `editor-global` | EDITOR | Editor | సంపాదకుడు | 0 |
-| `tenant-admin-global` | TENANT_ADMIN | Tenant Admin | టెనెంట్ అడ్మిన్ | 0 |
+| Designation ID (DB cuid, varies) | Code | Name | Native Name | Level Order |
+|---|---|---|---|---|
+| (varies) | PUBLISHER | Publisher | ప్రచురణకర్త | 0 |
+| (varies) | CHIEF_EDITOR | Chief Editor | ప్రధాన సంపాదకుడు | 0 |
+| (varies) | EDITOR | Editor | సంపాదకుడు | 0 |
+| (varies) | TENANT_ADMIN | Tenant Admin | టెనెంట్ అడ్మిన్ | 0 |
 | (varies) | STATE_BUREAU_CHIEF | State Bureau Chief | రాష్ట్ర బ్యూరో చీఫ్ | 1 |
 
 ### DISTRICT Level (levelOrder: 1)
@@ -29,7 +29,7 @@ Editorial and administrative roles at the state level:
 ### CONSTITUENCY Level (levelOrder: 3)
 | Designation ID | Code | Name | Native Name |
 |---------------|------|------|-------------|
-| `constituency-reporter-global` | CONSTITUENCY_REPORTER | Constituency Reporter | నియోజకవర్గ రిపోర్టర్ |
+| (varies) | CONSTITUENCY_REPORTER | Constituency Reporter | నియోజకవర్గ రిపోర్టర్ |
 
 ### ASSEMBLY Level (levelOrder: 4)
 Various assembly-specific designations
@@ -74,7 +74,7 @@ Each level accepts multiple location ID types for easier frontend integration:
 ```json
 POST /api/v1/tenants/{tenantId}/reporters
 {
-  "designationId": "publisher-global",
+  "designationId": "<publisherDesignationId>",
   "level": "STATE",
   "stateId": "cmit7pjf30001ugaov86j0ed5",
   "subscriptionActive": false,
@@ -92,7 +92,7 @@ POST /api/v1/tenants/{tenantId}/reporters
 ```json
 POST /api/v1/tenants/{tenantId}/reporters
 {
-  "designationId": "chief-editor-global",
+  "designationId": "<chiefEditorDesignationId>",
   "level": "STATE",
   "stateId": "cmit7pjf30001ugaov86j0ed5",
   "subscriptionActive": false,
@@ -108,7 +108,7 @@ POST /api/v1/tenants/{tenantId}/reporters
 ```json
 POST /api/v1/tenants/{tenantId}/reporters
 {
-  "designationId": "editor-global",
+  "designationId": "<editorDesignationId>",
   "level": "STATE",
   "stateId": "cmit7pjf30001ugaov86j0ed5",
   "subscriptionActive": false,
@@ -203,7 +203,7 @@ POST /api/v1/tenants/{tenantId}/reporters
 ```json
 POST /api/v1/tenants/{tenantId}/reporters
 {
-  "designationId": "constituency-reporter-global",
+  "designationId": "<constituencyReporterDesignationId>",
   "level": "CONSTITUENCY",
   "districtId": "cmit7pjf30001ugaov86j0abc",
   "subscriptionActive": false,
@@ -325,10 +325,10 @@ const levels = [
 ```typescript
 const designations = {
   STATE: [
-    { id: 'publisher-global', name: 'Publisher', nativeName: 'ప్రచురణకర్త' },
-    { id: 'chief-editor-global', name: 'Chief Editor', nativeName: 'ప్రధాన సంపాదకుడు' },
-    { id: 'editor-global', name: 'Editor', nativeName: 'సంపాదకుడు' },
-    { id: 'tenant-admin-global', name: 'Tenant Admin', nativeName: 'టెనెంట్ అడ్మిన్' },
+    { id: '<publisherDesignationId>', name: 'Publisher', nativeName: 'ప్రచురణకర్త' },
+    { id: '<chiefEditorDesignationId>', name: 'Chief Editor', nativeName: 'ప్రధాన సంపాదకుడు' },
+    { id: '<editorDesignationId>', name: 'Editor', nativeName: 'సంపాదకుడు' },
+    { id: '<tenantAdminDesignationId>', name: 'Tenant Admin', nativeName: 'టెనెంట్ అడ్మిన్' },
     // ... other STATE designations
   ],
   DISTRICT: [
@@ -338,7 +338,7 @@ const designations = {
     { id: 'cmkwcj8j50005jytf89cizzuu', name: 'RC Incharge', nativeName: 'ఆర్సీ ఇన్‌చార్జ్' }
   ],
   CONSTITUENCY: [
-    { id: 'constituency-reporter-global', name: 'Constituency Reporter', nativeName: 'నియోజకవర్గ రిపోర్టర్' }
+    { id: '<constituencyReporterDesignationId>', name: 'Constituency Reporter', nativeName: 'నియోజకవర్గ రిపోర్టర్' }
   ],
   // ... other levels
 };
@@ -382,7 +382,7 @@ Successful creation returns:
   "id": "cml7u9y6e01f2jy7h3x68bm44",
   "tenantId": "cmkh94g0s01eykb21toi1oucu",
   "userId": "cml7u9y6d01ezjy7haz1v2f0k",
-  "designationId": "constituency-reporter-global",
+  "designationId": "<designationId>",
   "level": "CONSTITUENCY",
   "stateId": null,
   "districtId": null,
