@@ -15,6 +15,7 @@ import {
   DEFAULT_OPENAI_MODEL_MODERATION,
   DEFAULT_OPENAI_MODEL_REWRITE,
   DEFAULT_OPENAI_MODEL_NEWSPAPER,
+  AI_PARALLEL_RACE,
 } from './aiConfig';
 
 type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article' | 'newspaper';
@@ -260,6 +261,40 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
     }
     return { text: '' };
   };
+
+  // SMART PARALLEL RACE MODE: Send requests to both providers simultaneously
+  // Whichever responds first wins - significantly reduces latency when one provider is slow/busy
+  const { AI_USE_GEMINI, AI_USE_OPENAI } = require('./aiConfig');
+  
+  if (AI_PARALLEL_RACE && geminiAllowed && openaiAllowed && AI_USE_GEMINI && AI_USE_OPENAI) {
+    console.log(`[AI][race] Starting parallel race for ${purpose} (Gemini vs OpenAI)...`);
+    const raceStart = Date.now();
+    
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const r = await tryGemini();
+          if (r?.text) {
+            console.log(`[AI][race] ✓ Gemini won! (${Date.now() - raceStart}ms)`);
+            return { ...r, winner: 'gemini' };
+          }
+          return null;
+        })(),
+        (async () => {
+          const r = await tryOpenAI();
+          if (r?.text) {
+            console.log(`[AI][race] ✓ OpenAI won! (${Date.now() - raceStart}ms)`);
+            return { ...r, winner: 'openai' };
+          }
+          return null;
+        })(),
+      ]);
+      
+      if (result?.text) return result;
+    } catch (e) {
+      console.warn(`[AI][race] Race failed:`, e);
+    }
+  }
 
   // Execute with preferred order
   if (shouldTryGeminiFirst) {

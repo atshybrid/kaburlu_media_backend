@@ -19,6 +19,7 @@ export const AI_PROVIDER: AIProvider = (() => {
 
 export const AI_USE_GEMINI = parseBool(process.env.AI_USE_GEMINI, true);  // Enable Gemini by default when key exists
 export const AI_USE_OPENAI = parseBool(process.env.AI_USE_OPENAI, true);  // Enable both providers
+export const AI_PARALLEL_RACE = parseBool(process.env.AI_PARALLEL_RACE, false);  // Race both providers simultaneously for fastest response
 
 // Feature flags (allow toggling without code changes)
 export const AI_ENABLE_SEO = parseBool(process.env.AI_ENABLE_SEO, true);
