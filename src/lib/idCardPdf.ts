@@ -172,55 +172,77 @@ async function inlineAssetsForPdf(data: any): Promise<any> {
 }
 
 /**
- * Build HTML for ID card (simplified version for PDF)
+ * Build HTML for ID card - RED/BLUE BANNER DESIGN (matches reference image)
  */
 function buildIdCardHtml(data: any): string {
   const { reporter, tenant, settings } = data;
+  
+  // Generate QR code data URL
+  const qrData = `ID:${reporter.cardNumber}\nName:${reporter.fullName}\nDesig:${reporter.designation}\nPhone:${reporter.mobileNumber}\nValid:${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}`;
+  const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
   
   const frontHtml = `
     <div class="card front" style="
       width: 54mm;
       height: 85.6mm;
-      background: linear-gradient(135deg, ${settings.primaryColor} 0%, #3B82F6 100%);
-      color: ${settings.secondaryColor};
-      font-family: 'Segoe UI', Arial, sans-serif;
-      padding: 4mm;
+      background: white;
+      font-family: Arial, sans-serif;
       box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      position: relative;
       page-break-after: always;
     ">
-      ${tenant.logoUrl ? `<img src="${tenant.logoUrl}" style="height: 12mm; max-width: 40mm; object-fit: contain; margin-bottom: 2mm;" />` : ''}
-      <div style="font-size: 10pt; font-weight: bold; text-align: center;">${tenant.name}</div>
-      ${tenant.tagline ? `<div style="font-size: 7pt; opacity: 0.9;">${tenant.tagline}</div>` : ''}
-      
-      <div style="
-        width: 22mm;
-        height: 28mm;
-        background: white;
-        border-radius: 2mm;
-        margin: 3mm 0;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      ">
-        ${reporter.profilePhotoUrl 
-          ? `<img src="${reporter.profilePhotoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />`
-          : `<div style="color: #999; font-size: 8pt;">No Photo</div>`
-        }
+      <!-- Telugu newspaper name -->
+      <div style="text-align: center; padding: 2mm 0; font-size: 12pt; font-weight: bold; color: #1E40AF;">
+        ${tenant.nativeName || tenant.name}
       </div>
       
-      <div style="font-size: 11pt; font-weight: bold; text-align: center;">${reporter.fullName}</div>
-      <div style="font-size: 8pt; opacity: 0.9;">${reporter.designation}</div>
-      <div style="font-size: 8pt; margin-top: 1mm;">${reporter.cardNumber}</div>
+      <!-- Red "PRINT MEDIA" banner -->
+      <div style="background: #FF0000; text-align: center; padding: 2mm 0; margin-bottom: 2mm;">
+        <div style="font-size: 12pt; font-weight: bold; color: white;">PRINT MEDIA</div>
+      </div>
       
-      ${reporter.workplaceLocation ? `
-        <div style="font-size: 7pt; margin-top: 2mm; text-align: center; opacity: 0.9; line-height: 1.3;">
-          ${reporter.workplaceLocation}
+      <!-- Photo and QR code section -->
+      <div style="display: flex; padding: 0 2mm; margin-bottom: 2mm;">
+        <!-- Photo LEFT -->
+        <div style="width: 18mm; height: 23mm; background: #f0f0f0; margin-right: 2mm; flex-shrink: 0;">
+          ${reporter.profilePhotoUrl 
+            ? `<img src="${reporter.profilePhotoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />`
+            : `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 7pt;">No Photo</div>`
+          }
         </div>
-      ` : ''}
+        
+        <!-- QR Code RIGHT -->
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+          <img src="${qrDataUrl}" style="width: 18mm; height: 18mm;" />
+        </div>
+      </div>
+      
+      <!-- Details section -->
+      <div style="padding: 0 2mm; font-size: 6.5pt; line-height: 1.4;">
+        <div style="margin-bottom: 1mm;">
+          <strong>Name</strong> <span style="margin: 0 2mm;">:</span> ${reporter.fullName}
+        </div>
+        <div style="margin-bottom: 1mm;">
+          <strong>ID Number</strong> <span style="margin: 0 2mm;">:</span> ${reporter.cardNumber}
+        </div>
+        <div style="margin-bottom: 1mm;">
+          <strong>Desig</strong> <span style="margin: 0 2mm;">:</span> ${reporter.designation}
+        </div>
+        <div style="margin-bottom: 1mm;">
+          <strong>Work Place</strong> <span style="margin: 0 2mm;">:</span> ${reporter.workplaceLocation || '-'}
+        </div>
+        <div style="margin-bottom: 1mm;">
+          <strong>Phone</strong> <span style="margin: 0 2mm;">:</span> ${reporter.mobileNumber}
+        </div>
+        <div>
+          <strong>Valid</strong> <span style="margin: 0 2mm;">:</span> ${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}
+        </div>
+      </div>
+      
+      <!-- Blue footer banner -->
+      <div style="position: absolute; bottom: 0; left: 0; right: 0; background: #1E40AF; text-align: center; padding: 1.5mm 0;">
+        <div style="font-size: 7pt; font-weight: bold; color: white;">PRGI No : ${reporter.cardNumber}</div>
+      </div>
     </div>
   `;
 
@@ -228,35 +250,50 @@ function buildIdCardHtml(data: any): string {
     <div class="card back" style="
       width: 54mm;
       height: 85.6mm;
-      background: ${settings.secondaryColor};
-      color: #333;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      padding: 4mm;
+      background: white;
+      font-family: Arial, sans-serif;
       box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
+      position: relative;
     ">
-      <div style="text-align: center; margin-bottom: 3mm;">
-        <div style="font-size: 9pt; font-weight: bold; color: ${settings.primaryColor};">PRESS CARD</div>
+      <!-- Blue header -->
+      <div style="background: #1E40AF; text-align: center; padding: 2mm 0; margin-bottom: 2mm;">
+        <div style="font-size: 11pt; font-weight: bold; color: white;">PRESS</div>
+        <div style="font-size: 8pt; font-weight: bold; color: white;">REPORTER ID CARD</div>
       </div>
       
-      <div style="font-size: 7pt; line-height: 1.4;">
-        <div><strong>Name:</strong> ${reporter.fullName}</div>
-        <div><strong>Mobile:</strong> ${reporter.mobileNumber}</div>
-        <div><strong>ID:</strong> ${reporter.cardNumber}</div>
-        <div><strong>Valid Till:</strong> ${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}</div>
+      <!-- Center QR code -->
+      <div style="text-align: center; margin: 3mm 0;">
+        <img src="${qrDataUrl}" style="width: 20mm; height: 20mm;" />
       </div>
       
-      ${settings.customBackContent ? `
-        <div style="font-size: 6pt; margin-top: 3mm; opacity: 0.8;">
-          ${settings.customBackContent}
+      <!-- ADDRESS section -->
+      <div style="text-align: center; margin-bottom: 2mm;">
+        <div style="font-size: 8pt; font-weight: bold; margin-bottom: 1mm;">ADDRESS</div>
+        <div style="font-size: 6pt; padding: 0 3mm; line-height: 1.3;">
+          ${reporter.workplaceLocation || 'Not specified'}
         </div>
-      ` : ''}
+        <div style="font-size: 6pt; margin-top: 1mm;">
+          Contact No: ${reporter.mobileNumber}
+        </div>
+      </div>
       
-      <div style="flex: 1;"></div>
+      <!-- Blue footer -->
+      <div style="background: #1E40AF; text-align: center; padding: 1mm 0; margin: 2mm 0;">
+        <div style="font-size: 6pt; font-weight: bold; color: white;">PRGI No : ${reporter.cardNumber}</div>
+      </div>
       
-      <div style="text-align: center; font-size: 6pt; opacity: 0.7;">
-        Issued on: ${new Date(reporter.issuedAt).toLocaleDateString('en-IN')}
+      <!-- Terms & Conditions -->
+      <div style="padding: 0 2mm;">
+        <div style="font-size: 6pt; font-weight: bold; text-align: center; margin-bottom: 1mm;">Terms & Conditions</div>
+        <div style="font-size: 4.5pt; line-height: 1.2;">
+          ${settings.customBackContent || 
+            '• This Reyuthu is to be used for the proper purpose of Newspaper representatives for gathering the latest news.<br>' +
+            '• Identity card should be Produced wherever required.<br>' +
+            '• The card holder shall not provide any wrong information for the sake of money.<br>' +
+            '• This card is valid only till the date mentioned on it and after that, the member shall return the card.<br>' +
+            '• It always is to be used for the public purpose only, not for private purpose and subject to central and state government rules.'
+          }
+        </div>
       </div>
     </div>
   `;
