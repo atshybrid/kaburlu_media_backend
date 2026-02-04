@@ -187,7 +187,8 @@ function buildIdCardHtml(data: any): string {
       height: 85.6mm;
       background: white;
       font-family: Arial, sans-serif;
-      box-sizing: border-box;
+      padding: 0;
+      margin: 0;
       position: relative;
       page-break-after: always;
     ">
@@ -197,50 +198,37 @@ function buildIdCardHtml(data: any): string {
       </div>
       
       <!-- Red "PRINT MEDIA" banner -->
-      <div style="background: #FF0000; text-align: center; padding: 2mm 0; margin-bottom: 2mm;">
+      <div style="background: #FF0000; text-align: center; padding: 2mm 0; margin: 0;">
         <div style="font-size: 12pt; font-weight: bold; color: white;">PRINT MEDIA</div>
       </div>
       
-      <!-- Photo and QR code section -->
-      <div style="display: flex; padding: 0 2mm; margin-bottom: 2mm;">
-        <!-- Photo LEFT -->
-        <div style="width: 18mm; height: 23mm; background: #f0f0f0; margin-right: 2mm; flex-shrink: 0;">
-          ${reporter.profilePhotoUrl 
-            ? `<img src="${reporter.profilePhotoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />`
-            : `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 7pt;">No Photo</div>`
-          }
-        </div>
-        
-        <!-- QR Code RIGHT -->
-        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-          <img src="${qrDataUrl}" style="width: 18mm; height: 18mm;" />
-        </div>
-      </div>
+      <!-- Photo and QR code section using table for better compatibility -->
+      <table style="width: 100%; border-collapse: collapse; margin: 2mm 0; padding: 0 2mm;">
+        <tr>
+          <td style="width: 20mm; vertical-align: top; padding-right: 2mm;">
+            ${reporter.profilePhotoUrl 
+              ? `<img src="${reporter.profilePhotoUrl}" style="width: 18mm; height: 23mm; object-fit: cover; display: block;" />`
+              : `<div style="width: 18mm; height: 23mm; background: #f0f0f0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 7pt; text-align: center;">No Photo</div>`
+            }
+          </td>
+          <td style="text-align: center; vertical-align: middle;">
+            <img src="${qrDataUrl}" style="width: 18mm; height: 18mm; display: inline-block;" />
+          </td>
+        </tr>
+      </table>
       
       <!-- Details section -->
-      <div style="padding: 0 2mm; font-size: 6.5pt; line-height: 1.4;">
-        <div style="margin-bottom: 1mm;">
-          <strong>Name</strong> <span style="margin: 0 2mm;">:</span> ${reporter.fullName}
-        </div>
-        <div style="margin-bottom: 1mm;">
-          <strong>ID Number</strong> <span style="margin: 0 2mm;">:</span> ${reporter.cardNumber}
-        </div>
-        <div style="margin-bottom: 1mm;">
-          <strong>Desig</strong> <span style="margin: 0 2mm;">:</span> ${reporter.designation}
-        </div>
-        <div style="margin-bottom: 1mm;">
-          <strong>Work Place</strong> <span style="margin: 0 2mm;">:</span> ${reporter.workplaceLocation || '-'}
-        </div>
-        <div style="margin-bottom: 1mm;">
-          <strong>Phone</strong> <span style="margin: 0 2mm;">:</span> ${reporter.mobileNumber}
-        </div>
-        <div>
-          <strong>Valid</strong> <span style="margin: 0 2mm;">:</span> ${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}
-        </div>
+      <div style="padding: 0 2mm; font-size: 6.5pt; line-height: 1.6; margin-top: 1mm;">
+        <div style="margin-bottom: 1mm;"><strong>Name</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${reporter.fullName}</div>
+        <div style="margin-bottom: 1mm;"><strong>ID Number</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${reporter.cardNumber}</div>
+        <div style="margin-bottom: 1mm;"><strong>Desig</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${reporter.designation}</div>
+        <div style="margin-bottom: 1mm;"><strong>Work Place</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${reporter.workplaceLocation || '-'}</div>
+        <div style="margin-bottom: 1mm;"><strong>Phone</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${reporter.mobileNumber}</div>
+        <div><strong>Valid</strong>&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}</div>
       </div>
       
       <!-- Blue footer banner -->
-      <div style="position: absolute; bottom: 0; left: 0; right: 0; background: #1E40AF; text-align: center; padding: 1.5mm 0;">
+      <div style="position: absolute; bottom: 0; left: 0; width: 100%; background: #1E40AF; text-align: center; padding: 1.5mm 0;">
         <div style="font-size: 7pt; font-weight: bold; color: white;">PRGI No : ${reporter.cardNumber}</div>
       </div>
     </div>
@@ -252,11 +240,12 @@ function buildIdCardHtml(data: any): string {
       height: 85.6mm;
       background: white;
       font-family: Arial, sans-serif;
-      box-sizing: border-box;
+      padding: 0;
+      margin: 0;
       position: relative;
     ">
       <!-- Blue header -->
-      <div style="background: #1E40AF; text-align: center; padding: 2mm 0; margin-bottom: 2mm;">
+      <div style="background: #1E40AF; text-align: center; padding: 2mm 0;">
         <div style="font-size: 11pt; font-weight: bold; color: white;">PRESS</div>
         <div style="font-size: 8pt; font-weight: bold; color: white;">REPORTER ID CARD</div>
       </div>
@@ -267,9 +256,9 @@ function buildIdCardHtml(data: any): string {
       </div>
       
       <!-- ADDRESS section -->
-      <div style="text-align: center; margin-bottom: 2mm;">
+      <div style="text-align: center; margin: 0 2mm 2mm 2mm;">
         <div style="font-size: 8pt; font-weight: bold; margin-bottom: 1mm;">ADDRESS</div>
-        <div style="font-size: 6pt; padding: 0 3mm; line-height: 1.3;">
+        <div style="font-size: 6pt; line-height: 1.3;">
           ${reporter.workplaceLocation || 'Not specified'}
         </div>
         <div style="font-size: 6pt; margin-top: 1mm;">
