@@ -37,10 +37,6 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
   const geminiAllowed = !!GEMINI_KEY && (preferGeminiForTranslation ? true : true);
   const openaiAllowed = !!OPENAI_KEY;
 
-  const useGeminiFirst = purpose === 'translation'
-    ? (geminiAllowed && (provider === 'gemini' || true))
-  const { AI_USE_GEMINI, AI_USE_OPENAI } = require('./aiConfig');
-
   const shouldTryGeminiFirst = purpose === 'translation'
     ? (AI_USE_GEMINI && geminiAllowed)
     : ((provider === 'gemini' && geminiAllowed) || (!AI_USE_OPENAI && geminiAllowed));
