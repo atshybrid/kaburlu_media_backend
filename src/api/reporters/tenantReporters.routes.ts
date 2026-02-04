@@ -4,6 +4,7 @@ import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
+import { generateAndUploadIdCardPdf } from '../../lib/idCardPdf';
 
 const router = Router();
 
@@ -2727,13 +2728,17 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
     if (!pdfUrl) {
       console.log(`⚠️  ID card PDF URL missing for reporter ${id}, regenerating...`);
       try {
-        const regenerated = await generateReporterIdCardPdf({
-          reporterId: id,
-          tenantId,
-          forceRegenerate: true,
-        });
-        pdfUrl = regenerated.pdfUrl;
-        console.log(`✓ PDF regenerated successfully: ${pdfUrl}`);
+        const regenerated = await generateAndUploadIdCardPdf(id);
+        if (regenerated.ok && regenerated.pdfUrl) {
+          pdfUrl = regenerated.pdfUrl;
+          console.log(`✓ PDF regenerated successfully: ${pdfUrl}`);
+        } else {
+          console.error('PDF regeneration returned error:', regenerated.error);
+          return res.status(500).json({ 
+            error: 'ID card PDF not found and regeneration failed',
+            details: regenerated.error 
+          });
+        }
       } catch (regenerateErr) {
         console.error('Failed to regenerate PDF:', regenerateErr);
         return res.status(500).json({ error: 'ID card PDF not found and regeneration failed' });
