@@ -324,10 +324,12 @@ async function getPuppeteerLaunchOptions(puppeteer: any): Promise<any> {
 async function generatePdfBuffer(html: string): Promise<Buffer> {
   let puppeteer: any;
   try {
-    puppeteer = require('puppeteer-core');
+    // Try full puppeteer first (includes Chrome)
+    puppeteer = require('puppeteer');
   } catch {
     try {
-      puppeteer = require('puppeteer');
+      // Fallback to puppeteer-core (needs executablePath)
+      puppeteer = require('puppeteer-core');
     } catch {
       throw new Error('Puppeteer not installed');
     }
