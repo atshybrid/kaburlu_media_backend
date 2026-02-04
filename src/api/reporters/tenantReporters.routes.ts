@@ -4,7 +4,7 @@ import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
-import { generateAndUploadIdCardPdf } from '../../lib/idCardPdfKit';
+import { generateAndUploadIdCardPdf } from '../../lib/idCardPdf';
 
 const router = Router();
 
