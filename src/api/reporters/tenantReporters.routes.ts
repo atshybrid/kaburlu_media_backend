@@ -497,10 +497,27 @@ function isRetryableTransactionError(e: any) {
   return code === 'P2034' || msg.includes('could not serialize access') || msg.includes('deadlock');
 }
 
-function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId'; id: string } {
+function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId' | 'divisionId' | 'constituencyId'; id: string } {
   if (level === 'STATE') return { field: 'stateId', id: String(body.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body.districtId || '') };
+  
+  // DIVISION level: can use districtId or mandalId
+  if (level === 'DIVISION') {
+    const districtId = String(body.districtId || '');
+    const mandalIdFallback = String(body.mandalId || '');
+    return { field: 'divisionId', id: districtId || mandalIdFallback };
+  }
+  
+  // CONSTITUENCY level: can use districtId, mandalId, or assemblyConstituencyId
+  if (level === 'CONSTITUENCY') {
+    const districtId = String(body.districtId || '');
+    const mandalId = String(body.mandalId || '');
+    const assemblyId = String(body.assemblyConstituencyId || '');
+    return { field: 'constituencyId', id: districtId || mandalId || assemblyId };
+  }
+  
   if (level === 'MANDAL') return { field: 'mandalId', id: String(body.mandalId || '') };
+  
   // ASSEMBLY level: accept assemblyConstituencyId OR mandalId OR districtId (will resolve in transaction)
   if (level === 'ASSEMBLY') {
     const assemblyId = String(body.assemblyConstituencyId || '');
@@ -961,6 +978,8 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
               level: lvl,
               stateId: lvl === 'STATE' ? locationKey.id : null,
               districtId: lvl === 'DISTRICT' ? locationKey.id : null,
+              divisionId: lvl === 'DIVISION' ? locationKey.id : null,
+              constituencyId: lvl === 'CONSTITUENCY' ? locationKey.id : null,
               mandalId: lvl === 'MANDAL' ? locationKey.id : null,
               assemblyConstituencyId: lvl === 'ASSEMBLY' ? resolvedAssemblyId : null,
               // Best-practice: snapshot pricing into the reporter row. If amounts are not provided,
