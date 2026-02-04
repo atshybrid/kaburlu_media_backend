@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../../lib/prisma';
 import axios from 'axios';
 import fs from 'fs';
+import { generateAndUploadIdCardPdf } from '../../lib/idCardPdfKit';
 
 const router = Router();
 
@@ -721,93 +722,158 @@ router.get('/pdf', async (req, res) => {
     }
     const reporter = await resolveReporterByQuery({ reporterId, mobile, fullName });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
-    let data = await buildIdCardData(reporter.id);
-    if (!data) return res.status(404).json({ error: 'ID card not found for reporter' });
-    // Inline external images as data URIs to ensure Puppeteer loads them
-    try {
-      data = await inlineAssetsForPdf(data);
-    } catch (e) {
-      console.error('id-cards/pdf asset inlining failed', {
-        reporterId: reporter.id,
-        err: (e as any)?.stack || (e as any)?.message || e
-      });
-    }
-
-    // For PDF rendering, avoid external network fetches inside Chromium.
-    (data as any).__pdfNoExternalAssets = true;
-
-    const html = buildIdCardHtml(data, { print: true });
-    let puppeteer: any;
-    // Prefer full puppeteer first (bundled Chromium) to avoid platform mismatches.
-    try {
-      puppeteer = require('puppeteer');
-    } catch (_e) {
-      try {
-        puppeteer = require('puppeteer-core');
-      } catch {
-        return res.status(500).json({ error: 'PDF rendering library not installed (puppeteer)' });
+    
+    // Use PDFKit-based generation (no Chrome dependencies)
+    const PDFDocument = require('pdfkit');
+    const QRCode = require('qrcode');
+    
+    // Build card data
+    const idCard = await (prisma as any).reporterIDCard.findUnique({
+      where: { reporterId: reporter.id },
+      include: {
+        reporter: {
+          include: {
+            user: { include: { profile: true } },
+            tenant: { include: { entity: true, idCardSettings: true } },
+            designation: true,
+            state: true,
+            district: true,
+            mandal: true,
+            assemblyConstituency: true,
+          }
+        }
       }
+    });
+    
+    if (!idCard || !idCard.reporter) {
+      return res.status(404).json({ error: 'ID card not found for reporter' });
     }
 
-    const launchOpts = await resolvePuppeteerLaunchOptions(puppeteer);
-    const puppeteerDefaultExecutablePath = (() => {
-      try {
-        return typeof puppeteer?.executablePath === 'function' ? String(puppeteer.executablePath()) : undefined;
-      } catch {
-        return undefined;
+    const r = idCard.reporter;
+    const tenant = r.tenant;
+    const entity = tenant?.entity;
+    const settings = tenant?.idCardSettings;
+    const profile = r.user?.profile;
+
+    // Build workplace location
+    const locationParts: string[] = [];
+    if (r.mandal?.name) {
+      locationParts.push(r.mandal.name);
+      if (r.district?.name) locationParts.push(r.district.name);
+      if (r.state?.name) locationParts.push(r.state.name);
+    } else if (r.assemblyConstituency?.name) {
+      locationParts.push(r.assemblyConstituency.name);
+      if (r.district?.name) locationParts.push(r.district.name);
+      if (r.state?.name) locationParts.push(r.state.name);
+    } else if (r.district?.name) {
+      locationParts.push(r.district.name);
+      if (r.state?.name) locationParts.push(r.state.name);
+    } else if (r.state?.name) {
+      locationParts.push(r.state.name);
+    }
+
+    const cardData = {
+      reporter: {
+        fullName: profile?.fullName || 'Unknown',
+        mobileNumber: r.user?.mobileNumber || '',
+        profilePhotoUrl: profile?.profilePhotoUrl || null,
+        cardNumber: idCard.cardNumber,
+        designation: r.designation?.name || 'Reporter',
+        workplaceLocation: locationParts.join(', '),
+      },
+      tenant: {
+        name: tenant?.name || 'Kaburlu Media',
+        nativeName: tenant?.nativeName || tenant?.name || 'కబుర్లు మీడియా',
+        logoUrl: entity?.logoUrl || settings?.logoUrl || null,
+      },
+      settings: {
+        primaryColor: settings?.primaryColor || '#1E40AF',
       }
-    })();
+    };
 
-    let browser: any;
-    try {
-      browser = await puppeteer.launch({
-        headless: launchOpts.headless,
-        args: launchOpts.args,
-        ...(launchOpts.defaultViewport ? { defaultViewport: launchOpts.defaultViewport } : {}),
-        ...(launchOpts.executablePath ? { executablePath: launchOpts.executablePath } : {})
-      });
-    } catch (e) {
-      console.error('id-cards/pdf puppeteer.launch failed', {
-        reporterId: reporter.id,
-        nodeEnv: process.env.NODE_ENV,
-        envPuppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-        envChromeBin: process.env.CHROME_BIN,
-        executablePath: launchOpts.executablePath,
-        executablePathExists: launchOpts.executablePath ? (() => { try { return fs.existsSync(launchOpts.executablePath); } catch { return false; } })() : false,
-        puppeteerDefaultExecutablePath,
-        puppeteerDefaultExecutablePathExists: puppeteerDefaultExecutablePath ? (() => { try { return fs.existsSync(puppeteerDefaultExecutablePath); } catch { return false; } })() : false,
-        err: (e as any)?.stack || (e as any)?.message || e
-      });
-      return res.status(500).json({ error: 'Failed to start PDF renderer' });
-    }
-    const page = await browser.newPage();
-    try { await page.setDefaultNavigationTimeout(30_000); } catch {}
-    try { await page.setBypassCSP(true); } catch {}
-    try { await page.emulateMediaType('screen'); } catch {}
-    try {
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    } catch (e) {
-      console.error('id-cards/pdf page.setContent failed', {
-        reporterId: reporter.id,
-        err: (e as any)?.stack || (e as any)?.message || e
-      });
-      await browser.close();
-      return res.status(500).json({ error: 'Failed to prepare PDF content' });
-    }
-    let pdfBuffer: Buffer;
-    try {
-      pdfBuffer = await page.pdf({ width: '54mm', height: '85.6mm', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
-    } catch (e) {
-      console.error('Puppeteer pdf() failed', e);
-      await browser.close();
-      return res.status(500).json({ error: 'Failed to render PDF' });
-    }
-    await browser.close();
+    // Generate PDF using PDFKit
+    const doc = new PDFDocument({
+      size: [153, 243], // 54mm × 85.6mm in points
+      margins: { top: 0, bottom: 0, left: 0, right: 0 }
+    });
 
-    const fileName = `ID_CARD_${data.reporter.cardNumber}.pdf`;
+    const buffers: Buffer[] = [];
+    doc.on('data', buffers.push.bind(buffers));
+    
+    const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', reject);
+    });
+
+    const cardWidth = 153;
+    const cardHeight = 243;
+
+    // White background
+    doc.rect(0, 0, cardWidth, cardHeight).fill('#FFFFFF');
+
+    // Telugu newspaper name at top
+    doc.fill('#1E40AF')
+       .fontSize(14)
+       .font('Helvetica-Bold')
+       .text(cardData.tenant.nativeName, 0, 8, { align: 'center', width: cardWidth });
+
+    // Red "PRINT MEDIA" banner
+    doc.rect(0, 28, cardWidth, 20).fill('#FF0000');
+    doc.fill('#FFFFFF')
+       .fontSize(14)
+       .font('Helvetica-Bold')
+       .text('PRINT MEDIA', 0, 33, { align: 'center', width: cardWidth });
+
+    // Photo placeholder
+    const photoX = 8;
+    const photoY = 55;
+    const photoWidth = 50;
+    const photoHeight = 65;
+    doc.rect(photoX, photoY, photoWidth, photoHeight).stroke('#CCCCCC');
+
+    // Generate QR code
+    const qrX = 65;
+    const qrY = 55;
+    const qrSize = 50;
+    try {
+      const qrData = `REPORTER:${cardData.reporter.cardNumber}`;
+      const qrBuffer = await QRCode.toBuffer(qrData, {
+        width: 200,
+        margin: 1,
+        color: { dark: '#000000', light: '#FFFFFF' }
+      });
+      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+    } catch (e) {
+      console.error('QR generation failed', e);
+    }
+
+    // Reporter details
+    const detailsY = 130;
+    doc.fill('#000000')
+       .fontSize(10)
+       .font('Helvetica-Bold')
+       .text(cardData.reporter.fullName, 10, detailsY, { width: cardWidth - 20 });
+
+    doc.fontSize(8)
+       .font('Helvetica')
+       .text(cardData.reporter.designation, 10, detailsY + 15, { width: cardWidth - 20 })
+       .text(cardData.reporter.workplaceLocation, 10, detailsY + 28, { width: cardWidth - 20 })
+       .text(cardData.reporter.mobileNumber, 10, detailsY + 41, { width: cardWidth - 20 });
+
+    // Blue footer
+    doc.rect(0, cardHeight - 30, cardWidth, 30).fill(cardData.settings.primaryColor);
+    doc.fill('#FFFFFF')
+       .fontSize(9)
+       .font('Helvetica-Bold')
+       .text(cardData.reporter.cardNumber, 0, cardHeight - 20, { align: 'center', width: cardWidth });
+
+    doc.end();
+
+    const pdfBuffer = await pdfPromise;
+
+    const fileName = `ID_CARD_${cardData.reporter.cardNumber}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    // Force download instead of inline preview
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.status(200).end(pdfBuffer);
   } catch (e) {
