@@ -2591,10 +2591,22 @@ router.patch('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authentica
  * @swagger
  * /tenants/{tenantId}/reporters/{id}/id-card/resend:
  *   post:
- *     summary: Resend ID card PDF via WhatsApp
+ *     summary: Resend ID card PDF via WhatsApp (✨ Auto-regenerates if missing)
  *     description: |
  *       Resends the existing ID card PDF to the reporter's registered mobile number via WhatsApp.
- *       The ID card must already have a valid PDF URL.
+ *       
+ *       **NEW FEATURE:** If the PDF URL is missing from the database, the system will automatically 
+ *       regenerate the PDF and then send it via WhatsApp. This ensures reliable delivery even if 
+ *       the PDF file was accidentally deleted.
+ *       
+ *       **Access Control:**
+ *       - Super Admin: Can resend any reporter's ID card
+ *       - Tenant Admin: Can resend ID cards for reporters in their tenant
+ *       - Reporter: Can resend their own ID card
+ *       
+ *       **Requirements:**
+ *       - ID card record must exist in database
+ *       - Reporter must have a registered mobile number
  *     tags: [TenantReporters]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -2602,25 +2614,65 @@ router.patch('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authentica
  *         name: tenantId
  *         required: true
  *         schema: { type: string }
+ *         example: "cmkh94g0s01eykb21toi1oucu"
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *         description: Reporter ID
+ *         example: "cml54silw009bbzyjen9g7qf8"
  *     responses:
  *       200:
- *         description: WhatsApp message sent
+ *         description: WhatsApp message sent successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 messageId: { type: string }
- *                 sentTo: { type: string }
- *       400: { description: ID card or PDF not found }
- *       403: { description: Not authorized }
- *       404: { description: Reporter not found }
+ *                 success: 
+ *                   type: boolean
+ *                   example: true
+ *                 message: 
+ *                   type: string
+ *                   example: "ID card PDF sent via WhatsApp"
+ *                 messageId: 
+ *                   type: string
+ *                   example: "wamid_HBgLOTE5MzQ3ODM5OTg3FQIAERgSQzc5RjE1QzBDMjk1OTlDNEI0AA=="
+ *                 sentTo: 
+ *                   type: string
+ *                   example: "91******9987"
+ *       400: 
+ *         description: ID card not found or mobile number missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string, example: "ID card not found. Generate it first." }
+ *       403: 
+ *         description: Not authorized to resend ID card
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string, example: "Not authorized to resend ID card" }
+ *       404: 
+ *         description: Reporter not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string, example: "Reporter not found" }
+ *       500:
+ *         description: PDF regeneration failed or WhatsApp send failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string, example: "ID card PDF not found and regeneration failed" }
  */
 router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
