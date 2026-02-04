@@ -109,10 +109,12 @@ function mapReporterContact(r: any) {
  *                 id: { type: string }
  *                 tenantId: { type: string }
  *                 userId: { type: string }
- *                 level: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
+ *                 level: { type: string, enum: [STATE, DISTRICT, DIVISION, CONSTITUENCY, ASSEMBLY, MANDAL] }
  *                 designationId: { type: string }
  *                 stateId: { type: string }
  *                 districtId: { type: string }
+ *                 divisionId: { type: string }
+ *                 constituencyId: { type: string }
  *                 mandalId: { type: string }
  *                 assemblyConstituencyId: { type: string }
  *                 subscriptionActive: { type: boolean }
@@ -646,11 +648,13 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *             required: [designationId, level, fullName, mobileNumber]
  *             properties:
  *               designationId: { type: string }
- *               level: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
+ *               level: { type: string, enum: [STATE, DISTRICT, DIVISION, CONSTITUENCY, ASSEMBLY, MANDAL] }
  *               stateId: { type: string }
  *               districtId: { type: string }
+ *               divisionId: { type: string, description: 'For DIVISION level - can use districtId or mandalId' }
+ *               constituencyId: { type: string, description: 'For CONSTITUENCY level - can use districtId, mandalId, or assemblyConstituencyId' }
  *               mandalId: { type: string }
- *               assemblyConstituencyId: { type: string }
+ *               assemblyConstituencyId: { type: string, description: 'For ASSEMBLY level - accepts assemblyConstituencyId, mandalId, or districtId (auto-resolves)' }
  *               subscriptionActive: { type: boolean }
  *               subscriptionActivationDate:
  *                 type: string
@@ -720,6 +724,100 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 idCardCharge: 1000
  *                 fullName: Scheduled Reporter
  *                 mobileNumber: '9502000002'
+ *             divisionReporterDistrict:
+ *               summary: DIVISION level reporter (RC Incharge) with districtId
+ *               value:
+ *                 designationId: cmkwcj8j50005jytf89cizzuu
+ *                 level: DIVISION
+ *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 90
+ *                 autoPublish: true
+ *                 fullName: RC Incharge Name
+ *                 mobileNumber: '9502111111'
+ *             divisionReporterMandal:
+ *               summary: DIVISION level reporter (RC Incharge) with mandalId
+ *               value:
+ *                 designationId: cmkwcj8j50005jytf89cizzuu
+ *                 level: DIVISION
+ *                 mandalId: cmkkud63k005vugvkwpo5o611
+ *                 subscriptionActive: true
+ *                 monthlySubscriptionAmount: 15000
+ *                 autoPublish: true
+ *                 fullName: RC Incharge Name
+ *                 mobileNumber: '9502111112'
+ *             constituencyReporter:
+ *               summary: CONSTITUENCY level reporter
+ *               value:
+ *                 designationId: constituency-reporter-global
+ *                 level: CONSTITUENCY
+ *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 60
+ *                 autoPublish: false
+ *                 fullName: Constituency Reporter Name
+ *                 mobileNumber: '9502222222'
+ *             assemblyReporterMandal:
+ *               summary: ASSEMBLY level reporter with mandalId (auto-resolves)
+ *               value:
+ *                 designationId: cmit7cpar0001ugkojh66y6ww
+ *                 level: ASSEMBLY
+ *                 mandalId: cmkkud63k005vugvkwpo5o611
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 365
+ *                 autoPublish: true
+ *                 fullName: Assembly Reporter
+ *                 mobileNumber: '9502333333'
+ *             assemblyReporterDistrict:
+ *               summary: ASSEMBLY level reporter with districtId (auto-resolves)
+ *               value:
+ *                 designationId: cmit7cpar0001ugkojh66y6ww
+ *                 level: ASSEMBLY
+ *                 districtId: cmit7pjf30001ugaov86j0abc
+ *                 subscriptionActive: true
+ *                 monthlySubscriptionAmount: 10000
+ *                 autoPublish: true
+ *                 fullName: Assembly Reporter
+ *                 mobileNumber: '9502333334'
+ *             editorialPublisher:
+ *               summary: Publisher (STATE level - Editorial Management)
+ *               value:
+ *                 designationId: publisher-global
+ *                 level: STATE
+ *                 stateId: cmit7pjf30001ugaov86j0ed5
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 365
+ *                 autoPublish: true
+ *                 fullName: Publisher Name
+ *                 mobileNumber: '9502444444'
+ *             editorialChiefEditor:
+ *               summary: Chief Editor (STATE level - Editorial Management)
+ *               value:
+ *                 designationId: chief-editor-global
+ *                 level: STATE
+ *                 stateId: cmit7pjf30001ugaov86j0ed5
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 365
+ *                 autoPublish: true
+ *                 fullName: Chief Editor Name
+ *                 mobileNumber: '9502555555'
+ *             editorialEditor:
+ *               summary: Editor (STATE level - Editorial Management)
+ *               value:
+ *                 designationId: editor-global
+ *                 level: STATE
+ *                 stateId: cmit7pjf30001ugaov86j0ed5
+ *                 subscriptionActive: false
+ *                 manualLoginEnabled: true
+ *                 manualLoginDays: 365
+ *                 autoPublish: true
+ *                 fullName: Editor Name
+ *                 mobileNumber: '9502666666'
  *     responses:
  *       201:
  *         description: Created
@@ -734,6 +832,8 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
  *                 level: { type: string }
  *                 stateId: { type: string, nullable: true }
  *                 districtId: { type: string, nullable: true }
+ *                 divisionId: { type: string, nullable: true }
+ *                 constituencyId: { type: string, nullable: true }
  *                 mandalId: { type: string, nullable: true }
  *                 assemblyConstituencyId: { type: string, nullable: true }
  *                 subscriptionActive: { type: boolean }
@@ -1049,12 +1149,18 @@ export default router;
  *         schema: { type: string }
  *       - in: query
  *         name: level
- *         schema: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
+ *         schema: { type: string, enum: [STATE, DISTRICT, DIVISION, CONSTITUENCY, ASSEMBLY, MANDAL] }
  *       - in: query
  *         name: stateId
  *         schema: { type: string }
  *       - in: query
  *         name: districtId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: divisionId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: constituencyId
  *         schema: { type: string }
  *       - in: query
  *         name: mandalId
@@ -1797,9 +1903,11 @@ router.get('/tenants/:tenantId/reporters/:id', async (req, res) => {
  *             type: object
  *             properties:
  *               designationId: { type: string }
- *               level: { type: string, enum: [STATE, DISTRICT, ASSEMBLY, MANDAL] }
+ *               level: { type: string, enum: [STATE, DISTRICT, DIVISION, CONSTITUENCY, ASSEMBLY, MANDAL] }
  *               stateId: { type: string }
  *               districtId: { type: string }
+ *               divisionId: { type: string }
+ *               constituencyId: { type: string }
  *               mandalId: { type: string }
  *               assemblyConstituencyId: { type: string }
  *               subscriptionActive: { type: boolean }
