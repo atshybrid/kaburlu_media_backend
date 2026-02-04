@@ -2658,18 +2658,33 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
     if (!reporter.idCard) {
       return res.status(400).json({ error: 'ID card not found. Generate it first.' });
     }
-    if (!reporter.idCard.pdfUrl) {
-      return res.status(400).json({ error: 'ID card PDF not generated yet' });
-    }
     if (!reporter.user?.mobileNumber) {
       return res.status(400).json({ error: 'Reporter mobile number not found' });
+    }
+
+    // Auto-regenerate PDF if missing
+    let pdfUrl = reporter.idCard.pdfUrl;
+    if (!pdfUrl) {
+      console.log(`⚠️  ID card PDF URL missing for reporter ${id}, regenerating...`);
+      try {
+        const regenerated = await generateReporterIdCardPdf({
+          reporterId: id,
+          tenantId,
+          forceRegenerate: true,
+        });
+        pdfUrl = regenerated.pdfUrl;
+        console.log(`✓ PDF regenerated successfully: ${pdfUrl}`);
+      } catch (regenerateErr) {
+        console.error('Failed to regenerate PDF:', regenerateErr);
+        return res.status(500).json({ error: 'ID card PDF not found and regeneration failed' });
+      }
     }
 
     // Send via WhatsApp
     const result = await sendIdCardViaWhatsApp({
       reporterId: id,
       tenantId,
-      pdfUrl: reporter.idCard.pdfUrl,
+      pdfUrl,
       cardNumber: reporter.idCard.cardNumber,
     });
 
