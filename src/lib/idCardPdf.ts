@@ -216,7 +216,7 @@ function buildIdCardHtml(data: any): string {
       </div>
       
       <div style="font-size: 11pt; font-weight: bold; text-align: center;">${reporter.fullName}</div>
-      <div style="font-size: 8pt; opacity: 0.9;">${reporter.designationNativeName || reporter.designation}</div>
+      <div style="font-size: 8pt; opacity: 0.9;">${reporter.designation}</div>
       <div style="font-size: 8pt; margin-top: 1mm;">${reporter.cardNumber}</div>
       
       ${reporter.workplaceLocation ? `
