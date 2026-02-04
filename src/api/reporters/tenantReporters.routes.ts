@@ -383,7 +383,7 @@ router.get('/reporters/me', passport.authenticate('jwt', { session: false }), as
   }
 });
 
-type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'MANDAL' | 'ASSEMBLY';
+type ReporterLevelInput = 'STATE' | 'DISTRICT' | 'DIVISION' | 'CONSTITUENCY' | 'ASSEMBLY' | 'MANDAL';
 
 type RoleName = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'REPORTER' | string;
 
@@ -396,8 +396,10 @@ function isAllowedCreatorRole(roleName: RoleName) {
 }
 
 function allowedChildLevelsForCreator(creatorLevel: ReporterLevelInput): ReporterLevelInput[] {
-  if (creatorLevel === 'STATE') return ['DISTRICT', 'ASSEMBLY', 'MANDAL'];
-  if (creatorLevel === 'DISTRICT') return ['ASSEMBLY', 'MANDAL'];
+  if (creatorLevel === 'STATE') return ['DISTRICT', 'DIVISION', 'CONSTITUENCY', 'ASSEMBLY', 'MANDAL'];
+  if (creatorLevel === 'DISTRICT') return ['DIVISION', 'CONSTITUENCY', 'ASSEMBLY', 'MANDAL'];
+  if (creatorLevel === 'DIVISION') return ['CONSTITUENCY', 'ASSEMBLY', 'MANDAL'];
+  if (creatorLevel === 'CONSTITUENCY') return ['ASSEMBLY', 'MANDAL'];
   if (creatorLevel === 'ASSEMBLY') return ['MANDAL'];
   return [];
 }
@@ -405,10 +407,10 @@ function allowedChildLevelsForCreator(creatorLevel: ReporterLevelInput): Reporte
 async function assertReporterCanCreateWithinChildScope(tx: any, input: {
   creator: any;
   requestedLevel: ReporterLevelInput;
-  requestedLocation: { field: 'stateId' | 'districtId' | 'mandalId' | 'assemblyConstituencyId'; id: string };
+  requestedLocation: { field: 'stateId' | 'districtId' | 'divisionId' | 'constituencyId' | 'mandalId' | 'assemblyConstituencyId'; id: string };
 }) {
   const creatorLevel = String(input.creator?.level || '') as ReporterLevelInput;
-  if (!['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(creatorLevel)) {
+  if (!['STATE', 'DISTRICT', 'DIVISION', 'CONSTITUENCY', 'MANDAL', 'ASSEMBLY'].includes(creatorLevel)) {
     throw httpError(403, { error: 'Reporter scope missing or invalid' });
   }
 
@@ -913,7 +915,7 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     if (!mobileNumber || !fullName) return res.status(400).json({ error: 'mobileNumber and fullName required' });
 
     const lvl = String(level) as ReporterLevelInput;
-    if (!['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(lvl)) return res.status(400).json({ error: 'Invalid level' });
+    if (!['STATE', 'DISTRICT', 'DIVISION', 'CONSTITUENCY', 'MANDAL', 'ASSEMBLY'].includes(lvl)) return res.status(400).json({ error: 'Invalid level' });
 
     const locationKey = getLocationKeyFromLevel(lvl, { stateId, districtId, mandalId, assemblyConstituencyId });
     if (!locationKey.id) {
