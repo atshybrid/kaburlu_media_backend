@@ -16,6 +16,8 @@ import {
   DEFAULT_OPENAI_MODEL_REWRITE,
   DEFAULT_OPENAI_MODEL_NEWSPAPER,
   AI_PARALLEL_RACE,
+  AI_USE_GEMINI,
+  AI_USE_OPENAI,
 } from './aiConfig';
 
 type AIPurpose = 'seo' | 'moderation' | 'translation' | 'rewrite' | 'shortnews_ai_article' | 'newspaper';
@@ -37,11 +39,6 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
 
   const useGeminiFirst = purpose === 'translation'
     ? (geminiAllowed && (provider === 'gemini' || true))
-    : (provider === 'gemini' && geminiAllowed);
-
-  // NOTE: AI_USE_GEMINI/AI_USE_OPENAI flags live in aiConfig; we honor them here.
-  // We intentionally keep AI_PROVIDER as a baseline preference, but purpose-specific
-  // routing overrides it when the corresponding AI_USE_* flag is set.
   const { AI_USE_GEMINI, AI_USE_OPENAI } = require('./aiConfig');
 
   const shouldTryGeminiFirst = purpose === 'translation'
@@ -269,8 +266,6 @@ export async function aiGenerateText({ prompt, purpose }: { prompt: string; purp
   if (AI_PARALLEL_RACE && geminiAllowed && openaiAllowed && AI_USE_GEMINI && AI_USE_OPENAI) {
     console.log(`[AI][race] Starting parallel race for ${purpose} (Gemini vs OpenAI)...`);
     const raceStart = Date.now();
-    
-    try {
       const result = await Promise.race([
         (async () => {
           const r = await tryGemini();
