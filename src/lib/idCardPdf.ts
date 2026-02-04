@@ -293,9 +293,10 @@ function buildIdCardHtml(data: any): string {
     <head>
       <meta charset="UTF-8">
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { margin: 0; padding: 0; }
         @page { size: 54mm 85.6mm; margin: 0; }
-        body { margin: 0; padding: 0; }
+        body { margin: 0; padding: 0; background: white; }
+        table { border-collapse: collapse; }
       </style>
     </head>
     <body>
