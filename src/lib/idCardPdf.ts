@@ -36,7 +36,6 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       state: true,
       district: true,
       mandal: true,
-      village: true,
       assemblyConstituency: true,
     }
   });
@@ -91,7 +90,6 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     if (reporter.state?.name) locationParts.push(reporter.state.name);
   } else {
     // Fallback: Show all available location info
-    if (reporter.village?.name) locationParts.push(reporter.village.name);
     if (reporter.mandal?.name) locationParts.push(reporter.mandal.name);
     if (reporter.assemblyConstituency?.name) locationParts.push(reporter.assemblyConstituency.name);
     if (reporter.district?.name) locationParts.push(reporter.district.name);
@@ -117,7 +115,6 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       state: reporter.state?.name,
       district: reporter.district?.name,
       mandal: reporter.mandal?.name,
-      village: reporter.village?.name,
       assemblyConstituency: reporter.assemblyConstituency?.name,
     },
     tenant: {
