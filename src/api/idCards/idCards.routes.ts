@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../../lib/prisma';
 import axios from 'axios';
 import fs from 'fs';
-import { generateAndUploadIdCardPdf } from '../../lib/idCardPdfKit';
+import { generateIdCardPdfBuffer } from '../../lib/idCardPdfKit';
 
 const router = Router();
 
@@ -722,156 +722,13 @@ router.get('/pdf', async (req, res) => {
     }
     const reporter = await resolveReporterByQuery({ reporterId, mobile, fullName });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
-    
-    // Use PDFKit-based generation (no Chrome dependencies)
-    const PDFDocument = require('pdfkit');
-    const QRCode = require('qrcode');
-    
-    // Build card data
-    const idCard = await (prisma as any).reporterIDCard.findUnique({
-      where: { reporterId: reporter.id },
-      include: {
-        reporter: {
-          include: {
-            user: { include: { profile: true } },
-            tenant: { include: { entity: true, idCardSettings: true } },
-            designation: true,
-            state: true,
-            district: true,
-            mandal: true,
-            assemblyConstituency: true,
-          }
-        }
-      }
-    });
-    
-    if (!idCard || !idCard.reporter) {
-      return res.status(404).json({ error: 'ID card not found for reporter' });
+    const result = await generateIdCardPdfBuffer(reporter.id);
+    if (!result.ok) {
+      return res.status(500).json({ error: result.error || 'Failed to generate PDF' });
     }
 
-    const r = idCard.reporter;
-    const tenant = r.tenant;
-    const entity = tenant?.entity;
-    const settings = tenant?.idCardSettings;
-    const profile = r.user?.profile;
-
-    // Build workplace location
-    const locationParts: string[] = [];
-    if (r.mandal?.name) {
-      locationParts.push(r.mandal.name);
-      if (r.district?.name) locationParts.push(r.district.name);
-      if (r.state?.name) locationParts.push(r.state.name);
-    } else if (r.assemblyConstituency?.name) {
-      locationParts.push(r.assemblyConstituency.name);
-      if (r.district?.name) locationParts.push(r.district.name);
-      if (r.state?.name) locationParts.push(r.state.name);
-    } else if (r.district?.name) {
-      locationParts.push(r.district.name);
-      if (r.state?.name) locationParts.push(r.state.name);
-    } else if (r.state?.name) {
-      locationParts.push(r.state.name);
-    }
-
-    const cardData = {
-      reporter: {
-        fullName: profile?.fullName || 'Unknown',
-        mobileNumber: r.user?.mobileNumber || '',
-        profilePhotoUrl: profile?.profilePhotoUrl || null,
-        cardNumber: idCard.cardNumber,
-        designation: r.designation?.name || 'Reporter',
-        workplaceLocation: locationParts.join(', '),
-      },
-      tenant: {
-        name: tenant?.name || 'Kaburlu Media',
-        nativeName: tenant?.nativeName || tenant?.name || 'కబుర్లు మీడియా',
-        logoUrl: entity?.logoUrl || settings?.logoUrl || null,
-      },
-      settings: {
-        primaryColor: settings?.primaryColor || '#1E40AF',
-      }
-    };
-
-    // Generate PDF using PDFKit
-    const doc = new PDFDocument({
-      size: [153, 243], // 54mm × 85.6mm in points
-      margins: { top: 0, bottom: 0, left: 0, right: 0 }
-    });
-
-    const buffers: Buffer[] = [];
-    doc.on('data', buffers.push.bind(buffers));
-    
-    const pdfPromise = new Promise<Buffer>((resolve, reject) => {
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
-      doc.on('error', reject);
-    });
-
-    const cardWidth = 153;
-    const cardHeight = 243;
-
-    // White background
-    doc.rect(0, 0, cardWidth, cardHeight).fill('#FFFFFF');
-
-    // Telugu newspaper name at top
-    doc.fill('#1E40AF')
-       .fontSize(14)
-       .font('Helvetica-Bold')
-       .text(cardData.tenant.nativeName, 0, 8, { align: 'center', width: cardWidth });
-
-    // Red "PRINT MEDIA" banner
-    doc.rect(0, 28, cardWidth, 20).fill('#FF0000');
-    doc.fill('#FFFFFF')
-       .fontSize(14)
-       .font('Helvetica-Bold')
-       .text('PRINT MEDIA', 0, 33, { align: 'center', width: cardWidth });
-
-    // Photo placeholder
-    const photoX = 8;
-    const photoY = 55;
-    const photoWidth = 50;
-    const photoHeight = 65;
-    doc.rect(photoX, photoY, photoWidth, photoHeight).stroke('#CCCCCC');
-
-    // Generate QR code
-    const qrX = 65;
-    const qrY = 55;
-    const qrSize = 50;
-    try {
-      const qrData = `REPORTER:${cardData.reporter.cardNumber}`;
-      const qrBuffer = await QRCode.toBuffer(qrData, {
-        width: 200,
-        margin: 1,
-        color: { dark: '#000000', light: '#FFFFFF' }
-      });
-      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
-    } catch (e) {
-      console.error('QR generation failed', e);
-    }
-
-    // Reporter details
-    const detailsY = 130;
-    doc.fill('#000000')
-       .fontSize(10)
-       .font('Helvetica-Bold')
-       .text(cardData.reporter.fullName, 10, detailsY, { width: cardWidth - 20 });
-
-    doc.fontSize(8)
-       .font('Helvetica')
-       .text(cardData.reporter.designation, 10, detailsY + 15, { width: cardWidth - 20 })
-       .text(cardData.reporter.workplaceLocation, 10, detailsY + 28, { width: cardWidth - 20 })
-       .text(cardData.reporter.mobileNumber, 10, detailsY + 41, { width: cardWidth - 20 });
-
-    // Blue footer
-    doc.rect(0, cardHeight - 30, cardWidth, 30).fill(cardData.settings.primaryColor);
-    doc.fill('#FFFFFF')
-       .fontSize(9)
-       .font('Helvetica-Bold')
-       .text(cardData.reporter.cardNumber, 0, cardHeight - 20, { align: 'center', width: cardWidth });
-
-    doc.end();
-
-    const pdfBuffer = await pdfPromise;
-
-    const fileName = `ID_CARD_${cardData.reporter.cardNumber}.pdf`;
+    const pdfBuffer = result.pdfBuffer;
+    const fileName = `ID_CARD_${result.cardNumber}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', pdfBuffer.length.toString());
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

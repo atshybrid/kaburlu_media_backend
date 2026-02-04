@@ -356,6 +356,23 @@ async function generatePdfBuffer(data: any): Promise<Buffer> {
 }
 
 /**
+ * Generate ID card PDF buffer (PDFKit) without uploading.
+ * This is intended for direct download endpoints.
+ */
+export async function generateIdCardPdfBuffer(reporterId: string): Promise<{ ok: true; pdfBuffer: Buffer; cardNumber: string } | { ok: false; error: string }> {
+  try {
+    const data = await buildIdCardData(reporterId);
+    if (!data) return { ok: false, error: 'Reporter or ID card not found' };
+
+    const pdfBuffer = await generatePdfBuffer(data);
+    const cardNumber = data.reporter.cardNumber;
+    return { ok: true, pdfBuffer, cardNumber };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'PDF generation failed' };
+  }
+}
+
+/**
  * Generate and upload ID card PDF
  */
 export async function generateAndUploadIdCardPdf(reporterId: string): Promise<IdCardPdfResult> {
