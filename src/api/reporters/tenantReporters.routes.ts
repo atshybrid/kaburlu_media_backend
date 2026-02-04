@@ -584,7 +584,11 @@ async function requireTenantEditorialScope(req: any, res: any): Promise<{ ok: tr
 
   if (roleName === 'SUPER_ADMIN') return { ok: true, tenantId: String(tenantId) };
 
-  // Tenant roles: ensure user is linked to a Reporter profile in the same tenant
+  // TENANT_ADMIN: Allow access without requiring reporter profile
+  // (Admin can manage reporters even if they don't have their own reporter record)
+  if (roleName === 'TENANT_ADMIN') return { ok: true, tenantId: String(tenantId) };
+
+  // Other tenant roles: ensure user is linked to a Reporter profile in the same tenant
   const rep = await (prisma as any).reporter.findFirst({ where: { userId: user.id }, select: { tenantId: true } }).catch(() => null);
   if (!rep?.tenantId) return { ok: false, status: 403, error: 'Reporter profile not linked to tenant' };
   if (String(rep.tenantId) !== String(tenantId)) return { ok: false, status: 403, error: 'Tenant scope mismatch' };
