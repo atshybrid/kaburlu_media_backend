@@ -6,7 +6,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
-import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdf';
+import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdfKit';
 
 const router = Router();
 
