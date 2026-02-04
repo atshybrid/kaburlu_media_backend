@@ -501,10 +501,11 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
   if (level === 'STATE') return { field: 'stateId', id: String(body.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body.districtId || '') };
   if (level === 'MANDAL') return { field: 'mandalId', id: String(body.mandalId || '') };
-  // ASSEMBLY level accepts assemblyConstituencyId OR mandalId (backward compatibility)
+  // ASSEMBLY level: accept assemblyConstituencyId OR mandalId (will resolve to assembly in transaction)
   if (level === 'ASSEMBLY') {
-    const assemblyId = String(body.assemblyConstituencyId || body.mandalId || '');
-    return { field: 'assemblyConstituencyId', id: assemblyId };
+    const assemblyId = String(body.assemblyConstituencyId || '');
+    const mandalIdFallback = String(body.mandalId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId || mandalIdFallback };
   }
   return { field: 'assemblyConstituencyId', id: String(body.assemblyConstituencyId || '') };
 }
@@ -850,6 +851,29 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
             const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
             if (!tenant) throw httpError(400, { error: 'Invalid tenantId' });
 
+            // ASSEMBLY level: if mandalId provided instead of assemblyConstituencyId, resolve it
+            let resolvedAssemblyId = locationKey.id;
+            if (lvl === 'ASSEMBLY' && locationKey.id) {
+              // Check if ID is actually a mandalId (validate it's a mandal, not assembly)
+              const isMandal = await tx.mandal.findUnique({ where: { id: locationKey.id }, select: { id: true, districtId: true } }).catch(() => null);
+              if (isMandal?.districtId) {
+                // Find first assembly constituency in the same district
+                const assembly = await tx.assemblyConstituency.findFirst({
+                  where: { districtId: isMandal.districtId },
+                  select: { id: true }
+                }).catch(() => null);
+                if (!assembly) {
+                  throw httpError(400, { error: 'No assembly constituency found for mandal district' });
+                }
+                resolvedAssemblyId = assembly.id;
+                console.log(`[ASSEMBLY Resolver] Mandal ${locationKey.id} → Assembly ${resolvedAssemblyId}`);
+              } else {
+                // Validate assemblyConstituencyId exists
+                const assembly = await tx.assemblyConstituency.findUnique({ where: { id: locationKey.id } }).catch(() => null);
+                if (!assembly) throw httpError(400, { error: 'Invalid assemblyConstituencyId' });
+              }
+            }
+
             // Validate designation belongs to requested level (and tenant/global).
             const designation = await tx.reporterDesignation.findUnique({ where: { id: String(designationId) }, select: { id: true, level: true, tenantId: true } }).catch(() => null);
             if (!designation) throw httpError(400, { error: 'Invalid designationId' });
@@ -922,7 +946,7 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
               stateId: lvl === 'STATE' ? locationKey.id : null,
               districtId: lvl === 'DISTRICT' ? locationKey.id : null,
               mandalId: lvl === 'MANDAL' ? locationKey.id : null,
-              assemblyConstituencyId: lvl === 'ASSEMBLY' ? locationKey.id : null,
+              assemblyConstituencyId: lvl === 'ASSEMBLY' ? resolvedAssemblyId : null,
               // Best-practice: snapshot pricing into the reporter row. If amounts are not provided,
               // default from TenantSettings.data.reporterPricing (tenant-managed).
               subscriptionActive: typeof body.subscriptionActive === 'boolean' ? body.subscriptionActive : pricingResolved.subscriptionEnabled,
