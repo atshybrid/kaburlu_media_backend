@@ -37,6 +37,7 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       district: true,
       mandal: true,
       village: true,
+      assemblyConstituency: true,
     }
   });
 
@@ -45,6 +46,59 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   const settings = reporter.tenant?.idCardSettings;
   const entity = reporter.tenant?.entity;
   const profile = reporter.user?.profile;
+
+  // Build location string based on level and designation
+  const locationParts: string[] = [];
+  const level = reporter.level;
+  const designationName = reporter.designation?.name || 'Reporter';
+  const designationNativeName = reporter.designation?.nativeName || null;
+
+  // Build hierarchical location display based on level
+  if (level === 'STATE') {
+    // STATE level: Show only state
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (level === 'DISTRICT') {
+    // DISTRICT level: Show district, state
+    if (reporter.district?.name) locationParts.push(reporter.district.name);
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (level === 'DIVISION') {
+    // DIVISION level: Show district or mandal (whichever is available), state
+    if (reporter.district?.name) {
+      locationParts.push(`${reporter.district.name} Division`);
+    } else if (reporter.mandal?.name) {
+      locationParts.push(`${reporter.mandal.name} Division`);
+    }
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (level === 'CONSTITUENCY') {
+    // CONSTITUENCY level: Show constituency info
+    if (reporter.assemblyConstituency?.name) {
+      locationParts.push(`${reporter.assemblyConstituency.name} Constituency`);
+    } else if (reporter.district?.name) {
+      locationParts.push(`${reporter.district.name} Constituency`);
+    } else if (reporter.mandal?.name) {
+      locationParts.push(`${reporter.mandal.name} Constituency`);
+    }
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (level === 'ASSEMBLY') {
+    // ASSEMBLY level: Show assembly constituency, district, state
+    if (reporter.assemblyConstituency?.name) locationParts.push(reporter.assemblyConstituency.name);
+    if (reporter.district?.name) locationParts.push(reporter.district.name);
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else if (level === 'MANDAL') {
+    // MANDAL level: Show mandal, district, state
+    if (reporter.mandal?.name) locationParts.push(reporter.mandal.name);
+    if (reporter.district?.name) locationParts.push(reporter.district.name);
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  } else {
+    // Fallback: Show all available location info
+    if (reporter.village?.name) locationParts.push(reporter.village.name);
+    if (reporter.mandal?.name) locationParts.push(reporter.mandal.name);
+    if (reporter.assemblyConstituency?.name) locationParts.push(reporter.assemblyConstituency.name);
+    if (reporter.district?.name) locationParts.push(reporter.district.name);
+    if (reporter.state?.name) locationParts.push(reporter.state.name);
+  }
+
+  const workplaceLocation = locationParts.join(', ');
 
   return {
     reporter: {
@@ -56,12 +110,15 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       cardNumber: reporter.idCard.cardNumber,
       issuedAt: reporter.idCard.issuedAt,
       expiresAt: reporter.idCard.expiresAt,
-      designation: reporter.designation?.name || 'Reporter',
+      designation: designationName,
+      designationNativeName: designationNativeName,
       level: reporter.level,
+      workplaceLocation: workplaceLocation,
       state: reporter.state?.name,
       district: reporter.district?.name,
       mandal: reporter.mandal?.name,
       village: reporter.village?.name,
+      assemblyConstituency: reporter.assemblyConstituency?.name,
     },
     tenant: {
       name: reporter.tenant?.name || 'Kaburlu Media',
@@ -159,12 +216,12 @@ function buildIdCardHtml(data: any): string {
       </div>
       
       <div style="font-size: 11pt; font-weight: bold; text-align: center;">${reporter.fullName}</div>
-      <div style="font-size: 8pt; opacity: 0.9;">${reporter.designation}</div>
+      <div style="font-size: 8pt; opacity: 0.9;">${reporter.designationNativeName || reporter.designation}</div>
       <div style="font-size: 8pt; margin-top: 1mm;">${reporter.cardNumber}</div>
       
-      ${reporter.district || reporter.state ? `
-        <div style="font-size: 7pt; margin-top: 2mm; text-align: center; opacity: 0.9;">
-          ${[reporter.mandal, reporter.district, reporter.state].filter(Boolean).join(', ')}
+      ${reporter.workplaceLocation ? `
+        <div style="font-size: 7pt; margin-top: 2mm; text-align: center; opacity: 0.9; line-height: 1.3;">
+          ${reporter.workplaceLocation}
         </div>
       ` : ''}
     </div>
