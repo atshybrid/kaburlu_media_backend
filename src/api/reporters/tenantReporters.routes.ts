@@ -2944,3 +2944,60 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
     return res.status(500).json({ error: 'Failed to resend ID card' });
   }
 });
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/pdf:
+ *   delete:
+ *     summary: Clear ID card PDF URL to force regeneration
+ *     description: Removes the PDF URL from the database. Next resend/regenerate call will create a fresh PDF.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: PDF URL cleared successfully
+ *       404:
+ *         description: Reporter or ID card not found
+ */
+router.delete('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { tenantId, id } = req.params;
+    
+    // Check reporter exists
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true }
+    });
+
+    if (!reporter) {
+      return res.status(404).json({ error: 'Reporter not found' });
+    }
+
+    if (!reporter.idCard) {
+      return res.status(404).json({ error: 'ID card not found' });
+    }
+
+    // Clear PDF URL
+    await (prisma as any).reporterIDCard.update({
+      where: { reporterId: id },
+      data: { pdfUrl: null }
+    });
+
+    return res.json({ 
+      success: true, 
+      message: 'PDF URL cleared. Next resend/regenerate will create fresh PDF.' 
+    });
+  } catch (e: any) {
+    console.error('delete id-card pdf error', e);
+    return res.status(500).json({ error: 'Failed to clear PDF URL' });
+  }
+});
