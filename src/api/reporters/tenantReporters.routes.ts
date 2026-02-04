@@ -501,11 +501,12 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
   if (level === 'STATE') return { field: 'stateId', id: String(body.stateId || '') };
   if (level === 'DISTRICT') return { field: 'districtId', id: String(body.districtId || '') };
   if (level === 'MANDAL') return { field: 'mandalId', id: String(body.mandalId || '') };
-  // ASSEMBLY level: accept assemblyConstituencyId OR mandalId (will resolve to assembly in transaction)
+  // ASSEMBLY level: accept assemblyConstituencyId OR mandalId OR districtId (will resolve in transaction)
   if (level === 'ASSEMBLY') {
     const assemblyId = String(body.assemblyConstituencyId || '');
     const mandalIdFallback = String(body.mandalId || '');
-    return { field: 'assemblyConstituencyId', id: assemblyId || mandalIdFallback };
+    const districtIdFallback = String(body.districtId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId || mandalIdFallback || districtIdFallback };
   }
   return { field: 'assemblyConstituencyId', id: String(body.assemblyConstituencyId || '') };
 }
@@ -851,13 +852,13 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
             const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
             if (!tenant) throw httpError(400, { error: 'Invalid tenantId' });
 
-            // ASSEMBLY level: if mandalId provided instead of assemblyConstituencyId, resolve it
+            // ASSEMBLY level: resolve mandalId or districtId to assemblyConstituencyId
             let resolvedAssemblyId = locationKey.id;
             if (lvl === 'ASSEMBLY' && locationKey.id) {
-              // Check if ID is actually a mandalId (validate it's a mandal, not assembly)
+              // Check if ID is a mandalId
               const isMandal = await tx.mandal.findUnique({ where: { id: locationKey.id }, select: { id: true, districtId: true } }).catch(() => null);
               if (isMandal?.districtId) {
-                // Find first assembly constituency in the same district
+                // Find first assembly constituency in mandal's district
                 const assembly = await tx.assemblyConstituency.findFirst({
                   where: { districtId: isMandal.districtId },
                   select: { id: true }
@@ -868,9 +869,24 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
                 resolvedAssemblyId = assembly.id;
                 console.log(`[ASSEMBLY Resolver] Mandal ${locationKey.id} → Assembly ${resolvedAssemblyId}`);
               } else {
-                // Validate assemblyConstituencyId exists
-                const assembly = await tx.assemblyConstituency.findUnique({ where: { id: locationKey.id } }).catch(() => null);
-                if (!assembly) throw httpError(400, { error: 'Invalid assemblyConstituencyId' });
+                // Check if ID is a districtId
+                const isDistrict = await tx.district.findUnique({ where: { id: locationKey.id }, select: { id: true } }).catch(() => null);
+                if (isDistrict) {
+                  // Find first assembly constituency in district
+                  const assembly = await tx.assemblyConstituency.findFirst({
+                    where: { districtId: locationKey.id },
+                    select: { id: true }
+                  }).catch(() => null);
+                  if (!assembly) {
+                    throw httpError(400, { error: 'No assembly constituency found for district' });
+                  }
+                  resolvedAssemblyId = assembly.id;
+                  console.log(`[ASSEMBLY Resolver] District ${locationKey.id} → Assembly ${resolvedAssemblyId}`);
+                } else {
+                  // Validate as assemblyConstituencyId
+                  const assembly = await tx.assemblyConstituency.findUnique({ where: { id: locationKey.id } }).catch(() => null);
+                  if (!assembly) throw httpError(400, { error: 'Invalid assemblyConstituencyId, mandalId, or districtId' });
+                }
               }
             }
 
