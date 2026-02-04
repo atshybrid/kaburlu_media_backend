@@ -122,6 +122,7 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       nativeName: reporter.tenant?.nativeName || null,
       logoUrl: entity?.logoUrl || settings?.frontLogoUrl || null,
       tagline: entity?.tagline || '',
+      domain: reporter.tenant?.domain || 'kaburlu.com',
     },
     settings: {
       templateStyle: settings?.templateStyle || 'modern',
@@ -200,9 +201,13 @@ async function inlineAssetsForPdf(data: any): Promise<any> {
 function buildIdCardHtml(data: any): string {
   const { reporter, tenant, settings } = data;
   
-  // Generate QR code data URL
-  const qrData = `ID:${reporter.cardNumber}\nName:${reporter.fullName}\nDesig:${reporter.designation}\nPhone:${reporter.mobileNumber}\nValid:${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}`;
-  const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+  // Front QR: Basic ID info
+  const frontQrData = `ID:${reporter.cardNumber}\nName:${reporter.fullName}\nDesig:${reporter.designation}\nPhone:${reporter.mobileNumber}\nValid:${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}`;
+  const frontQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(frontQrData)}`;
+  
+  // Back QR: Domain URL - domainname.com/reporter/reporterid
+  const backQrData = `${tenant.domain || 'kaburlu.com'}/reporter/${reporter.id}`;
+  const backQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(backQrData)}`;
   
   const frontHtml = `
     <div class="card front" style="
@@ -215,9 +220,12 @@ function buildIdCardHtml(data: any): string {
       position: relative;
       page-break-after: always;
     ">
-      <!-- Telugu newspaper name -->
-      <div style="text-align: center; padding: 1.5mm 0; font-size: 11pt; font-weight: bold; color: #0033CC;">
-        ${tenant.nativeName || tenant.name}
+      <!-- Logo at top (image not text) -->
+      <div style="text-align: center; padding: 2mm 0;">
+        ${settings.frontLogoUrl 
+          ? `<img src="${settings.frontLogoUrl}" style="max-height: 8mm; max-width: 50mm; object-fit: contain;" />`
+          : `<div style="font-size: 11pt; font-weight: bold; color: #0033CC;">${tenant.nativeName || tenant.name}</div>`
+        }
       </div>
       
       <!-- Red "PRINT MEDIA" banner -->
@@ -228,33 +236,33 @@ function buildIdCardHtml(data: any): string {
       <!-- Photo and QR code section -->
       <table style="width: 100%; border-collapse: collapse; margin: 3mm 0 0 0; padding: 0;">
         <tr>
-          <td style="width: 50%; vertical-align: top; padding-left: 3mm; padding-right: 1mm;">
+          <td style="width: 50%; vertical-align: top; padding-left: 3mm; padding-right: 1mm; position: relative;">
             ${reporter.profilePhotoUrl 
-              ? `<div style="position: relative; width: 22mm; height: 27mm;">
+              ? `<div style="position: relative; display: inline-block;">
                   <img src="${reporter.profilePhotoUrl}" style="width: 22mm; height: 27mm; object-fit: cover; display: block; border: 1px solid #ddd;" />
                   ${settings.roundStampUrl 
-                    ? `<img src="${settings.roundStampUrl}" style="position: absolute; bottom: 1mm; right: 1mm; width: 9mm; height: 9mm; object-fit: contain;" />`
+                    ? `<img src="${settings.roundStampUrl}" style="position: absolute; bottom: -2mm; right: -2mm; width: 9mm; height: 9mm; object-fit: contain; z-index: 10;" />`
                     : ''
                   }
                 </div>`
-              : `<div style="width: 22mm; height: 27mm; background: #f0f0f0; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; color: #999; font-size: 7pt; text-align: center;">No Photo</div>`
+              : `<div style="width: 22mm; height: 27mm; background: #f0f0f0; border: 1px solid #ddd; display: inline-block; text-align: center; line-height: 27mm; color: #999; font-size: 7pt;">No Photo</div>`
             }
           </td>
           <td style="width: 50%; text-align: center; vertical-align: top; padding-right: 3mm; padding-left: 1mm; padding-top: 2mm;">
-            <img src="${qrDataUrl}" style="width: 22mm; height: 22mm; display: inline-block; border: 1px solid #eee;" />
+            <img src="${frontQrUrl}" style="width: 22mm; height: 22mm; display: inline-block; border: 1px solid #eee;" />
           </td>
         </tr>
       </table>
       
-      <!-- Details section -->
-      <div style="padding: 0 3mm; font-size: 7.5pt; line-height: 2; margin-top: 2mm;">
+      <!-- Details section - reduced gap -->
+      <div style="padding: 0 3mm; font-size: 7.5pt; line-height: 1.5; margin-top: 2mm;">
         <table style="width: 100%; border-collapse: collapse;">
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">Name</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.fullName}</td></tr>
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">ID Number</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.cardNumber}</td></tr>
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">Desig</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.designation}</td></tr>
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">Work Place</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.workplaceLocation || '-'}</td></tr>
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">Phone</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.mobileNumber}</td></tr>
-          <tr><td style="width: 30%; font-weight: bold; padding: 0.3mm 0;">Valid</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">Name</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.fullName}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">ID Number</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.cardNumber}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">Desig</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.designation}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">Work Place</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.workplaceLocation || '-'}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">Phone</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${reporter.mobileNumber}</td></tr>
+          <tr><td style="width: 30%; font-weight: bold; padding: 0.2mm 0;">Valid</td><td style="width: 5%; text-align: center;">:</td><td style="width: 65%;">${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}</td></tr>
         </table>
       </div>
       
@@ -281,9 +289,9 @@ function buildIdCardHtml(data: any): string {
         <div style="font-size: 9pt; font-weight: bold; color: white; letter-spacing: 1px; margin-top: 1mm;">REPORTER ID CARD</div>
       </div>
       
-      <!-- Center QR code -->
+      <!-- Center QR code - domain URL -->
       <div style="text-align: center; margin: 4mm 0;">
-        <img src="${qrDataUrl}" style="width: 23mm; height: 23mm; border: 1px solid #eee;" />
+        <img src="${backQrUrl}" style="width: 23mm; height: 23mm; border: 1px solid #eee;" />
       </div>
       
       <!-- ADDRESS section -->
@@ -297,21 +305,13 @@ function buildIdCardHtml(data: any): string {
         </div>
       </div>
       
-      <!-- Blue footer -->
-      <div style="background: #0033CC; text-align: center; padding: 2mm 0; margin: 0;">
-        <div style="font-size: 8pt; font-weight: bold; color: white; letter-spacing: 0.5px;">PRGI No : ${reporter.cardNumber}</div>
-      </div>
-      
-      <!-- Terms & Conditions -->
-      <div style="padding: 2mm 3mm;">
-        <div style="font-size: 7pt; font-weight: bold; text-align: center; margin-bottom: 1.5mm;">Terms & Conditions</div>
-        <div style="font-size: 5pt; line-height: 1.3; text-align: left;">
+      <!-- Blue footer with PRGI No and Terms & Conditions -->
+      <div style="position: absolute; bottom: 0; left: 0; width: 100%; background: #0033CC; padding: 2mm 3mm;">
+        <div style="font-size: 7pt; font-weight: bold; color: white; text-align: center; margin-bottom: 1.5mm;">PRGI No : ${reporter.cardNumber}</div>
+        <div style="font-size: 6pt; font-weight: bold; color: white; text-align: center; margin-bottom: 1mm;">Terms & Conditions</div>
+        <div style="font-size: 4.5pt; line-height: 1.2; color: white; text-align: left;">
           ${settings.customBackContent || 
-            '• This Raayutu is to be used for the proper purpose of Newspaper representatives for gathering the latest news.<br>' +
-            '• Identity card should be Produced wherever required.<br>' +
-            '• The card holder shall not provide any wrong information for the sake of money.<br>' +
-            '• This card is valid only till the date mentioned on it and after that, the member shall return the card.<br>' +
-            '• It always is to be used for the public purpose only, not for private purpose and subject to central and state government rules.'
+            '• This Raayutu is to be used for the proper purpose of Newspaper representatives for gathering the latest news. • Identity card should be Produced wherever required. • The card holder shall not provide any wrong information for the sake of money. • This card is valid only till the date mentioned on it and after that, the member shall return the card. • It always is to be used for the public purpose only, not for private purpose and subject to central and state government rules.'
           }
         </div>
       </div>
