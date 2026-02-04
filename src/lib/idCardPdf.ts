@@ -119,7 +119,8 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     },
     tenant: {
       name: reporter.tenant?.name || 'Kaburlu Media',
-      logoUrl: entity?.logoUrl || settings?.logoUrl || null,
+      nativeName: reporter.tenant?.nativeName || null,
+      logoUrl: entity?.logoUrl || settings?.frontLogoUrl || null,
       tagline: entity?.tagline || '',
     },
     settings: {
@@ -130,6 +131,9 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       showBloodGroup: settings?.showBloodGroup !== false,
       showAddress: settings?.showAddress !== false,
       customBackContent: settings?.customBackContent || null,
+      frontLogoUrl: settings?.frontLogoUrl || null,
+      roundStampUrl: settings?.roundStampUrl || null,
+      signUrl: settings?.signUrl || null,
     }
   };
 }
@@ -166,6 +170,24 @@ async function inlineAssetsForPdf(data: any): Promise<any> {
   if (cloned.tenant?.logoUrl) {
     const inlined = await urlToBase64(cloned.tenant.logoUrl);
     if (inlined) cloned.tenant.logoUrl = inlined;
+  }
+
+  // Inline front logo
+  if (cloned.settings?.frontLogoUrl) {
+    const inlined = await urlToBase64(cloned.settings.frontLogoUrl);
+    if (inlined) cloned.settings.frontLogoUrl = inlined;
+  }
+
+  // Inline round stamp
+  if (cloned.settings?.roundStampUrl) {
+    const inlined = await urlToBase64(cloned.settings.roundStampUrl);
+    if (inlined) cloned.settings.roundStampUrl = inlined;
+  }
+
+  // Inline signature
+  if (cloned.settings?.signUrl) {
+    const inlined = await urlToBase64(cloned.settings.signUrl);
+    if (inlined) cloned.settings.signUrl = inlined;
   }
 
   return cloned;
@@ -205,9 +227,15 @@ function buildIdCardHtml(data: any): string {
       <!-- Photo and QR code section using table for better compatibility -->
       <table style="width: 100%; border-collapse: collapse; margin: 2mm 0; padding: 0 2mm;">
         <tr>
-          <td style="width: 20mm; vertical-align: top; padding-right: 2mm;">
+          <td style="width: 20mm; vertical-align: top; padding-right: 2mm; position: relative;">
             ${reporter.profilePhotoUrl 
-              ? `<img src="${reporter.profilePhotoUrl}" style="width: 18mm; height: 23mm; object-fit: cover; display: block;" />`
+              ? `<div style="position: relative; width: 18mm; height: 23mm;">
+                  <img src="${reporter.profilePhotoUrl}" style="width: 18mm; height: 23mm; object-fit: cover; display: block;" />
+                  ${settings.roundStampUrl 
+                    ? `<img src="${settings.roundStampUrl}" style="position: absolute; bottom: 0; right: 0; width: 8mm; height: 8mm; object-fit: contain;" />`
+                    : ''
+                  }
+                </div>`
               : `<div style="width: 18mm; height: 23mm; background: #f0f0f0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 7pt; text-align: center;">No Photo</div>`
             }
           </td>
