@@ -717,11 +717,40 @@ router.get('/pdf', async (req, res) => {
     const reporterId = req.query.reporterId ? String(req.query.reporterId) : undefined;
     const mobile = req.query.mobile ? String(req.query.mobile) : undefined;
     const fullName = req.query.fullName ? String(req.query.fullName) : undefined;
+    const forceRender = String(req.query.forceRender || '').toLowerCase() === 'true';
     if (!reporterId && !mobile && !fullName) {
       return res.status(400).json({ error: 'Provide reporterId or mobile or fullName' });
     }
     const reporter = await resolveReporterByQuery({ reporterId, mobile, fullName });
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // 1) Preferred path: if a PDF was already generated and stored (Bunny URL), serve that.
+    // This matches the WhatsApp-sent PDF and avoids layout mismatches.
+    if (!forceRender) {
+      try {
+        const rec = await (prisma as any).reporterIDCard.findUnique({
+          where: { reporterId: reporter.id },
+          select: { pdfUrl: true, cardNumber: true }
+        });
+        const storedUrl = rec?.pdfUrl ? String(rec.pdfUrl) : '';
+        if (storedUrl) {
+          const fileName = `ID_CARD_${rec?.cardNumber || reporter.id}.pdf`;
+          const resp = await axios.get(storedUrl, { responseType: 'arraybuffer', timeout: 30_000 });
+          const pdfBuffer = Buffer.from(resp.data);
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Length', pdfBuffer.length.toString());
+          res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+          return res.status(200).end(pdfBuffer);
+        }
+      } catch (e) {
+        console.error('id-cards/pdf fetch stored pdfUrl failed', {
+          reporterId: reporter.id,
+          err: (e as any)?.stack || (e as any)?.message || e
+        });
+      }
+    }
+
+    // 2) Fallback: generate on the fly with PDFKit (no Chromium dependencies)
     const result = await generateIdCardPdfBuffer(reporter.id);
     if (!result.ok) {
       return res.status(500).json({ error: result.error || 'Failed to generate PDF' });
