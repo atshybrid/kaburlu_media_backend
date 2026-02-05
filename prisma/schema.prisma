@@ -343,6 +343,7 @@ model Article {
   contentJson       Json?
   languageId        String?
   tenantId          String?
+  priority          Int                @default(3) // 1=high priority, 2=medium, 3=low
   aiUsageEvents     AiUsageEvent[]
   author            User               @relation(fields: [authorId], references: [id])
   language          Language?          @relation("Article_language", fields: [languageId], references: [id])
@@ -358,6 +359,7 @@ model Article {
   Article_B         Article[]          @relation("RelatedArticles")
 
   @@index([tenantId, createdAt])
+  @@index([priority])
 }
 
 /// Website-focused, tenant-scoped article with SEO-friendly JSON payload

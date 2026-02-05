@@ -74,6 +74,7 @@ import articlesUnifiedRoutes from './api/articles/unified.routes';
 import reporterArticlesRoutes from './api/articles/reporter.routes';
 import articleQuotaRoutes from './api/articles/articleQuota.routes';
 import reporterQuotaRoutes from './api/articles/reporterQuota.routes';
+import articleListRoutes from './api/articles/articleList.routes';
 import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
 import analyticsRoutes from './api/analytics/analytics.routes';
 import gdprRoutes from './api/gdpr/gdpr.routes';
@@ -345,6 +346,7 @@ app.use('/tenant-admins', tenantAdminsRoutes);
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
 apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creation (MUST be before articlesRoutes to avoid /:id catching /unified)
+apiV1.use('/articles/list', articleListRoutes);  // Role-based article listing (superadmin, tenant, reporter)
 apiV1.use('/articles', articlesRoutes);
 apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/reporter', reporterArticlesRoutes);  // Reporter dashboard - own articles only (authorId from JWT)
