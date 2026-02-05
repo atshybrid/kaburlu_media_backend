@@ -34,51 +34,18 @@ jobs:
             echo "▶ Pull latest code"
             git pull origin main
 
-            echo "▶ Install Puppeteer/Chromium OS dependencies"
-            if [ "$(id -u)" -eq 0 ]; then
-              SUDO=""
-            else
-              # Non-interactive sudo (passwordless) is required for apt-get.
-              if sudo -n true 2>/dev/null; then
-                SUDO="sudo"
-              else
-                echo "❌ sudo requires a password (non-interactive)."
-                echo "Fix options:"
-                echo "  1) Run this action as root (set username: root)"
-                echo "  2) Configure passwordless sudo for deploy user (NOPASSWD) for apt-get)"
-                exit 1
-              fi
+            echo "▶ Verify Chromium is installed (manual server prerequisite)"
+            CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
+            if [ -z "$CHROME_BIN" ]; then
+              echo "❌ Chromium not found on server PATH. Install it manually on the droplet, then re-run deploy."
+              echo "Suggested commands (Ubuntu):"
+              echo "  sudo apt-get update"
+              echo "  sudo apt-get install -y --no-install-recommends chromium"
+              echo "  # or: sudo apt-get install -y --no-install-recommends chromium-browser"
+              exit 1
             fi
-
-            $SUDO apt-get update
-            # Prefer chromium package (Debian/Ubuntu). Fallback to chromium-browser if needed.
-            $SUDO apt-get install -y --no-install-recommends chromium \
-              || $SUDO apt-get install -y --no-install-recommends chromium-browser
-
-            $SUDO apt-get install -y --no-install-recommends \
-              ca-certificates \
-              fonts-liberation \
-              fonts-noto-color-emoji \
-              libasound2 \
-              libatk-bridge2.0-0 \
-              libatk1.0-0 \
-              libcups2 \
-              libdbus-1-3 \
-              libdrm2 \
-              libgbm1 \
-              libgtk-3-0 \
-              libnss3 \
-              libpango-1.0-0 \
-              libpangocairo-1.0-0 \
-              libcairo2 \
-              libx11-xcb1 \
-              libxcomposite1 \
-              libxdamage1 \
-              libxfixes3 \
-              libxrandr2 \
-              libxshmfence1 \
-              libxss1 \
-              libxtst6
+            echo "▶ Chromium found: $CHROME_BIN"
+            "$CHROME_BIN" --version || true
 
             echo "▶ Write ENV file from GitHub Secrets"
             echo "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
@@ -99,14 +66,8 @@ jobs:
             echo "▶ Restart PM2 cleanly"
             pm2 delete kaburlu-api || true
 
-            CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
-            if [ -n "$CHROME_BIN" ]; then
-              echo "▶ Using Chromium executable: $CHROME_BIN"
-              PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN" pm2 start dist/index.js --name kaburlu-api
-            else
-              echo "⚠️ Chromium binary not found in PATH; starting without PUPPETEER_EXECUTABLE_PATH"
-              pm2 start dist/index.js --name kaburlu-api
-            fi
+            echo "▶ Using Chromium executable: $CHROME_BIN"
+            PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN" pm2 start dist/index.js --name kaburlu-api
             pm2 save
 
             echo "✅ Deployment completed successfully"
