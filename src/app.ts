@@ -72,6 +72,8 @@ import proofsRoutes from './api/proofs/proofs.routes';
 import aiHealthRoutes from './api/health/ai.routes';
 import articlesUnifiedRoutes from './api/articles/unified.routes';
 import reporterArticlesRoutes from './api/articles/reporter.routes';
+import articleQuotaRoutes from './api/articles/articleQuota.routes';
+import reporterQuotaRoutes from './api/articles/reporterQuota.routes';
 import leaderboardRoutes from './api/leaderboard/leaderboard.routes';
 import analyticsRoutes from './api/analytics/analytics.routes';
 import gdprRoutes from './api/gdpr/gdpr.routes';
@@ -346,6 +348,8 @@ apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creati
 apiV1.use('/articles', articlesRoutes);
 apiV1.use('/articles/read', articleReadRoutes);
 apiV1.use('/reporter', reporterArticlesRoutes);  // Reporter dashboard - own articles only (authorId from JWT)
+apiV1.use('/', articleQuotaRoutes);  // Admin quota management (tenant & reporter quotas)
+apiV1.use('/', reporterQuotaRoutes);  // Reporter self-service quota check
 apiV1.use('/shortnews', shortNewsRoutes);
 apiV1.use('/shortnews/read', shortNewsReadRoutes);
 apiV1.use('/likes', (_req, res) => {

@@ -472,6 +472,7 @@ model Tenant {
   translations                 TenantTranslation[]
   webArticles                  TenantWebArticle[]            @relation("Tenant_WebArticles")
   villages                     Village[]
+  articleQuota                 TenantArticleQuota?
 }
 
 /// Tenant ePaper publication edition definition (State-level or umbrella edition).
@@ -1162,40 +1163,41 @@ model NewsletterSubscription {
 }
 
 model Reporter {
-  id                         String                @id @default(cuid())
+  id                         String                  @id @default(cuid())
   tenantId                   String
   level                      ReporterLevel?
   stateId                    String?
   districtId                 String?
-  divisionId                 String?               // New: For DIVISION level (can be districtId or mandalId)
-  constituencyId             String?               // New: For CONSTITUENCY level (can be districtId, mandalId, or assemblyConstituencyId)
+  divisionId                 String?                 // New: For DIVISION level (can be districtId or mandalId)
+  constituencyId             String?                 // New: For CONSTITUENCY level (can be districtId, mandalId, or assemblyConstituencyId)
   mandalId                   String?
-  active                     Boolean               @default(true)
-  createdAt                  DateTime              @default(now())
-  updatedAt                  DateTime              @updatedAt
-  userId                     String?               @unique
+  active                     Boolean                 @default(true)
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  userId                     String?                 @unique
   designationId              String?
   kycData                    Json?
-  kycStatus                  KycStatus             @default(PENDING)
+  kycStatus                  KycStatus               @default(PENDING)
   monthlySubscriptionAmount  Int?
-  subscriptionActive         Boolean               @default(false)
-  subscriptionActivationDate DateTime?             // Scheduled activation date
+  subscriptionActive         Boolean                 @default(false)
+  subscriptionActivationDate DateTime?               // Scheduled activation date
   assemblyConstituencyId     String?
   idCardCharge               Int?
   profilePhotoUrl            String?
   manualLoginActivatedAt     DateTime?
   manualLoginDays            Int?
-  manualLoginEnabled         Boolean               @default(false)
+  manualLoginEnabled         Boolean                 @default(false)
   manualLoginExpiresAt       DateTime?
-  assemblyConstituency       AssemblyConstituency? @relation(fields: [assemblyConstituencyId], references: [id])
-  designation                ReporterDesignation?  @relation(fields: [designationId], references: [id])
-  district                   District?             @relation(fields: [districtId], references: [id])
-  mandal                     Mandal?               @relation(fields: [mandalId], references: [id])
-  state                      State?                @relation(fields: [stateId], references: [id])
-  tenant                     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user                       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assemblyConstituency       AssemblyConstituency?   @relation(fields: [assemblyConstituencyId], references: [id])
+  designation                ReporterDesignation?    @relation(fields: [designationId], references: [id])
+  district                   District?               @relation(fields: [districtId], references: [id])
+  mandal                     Mandal?                 @relation(fields: [mandalId], references: [id])
+  state                      State?                  @relation(fields: [stateId], references: [id])
+  tenant                     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                       User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   idCard                     ReporterIDCard?
   payments                   ReporterPayment[]
+  articleQuota               ReporterArticleQuota?
 
   @@index([tenantId, level])
   @@index([designationId])
@@ -1270,6 +1272,39 @@ model TenantIdCardSettings {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// Tenant-wide daily article quota defaults for all reporters
+model TenantArticleQuota {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  maxPriority1Daily Int      @default(5) // High priority
+  maxPriority2Daily Int      @default(10) // Medium priority
+  maxPriority3Daily Int      @default(20) // Low priority
+  maxTotalDaily     Int      @default(30) // Total articles per day
+  enforceQuota      Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+/// Per-reporter daily article quota overrides
+model ReporterArticleQuota {
+  id                String   @id @default(cuid())
+  reporterId        String   @unique
+  reporter          Reporter @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  maxPriority1Daily Int? // null = use tenant default
+  maxPriority2Daily Int?
+  maxPriority3Daily Int?
+  maxTotalDaily     Int?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([reporterId])
+  @@index([isActive])
 }
 
 model Village {
