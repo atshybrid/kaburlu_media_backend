@@ -35,12 +35,27 @@ jobs:
             git pull origin main
 
             echo "▶ Install Puppeteer/Chromium OS dependencies"
-            sudo apt-get update
+            if [ "$(id -u)" -eq 0 ]; then
+              SUDO=""
+            else
+              # Non-interactive sudo (passwordless) is required for apt-get.
+              if sudo -n true 2>/dev/null; then
+                SUDO="sudo"
+              else
+                echo "❌ sudo requires a password (non-interactive)."
+                echo "Fix options:"
+                echo "  1) Run this action as root (set username: root)"
+                echo "  2) Configure passwordless sudo for deploy user (NOPASSWD) for apt-get)"
+                exit 1
+              fi
+            fi
+
+            $SUDO apt-get update
             # Prefer chromium package (Debian/Ubuntu). Fallback to chromium-browser if needed.
-            sudo apt-get install -y --no-install-recommends chromium \
-              || sudo apt-get install -y --no-install-recommends chromium-browser \
-              || true
-            sudo apt-get install -y --no-install-recommends \
+            $SUDO apt-get install -y --no-install-recommends chromium \
+              || $SUDO apt-get install -y --no-install-recommends chromium-browser
+
+            $SUDO apt-get install -y --no-install-recommends \
               ca-certificates \
               fonts-liberation \
               fonts-noto-color-emoji \
@@ -83,7 +98,15 @@ jobs:
 
             echo "▶ Restart PM2 cleanly"
             pm2 delete kaburlu-api || true
-            pm2 start dist/index.js --name kaburlu-api
+
+            CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
+            if [ -n "$CHROME_BIN" ]; then
+              echo "▶ Using Chromium executable: $CHROME_BIN"
+              PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN" pm2 start dist/index.js --name kaburlu-api
+            else
+              echo "⚠️ Chromium binary not found in PATH; starting without PUPPETEER_EXECUTABLE_PATH"
+              pm2 start dist/index.js --name kaburlu-api
+            fi
             pm2 save
 
             echo "✅ Deployment completed successfully"
