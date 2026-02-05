@@ -655,7 +655,14 @@ async function getPuppeteerLaunchOptions(puppeteer: any): Promise<any> {
 
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN;
   const linuxCandidates = process.platform === 'linux'
-    ? ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome']
+    ? [
+        // Prefer Google Chrome first (common on droplets)
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        // Then Chromium variants
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+      ]
     : [];
   const fs = await import('fs');
   
