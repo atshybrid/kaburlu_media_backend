@@ -2226,38 +2226,44 @@ router.get('/homepage/config', async (req, res) => {
  * @swagger
  * /public/homepage/smart:
  *   get:
- *     summary: 🚀 Smart Homepage - Auto-detects theme & returns articles (Single API)
+ *     summary: 🚀 Smart Homepage - Auto-detects theme & returns complete sections (Single API)
  *     description: |
- *       **ONE API CALL - Complete Homepage with Articles**
+ *       **ONE API CALL - Complete Homepage with All Sections**
  *       
- *       This smart endpoint does everything:
- *       1. Auto-detects theme style from domain settings (style1 or style2)
- *       2. Returns SEO metadata
- *       3. Returns homepage sections with actual articles
- *       4. Auto-fills sections based on limits (publishedAt or viewCount)
- *       5. Injects categories into each section
- *       6. Auto-hides sections if categories not available (visible: false)
+ *       Returns homepage sections optimized for Style1 and Style2 themes:
  *       
- *       **Response includes:**
- *       - `config`: Theme detection & layout structure
- *       - `seo`: Meta tags, OG tags, JSON-LD
- *       - `sections`: All homepage sections with articles
- *       - Each section has `visible: true/false` based on category availability
+ *       **Style1 Sections (6 sections, ~70 articles total):**
+ *       - `ticker`: Breaking News (12 articles, sorted by publishedAt DESC)
+ *       - `latest`: Latest News (20 articles, sorted by publishedAt DESC)
+ *       - `mustRead`: Must Read (10 most viewed articles, sorted by viewCount DESC)
+ *       - `trending`: Top Articles (10 trending, sorted by viewCount + publishedAt DESC)
+ *       - `hero`: Hero Section (14 articles in 2 columns: heroLead + heroGrid)
+ *       - `categories`: Category Sections (4-8 categories × 5 articles each = 20-40 articles)
  *       
- *       **Theme Detection:**
- *       - Checks `DomainSettings.data.themeStyle`
- *       - Defaults to `style1` if not set
- *       - Returns appropriate sections for detected theme
+ *       **Key Features:**
+ *       1. Auto-detects theme from `DomainSettings.data.themeStyle`
+ *       2. Returns SEO metadata (title, description, OG tags, JSON-LD)
+ *       3. Smart section visibility (hides sections with no articles)
+ *       4. Article card data optimized for performance (no full content)
+ *       5. Language filtering support
+ *       6. Flexible sorting (publishedAt or viewCount)
  *       
- *       **Article Selection:**
- *       - Top articles by `publishedAt DESC` (latest first)
- *       - Can use `viewCount DESC` for trending (if enabled)
- *       - Respects section limits from config
+ *       **Section Keys:**
+ *       - `ticker` - Breaking news ticker (always latest)
+ *       - `latest` - Top latest articles feed
+ *       - `mustRead` - Most viewed/popular articles
+ *       - `trending` - Trending articles (view count + recency)
+ *       - `hero` - Main featured section with columns
+ *       - `categories` - Category-wise article groups
  *       
- *       **Category Handling:**
- *       - Checks if required categories exist for tenant
- *       - Sets `visible: false` if categories missing
- *       - UI can hide invisible sections
+ *       **Legacy Support:**
+ *       - Still supports old keys: `flashTicker`, `heroSection`, `categorySection`
+ *       - Backward compatible with existing frontend code
+ *       
+ *       **Performance:**
+ *       - Returns only card data (title, cover, slug, publishedAt, viewCount, category)
+ *       - No contentJson or tags (reduces response from ~100KB to ~14KB per section)
+ *       - Optimized for ISR/SSG caching
  *       
  *     tags: [News Website API 2.0]
  *     parameters:
@@ -2265,20 +2271,20 @@ router.get('/homepage/config', async (req, res) => {
  *         name: X-Tenant-Domain
  *         required: false
  *         description: Domain name (or uses Host header in production)
- *         schema: { type: string, example: "telangana.kaburlu.com" }
+ *         schema: { type: string, example: "kaburlutoday.com" }
  *       - in: query
  *         name: lang
  *         required: false
- *         description: Language filter for articles
+ *         description: Language code filter (e.g., "te" for Telugu, "en" for English)
  *         schema: { type: string, example: "te" }
  *       - in: query
  *         name: sortBy
  *         required: false
- *         description: Sort articles by publishedAt or viewCount
+ *         description: Default sorting for sections (publishedAt for latest, viewCount for trending)
  *         schema: { type: string, enum: [publishedAt, viewCount], default: publishedAt }
  *     responses:
  *       200:
- *         description: Complete homepage with config, SEO, and articles
+ *         description: Complete homepage with config, SEO, and article sections
  *         content:
  *           application/json:
  *             schema:
@@ -2287,51 +2293,179 @@ router.get('/homepage/config', async (req, res) => {
  *                 config:
  *                   type: object
  *                   properties:
- *                     themeStyle: { type: string, enum: [style1, style2] }
- *                     detectedFromDomain: { type: string }
+ *                     themeStyle: { type: string, enum: [style1, style2], description: "Detected theme" }
+ *                     detectedFromDomain: { type: string, description: "Domain used for detection" }
+ *                     sortBy: { type: string, description: "Applied sorting method" }
  *                 seo:
  *                   type: object
  *                   properties:
- *                     title: { type: string }
- *                     description: { type: string }
- *                     ogImageUrl: { type: string }
- *                     jsonLd: { type: object }
+ *                     title: { type: string, description: "Homepage meta title" }
+ *                     description: { type: string, description: "Homepage meta description" }
+ *                     keywords: { type: string, nullable: true }
+ *                     ogImageUrl: { type: string, description: "OG image for social sharing" }
+ *                     ogUrl: { type: string }
+ *                     jsonLd: { type: object, description: "Schema.org WebSite JSON-LD" }
  *                 sections:
  *                   type: array
+ *                   description: "Homepage sections with articles"
  *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: string }
- *                       key: { type: string }
- *                       name: { type: string }
- *                       visible: { type: boolean }
- *                       articles: { type: array }
+ *                     oneOf:
+ *                       - type: object
+ *                         description: "Ticker/Latest/MustRead/Trending Section"
+ *                         properties:
+ *                           id: { type: string }
+ *                           key: { type: string, enum: [ticker, latest, mustRead, trending] }
+ *                           name: { type: string }
+ *                           visible: { type: boolean }
+ *                           limit: { type: number }
+ *                           articles:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 id: { type: string }
+ *                                 slug: { type: string }
+ *                                 title: { type: string }
+ *                                 coverImageUrl: { type: string }
+ *                                 publishedAt: { type: string, format: date-time }
+ *                                 viewCount: { type: number }
+ *                                 category:
+ *                                   type: object
+ *                                   properties:
+ *                                     id: { type: string }
+ *                                     slug: { type: string }
+ *                                     name: { type: string }
+ *                       - type: object
+ *                         description: "Hero Section with Columns"
+ *                         properties:
+ *                           id: { type: string }
+ *                           key: { type: string, enum: [hero] }
+ *                           name: { type: string }
+ *                           visible: { type: boolean }
+ *                           columns:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 key: { type: string }
+ *                                 position: { type: number }
+ *                                 name: { type: string }
+ *                                 limit: { type: number }
+ *                                 articles: { type: array }
+ *                       - type: object
+ *                         description: "Categories Section"
+ *                         properties:
+ *                           id: { type: string }
+ *                           key: { type: string, enum: [categories] }
+ *                           name: { type: string }
+ *                           visible: { type: boolean }
+ *                           categoriesShown: { type: number }
+ *                           articlesPerCategory: { type: number }
+ *                           categories:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 slug: { type: string }
+ *                                 name: { type: string }
+ *                                 visible: { type: boolean }
+ *                                 articlesLimit: { type: number }
+ *                                 articles: { type: array }
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     timestamp: { type: string, format: date-time }
+ *                     totalSections: { type: number }
+ *                     visibleSections: { type: number }
  *             examples:
- *               style1Response:
- *                 summary: Style1 smart homepage with articles
+ *               style1Complete:
+ *                 summary: Complete Style1 homepage with all sections
  *                 value:
  *                   config:
  *                     themeStyle: style1
- *                     detectedFromDomain: telangana.kaburlu.com
+ *                     detectedFromDomain: kaburlutoday.com
+ *                     sortBy: publishedAt
  *                   seo:
- *                     title: తెలంగాణ వార్తలు - Kaburlu
- *                     description: తెలంగాణ రాష్ట్ర తాజా వార్తలు
- *                     ogImageUrl: https://cdn.kaburlu.com/og-image.jpg
+ *                     title: "Kaburlu News"
+ *                     description: "Latest breaking news and updates."
+ *                     ogImageUrl: "https://kaburlu-news.b-cdn.net/kaburu_logo.png"
+ *                     ogUrl: "https://kaburlutoday.com"
+ *                     jsonLd:
+ *                       "@context": "https://schema.org"
+ *                       "@type": "WebSite"
+ *                       name: "Kaburlu today"
+ *                       url: "https://kaburlutoday.com"
  *                   sections:
- *                     - id: section-1
- *                       key: flashTicker
- *                       name: Flash News Ticker
+ *                     - id: auto-ticker
+ *                       key: ticker
+ *                       name: Breaking News
  *                       visible: true
  *                       limit: 12
- *                       articles: []
- *                     - id: section-4
- *                       key: categorySection
- *                       name: 4-Column Categories
+ *                       articles:
+ *                         - id: "cml8ka7f301f4bz5g16fi8mw7"
+ *                           slug: "kukatpally-road-widening"
+ *                           title: "కూకట్‌పల్లి: రహదారిపై 100 ఫీట్ విస్తరణ పనులు"
+ *                           coverImageUrl: "https://cdn.example.com/cover.webp"
+ *                           publishedAt: "2026-02-04T21:50:37.065Z"
+ *                           viewCount: 22
+ *                           category:
+ *                             id: "cat-123"
+ *                             slug: "traffic"
+ *                             name: "Traffic"
+ *                     - id: auto-latest
+ *                       key: latest
+ *                       name: Latest News
  *                       visible: true
+ *                       limit: 20
+ *                       articles: [20 latest articles]
+ *                     - id: auto-mustread
+ *                       key: mustRead
+ *                       name: Must Read
+ *                       visible: true
+ *                       limit: 10
+ *                       articles: [10 most viewed articles]
+ *                     - id: auto-trending
+ *                       key: trending
+ *                       name: Top Articles
+ *                       visible: true
+ *                       limit: 10
+ *                       articles: [10 trending articles]
+ *                     - id: auto-hero
+ *                       key: hero
+ *                       name: Hero Section
+ *                       visible: true
+ *                       columns:
+ *                         - key: heroLead
+ *                           position: 1
+ *                           name: Hero Lead
+ *                           limit: 1
+ *                           articles: [1 featured article]
+ *                         - key: heroGrid
+ *                           position: 2
+ *                           name: Hero Grid
+ *                           limit: 13
+ *                           articles: [13 grid articles]
+ *                     - id: auto-categories
+ *                       key: categories
+ *                       name: Category Sections
+ *                       visible: true
+ *                       categoriesShown: 2
+ *                       articlesPerCategory: 5
  *                       categories:
- *                         - slug: జాతీయం
- *                           name: జాతీయం
- *                           articles: []
+ *                         - slug: politics
+ *                           name: Politics
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [5 politics articles]
+ *                         - slug: education
+ *                           name: Education
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [5 education articles]
+ *                   meta:
+ *                     timestamp: "2026-02-05T20:32:23.248Z"
+ *                     totalSections: 6
+ *                     visibleSections: 6
  *       500:
  *         description: Error fetching homepage
  */
