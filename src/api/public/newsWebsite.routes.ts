@@ -2401,23 +2401,76 @@ router.get('/homepage/smart', async (req, res) => {
       allCategories.map((c: any) => [c.slug, c])
     );
 
+    // Get language if specified
+    let languageId: string | undefined;
+    if (lang) {
+      const language = await p.language.findFirst({ where: { code: lang } });
+      languageId = language?.id;
+    }
+
     // Build article query filter
     const articleWhere: any = {
       tenantId: tenant.id,
-      status: 'PUBLISHED',
-      isActive: true
+      status: 'PUBLISHED'
     };
-    if (lang) {
-      articleWhere.languageCode = lang;
+    if (languageId) {
+      articleWhere.languageId = languageId;
     }
 
     // Response sections array
     const sections: any[] = [];
 
+    // Article select for card view
+    const articleSelect = {
+      id: true,
+      slug: true,
+      title: true,
+      coverImageUrl: true,
+      contentJson: true,
+      publishedAt: true,
+      viewCount: true,
+      tags: true,
+      category: { select: { id: true, slug: true, name: true } }
+    };
+
     // STYLE1 PROCESSING
     if (themeStyle === 'style1') {
       const storedStyle1 = isPlainObject(homepageConfig.style1Layout) ? homepageConfig.style1Layout : null;
-      const layoutSections = storedStyle1?.sections || [];
+      let layoutSections = storedStyle1?.sections || [];
+
+      // SMART FALLBACK: Auto-generate sections if none configured
+      if (layoutSections.length === 0) {
+        layoutSections = [
+          {
+            id: 'auto-flash',
+            key: 'flashTicker',
+            name: 'Breaking News',
+            isActive: true,
+            config: { articlesLimit: 15 }
+          },
+          {
+            id: 'auto-hero',
+            key: 'heroSection',
+            name: 'Top Stories',
+            isActive: true,
+            layout: {
+              columns: [
+                { key: 'main', position: 1, name: 'Featured', label: 'Featured Stories', articlesLimit: 6 }
+              ]
+            }
+          },
+          {
+            id: 'auto-categories',
+            key: 'categorySection',
+            name: 'Categories',
+            isActive: true,
+            config: {
+              categories: ['national', 'state', 'politics', 'entertainment', 'sports', 'business', 'technology'],
+              articlesPerCategory: 5
+            }
+          }
+        ];
+      }
 
       for (const section of layoutSections) {
         const sectionKey = section.key;
@@ -2444,16 +2497,7 @@ router.get('/homepage/smart', async (req, res) => {
             where: articleWhere,
             orderBy: { [sortBy]: 'desc' },
             take: limit,
-            select: {
-              id: true,
-              slug: true,
-              title: true,
-              excerpt: true,
-              coverImageUrl: true,
-              publishedAt: true,
-              viewCount: true,
-              category: { select: { slug: true, name: true } }
-            }
+            select: articleSelect
           });
 
           sections.push({
@@ -2478,16 +2522,7 @@ router.get('/homepage/smart', async (req, res) => {
               where: articleWhere,
               orderBy: { [sortBy]: 'desc' },
               take: colLimit,
-              select: {
-                id: true,
-                slug: true,
-                title: true,
-                excerpt: true,
-                coverImageUrl: true,
-                publishedAt: true,
-                viewCount: true,
-                category: { select: { slug: true, name: true } }
-              }
+              select: articleSelect
             });
 
             heroColumns.push({
@@ -2532,16 +2567,7 @@ router.get('/homepage/smart', async (req, res) => {
               where: { ...articleWhere, categoryId: category.id },
               orderBy: { [sortBy]: 'desc' },
               take: articlesPerCategory,
-              select: {
-                id: true,
-                slug: true,
-                title: true,
-                excerpt: true,
-                coverImageUrl: true,
-                publishedAt: true,
-                viewCount: true,
-                category: { select: { slug: true, name: true } }
-              }
+              select: articleSelect
             });
 
             categoryData.push({
@@ -2622,16 +2648,7 @@ router.get('/homepage/smart', async (req, res) => {
           },
           orderBy: { [sortBy]: 'desc' },
           take: 10,
-          select: {
-            id: true,
-            slug: true,
-            title: true,
-            excerpt: true,
-            coverImageUrl: true,
-            publishedAt: true,
-            viewCount: true,
-            category: { select: { slug: true, name: true } }
-          }
+          select: articleSelect
         });
 
         sections.push({
