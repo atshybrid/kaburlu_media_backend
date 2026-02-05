@@ -2927,6 +2927,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
     const id = String(req.params.id || '').trim();
     if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
     const user: any = (req as any).user;
+    const forceRegenerate =
+      String((req.query as any)?.forceRegenerate ?? (req.body as any)?.forceRegenerate ?? 'false').toLowerCase() === 'true';
 
     const reporter = await (prisma as any).reporter.findFirst({
       where: { id, tenantId },
@@ -2971,8 +2973,36 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
       return res.status(400).json({ error: 'Reporter mobile number not found' });
     }
 
-    // Auto-regenerate PDF if missing
+    // Get PDF URL - reuse existing by default; optionally generate a fresh one.
     let pdfUrl = reporter.idCard.pdfUrl;
+
+    if (forceRegenerate) {
+      console.log(`⚙️  forceRegenerate=true for reporter ${id}; generating fresh PDF...`);
+      if (isBunnyCdnConfigured()) {
+        const regenerated = await generateAndUploadIdCardPdf(id);
+        if (regenerated.ok && regenerated.pdfUrl) {
+          pdfUrl = regenerated.pdfUrl;
+          await (prisma as any).reporterIDCard
+            .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
+            .catch(() => null);
+        } else {
+          console.error('Forced PDF regeneration returned error:', regenerated.error);
+          const baseUrl = await resolveTenantBaseUrl(req, tenantId);
+          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true&ts=${Date.now()}`;
+          await (prisma as any).reporterIDCard
+            .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
+            .catch(() => null);
+        }
+      } else {
+        const baseUrl = await resolveTenantBaseUrl(req, tenantId);
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true&ts=${Date.now()}`;
+        await (prisma as any).reporterIDCard
+          .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
+          .catch(() => null);
+      }
+    }
+
+    // Auto-regenerate PDF if missing
     if (!pdfUrl) {
       console.log(`⚠️  ID card PDF URL missing for reporter ${id}, regenerating...`);
       if (isBunnyCdnConfigured()) {
@@ -2997,7 +3027,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
         }
       } else {
         const baseUrl = await resolveTenantBaseUrl(req, tenantId);
-        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true&ts=${Date.now()}`;
         await (prisma as any).reporterIDCard
           .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
           .catch(() => null);
