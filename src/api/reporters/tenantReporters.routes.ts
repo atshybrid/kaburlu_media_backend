@@ -2419,6 +2419,31 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       },
     });
 
+    // Generate PDF if Bunny CDN is configured
+    if (isBunnyCdnConfigured()) {
+      try {
+        const result = await generateAndUploadIdCardPdf(reporter.id);
+        if (result.ok && result.pdfUrl) {
+          await (prisma as any).reporterIDCard.update({
+            where: { id: idCard.id },
+            data: { pdfUrl: result.pdfUrl },
+          });
+          idCard.pdfUrl = result.pdfUrl;
+
+          // Send via WhatsApp
+          await sendIdCardViaWhatsApp({
+            reporterId: reporter.id,
+            tenantId,
+            pdfUrl: result.pdfUrl,
+            cardNumber,
+          });
+        }
+      } catch (pdfErr) {
+        console.error('Failed to generate PDF for new ID card:', pdfErr);
+        // Don't fail the request - card is created, PDF can be generated later
+      }
+    }
+
     return res.status(201).json(idCard);
   } catch (e) {
     console.error('tenant reporter id-card error', e);
