@@ -44,6 +44,9 @@ jobs:
             echo "▶ Generate Prisma client"
             npx prisma generate
 
+            echo "▶ Run database migrations (production)"
+            npx prisma migrate deploy
+
             echo "▶ Build production dist"
             npm run build
 
