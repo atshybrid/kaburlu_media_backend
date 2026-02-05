@@ -350,9 +350,12 @@ router.get('/config', async (_req, res) => {
     function ensureSocialImageFormat(imageUrl: string | null): string | null {
       if (!imageUrl) return null;
       
-      // If it's a PNG, warn in development
-      if (imageUrl.toLowerCase().endsWith('.png')) {
-        console.warn(`[Social Image Warning] PNG detected for OG/Twitter image: ${imageUrl}. Consider using JPG for better social media compatibility.`);
+      const lowerUrl = imageUrl.toLowerCase();
+      // Warn if PNG or WebP (should be JPG for best social media compatibility)
+      if (lowerUrl.endsWith('.png')) {
+        console.warn(`[Social Image Warning] PNG detected for OG/Twitter image: ${imageUrl}. Should use JPG for better social media compatibility.`);
+      } else if (lowerUrl.endsWith('.webp')) {
+        console.warn(`[Social Image Warning] WebP detected for OG/Twitter image: ${imageUrl}. Should use JPG for better social media compatibility.`);
       }
       
       return imageUrl;
@@ -2870,8 +2873,16 @@ router.get('/articles/:slug', async (req, res) => {
     
     // Ensure OG image is JPG for social sharing
     let ogImageUrl = article.coverImageUrl;
-    if (ogImageUrl && ogImageUrl.toLowerCase().endsWith('.png')) {
-      console.warn(`[Social Image Warning] Article ${article.slug} has PNG cover image. Should be JPG for better social sharing.`);
+    let ogImageWarning = null;
+    if (ogImageUrl) {
+      const lowerUrl = ogImageUrl.toLowerCase();
+      if (lowerUrl.endsWith('.png')) {
+        ogImageWarning = 'PNG image detected. Convert to JPG for better social sharing (Facebook, WhatsApp, Twitter).';
+        console.warn(`[Social Image Warning] Article ${article.slug} has PNG cover image. Should be JPG for better social sharing.`);
+      } else if (lowerUrl.endsWith('.webp')) {
+        ogImageWarning = 'WebP image detected. Convert to JPG for better social sharing compatibility (Facebook, WhatsApp, Twitter).';
+        console.warn(`[Social Image Warning] Article ${article.slug} has WebP cover image. Should be JPG for social sharing.`);
+      }
     }
 
     const seo = {
@@ -2879,6 +2890,7 @@ router.get('/articles/:slug', async (req, res) => {
       description: article.metaDescription || excerpt,
       canonicalUrl: articleUrl,
       ogImage: ogImageUrl,
+      ogImageWarning, // null if JPG, warning message if PNG/WebP
       ogUrl: articleUrl,
       ogType: 'article',
       twitterCard: 'summary_large_image',
