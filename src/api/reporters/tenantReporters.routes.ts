@@ -4,7 +4,7 @@ import prisma from '../../lib/prisma';
 import * as bcrypt from 'bcrypt';
 import { requireSuperOrTenantAdminScoped } from '../middlewares/authz';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
-import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdfKit';
+import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdf';
 
 const router = Router();
 
@@ -3112,6 +3112,11 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
         const result = await generateAndUploadIdCardPdf(id);
         if (result.ok && result.pdfUrl) {
           pdfUrl = result.pdfUrl;
+          // Update DB with new PDF URL
+          await (prisma as any).reporterIDCard.update({
+            where: { id: idCard.id },
+            data: { pdfUrl: result.pdfUrl },
+          });
           await sendIdCardViaWhatsApp({
             reporterId: id,
             tenantId,

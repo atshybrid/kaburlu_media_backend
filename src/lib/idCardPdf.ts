@@ -633,17 +633,12 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
     // 3. Build HTML
     const html = buildIdCardHtml(data);
 
-    // 4. Generate PDF
-    console.log(`[ID Card PDF] Generating PDF...`);
-    const pdfBuffer = await generatePdfBuffer(html);
-    console.log(`[ID Card PDF] PDF generated, size: ${pdfBuffer.length} bytes`);
+    // 4. Generate PDF with Puppeteer
+    const pdfBuffer = await generatePdfWithPuppeteer(html);
 
-    // 5. Upload to Bunny CDN using existing bunnyStorage lib
-    const timestamp = Date.now();
-    const key = `id-cards/${data.reporter.cardNumber}_${timestamp}.pdf`;
-    console.log(`[ID Card PDF] Uploading to Bunny: ${key}`);
-    
-    const { publicUrl: pdfUrl } = await bunnyStoragePutObject({
+    // 5. Upload to Bunny CDN
+    const key = `id-cards/${reporterId}_${data.reporter.cardNumber}.pdf`;
+    const pdfUrl = await bunnyStoragePutObject({
       key,
       body: pdfBuffer,
       contentType: 'application/pdf',
@@ -670,3 +665,42 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
     };
   }
 }
+
+/**
+ * Generate ID Card PDF buffer without uploading (for direct streaming)
+ */
+export async function generateIdCardPdfBuffer(reporterId: string): Promise<{ok: boolean; pdfBuffer?: Buffer; cardNumber?: string; error?: string}> {
+  try {
+    // 1. Build ID card data
+    let data = await buildIdCardData(reporterId);
+    if (!data) {
+      return { ok: false, error: 'ID card not found for reporter' };
+    }
+
+    // 2. Inline assets for PDF
+    try {
+      data = await inlineAssetsForPdf(data);
+    } catch (e) {
+      console.error('[ID Card PDF Buffer] Asset inlining failed:', e);
+    }
+
+    // 3. Build HTML
+    const html = buildIdCardHtml(data);
+
+    // 4. Generate PDF buffer with Puppeteer
+    const pdfBuffer = await generatePdfWithPuppeteer(html);
+
+    return {
+      ok: true,
+      pdfBuffer,
+      cardNumber: data.reporter.cardNumber
+    };
+  } catch (e: any) {
+    console.error('[ID Card PDF Buffer] Generation failed:', e);
+    return {
+      ok: false,
+      error: e.message || 'Failed to generate ID card PDF buffer'
+    };
+  }
+}
+

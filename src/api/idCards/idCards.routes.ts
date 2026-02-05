@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../../lib/prisma';
 import axios from 'axios';
 import fs from 'fs';
-import { generateIdCardPdfBuffer } from '../../lib/idCardPdfKit';
+import { generateIdCardPdfBuffer } from '../../lib/idCardPdf';
 
 const router = Router();
 

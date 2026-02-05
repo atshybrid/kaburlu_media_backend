@@ -3,7 +3,7 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { createUser, findUserByMobileNumber } from '../users/users.service';
 import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
-import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdfKit';
+import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCardPdf';
 
 const router = Router();
 
