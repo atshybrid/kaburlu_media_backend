@@ -2224,7 +2224,11 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
 });
 
 /**
- * @swagger
+ * LEGACY ENDPOINT - Swagger docs commented out
+ * This endpoint is kept for backward compatibility but docs moved to News Website API 2.0
+ * See: src/api/public/newsWebsite.routes.ts - GET /articles/:slug
+ * 
+ * @swagger-disabled
  * /public/articles/{slug}:
  *   get:
  *     summary: 🚀 Get complete article details with reporter info, trending & related articles
