@@ -315,7 +315,8 @@ async function inlineAssetsForPdf(data: any): Promise<any> {
 function buildIdCardHtml(data: any): string {
   const { reporter, tenant, settings } = data;
 
-  const prgiNumber = String((tenant as any)?.prgiNumber || '').trim() || String(reporter.cardNumber || '').trim() || '-';
+  // PRGI number must come from tenant/entity PRGI registration, not from reporter ID-card number.
+  const prgiNumber = String((tenant as any)?.prgiNumber || '').trim() || '-';
 
   const baseFontStack =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif';
