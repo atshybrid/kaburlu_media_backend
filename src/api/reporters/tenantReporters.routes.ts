@@ -3097,7 +3097,6 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     const idCard = await (prisma as any).reporterIDCard.create({
       data: {
         reporterId: id,
-        tenantId,
         cardNumber,
         issuedAt,
         expiresAt,
