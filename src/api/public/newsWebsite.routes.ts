@@ -342,6 +342,22 @@ router.get('/config', async (_req, res) => {
     const baseUrl = `https://${domain.domain}`;
     const tenantDefaultCode = tenantEntity?.language?.code;
     
+    /**
+     * Helper: Ensure social sharing images are JPG format
+     * Social platforms (Facebook, Twitter, WhatsApp) work best with JPG images.
+     * PNG files can cause sharing issues on some platforms.
+     */
+    function ensureSocialImageFormat(imageUrl: string | null): string | null {
+      if (!imageUrl) return null;
+      
+      // If it's a PNG, warn in development
+      if (imageUrl.toLowerCase().endsWith('.png')) {
+        console.warn(`[Social Image Warning] PNG detected for OG/Twitter image: ${imageUrl}. Consider using JPG for better social media compatibility.`);
+      }
+      
+      return imageUrl;
+    }
+    
     // Branding
     const effectiveDomainSettings = (domainSettings as any)?.data || {};
     const branding = {
@@ -361,11 +377,15 @@ router.get('/config', async (_req, res) => {
       keywords: seoBase?.keywords ?? null
     };
 
+    // IMPORTANT: Social sharing images should be JPG for best compatibility
+    const ogImageUrl = ensureSocialImageFormat(seoBase?.ogImageUrl);
+    const twitterImageUrl = ensureSocialImageFormat(seoBase?.twitterImageUrl);
+
     const seoOpenGraph = {
       url: baseUrl,
       title: seoBase?.ogTitle ?? seoBase?.defaultMetaTitle ?? null,
       description: seoBase?.ogDescription ?? seoBase?.defaultMetaDescription ?? null,
-      imageUrl: seoBase?.ogImageUrl ?? null,
+      imageUrl: ogImageUrl,
       siteName: branding.siteName
     };
 
@@ -374,7 +394,7 @@ router.get('/config', async (_req, res) => {
       handle: seoBase?.twitterHandle ?? null,
       title: seoBase?.twitterTitle ?? seoOpenGraph.title,
       description: seoBase?.twitterDescription ?? seoOpenGraph.description,
-      imageUrl: seoBase?.twitterImageUrl ?? seoOpenGraph.imageUrl
+      imageUrl: twitterImageUrl ?? ogImageUrl
     };
 
     // Languages

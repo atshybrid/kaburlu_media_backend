@@ -565,11 +565,31 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     robots: seoConfig.robots,
   };
 
+  /**
+   * Helper: Ensure social sharing images are JPG format
+   * Social platforms (Facebook, Twitter, WhatsApp) work best with JPG images.
+   * PNG files can cause sharing issues on some platforms.
+   */
+  function ensureSocialImageFormat(imageUrl: string | null): string | null {
+    if (!imageUrl) return null;
+    
+    // If it's a PNG, warn in development
+    if (imageUrl.toLowerCase().endsWith('.png')) {
+      console.warn(`[Social Image Warning] PNG detected for OG/Twitter image: ${imageUrl}. Consider using JPG for better social media compatibility.`);
+    }
+    
+    return imageUrl;
+  }
+
+  // IMPORTANT: Social sharing images should be JPG for best compatibility
+  const ogImageUrl = ensureSocialImageFormat(seoConfig.ogImageUrl);
+  const twitterImageUrl = ensureSocialImageFormat((seoBase as any)?.twitterImageUrl);
+
   const seoOpenGraph = {
     url: seoConfig.canonicalBaseUrl,
     title: seoConfig.ogTitle,
     description: seoConfig.ogDescription,
-    imageUrl: seoConfig.ogImageUrl,
+    imageUrl: ogImageUrl,
     siteName: branding.siteName,
   };
 
@@ -578,7 +598,7 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     handle: (seoBase as any)?.twitterHandle ?? null,
     title: (seoBase as any)?.twitterTitle ?? seoConfig.ogTitle,
     description: (seoBase as any)?.twitterDescription ?? seoConfig.ogDescription,
-    imageUrl: (seoBase as any)?.twitterImageUrl ?? seoConfig.ogImageUrl,
+    imageUrl: twitterImageUrl ?? ogImageUrl,
   };
 
   const contentConfig = {
