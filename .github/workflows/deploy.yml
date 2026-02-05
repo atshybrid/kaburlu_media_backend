@@ -34,6 +34,37 @@ jobs:
             echo "▶ Pull latest code"
             git pull origin main
 
+            echo "▶ Install Puppeteer/Chromium OS dependencies"
+            sudo apt-get update
+            # Prefer chromium package (Debian/Ubuntu). Fallback to chromium-browser if needed.
+            sudo apt-get install -y --no-install-recommends chromium \
+              || sudo apt-get install -y --no-install-recommends chromium-browser \
+              || true
+            sudo apt-get install -y --no-install-recommends \
+              ca-certificates \
+              fonts-liberation \
+              fonts-noto-color-emoji \
+              libasound2 \
+              libatk-bridge2.0-0 \
+              libatk1.0-0 \
+              libcups2 \
+              libdbus-1-3 \
+              libdrm2 \
+              libgbm1 \
+              libgtk-3-0 \
+              libnss3 \
+              libpango-1.0-0 \
+              libpangocairo-1.0-0 \
+              libcairo2 \
+              libx11-xcb1 \
+              libxcomposite1 \
+              libxdamage1 \
+              libxfixes3 \
+              libxrandr2 \
+              libxshmfence1 \
+              libxss1 \
+              libxtst6
+
             echo "▶ Write ENV file from GitHub Secrets"
             echo "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
 

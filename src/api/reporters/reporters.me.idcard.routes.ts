@@ -122,7 +122,7 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
     
     // Generate card number
     const existingCount = await (prisma as any).reporterIDCard.count({
-      where: { tenantId: reporter.tenantId }
+      where: { reporter: { tenantId: reporter.tenantId } }
     });
     const prefix = settings.cardNumberPrefix || 'KT';
     const now = new Date();
@@ -140,7 +140,6 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
     const idCard = await (prisma as any).reporterIDCard.create({
       data: {
         reporterId: reporter.id,
-        tenantId: reporter.tenantId,
         cardNumber,
         issuedAt,
         expiresAt,
@@ -338,7 +337,7 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
       cardNumber = previousCardNumber;
     } else {
       const existingCount = await (prisma as any).reporterIDCard.count({
-        where: { tenantId: reporter.tenantId }
+        where: { reporter: { tenantId: reporter.tenantId } }
       });
       const prefix = settings.cardNumberPrefix || 'KT';
       const now = new Date();
@@ -356,7 +355,6 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
     const idCard = await (prisma as any).reporterIDCard.create({
       data: {
         reporterId: reporter.id,
-        tenantId: reporter.tenantId,
         cardNumber,
         issuedAt: now,
         expiresAt,

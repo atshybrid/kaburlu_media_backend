@@ -64,8 +64,13 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (mandal?.name) {
+      // CONSTITUENCY rule: show only the selected location name (no district/state suffix)
+      if (reporterLevel === 'CONSTITUENCY') {
+        return includeSelectedName ? [mandal.name] : [];
+      }
+
       const parts: string[] = [];
-      if (includeSelectedName && (includeMandalInWorkPlace || reporterLevel === 'CONSTITUENCY')) {
+      if (includeSelectedName && includeMandalInWorkPlace) {
         parts.push(mandal.name);
       }
       if (mandal.district?.name) parts.push(mandal.district.name);
@@ -78,8 +83,13 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (assembly?.name) {
+      // CONSTITUENCY rule: show only the selected location name (no district/state suffix)
+      if (reporterLevel === 'CONSTITUENCY') {
+        return includeSelectedName ? [assembly.name] : [];
+      }
+
       const parts: string[] = [];
-      if (includeSelectedName && (reporterLevel === 'ASSEMBLY' || reporterLevel === 'CONSTITUENCY')) {
+      if (includeSelectedName && reporterLevel === 'ASSEMBLY') {
         parts.push(assembly.name);
       }
       if (assembly.district?.name) parts.push(assembly.district.name);
@@ -92,6 +102,9 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       .findUnique({ where: { id }, include: { state: true } })
       .catch(() => null);
     if (district?.name) {
+      // CONSTITUENCY rule: show only the selected location name (no state suffix)
+      if (reporterLevel === 'CONSTITUENCY') return [district.name];
+
       const parts = [district.name];
       if (district.state?.name) parts.push(district.state.name);
       return parts;
@@ -191,6 +204,7 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       logoUrl: entity?.logoUrl || settings?.frontLogoUrl || null,
       tagline: entity?.tagline || '',
       domain: reporter.tenant?.domain || 'kaburlu.com',
+      prgiNumber: entity?.prgiNumber || reporter.tenant?.prgiNumber || null,
     },
     settings: {
       templateStyle: settings?.templateStyle || 'modern',
@@ -301,6 +315,8 @@ async function inlineAssetsForPdf(data: any): Promise<any> {
 function buildIdCardHtml(data: any): string {
   const { reporter, tenant, settings } = data;
 
+  const prgiNumber = String((tenant as any)?.prgiNumber || '').trim() || String(reporter.cardNumber || '').trim() || '-';
+
   const baseFontStack =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif';
 
@@ -353,6 +369,7 @@ function buildIdCardHtml(data: any): string {
   const frontQrSizeMm = 22;
   const frontStampSizeMm = 10;
   const frontFooterReserveMm = 11;
+  const frontFooterHeightMm = 7.0;
   
   // Front QR: Basic ID info
   const frontQrData = `ID:${reporter.cardNumber}\nName:${reporter.fullName}\nDesig:${reporter.designation}\nPhone:${reporter.mobileNumber}\nValid:${new Date(reporter.expiresAt).toLocaleDateString('en-IN')}`;
@@ -370,14 +387,12 @@ function buildIdCardHtml(data: any): string {
     : '';
 
   const frontSignatureHtml = `
-      <div style="display: flex; justify-content: flex-end; padding: 0 3mm 1.3mm 3mm;">
-        <div style="width: 22mm; text-align: center;">
-          ${settings.signUrl
-            ? `<img src="${settings.signUrl}" style="width: 16mm; height: 5mm; object-fit: contain; display: block; margin: 0 auto;" />`
-            : `<div style="height: 5mm;"></div><div style="height: 0.25mm; background: #111; opacity: 0.35; width: 16mm; margin: 0.2mm auto 0 auto;"></div>`
-          }
-          <div style="font-size: 5.4pt; font-weight: 900; color: #111; margin-top: 0.35mm; line-height: 1.05; letter-spacing: 0.2px;">Authorized Signature</div>
-        </div>
+      <div style="position: absolute; right: 0.5mm; bottom: ${frontFooterHeightMm + 0.6}mm; width: 22mm; text-align: center; z-index: 5;">
+        ${settings.signUrl
+          ? `<img src="${settings.signUrl}" style="width: 16mm; height: 5mm; object-fit: contain; display: block; margin: 0 auto;" />`
+          : ''
+        }
+        <div style="font-size: 5.0pt; font-weight: 900; color: #111; margin-top: 0.35mm; line-height: 1.05; letter-spacing: 0.2px;">Authorized Signature</div>
       </div>
     `;
   
@@ -412,8 +427,8 @@ function buildIdCardHtml(data: any): string {
         <div style="font-size: 14pt; font-weight: bold; color: white; letter-spacing: 2px;">PRINT MEDIA</div>
       </div>
 
-      <!-- Body (no overlap with footer) -->
-      <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+      <!-- Body (reserve space for fixed footer) -->
+      <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; padding-bottom: ${frontFooterHeightMm}mm; box-sizing: border-box;">
       
       <!-- Photo and QR code section -->
       <table style="width: 100%; border-collapse: collapse; margin: 1.2mm 0 0 0; padding: 0;">
@@ -442,7 +457,7 @@ function buildIdCardHtml(data: any): string {
       
       <!-- Details (compact, single-line) -->
       <div style="padding: 0 3mm; margin-top: 1.5mm;">
-        <table style="width: 100%; border-collapse: collapse; font-size: 7.1pt; line-height: 1.15; font-weight: 500;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 6.6pt; line-height: 1.12; font-weight: 500;">
           <tr>
             <td style="width: 30%; font-weight: bold; padding: 0.15mm 0; white-space: nowrap;">Name</td>
             <td style="width: 5%; text-align: center; white-space: nowrap;">:</td>
@@ -476,16 +491,13 @@ function buildIdCardHtml(data: any): string {
         </table>
       </div>
 
-      <!-- Signature uses the remaining white space above footer -->
-      <div style="margin-top: auto;">
-        ${frontSignatureHtml}
-      </div>
+      ${settings.signUrl ? frontSignatureHtml : ''}
 
       </div>
       
-      <!-- Blue footer banner -->
-      <div style="background: ${primaryColor}; text-align: center; padding: 2mm 0; width: ${fullBleedWidthMm}mm; position: relative; left: ${bleedLeftMm}mm; display: block;">
-        <div style="font-size: 8pt; font-weight: bold; color: white; letter-spacing: 0.5px;">PRGI No : ${reporter.cardNumber}</div>
+      <!-- Blue footer banner (fixed height) -->
+      <div style="position: absolute; left: ${bleedLeftMm}mm; bottom: 0; width: ${fullBleedWidthMm}mm; height: ${frontFooterHeightMm}mm; background: ${primaryColor}; display: flex; align-items: center; justify-content: center;">
+        <div style="font-size: 8pt; font-weight: bold; color: white; letter-spacing: 0.5px;">PRGI No : ${escapeHtml(prgiNumber)}</div>
       </div>
     </div>
   `;
@@ -539,7 +551,7 @@ function buildIdCardHtml(data: any): string {
 
           <!-- PRGI box (separate, do not mix with footer) -->
           <div style="margin-top: 1.4mm; border: 0.4mm solid ${primaryColor}; border-radius: 1mm; padding: 1.2mm 1mm; text-align: center; background: #fff;">
-            <div style="font-size: 8pt; font-weight: 900; color: #111; letter-spacing: 0.4px;">PRGI No : ${reporter.cardNumber}</div>
+            <div style="font-size: 8pt; font-weight: 900; color: #111; letter-spacing: 0.4px;">PRGI No : ${escapeHtml(prgiNumber)}</div>
           </div>
         </div>
 

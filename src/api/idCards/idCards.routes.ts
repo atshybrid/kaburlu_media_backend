@@ -132,8 +132,10 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (mandal?.name) {
+      if (reporterLevel === 'CONSTITUENCY') return [mandal.name];
+
       const parts: string[] = [];
-      if (includeMandalInWorkPlace || reporterLevel === 'CONSTITUENCY') parts.push(mandal.name);
+      if (includeMandalInWorkPlace) parts.push(mandal.name);
       if (mandal.district?.name) parts.push(mandal.district.name);
       if (mandal.district?.state?.name) parts.push(mandal.district.state.name);
       return parts;
@@ -143,8 +145,10 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (assembly?.name) {
+      if (reporterLevel === 'CONSTITUENCY') return [assembly.name];
+
       const parts: string[] = [];
-      if (reporterLevel === 'ASSEMBLY' || reporterLevel === 'CONSTITUENCY') parts.push(assembly.name);
+      if (reporterLevel === 'ASSEMBLY') parts.push(assembly.name);
       if (assembly.district?.name) parts.push(assembly.district.name);
       if (assembly.district?.state?.name) parts.push(assembly.district.state.name);
       return parts;
@@ -154,6 +158,8 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
       .findUnique({ where: { id }, include: { state: true } })
       .catch(() => null);
     if (district?.name) {
+      if (reporterLevel === 'CONSTITUENCY') return [district.name];
+
       const parts = [district.name];
       if (district.state?.name) parts.push(district.state.name);
       return parts;
