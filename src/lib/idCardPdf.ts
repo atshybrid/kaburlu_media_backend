@@ -48,6 +48,49 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   const entity = reporter.tenant?.entity;
   const profile = reporter.user?.profile;
 
+  async function resolveLocationPartsFromFlexibleId(flexibleId: string): Promise<string[]> {
+    const id = String(flexibleId || '').trim();
+    if (!id) return [];
+
+    // Try Mandal
+    const mandal = await (prisma as any).mandal
+      .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
+      .catch(() => null);
+    if (mandal?.name) {
+      const parts = [mandal.name];
+      if (mandal.district?.name) parts.push(mandal.district.name);
+      if (mandal.district?.state?.name) parts.push(mandal.district.state.name);
+      return parts;
+    }
+
+    // Try Assembly Constituency
+    const assembly = await (prisma as any).assemblyConstituency
+      .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
+      .catch(() => null);
+    if (assembly?.name) {
+      const parts = [assembly.name];
+      if (assembly.district?.name) parts.push(assembly.district.name);
+      if (assembly.district?.state?.name) parts.push(assembly.district.state.name);
+      return parts;
+    }
+
+    // Try District
+    const district = await (prisma as any).district
+      .findUnique({ where: { id }, include: { state: true } })
+      .catch(() => null);
+    if (district?.name) {
+      const parts = [district.name];
+      if (district.state?.name) parts.push(district.state.name);
+      return parts;
+    }
+
+    // Try State
+    const state = await (prisma as any).state.findUnique({ where: { id } }).catch(() => null);
+    if (state?.name) return [state.name];
+
+    return [];
+  }
+
   // Build "Work Place" string based on selected location (mandal/assembly/district/state).
   // This is intentionally tolerant: some records have mismatched/missing `level`, but still have a location selected.
   const locationParts: string[] = [];
@@ -69,7 +112,24 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     locationParts.push(reporter.state.name);
   }
 
-  const workplaceLocation = locationParts.join(', ');
+  let workplaceLocation = locationParts.join(', ').replace(/\s+/g, ' ').trim();
+
+  // Fallback for newer hierarchy fields (divisionId/constituencyId) that may contain IDs
+  // of Mandal/Assembly/District/State (even if the legacy *_Id fields are empty).
+  if (!workplaceLocation) {
+    const fallbackIds = [
+      (reporter as any).constituencyId,
+      (reporter as any).divisionId,
+    ].filter(Boolean);
+
+    for (const fid of fallbackIds) {
+      const parts = await resolveLocationPartsFromFlexibleId(String(fid));
+      if (parts.length) {
+        workplaceLocation = parts.join(', ').replace(/\s+/g, ' ').trim();
+        break;
+      }
+    }
+  }
 
   return {
     reporter: {
@@ -366,7 +426,7 @@ function buildIdCardHtml(data: any): string {
           <tr>
             <td style="width: 30%; font-weight: bold; padding: 0.15mm 0; white-space: nowrap;">Work Place</td>
             <td style="width: 5%; text-align: center; white-space: nowrap;">:</td>
-            <td style="width: 65%; padding: 0.15mm 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${reporter.workplaceLocation || '-'}</td>
+            <td style="width: 65%; padding: 0.15mm 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${String(reporter.workplaceLocation || '').trim() || '-'}</td>
           </tr>
           <tr>
             <td style="width: 30%; font-weight: bold; padding: 0.15mm 0; white-space: nowrap;">Contact No</td>
