@@ -57,6 +57,9 @@ coverage/
 # Local style-lock snapshots (restore points)
 tmp/style-lock/
 
+# Local generated PDFs (debug/verification artifacts)
+tmp/*.pdf
+
 # IDX
 .IDX/
 secrets/.env.digitalocean
