@@ -2964,6 +2964,157 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
 
 /**
  * @swagger
+ * /tenants/{tenantId}/reporters/{id}/id-card/regenerate:
+ *   post:
+ *     summary: Regenerate ID card for a reporter
+ *     description: |
+ *       Deletes existing ID card and generates a new one with optional new card number.
+ *       Automatically sends the new card via WhatsApp.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: Reason for regeneration
+ *                 example: "Card was lost, issuing replacement"
+ *               keepCardNumber:
+ *                 type: boolean
+ *                 description: Keep the same card number (true) or generate new one (false)
+ *                 default: false
+ *     responses:
+ *       200:
+ *         description: ID card regenerated successfully
+ *       404:
+ *         description: Reporter not found
+ */
+router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+    
+    const user: any = (req as any).user;
+    const body = req.body || {};
+    const keepCardNumber = body.keepCardNumber === true;
+    const reason = String(body.reason || '').trim();
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      include: { idCard: true, user: { select: { mobileNumber: true } } }
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Access control
+    const roleName = String(user?.role?.name || '').toUpperCase();
+    const isSuperAdmin = roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN';
+    const isTenantAdmin = roleName === 'TENANT_ADMIN' || roleName === 'ADMIN';
+    const isReporter = roleName === 'REPORTER';
+    const isOwnReporter = isReporter && reporter.userId && reporter.userId === user?.id;
+
+    let isAdminOfTenant = isSuperAdmin;
+    if (!isAdminOfTenant && isTenantAdmin) {
+      const adminReporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id, tenantId }, select: { id: true } })
+        .catch(() => null);
+      isAdminOfTenant = !!adminReporter || isTenantAdmin;
+    }
+
+    if (!isSuperAdmin && !isAdminOfTenant && !isOwnReporter) {
+      return res.status(403).json({ error: 'Not authorized to regenerate ID card' });
+    }
+
+    const previousCardNumber = reporter.idCard?.cardNumber || null;
+
+    // Delete existing ID card if present
+    if (reporter.idCard) {
+      await (prisma as any).reporterIDCard.delete({ where: { reporterId: id } });
+    }
+
+    // Generate card number
+    const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId } });
+    if (!settings) {
+      return res.status(400).json({ error: 'Tenant ID card settings not configured' });
+    }
+
+    let cardNumber: string;
+    if (keepCardNumber && previousCardNumber) {
+      cardNumber = previousCardNumber;
+    } else {
+      const existingCount = await (prisma as any).reporterIDCard.count({ where: { tenantId } });
+      const prefix = settings.cardNumberPrefix || 'KT';
+      const now = new Date();
+      const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+      const seq = String(existingCount + 1).padStart(3, '0');
+      cardNumber = `${prefix}${yyyymm}${seq}`;
+    }
+
+    // Calculate validity
+    const validityMonths = settings.validityMonths || 12;
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt);
+    expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+
+    // Create new ID card
+    const idCard = await (prisma as any).reporterIDCard.create({
+      data: {
+        reporterId: id,
+        tenantId,
+        cardNumber,
+        issuedAt,
+        expiresAt,
+      }
+    });
+
+    // Generate PDF and send via WhatsApp
+    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+    let pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${id}`;
+
+    if (isBunnyCdnConfigured()) {
+      try {
+        const result = await generateAndUploadIdCardPdf(id);
+        if (result.ok && result.pdfUrl) {
+          pdfUrl = result.pdfUrl;
+          await sendIdCardViaWhatsApp({
+            reporterId: id,
+            tenantId,
+            pdfUrl: result.pdfUrl,
+            cardNumber,
+          }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
+        }
+      } catch (e) {
+        console.error('[ID Card] Regenerate - PDF generation error:', e);
+      }
+    }
+
+    res.status(200).json({
+      ...idCard,
+      pdfUrl,
+      previousCardNumber,
+      reason: reason || null,
+      message: 'ID card regenerated successfully',
+    });
+  } catch (e: any) {
+    console.error('regenerate id-card error', e);
+    res.status(500).json({ error: 'Failed to regenerate ID card' });
+  }
+});
+
+/**
+ * @swagger
  * /tenants/{tenantId}/reporters/{id}/id-card/pdf:
  *   delete:
  *     summary: Clear ID card PDF URL to force regeneration
