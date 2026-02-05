@@ -548,8 +548,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
  *               value:
  *                 reason: "Validity period was incorrect"
  *     responses:
- *       201:
- *         description: New ID card generated successfully
+ *       200:
+ *         description: ID card regenerated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -557,23 +557,51 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
  *               properties:
  *                 id: { type: string, example: "cmknew123idcard789" }
  *                 reporterId: { type: string, example: "cmk8abc123reporter456" }
- *                 cardNumber: { type: string, example: "KM202601000124" }
- *                 issuedAt: { type: string, format: date-time, example: "2026-01-30T12:00:00.000Z" }
- *                 expiresAt: { type: string, format: date-time, example: "2027-01-30T12:00:00.000Z" }
- *                 pdfUrl: { type: string, nullable: true, example: null }
- *                 previousCardNumber: { type: string, nullable: true, example: "KM202601000123" }
- *                 regeneratedBy: { type: string, example: "cmkadmin123user456" }
- *                 regenerationReason: { type: string, nullable: true, example: "Photo was incorrect" }
- *             example:
- *               id: "cmknew123idcard789"
- *               reporterId: "cmk8abc123reporter456"
- *               cardNumber: "KM202601000124"
- *               issuedAt: "2026-01-30T12:00:00.000Z"
- *               expiresAt: "2027-01-30T12:00:00.000Z"
- *               pdfUrl: null
- *               previousCardNumber: "KM202601000123"
- *               regeneratedBy: "cmkadmin123user456"
- *               regenerationReason: "Photo was incorrect"
+ *                 cardNumber: { type: string, example: "PA0001" }
+ *                 issuedAt: { type: string, format: date-time, example: "2026-02-05T21:30:39.601Z" }
+ *                 expiresAt: { type: string, format: date-time, example: "2027-02-05T21:30:39.601Z" }
+ *                 pdfUrl: 
+ *                   type: string
+ *                   nullable: true
+ *                   description: |
+ *                     PDF URL depends on Bunny CDN configuration:
+ *                     - If Bunny CDN configured: Static CDN URL (e.g., https://kaburlu-news.b-cdn.net/id-cards/xxx.pdf)
+ *                     - If NOT configured: Dynamic endpoint URL (e.g., https://api.kaburlumedia.com/api/v1/id-cards/pdf?reporterId=xxx&forceRender=true)
+ *                   example: "https://prashnaayudham.com/api/v1/id-cards/pdf?reporterId=cml54silw009bbzyjen9g7qf8&forceRender=true"
+ *                 createdAt: { type: string, format: date-time, example: "2026-02-05T21:30:39.602Z" }
+ *                 updatedAt: { type: string, format: date-time, example: "2026-02-05T21:30:39.602Z" }
+ *                 previousCardNumber: { type: string, nullable: true, example: "PA0001" }
+ *                 reason: { type: string, nullable: true, example: "Reporter uploaded wrong photo, now corrected" }
+ *                 message: { type: string, example: "ID card regenerated successfully" }
+ *             examples:
+ *               withBunnyCdn:
+ *                 summary: Response with Bunny CDN (local dev)
+ *                 value:
+ *                   id: "cml9z18jw01f2jybhlfragi39"
+ *                   reporterId: "cml54silw009bbzyjen9g7qf8"
+ *                   cardNumber: "PA0001"
+ *                   issuedAt: "2026-02-05T21:31:19.052Z"
+ *                   expiresAt: "2027-02-05T21:31:19.052Z"
+ *                   pdfUrl: "https://kaburlu-news.b-cdn.net/id-cards/cml54silw009bbzyjen9g7qf8_PA0001_1770327082491.pdf"
+ *                   createdAt: "2026-02-05T21:31:19.053Z"
+ *                   updatedAt: "2026-02-05T21:31:19.053Z"
+ *                   previousCardNumber: "PA0001"
+ *                   reason: "Reporter uploaded wrong photo, now corrected"
+ *                   message: "ID card regenerated successfully"
+ *               withoutBunnyCdn:
+ *                 summary: Response without Bunny CDN (production)
+ *                 value:
+ *                   id: "cml9z0e4101f4bzbzylqj60jv"
+ *                   reporterId: "cml54silw009bbzyjen9g7qf8"
+ *                   cardNumber: "PA0001"
+ *                   issuedAt: "2026-02-05T21:30:39.601Z"
+ *                   expiresAt: "2027-02-05T21:30:39.601Z"
+ *                   pdfUrl: "https://prashnaayudham.com/api/v1/id-cards/pdf?reporterId=cml54silw009bbzyjen9g7qf8&forceRender=true"
+ *                   createdAt: "2026-02-05T21:30:39.602Z"
+ *                   updatedAt: "2026-02-05T21:30:39.602Z"
+ *                   previousCardNumber: "PA0001"
+ *                   reason: "Reporter uploaded wrong photo, now corrected"
+ *                   message: "ID card regenerated successfully"
  *       401:
  *         description: Unauthorized - JWT token required
  *         content:
@@ -693,13 +721,22 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       expiresAt = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000);
     }
 
+    // Determine pdfUrl based on configuration
+    let initialPdfUrl: string | null = null;
+    if (!isBunnyCdnConfigured()) {
+      // If Bunny CDN is not configured, use dynamic PDF endpoint
+      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+      initialPdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true`;
+    }
+    // If Bunny CDN is configured, pdfUrl will be updated after async upload completes
+
     const newIdCard = await (prisma as any).reporterIDCard.create({
       data: {
         reporterId: reporter.id,
         cardNumber,
         issuedAt,
         expiresAt,
-        pdfUrl: null
+        pdfUrl: initialPdfUrl
       }
     });
 
@@ -728,13 +765,11 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
         }
       }).catch(e => console.error('[ID Card] Regenerate - PDF error:', e));
     } else {
-      // Fallback: Use dynamic PDF URL
-      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-      const pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      // Fallback: Send WhatsApp with dynamic PDF URL
       sendIdCardViaWhatsApp({
         reporterId: reporter.id,
         tenantId,
-        pdfUrl,
+        pdfUrl: initialPdfUrl!,
         cardNumber: newIdCard.cardNumber,
       }).then(result => {
         if (result.ok) {
@@ -745,16 +780,19 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
     }
 
-    res.status(201).json({
-      ...newIdCard,
+    // Return clean response matching production format
+    res.status(200).json({
+      id: newIdCard.id,
+      reporterId: newIdCard.reporterId,
+      cardNumber: newIdCard.cardNumber,
+      issuedAt: newIdCard.issuedAt,
+      expiresAt: newIdCard.expiresAt,
+      pdfUrl: newIdCard.pdfUrl,
+      createdAt: newIdCard.createdAt,
+      updatedAt: newIdCard.updatedAt,
       previousCardNumber,
-      regeneratedBy: user?.id,
-      regenerationReason: reason || null,
-      pdfGenerating: isBunnyCdnConfigured(),
-      whatsappSent: true,
-      message: isBunnyCdnConfigured()
-        ? 'ID card regenerated, PDF uploading to CDN and will be sent via WhatsApp'
-        : 'ID card regenerated and sent via WhatsApp'
+      reason: reason || null,
+      message: 'ID card regenerated successfully'
     });
   } catch (e) {
     console.error('regenerate reporter id-card error', e);
