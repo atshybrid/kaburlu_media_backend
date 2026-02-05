@@ -2391,13 +2391,13 @@ router.get('/homepage/smart', async (req, res) => {
       }
     };
 
-    // Get all categories for tenant
+    // Get all categories (categories are global, not tenant-specific)
     const allCategories = await p.category.findMany({
-      where: { tenantId: tenant.id, isActive: true },
+      where: { isDeleted: false },
       select: { id: true, slug: true, name: true }
     });
     
-    const categoryMap = new Map<string, { id: string; slug: string; name: string }>(
+    const categoryMap = new Map<string, { id: string; slug: true; name: string }>(
       allCategories.map((c: any) => [c.slug, c])
     );
 
