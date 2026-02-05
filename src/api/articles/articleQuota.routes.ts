@@ -14,7 +14,7 @@ const router = Router();
  * /tenants/{tenantId}/article-quota:
  *   get:
  *     summary: Get tenant default article quota settings
- *     tags: [TenantAdmins]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -87,7 +87,7 @@ router.get('/tenants/:tenantId/article-quota', passport.authenticate('jwt', { se
  * /tenants/{tenantId}/article-quota:
  *   put:
  *     summary: Update tenant default article quota settings
- *     tags: [TenantAdmins]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -165,7 +165,7 @@ router.put('/tenants/:tenantId/article-quota', passport.authenticate('jwt', { se
  * /tenants/{tenantId}/reporters/{reporterId}/article-quota:
  *   get:
  *     summary: Get reporter-specific quota override
- *     tags: [TenantAdmins]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
@@ -232,7 +232,7 @@ router.get('/tenants/:tenantId/reporters/:reporterId/article-quota', passport.au
  * /tenants/{tenantId}/reporters/{reporterId}/article-quota:
  *   put:
  *     summary: Set reporter-specific quota override
- *     tags: [TenantAdmins]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       content:
@@ -310,7 +310,7 @@ router.put('/tenants/:tenantId/reporters/:reporterId/article-quota', passport.au
  * /tenants/{tenantId}/reporters/article-quota-summary:
  *   get:
  *     summary: Get all reporters quota usage summary
- *     tags: [TenantAdmins]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query

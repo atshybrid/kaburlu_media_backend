@@ -7,7 +7,7 @@ const router = Router();
 /**
  * @swagger
  * tags:
- *   name: Article Management
+ *   name: Article Listing & Filters
  *   description: Role-based article listing with advanced filters
  */
 
@@ -67,7 +67,7 @@ function buildLocationFilter(stateId?: string, districtId?: string, mandalId?: s
  *       - Priority filter
  *       - Date filter (defaults to current date)
  *       - Character count filter (min/max)
- *     tags: [Article Management]
+ *     tags: [Article Listing & Filters]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -346,7 +346,7 @@ router.get('/superadmin', passport.authenticate('jwt', { session: false }), asyn
  *     description: |
  *       Tenant Admin can view articles only within their tenant.
  *       Filters: state/district/mandal, reporter, priority, date, character count.
- *     tags: [Article Management]
+ *     tags: [Article Listing & Filters]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -577,7 +577,7 @@ router.get('/tenant', passport.authenticate('jwt', { session: false }), async (r
  *     description: |
  *       Reporter can view only their own articles.
  *       Filters: priority, date (defaults to today), character count.
- *     tags: [Article Management]
+ *     tags: [Article Listing & Filters]
  *     security:
  *       - bearerAuth: []
  *     parameters:

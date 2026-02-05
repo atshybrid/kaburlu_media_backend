@@ -259,8 +259,10 @@ app.use(
   swaggerUi.setup(swaggerSpec, {
     swaggerOptions: {
       url: '/api/docs/swagger.json',
-      docExpansion: 'none',
-      persistAuthorization: false
+      docExpansion: 'list',  // Auto-expand all tags (was 'none')
+      persistAuthorization: true,  // Persist auth token across page refresh
+      filter: true,  // Enable search filter
+      displayRequestDuration: true  // Show request time
     }
   })
 );
@@ -273,8 +275,10 @@ app.use(
   swaggerUi.setup(swaggerSpec, {
     swaggerOptions: {
       url: '/api/v1/docs/swagger.json',
-      docExpansion: 'none',
-      persistAuthorization: false
+      docExpansion: 'list',  // Auto-expand all tags (was 'none')
+      persistAuthorization: true,  // Persist auth token across page refresh
+      filter: true,  // Enable search filter
+      displayRequestDuration: true  // Show request time
     }
   })
 );

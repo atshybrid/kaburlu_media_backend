@@ -14,7 +14,7 @@ const router = Router();
  * /reporter/article-quota:
  *   get:
  *     summary: Get my article quota and usage
- *     tags: [Reporters]
+ *     tags: [Article Quota Management]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query

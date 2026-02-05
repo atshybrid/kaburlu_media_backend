@@ -89,6 +89,8 @@ const swaggerDefinition = {
     { name: 'Reporter Payments', description: 'Annual subscription/payment tracking' },
     { name: 'Leaderboard', description: 'Reporter monthly leaderboard and performance rankings' },
     { name: 'Analytics', description: 'Tenant and reporter analytics with article counts and breakdowns' },
+    { name: 'Article Listing & Filters', description: 'Role-based article listing APIs with advanced filters - Super Admin, Tenant Admin, Reporter endpoints for article management and monitoring' },
+    { name: 'Article Quota Management', description: 'Reporter daily article quota system - Admin quota settings and reporter self-service quota checking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
     { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
