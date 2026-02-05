@@ -2420,16 +2420,14 @@ router.get('/homepage/smart', async (req, res) => {
     // Response sections array
     const sections: any[] = [];
 
-    // Article select for card view
+    // Article select for card view (minimal data for homepage performance)
     const articleSelect = {
       id: true,
       slug: true,
       title: true,
       coverImageUrl: true,
-      contentJson: true,
       publishedAt: true,
       viewCount: true,
-      tags: true,
       category: { select: { id: true, slug: true, name: true } }
     };
 
