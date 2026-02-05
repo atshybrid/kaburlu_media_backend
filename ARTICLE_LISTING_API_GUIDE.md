@@ -1,7 +1,7 @@
 # Article Listing APIs - Quick Reference
 
 ## Overview
-Role-based article listing with advanced filters for different user types.
+Role-based article listing and detail retrieval with advanced filters for different user types.
 
 ## Endpoints
 
@@ -169,6 +169,120 @@ curl 'https://api.kaburlumedia.com/api/v1/articles/list/reporter?minChars=1000' 
 ```
 
 **Response:** Same structure but without reporter details (since it's the user's own articles)
+
+---
+
+## 4. Get Article by ID (All Roles)
+
+```
+GET /api/v1/articles/{id}/detail
+Authorization: Bearer {token}
+```
+
+**Who can access:** 
+- **Super Admin/Desk Editor**: Can view any article
+- **Tenant Admin**: Can view articles within their tenant only
+- **Reporter**: Can view only their own articles
+
+**Parameters:**
+- `id` (path) - Article ID (required)
+
+**Example:**
+```bash
+# Get article details
+curl 'https://api.kaburlumedia.com/api/v1/articles/cm1article123xyz/detail' \
+  -H 'Authorization: Bearer YOUR_TOKEN'
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "cm1article123xyz",
+  "title": "హైదరాబాద్‌లో రోడ్డు ప్రమాదం",
+  "content": "హైదరాబాద్ సెకండరాబాద్ మండలంలో ఈ రోజు ఉదయం రోడ్డు ప్రమాదం జరిగింది...",
+  "characterCount": 243,
+  "createdAt": "2026-02-06T06:30:00.000Z",
+  "updatedAt": "2026-02-06T06:30:00.000Z",
+  "scheduledAt": null,
+  "status": "PUBLISHED",
+  "type": "reporter",
+  "priority": 1,
+  "viewCount": 45,
+  "isBreakingNews": true,
+  "isTrending": false,
+  "tags": ["road-accident", "hyderabad", "breaking"],
+  "images": ["https://kaburlu-news.b-cdn.net/articles/accident-photo-1.webp"],
+  "headlines": "హైదరాబాద్‌లో ప్రమాదం",
+  "longNews": "దీర్ఘ వార్త కంటెంట్...",
+  "shortNews": "చిన్న వార్త...",
+  "contentJson": null,
+  "authorId": "user123",
+  "aArticle Detail Page
+```javascript
+// Frontend: Show full article when user clicks on article card
+const articleId = 'cm1article123xyz';
+const response = await fetch(`/api/v1/articles/${articleId}/detail`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const article = await response.json();
+
+// Display full article with:
+// - Title, content, images
+// - Author details (name, designation, location)
+// - Categories, tags
+// - View count, trending/breaking status
+// - Priority indicator
+```
+
+### uthor": {
+    "id": "user123",
+    "mobileNumber": "9876543210",
+    "email": "reporter1@kaburlumedia.com",
+    "reporterProfile": {
+      "id": "reporter123",
+      "level": "MANDAL",
+      "state": {
+        "id": "state_telangana",
+        "name": "Telangana"
+      },
+      "district": {
+        "id": "dist_hyderabad",
+        "name": "Hyderabad"
+      },
+      "mandal": {
+        "id": "mandal_secunderabad",
+        "name": "Secunderabad"
+      },
+      "designation": {
+        "name": "Mandal Reporter",
+        "nativeName": "మండల రిపోర్టర్"
+      }
+    }
+  },
+  "tenant": {
+    "id": "cmk7e7tg401ezlp22wkz5rxky",
+    "name": "Kaburlu News",
+    "slug": "kaburlu-news"
+  },
+  "language": {
+    "id": "lang_telugu",
+    "name": "Telugu",
+    "code": "te"
+  },
+  "categories": [
+    {
+      "id": "cat123",
+      "name": "Breaking News",
+      "slug": "breaking-news"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `401 Unauthorized` - No valid token
+- `403 Forbidden` - Access denied (tenant mismatch or not own article)
+- `404 Not Found` - Article doesn't exist
 
 ---
 

@@ -742,4 +742,170 @@ router.get('/reporter', passport.authenticate('jwt', { session: false }), async 
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/articles/{id}/detail:
+ *   get:
+ *     summary: Get article by ID (Role-based access)
+ *     description: |
+ *       Get detailed article information with role-based access control:
+ *       - Super Admin/Desk Editor: Can view any article
+ *       - Tenant Admin: Can view articles within their tenant
+ *       - Reporter: Can view only their own articles
+ *     tags: [Article Listing & Filters]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Article ID
+ *     responses:
+ *       200:
+ *         description: Article details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 title:
+ *                   type: string
+ *                 content:
+ *                   type: string
+ *                 characterCount:
+ *                   type: integer
+ *                 priority:
+ *                   type: integer
+ *                 status:
+ *                   type: string
+ *                 author:
+ *                   type: object
+ *       403:
+ *         description: Forbidden - Access denied
+ *       404:
+ *         description: Article not found
+ */
+router.get('/:id/detail', passport.authenticate('jwt', { session: false }), async (req: Request, res: Response) => {
+  try {
+    const user: any = (req as any).user;
+    if (!user || !user.role) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const userRole = user.role.name?.toUpperCase();
+
+    // Check role permissions
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'SUPERADMIN';
+    const isDeskEditor = userRole === 'DESK_EDITOR';
+    const isTenantAdmin = userRole === 'TENANT_ADMIN' || userRole === 'ADMIN';
+    const isReporter = userRole === 'REPORTER';
+
+    if (!isSuperAdmin && !isDeskEditor && !isTenantAdmin && !isReporter) {
+      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+    }
+
+    // Fetch article with full details
+    const article = await prisma.article.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        createdAt: true,
+        updatedAt: true,
+        scheduledAt: true,
+        status: true,
+        type: true,
+        priority: true,
+        viewCount: true,
+        isBreakingNews: true,
+        isTrending: true,
+        tags: true,
+        images: true,
+        headlines: true,
+        longNews: true,
+        shortNews: true,
+        contentJson: true,
+        authorId: true,
+        author: {
+          select: {
+            id: true,
+            mobileNumber: true,
+            email: true,
+            reporterProfile: {
+              select: {
+                id: true,
+                level: true,
+                state: { select: { id: true, name: true } },
+                district: { select: { id: true, name: true } },
+                mandal: { select: { id: true, name: true } },
+                designation: { select: { name: true, nativeName: true } },
+              },
+            },
+          },
+        },
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+        language: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        categories: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    // Apply role-based access control
+    if (isReporter) {
+      // Reporter can only view their own articles
+      if (article.authorId !== user.id) {
+        return res.status(403).json({ error: 'Forbidden: You can only view your own articles' });
+      }
+    } else if (isTenantAdmin) {
+      // Tenant admin can only view articles within their tenant
+      const reporter = await getReporterProfile(user.id);
+      if (!reporter) {
+        return res.status(403).json({ error: 'Tenant Admin profile missing reporter linkage' });
+      }
+      if (article.tenant?.id !== reporter.tenantId) {
+        return res.status(403).json({ error: 'Forbidden: Article not in your tenant' });
+      }
+    }
+    // Super Admin and Desk Editor can view any article (no additional checks)
+
+    // Calculate character count
+    const characterCount = article.content?.length || 0;
+
+    return res.json({
+      ...article,
+      characterCount,
+    });
+  } catch (error: any) {
+    console.error('[Article Detail] Error:', error);
+    return res.status(500).json({ error: 'Failed to fetch article', details: error.message });
+  }
+});
+
 export default router;
