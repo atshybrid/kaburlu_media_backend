@@ -824,6 +824,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
   try {
     const { tenantId, id } = req.params;
     const user = req.user as any;
+    const forceRegenerate =
+      String((req.query as any)?.forceRegenerate ?? (req.body as any)?.forceRegenerate ?? 'false').toLowerCase() === 'true';
 
     const reporter = await (prisma as any).reporter.findFirst({
       where: { id, tenantId },
@@ -867,6 +869,24 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
 
     // Get PDF URL - either from DB or generate on demand
     let pdfUrl = reporter.idCard.pdfUrl;
+
+    if (forceRegenerate) {
+      if (isBunnyCdnConfigured()) {
+        console.log(`[ID Card Resend] forceRegenerate=true; generating new PDF for reporter ${reporter.id}`);
+        const genResult = await generateAndUploadIdCardPdf(reporter.id);
+        if (genResult.ok && genResult.pdfUrl) {
+          pdfUrl = genResult.pdfUrl;
+          console.log(`[ID Card Resend] Generated PDF (forced): ${pdfUrl}`);
+        } else {
+          console.error(`[ID Card Resend] Forced PDF generation failed:`, genResult.error);
+          const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
+        }
+      } else {
+        const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
+      }
+    }
     
     if (!pdfUrl) {
       // PDF not in DB - try to generate and upload now
@@ -880,12 +900,12 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
           console.error(`[ID Card Resend] PDF generation failed:`, genResult.error);
           // Fallback to dynamic URL
           const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
         }
       } else {
         // Fallback to dynamic URL
         const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
       }
     }
 

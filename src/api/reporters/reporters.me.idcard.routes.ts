@@ -200,6 +200,8 @@ router.post('/id-card/resend', passport.authenticate('jwt', { session: false }),
   try {
     const user = req.user as any;
     const userRole = user?.role?.name?.toUpperCase() || '';
+    const forceRegenerate =
+      String((req.query as any)?.forceRegenerate ?? (req.body as any)?.forceRegenerate ?? 'false').toLowerCase() === 'true';
     
     if (userRole !== 'REPORTER') {
       return res.status(403).json({ error: 'Only reporters can use this endpoint' });
@@ -227,9 +229,27 @@ router.post('/id-card/resend', passport.authenticate('jwt', { session: false }),
     
     // Get PDF URL
     let pdfUrl = reporter.idCard.pdfUrl;
+
+    if (forceRegenerate) {
+      if (isBunnyCdnConfigured()) {
+        console.log(`[ID Card Resend/Me] forceRegenerate=true; generating new PDF for reporter ${reporter.id}`);
+        const genResult = await generateAndUploadIdCardPdf(reporter.id);
+        if (genResult.ok && genResult.pdfUrl) {
+          pdfUrl = genResult.pdfUrl;
+        } else {
+          console.error(`[ID Card Resend/Me] Forced PDF generation failed:`, genResult.error);
+          const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+          pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
+        }
+      } else {
+        const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
+      }
+    }
+
     if (!pdfUrl) {
       const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
     }
     
     // Send via WhatsApp
