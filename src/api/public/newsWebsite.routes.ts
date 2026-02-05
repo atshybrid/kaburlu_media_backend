@@ -2232,13 +2232,16 @@ router.get('/homepage/config', async (req, res) => {
  *       
  *       Returns homepage sections optimized for Style1 and Style2 themes:
  *       
- *       **Style1 Sections (6 sections, ~70 articles total):**
- *       - `ticker`: Breaking News (12 articles, sorted by publishedAt DESC)
- *       - `latest`: Latest News (20 articles, sorted by publishedAt DESC)
- *       - `mustRead`: Must Read (10 most viewed articles, sorted by viewCount DESC)
- *       - `trending`: Top Articles (10 trending, sorted by viewCount + publishedAt DESC)
- *       - `hero`: Hero Section (14 articles in 2 columns: heroLead + heroGrid)
- *       - `categories`: Category Sections (4-8 categories × 5 articles each = 20-40 articles)
+ *       **Style1 Sections (5 sections, ~50-60 articles total):**
+ *       - `ticker`: Flash Ticker (12 articles, latest breaking news, publishedAt DESC)
+ *       - `hero`: Hero Section (26 articles in 4 columns)
+ *         * Col-1 `heroMain`: 6 articles (hero cards, publishedAt DESC)
+ *         * Col-2 `heroLatest`: 8 articles (latest news, publishedAt DESC)
+ *         * Col-3 `heroMustRead`: 8 articles (must-read, viewCount DESC)
+ *         * Col-4 `heroTop`: 4 articles (trending, viewCount + publishedAt DESC)
+ *       - `categories`: Category Columns (4 categories × 5 articles = ~20 articles, STRICT limit)
+ *       - `hgBlock`: HG Block (2 categories × 5 articles = ~10 articles)
+ *       - `webStories`: Web Stories (1 category × 8 articles, OPTIONAL - only shows if available)
  *       
  *       **Key Features:**
  *       1. Auto-detects theme from `DomainSettings.data.themeStyle`
@@ -2247,14 +2250,14 @@ router.get('/homepage/config', async (req, res) => {
  *       4. Article card data optimized for performance (no full content)
  *       5. Language filtering support
  *       6. Flexible sorting (publishedAt or viewCount)
+ *       7. STRICT category limits enforced (4 for categories, 2 for HG Block, 1 for webStories)
  *       
  *       **Section Keys:**
  *       - `ticker` - Breaking news ticker (always latest)
- *       - `latest` - Top latest articles feed
- *       - `mustRead` - Most viewed/popular articles
- *       - `trending` - Trending articles (view count + recency)
- *       - `hero` - Main featured section with columns
- *       - `categories` - Category-wise article groups
+ *       - `hero` - Main featured section with 4 columns (different sorting per column)
+ *       - `categories` - Category columns (STRICT 4-category limit)
+ *       - `hgBlock` - HG Block section (2 categories)
+ *       - `webStories` - Web Stories section (1 category, optional)
  *       
  *       **Legacy Support:**
  *       - Still supports old keys: `flashTicker`, `heroSection`, `categorySection`
@@ -2398,7 +2401,7 @@ router.get('/homepage/config', async (req, res) => {
  *                   sections:
  *                     - id: auto-ticker
  *                       key: ticker
- *                       name: Breaking News
+ *                       name: Flash Ticker
  *                       visible: true
  *                       limit: 12
  *                       articles:
@@ -2412,60 +2415,96 @@ router.get('/homepage/config', async (req, res) => {
  *                             id: "cat-123"
  *                             slug: "traffic"
  *                             name: "Traffic"
- *                     - id: auto-latest
- *                       key: latest
- *                       name: Latest News
- *                       visible: true
- *                       limit: 20
- *                       articles: [20 latest articles]
- *                     - id: auto-mustread
- *                       key: mustRead
- *                       name: Must Read
- *                       visible: true
- *                       limit: 10
- *                       articles: [10 most viewed articles]
- *                     - id: auto-trending
- *                       key: trending
- *                       name: Top Articles
- *                       visible: true
- *                       limit: 10
- *                       articles: [10 trending articles]
  *                     - id: auto-hero
  *                       key: hero
  *                       name: Hero Section
  *                       visible: true
+ *                       totalArticles: 26
  *                       columns:
- *                         - key: heroLead
+ *                         - key: heroMain
  *                           position: 1
- *                           name: Hero Lead
- *                           limit: 1
- *                           articles: [1 featured article]
- *                         - key: heroGrid
+ *                           name: Hero Main
+ *                           limit: 6
+ *                           articles: [6 latest hero articles - publishedAt DESC]
+ *                         - key: heroLatest
  *                           position: 2
- *                           name: Hero Grid
- *                           limit: 13
- *                           articles: [13 grid articles]
+ *                           name: Latest News
+ *                           limit: 8
+ *                           articles: [8 latest articles - publishedAt DESC]
+ *                         - key: heroMustRead
+ *                           position: 3
+ *                           name: Must Read
+ *                           limit: 8
+ *                           articles: [8 most viewed articles - viewCount DESC]
+ *                         - key: heroTop
+ *                           position: 4
+ *                           name: Top Articles
+ *                           limit: 4
+ *                           articles: [4 trending articles - viewCount + publishedAt DESC]
  *                     - id: auto-categories
  *                       key: categories
- *                       name: Category Sections
+ *                       name: Category Columns
  *                       visible: true
- *                       categoriesShown: 2
+ *                       categoriesShown: 4
+ *                       maxCategories: 4
  *                       articlesPerCategory: 5
+ *                       totalArticles: 12
  *                       categories:
+ *                         - slug: national
+ *                           name: NATIONAL
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [2 national articles]
  *                         - slug: politics
  *                           name: Politics
  *                           visible: true
  *                           articlesLimit: 5
- *                           articles: [5 politics articles]
- *                         - slug: education
- *                           name: Education
+ *                           articles: [3 politics articles]
+ *                         - slug: entertainment
+ *                           name: ENTERTAINMENT
  *                           visible: true
  *                           articlesLimit: 5
- *                           articles: [5 education articles]
+ *                           articles: [2 entertainment articles]
+ *                         - slug: sports
+ *                           name: SPORTS
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [5 sports articles]
+ *                     - id: auto-hgblock
+ *                       key: hgBlock
+ *                       name: HG Block
+ *                       visible: true
+ *                       categoriesShown: 2
+ *                       maxCategories: 2
+ *                       articlesPerCategory: 5
+ *                       totalArticles: 7
+ *                       categories:
+ *                         - slug: national
+ *                           name: NATIONAL
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [2 national articles]
+ *                         - slug: sports
+ *                           name: SPORTS
+ *                           visible: true
+ *                           articlesLimit: 5
+ *                           articles: [5 sports articles]
+ *                     - id: auto-webstories
+ *                       key: webStories
+ *                       name: Web Stories
+ *                       visible: true
+ *                       optional: true
+ *                       totalArticles: 2
+ *                       categories:
+ *                         - slug: entertainment
+ *                           name: ENTERTAINMENT
+ *                           visible: true
+ *                           articlesLimit: 8
+ *                           articles: [2 entertainment stories]
  *                   meta:
  *                     timestamp: "2026-02-05T20:32:23.248Z"
- *                     totalSections: 6
- *                     visibleSections: 6
+ *                     totalSections: 5
+ *                     visibleSections: 5
  *       500:
  *         description: Error fetching homepage
  */
@@ -2574,36 +2613,25 @@ router.get('/homepage/smart', async (req, res) => {
       let layoutSections = storedStyle1?.sections || [];
 
       // SMART FALLBACK: Auto-generate sections matching Style1 frontend requirements
-      // Style1 needs: Ticker (10-12), Hero (30 articles in 4 columns), Categories (4×5=20)
+      // Style1 Structure:
+      // - Flash Ticker: 10-12 articles (latest breaking news)
+      // - Hero Section: 26 articles across 4 columns
+      //   * Col-1: 6 articles (hero + medium + small cards)
+      //   * Col-2: 8 articles (latest news)
+      //   * Col-3: 8 articles (must-read labeled)
+      //   * Col-4: 4 articles (top articles labeled)
+      // - Category Columns: 20 articles (4 categories × 5 each, STRICT limit)
+      // - HG Block: 10 articles (2 categories × 5 each)
+      // - Web Stories: 8 articles (1 category × 8, optional)
+      // Total: ~50-60 articles on homepage
       if (layoutSections.length === 0) {
         layoutSections = [
           {
             id: 'auto-ticker',
             key: 'ticker',
-            name: 'Breaking News',
+            name: 'Flash Ticker',
             isActive: true,
             config: { articlesLimit: 12 }
-          },
-          {
-            id: 'auto-latest',
-            key: 'latest',
-            name: 'Latest News',
-            isActive: true,
-            config: { articlesLimit: 20 }
-          },
-          {
-            id: 'auto-mustread',
-            key: 'mustRead',
-            name: 'Must Read',
-            isActive: true,
-            config: { articlesLimit: 10 }
-          },
-          {
-            id: 'auto-trending',
-            key: 'trending',
-            name: 'Top Articles',
-            isActive: true,
-            config: { articlesLimit: 10 }
           },
           {
             id: 'auto-hero',
@@ -2612,20 +2640,48 @@ router.get('/homepage/smart', async (req, res) => {
             isActive: true,
             layout: {
               columns: [
-                { key: 'heroLead', position: 1, name: 'Hero Lead', articlesLimit: 1 },
-                { key: 'heroGrid', position: 2, name: 'Hero Grid', articlesLimit: 13 }
+                { key: 'heroMain', position: 1, name: 'Hero Main', articlesLimit: 6 },
+                { key: 'heroLatest', position: 2, name: 'Latest News', articlesLimit: 8 },
+                { key: 'heroMustRead', position: 3, name: 'Must Read', articlesLimit: 8 },
+                { key: 'heroTop', position: 4, name: 'Top Articles', articlesLimit: 4 }
               ]
             }
           },
           {
             id: 'auto-categories',
             key: 'categories',
-            name: 'Category Sections',
+            name: 'Category Columns',
             isActive: true,
             config: {
               categories: ['national', 'politics', 'entertainment', 'sports', 'business', 'technology', 'education', 'health'],
               articlesPerCategory: 5,
-              maxCategories: 4
+              maxCategories: 4,  // STRICT: Only first 4 categories with articles
+              minArticlesRequired: 1  // Show category if it has at least 1 article
+            }
+          },
+          {
+            id: 'auto-hgblock',
+            key: 'hgBlock',
+            name: 'HG Block',
+            isActive: true,
+            config: {
+              categories: ['national', 'sports', 'entertainment', 'business'],
+              articlesPerCategory: 5,
+              maxCategories: 2,  // Exactly 2 categories
+              minArticlesRequired: 1  // Show category if it has at least 1 article
+            }
+          },
+          {
+            id: 'auto-webstories',
+            key: 'webStories',
+            name: 'Web Stories',
+            isActive: true,
+            config: {
+              categories: ['entertainment', 'lifestyle', 'technology'],
+              articlesPerCategory: 8,
+              maxCategories: 1,  // Only 1 category
+              minArticlesRequired: 1,  // Show if at least 1 story (flexible)
+              optional: true  // Section won't show if no category has articles
             }
           }
         ];
@@ -2649,7 +2705,7 @@ router.get('/homepage/smart', async (req, res) => {
           continue;
         }
 
-        // TICKER (Breaking News - 10-12 articles)
+        // TICKER (Flash Ticker - 10-12 articles)
         if (sectionKey === 'ticker') {
           const limit = sectionConfig.articlesLimit || 12;
           const articles = await p.tenantWebArticle.findMany({
@@ -2662,86 +2718,38 @@ router.get('/homepage/smart', async (req, res) => {
           sections.push({
             id: section.id,
             key: 'ticker',
-            name: section.name || 'Breaking News',
+            name: section.name || 'Flash Ticker',
             visible: articles.length > 0,
             limit,
             articles
           });
         }
 
-        // LATEST NEWS (Top 20 latest articles)
-        else if (sectionKey === 'latest') {
-          const limit = sectionConfig.articlesLimit || 20;
-          const articles = await p.tenantWebArticle.findMany({
-            where: articleWhere,
-            orderBy: { publishedAt: 'desc' },
-            take: limit,
-            select: articleSelect
-          });
-
-          sections.push({
-            id: section.id,
-            key: 'latest',
-            name: section.name || 'Latest News',
-            visible: articles.length > 0,
-            limit,
-            articles
-          });
-        }
-
-        // MUST READ (Top 10 most viewed articles)
-        else if (sectionKey === 'mustRead') {
-          const limit = sectionConfig.articlesLimit || 10;
-          const articles = await p.tenantWebArticle.findMany({
-            where: articleWhere,
-            orderBy: { viewCount: 'desc' },
-            take: limit,
-            select: articleSelect
-          });
-
-          sections.push({
-            id: section.id,
-            key: 'mustRead',
-            name: section.name || 'Must Read',
-            visible: articles.length > 0,
-            limit,
-            articles
-          });
-        }
-
-        // TRENDING (Top 10 trending articles)
-        else if (sectionKey === 'trending') {
-          const limit = sectionConfig.articlesLimit || 10;
-          const articles = await p.tenantWebArticle.findMany({
-            where: articleWhere,
-            orderBy: [
-              { viewCount: 'desc' },
-              { publishedAt: 'desc' }
-            ],
-            take: limit,
-            select: articleSelect
-          });
-
-          sections.push({
-            id: section.id,
-            key: 'trending',
-            name: section.name || 'Top Articles',
-            visible: articles.length > 0,
-            limit,
-            articles
-          });
-        }
-
-        // HERO SECTION (Main featured articles with layout columns)
+        // HERO SECTION (26 articles across 4 columns with different sorting)
+        // Col-1 (heroMain): 6 articles - publishedAt DESC (latest hero content)
+        // Col-2 (heroLatest): 8 articles - publishedAt DESC (latest news)
+        // Col-3 (heroMustRead): 8 articles - viewCount DESC (most viewed)
+        // Col-4 (heroTop): 4 articles - viewCount + publishedAt DESC (trending)
         else if (sectionKey === 'hero') {
           const columns = section.layout?.columns || [];
           const heroColumns: any[] = [];
 
           for (const col of columns) {
             const colLimit = col.articlesLimit || 6;
+            let orderBy: any = { publishedAt: 'desc' }; // Default: latest
+            
+            // Column-specific sorting logic
+            if (col.key === 'heroMustRead') {
+              orderBy = { viewCount: 'desc' }; // Most viewed
+            } else if (col.key === 'heroTop') {
+              orderBy = [{ viewCount: 'desc' }, { publishedAt: 'desc' }]; // Trending
+            } else if (col.key === 'heroLatest' || col.key === 'heroMain') {
+              orderBy = { publishedAt: 'desc' }; // Latest
+            }
+
             const colArticles = await p.tenantWebArticle.findMany({
               where: articleWhere,
-              orderBy: { [sortBy]: 'desc' },
+              orderBy,
               take: colLimit,
               select: articleSelect
             });
@@ -2755,25 +2763,28 @@ router.get('/homepage/smart', async (req, res) => {
             });
           }
 
+          const totalHeroArticles = heroColumns.reduce((sum, col) => sum + col.articles.length, 0);
           sections.push({
             id: section.id,
             key: 'hero',
             name: section.name || 'Hero Section',
-            visible: heroColumns.some(c => c.articles.length > 0),
+            visible: totalHeroArticles > 0,
+            totalArticles: totalHeroArticles,
             columns: heroColumns
           });
         }
 
-        // CATEGORIES (Category-wise article sections)
+        // CATEGORIES (Category Columns - STRICT 4 categories × 5 articles = 20 total)
         else if (sectionKey === 'categories') {
           const categorySlugs = sectionConfig.categories || ['national', 'entertainment', 'politics', 'sports'];
           const articlesPerCategory = sectionConfig.articlesPerCategory || 5;
-          const maxCategories = sectionConfig.maxCategories || 10; // Limit total categories shown
+          const maxCategories = sectionConfig.maxCategories || 4; // STRICT limit
+          const minArticlesRequired = sectionConfig.minArticlesRequired || 0; // Minimum articles to show category
           const categoryData: any[] = [];
 
           let processedCount = 0;
           for (const slug of categorySlugs) {
-            if (processedCount >= maxCategories) break;
+            if (processedCount >= maxCategories) break; // STRICT: Stop at maxCategories
             
             const category = categoryMap.get(slug);
             if (!category) {
@@ -2782,12 +2793,13 @@ router.get('/homepage/smart', async (req, res) => {
 
             const catArticles = await p.tenantWebArticle.findMany({
               where: { ...articleWhere, categoryId: category.id },
-              orderBy: { [sortBy]: 'desc' },
+              orderBy: { publishedAt: 'desc' },
               take: articlesPerCategory,
               select: articleSelect
             });
 
-            if (catArticles.length > 0) {
+            // Only include if meets minimum article requirement
+            if (catArticles.length >= minArticlesRequired) {
               categoryData.push({
                 slug: category.slug,
                 name: category.name,
@@ -2799,16 +2811,113 @@ router.get('/homepage/smart', async (req, res) => {
             }
           }
 
+          const totalCategoryArticles = categoryData.reduce((sum, cat) => sum + cat.articles.length, 0);
           sections.push({
             id: section.id,
             key: 'categories',
-            name: section.name || 'Category Sections',
+            name: section.name || 'Category Columns',
             visible: categoryData.length > 0,
             categoriesShown: categoryData.length,
-            categoriesTotal: categorySlugs.length,
+            maxCategories, // Show the strict limit
             articlesPerCategory,
+            totalArticles: totalCategoryArticles,
             categories: categoryData
           });
+        }
+
+        // HG BLOCK (2 categories × 5 articles = 10 total)
+        else if (sectionKey === 'hgBlock') {
+          const categorySlugs = sectionConfig.categories || ['national', 'sports'];
+          const articlesPerCategory = sectionConfig.articlesPerCategory || 5;
+          const maxCategories = sectionConfig.maxCategories || 2; // STRICT: Exactly 2
+          const minArticlesRequired = sectionConfig.minArticlesRequired || 0;
+          const categoryData: any[] = [];
+
+          let processedCount = 0;
+          for (const slug of categorySlugs) {
+            if (processedCount >= maxCategories) break;
+            
+            const category = categoryMap.get(slug);
+            if (!category) continue;
+
+            const catArticles = await p.tenantWebArticle.findMany({
+              where: { ...articleWhere, categoryId: category.id },
+              orderBy: { publishedAt: 'desc' },
+              take: articlesPerCategory,
+              select: articleSelect
+            });
+
+            if (catArticles.length >= minArticlesRequired) {
+              categoryData.push({
+                slug: category.slug,
+                name: category.name,
+                visible: true,
+                articlesLimit: articlesPerCategory,
+                articles: catArticles
+              });
+              processedCount++;
+            }
+          }
+
+          const totalHGArticles = categoryData.reduce((sum, cat) => sum + cat.articles.length, 0);
+          sections.push({
+            id: section.id,
+            key: 'hgBlock',
+            name: section.name || 'HG Block',
+            visible: categoryData.length > 0,
+            categoriesShown: categoryData.length,
+            maxCategories,
+            articlesPerCategory,
+            totalArticles: totalHGArticles,
+            categories: categoryData
+          });
+        }
+
+        // WEB STORIES (1 category × 8 stories, OPTIONAL section)
+        else if (sectionKey === 'webStories') {
+          const categorySlugs = sectionConfig.categories || ['entertainment', 'lifestyle'];
+          const articlesPerCategory = sectionConfig.articlesPerCategory || 8;
+          const maxCategories = 1; // Only 1 category
+          const minArticlesRequired = sectionConfig.minArticlesRequired || 8; // Must have 8 stories
+          const isOptional = sectionConfig.optional === true;
+          let categoryData: any[] = [];
+
+          // Find first category with enough stories
+          for (const slug of categorySlugs) {
+            const category = categoryMap.get(slug);
+            if (!category) continue;
+
+            const catArticles = await p.tenantWebArticle.findMany({
+              where: { ...articleWhere, categoryId: category.id },
+              orderBy: { publishedAt: 'desc' },
+              take: articlesPerCategory,
+              select: articleSelect
+            });
+
+            if (catArticles.length >= minArticlesRequired) {
+              categoryData.push({
+                slug: category.slug,
+                name: category.name,
+                visible: true,
+                articlesLimit: articlesPerCategory,
+                articles: catArticles
+              });
+              break; // Only need 1 category
+            }
+          }
+
+          // Only push section if not optional OR if we have data
+          if (!isOptional || categoryData.length > 0) {
+            sections.push({
+              id: section.id,
+              key: 'webStories',
+              name: section.name || 'Web Stories',
+              visible: categoryData.length > 0,
+              optional: isOptional,
+              totalArticles: categoryData.length > 0 ? categoryData[0].articles.length : 0,
+              categories: categoryData
+            });
+          }
         }
 
         // FLASH TICKER (Legacy - same as ticker)
