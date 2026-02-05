@@ -423,18 +423,26 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       expiresAt = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000);
     }
 
+    // Determine pdfUrl based on configuration
+    let initialPdfUrl: string | null = null;
+    if (!isBunnyCdnConfigured()) {
+      // If Bunny CDN is not configured, use dynamic PDF endpoint
+      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
+      initialPdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true`;
+    }
+    // If Bunny CDN is configured, pdfUrl will be updated after async upload completes
+
     const idCard = await (prisma as any).reporterIDCard.create({
       data: {
         reporterId: reporter.id,
         cardNumber,
         issuedAt,
         expiresAt,
-        pdfUrl: null
+        pdfUrl: initialPdfUrl
       }
     });
 
     // Generate PDF and upload to Bunny CDN (async, don't block response)
-    let pdfUrl: string | null = null;
     if (isBunnyCdnConfigured()) {
       generateAndUploadIdCardPdf(reporter.id).then(result => {
         if (result.ok) {
@@ -457,13 +465,11 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
         }
       }).catch(e => console.error('[ID Card] PDF generation error:', e));
     } else {
-      // Fallback: Use dynamic PDF URL
-      const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+      // Fallback: Send WhatsApp with dynamic PDF URL
       sendIdCardViaWhatsApp({
         reporterId: reporter.id,
         tenantId,
-        pdfUrl,
+        pdfUrl: initialPdfUrl!,
         cardNumber,
       }).then(result => {
         if (result.ok) {
@@ -474,13 +480,17 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }).catch(e => console.error('[ID Card] Auto-send WhatsApp error:', e));
     }
 
+    // Return clean response
     res.status(201).json({
-      ...idCard,
-      pdfGenerating: isBunnyCdnConfigured(),
-      whatsappSent: true,
-      message: isBunnyCdnConfigured() 
-        ? 'ID card generated, PDF uploading to CDN and will be sent via WhatsApp' 
-        : 'ID card generated and sent via WhatsApp'
+      id: idCard.id,
+      reporterId: idCard.reporterId,
+      cardNumber: idCard.cardNumber,
+      issuedAt: idCard.issuedAt,
+      expiresAt: idCard.expiresAt,
+      pdfUrl: idCard.pdfUrl,
+      createdAt: idCard.createdAt,
+      updatedAt: idCard.updatedAt,
+      message: 'ID card generated successfully'
     });
   } catch (e) {
     console.error('generate reporter id-card error', e);

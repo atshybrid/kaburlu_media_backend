@@ -654,12 +654,26 @@ async function getPuppeteerLaunchOptions(puppeteer: any): Promise<any> {
   ];
 
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN;
+  const linuxCandidates = process.platform === 'linux'
+    ? ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome']
+    : [];
+  const fs = await import('fs');
   
   // Try env path first
   if (envPath) {
-    const fs = await import('fs');
     if (fs.existsSync(envPath)) {
-      return { headless: 'new', args, executablePath: envPath };
+      return { headless: true, args, executablePath: envPath };
+    }
+  }
+
+  // Prefer common Linux Chromium paths (DigitalOcean/Ubuntu)
+  for (const p of linuxCandidates) {
+    try {
+      if (p && fs.existsSync(p)) {
+        return { headless: true, args, executablePath: p };
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -667,15 +681,14 @@ async function getPuppeteerLaunchOptions(puppeteer: any): Promise<any> {
   try {
     const defaultPath = typeof puppeteer?.executablePath === 'function' ? puppeteer.executablePath() : undefined;
     if (defaultPath) {
-      const fs = await import('fs');
       if (fs.existsSync(defaultPath)) {
-        return { headless: 'new', args, executablePath: defaultPath };
+        return { headless: true, args, executablePath: defaultPath };
       }
     }
   } catch {}
 
   // Fallback - let puppeteer find Chrome
-  return { headless: 'new', args };
+  return { headless: true, args };
 }
 
 /**
@@ -684,12 +697,12 @@ async function getPuppeteerLaunchOptions(puppeteer: any): Promise<any> {
 async function generatePdfBuffer(html: string): Promise<Buffer> {
   let puppeteer: any;
   try {
-    // Try full puppeteer first (includes Chrome)
-    puppeteer = require('puppeteer');
+    // Prefer puppeteer-core on servers (requires system Chrome/Chromium)
+    puppeteer = require('puppeteer-core');
   } catch {
     try {
-      // Fallback to puppeteer-core (needs executablePath)
-      puppeteer = require('puppeteer-core');
+      // Fallback to full puppeteer (may include bundled Chrome)
+      puppeteer = require('puppeteer');
     } catch {
       throw new Error('Puppeteer not installed');
     }
