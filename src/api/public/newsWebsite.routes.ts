@@ -2688,4 +2688,291 @@ router.get('/homepage/smart', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /public/articles/{slug}:
+ *   get:
+ *     summary: 📰 Get Article by Slug - Complete SEO-optimized article with reporter details
+ *     description: |
+ *       **Complete Article Details - SEO Friendly**
+ *       
+ *       Returns comprehensive article information including:
+ *       - Full article content with inline images
+ *       - SEO metadata (OG tags, Twitter cards, JSON-LD)
+ *       - Reporter profile with stats
+ *       - Must-read related articles
+ *       
+ *       **SEO Features:**
+ *       - Meta title & description
+ *       - OG image (JPG format for social sharing)
+ *       - Twitter card metadata
+ *       - Canonical URL
+ *       - Article schema (JSON-LD)
+ *       
+ *       **Reporter Stats:**
+ *       - Profile photo, name, designation, location
+ *       - Total articles published
+ *       - Total view count across all articles
+ *       
+ *       **Performance:**
+ *       - Single API call for article page
+ *       - Optimized for SSR/SSG
+ *       - CDN-friendly responses
+ *       
+ *     tags: [News Website API 2.0]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: Article slug
+ *         schema: { type: string, example: "telangana-assembly-session-updates" }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Domain name (or uses Host header)
+ *         schema: { type: string, example: "kaburlutoday.com" }
+ *     responses:
+ *       200:
+ *         description: Complete article with SEO and reporter details
+ *       404:
+ *         description: Article not found
+ */
+router.get('/articles/:slug', async (req, res) => {
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  
+  if (!tenant || !domain) {
+    return res.status(500).json({ 
+      error: 'Domain context missing',
+      hint: 'Ensure Host header or X-Tenant-Domain header is set'
+    });
+  }
+
+  try {
+    const { slug } = req.params;
+
+    // Fetch article with all relations
+    const article = await p.tenantWebArticle.findFirst({
+      where: {
+        slug,
+        tenantId: tenant.id,
+        status: 'PUBLISHED'
+      },
+      include: {
+        category: { select: { id: true, slug: true, name: true } },
+        language: { select: { id: true, code: true, name: true } },
+        author: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                fullName: true,
+                profilePhotoUrl: true,
+                bio: true
+              }
+            },
+            reporterProfile: {
+              select: {
+                id: true,
+                designation: true,
+                profilePhotoUrl: true,
+                state: { select: { id: true, name: true } },
+                district: { select: { id: true, name: true } },
+                mandal: { select: { id: true, name: true } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    // Increment view count (fire and forget)
+    p.tenantWebArticle.update({
+      where: { id: article.id },
+      data: { viewCount: { increment: 1 } }
+    }).catch(() => {}); // Ignore errors
+
+    // Get reporter stats if author exists
+    let reporterStats = null;
+    if (article.author?.reporterProfile) {
+      const [totalArticles, totalViews] = await Promise.all([
+        p.tenantWebArticle.count({
+          where: {
+            authorId: article.author.id,
+            tenantId: tenant.id,
+            status: 'PUBLISHED'
+          }
+        }),
+        p.tenantWebArticle.aggregate({
+          where: {
+            authorId: article.author.id,
+            tenantId: tenant.id,
+            status: 'PUBLISHED'
+          },
+          _sum: { viewCount: true }
+        })
+      ]);
+
+      reporterStats = {
+        totalArticles,
+        totalViews: totalViews._sum.viewCount || 0
+      };
+    }
+
+    // Get must-read articles (same category, high views, recent)
+    const mustRead = await p.tenantWebArticle.findMany({
+      where: {
+        tenantId: tenant.id,
+        status: 'PUBLISHED',
+        categoryId: article.categoryId,
+        id: { not: article.id }
+      },
+      orderBy: [
+        { viewCount: 'desc' },
+        { publishedAt: 'desc' }
+      ],
+      take: 5,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        coverImageUrl: true,
+        publishedAt: true,
+        viewCount: true,
+        category: { select: { id: true, slug: true, name: true } }
+      }
+    });
+
+    // Extract content details
+    const contentJson = article.contentJson as any || {};
+    const blocks = contentJson.blocks || [];
+    const excerpt = contentJson.excerpt || article.metaDescription || '';
+    
+    // Extract all images from content
+    const inlineImages: string[] = [];
+    blocks.forEach((block: any) => {
+      if (block.image?.url) {
+        inlineImages.push(block.image.url);
+      }
+    });
+
+    // Extract highlights
+    const highlights = contentJson.highlights || [];
+
+    // Build SEO metadata
+    const baseUrl = `https://${domain.domain}`;
+    const articleUrl = `${baseUrl}/articles/${article.slug}`;
+    
+    // Ensure OG image is JPG for social sharing
+    let ogImageUrl = article.coverImageUrl;
+    if (ogImageUrl && ogImageUrl.toLowerCase().endsWith('.png')) {
+      console.warn(`[Social Image Warning] Article ${article.slug} has PNG cover image. Should be JPG for better social sharing.`);
+    }
+
+    const seo = {
+      title: article.seoTitle || article.title,
+      description: article.metaDescription || excerpt,
+      canonicalUrl: articleUrl,
+      ogImage: ogImageUrl,
+      ogUrl: articleUrl,
+      ogType: 'article',
+      twitterCard: 'summary_large_image',
+      twitterImage: ogImageUrl,
+      publishedTime: article.publishedAt?.toISOString() || null,
+      modifiedTime: article.updatedAt.toISOString(),
+      author: article.author?.profile?.fullName || null,
+      section: article.category?.name || null,
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@type': 'NewsArticle',
+        'headline': article.title,
+        'description': excerpt,
+        'image': ogImageUrl ? [ogImageUrl] : [],
+        'datePublished': article.publishedAt?.toISOString() || article.createdAt.toISOString(),
+        'dateModified': article.updatedAt.toISOString(),
+        'author': article.author ? {
+          '@type': 'Person',
+          'name': article.author.profile?.fullName || 'Unknown',
+          'url': article.author.reporterProfile ? `${baseUrl}/reporters/${article.author.id}` : null
+        } : null,
+        'publisher': {
+          '@type': 'Organization',
+          'name': tenant.name,
+          'url': baseUrl
+        },
+        'mainEntityOfPage': {
+          '@type': 'WebPage',
+          '@id': articleUrl
+        }
+      }
+    };
+
+    // Build reporter details
+    let reporter = null;
+    if (article.author) {
+      const profile = article.author.reporterProfile;
+      const userProfile = article.author.profile;
+      reporter = {
+        id: article.author.id,
+        name: userProfile?.fullName || 'Unknown',
+        profilePhoto: profile?.profilePhotoUrl || userProfile?.profilePhotoUrl || null,
+        designation: profile?.designation || null,
+        bio: userProfile?.bio || null,
+        location: {
+          state: profile?.state?.name || null,
+          district: profile?.district?.name || null,
+          mandal: profile?.mandal?.name || null
+        },
+        stats: reporterStats
+      };
+    }
+
+    // Build content structure
+    const content = {
+      title: article.title,
+      coverImage: article.coverImageUrl,
+      excerpt,
+      highlights,
+      blocks,
+      inlineImages,
+      plainText: contentJson.plainText || null,
+      contentHtml: contentJson.contentHtml || null
+    };
+
+    return res.json({
+      article: {
+        id: article.id,
+        slug: article.slug,
+        title: article.title,
+        content,
+        category: article.category,
+        language: article.language,
+        publishedAt: article.publishedAt,
+        viewCount: article.viewCount + 1, // Include the increment
+        isBreaking: article.isBreaking,
+        shareCount: article.shareCount,
+        createdAt: article.createdAt,
+        updatedAt: article.updatedAt
+      },
+      seo,
+      reporter,
+      mustRead,
+      meta: {
+        timestamp: new Date().toISOString(),
+        domain: domain.domain,
+        tenant: tenant.name
+      }
+    });
+
+  } catch (e: any) {
+    console.error('Get article error:', e);
+    return res.status(500).json({ error: 'Failed to fetch article' });
+  }
+});
+
 export default router;
