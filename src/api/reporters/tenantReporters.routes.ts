@@ -8,6 +8,27 @@ import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCa
 
 const router = Router();
 
+async function resolveTenantBaseUrl(req: any, tenantId: string): Promise<string> {
+  const envBase = String(process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || '').trim();
+  if (envBase) return envBase.replace(/\/+$/g, '');
+
+  const primary = await (prisma as any).domain
+    .findFirst({ where: { tenantId, status: 'ACTIVE', isPrimary: true }, select: { domain: true } })
+    .catch(() => null);
+  const any =
+    primary ||
+    (await (prisma as any).domain
+      .findFirst({ where: { tenantId, status: 'ACTIVE' }, select: { domain: true } })
+      .catch(() => null));
+  if (any?.domain) return `https://${String(any.domain).trim()}`;
+
+  const host = req?.get ? String(req.get('host') || '').trim() : '';
+  const proto = req?.protocol ? String(req.protocol).trim() : 'http';
+  if (host) return `${proto}://${host}`;
+
+  return 'https://api.kaburlumedia.com';
+}
+
 /**
  * Send ID card PDF to reporter via WhatsApp.
  * Called after ID card PDF is uploaded or on resend request.
@@ -2444,6 +2465,18 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }
     }
 
+    // If Bunny is not configured (common in local/dev), still set a usable pdfUrl
+    // pointing to our own PDF endpoint. Use forceRender=true to avoid recursive fetches.
+    if (!idCard.pdfUrl) {
+      const baseUrl = await resolveTenantBaseUrl(req, tenantId);
+      const fallbackPdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
+      await (prisma as any).reporterIDCard.update({
+        where: { id: idCard.id },
+        data: { pdfUrl: fallbackPdfUrl },
+      });
+      idCard.pdfUrl = fallbackPdfUrl;
+    }
+
     return res.status(201).json(idCard);
   } catch (e) {
     console.error('tenant reporter id-card error', e);
@@ -2942,21 +2975,32 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/resend', passport.authenti
     let pdfUrl = reporter.idCard.pdfUrl;
     if (!pdfUrl) {
       console.log(`⚠️  ID card PDF URL missing for reporter ${id}, regenerating...`);
-      try {
-        const regenerated = await generateAndUploadIdCardPdf(id);
-        if (regenerated.ok && regenerated.pdfUrl) {
-          pdfUrl = regenerated.pdfUrl;
-          console.log(`✓ PDF regenerated successfully: ${pdfUrl}`);
-        } else {
-          console.error('PDF regeneration returned error:', regenerated.error);
-          return res.status(500).json({ 
-            error: 'ID card PDF not found and regeneration failed',
-            details: regenerated.error 
-          });
+      if (isBunnyCdnConfigured()) {
+        try {
+          const regenerated = await generateAndUploadIdCardPdf(id);
+          if (regenerated.ok && regenerated.pdfUrl) {
+            pdfUrl = regenerated.pdfUrl;
+            console.log(`✓ PDF regenerated successfully: ${pdfUrl}`);
+            await (prisma as any).reporterIDCard
+              .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
+              .catch(() => null);
+          } else {
+            console.error('PDF regeneration returned error:', regenerated.error);
+            return res.status(500).json({
+              error: 'ID card PDF not found and regeneration failed',
+              details: regenerated.error,
+            });
+          }
+        } catch (regenerateErr) {
+          console.error('Failed to regenerate PDF:', regenerateErr);
+          return res.status(500).json({ error: 'ID card PDF not found and regeneration failed' });
         }
-      } catch (regenerateErr) {
-        console.error('Failed to regenerate PDF:', regenerateErr);
-        return res.status(500).json({ error: 'ID card PDF not found and regeneration failed' });
+      } else {
+        const baseUrl = await resolveTenantBaseUrl(req, tenantId);
+        pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
+        await (prisma as any).reporterIDCard
+          .update({ where: { id: reporter.idCard.id }, data: { pdfUrl } })
+          .catch(() => null);
       }
     }
 
@@ -3104,8 +3148,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     });
 
     // Generate PDF and send via WhatsApp
-    const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-    let pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${id}`;
+    let pdfUrl: string | null = null;
 
     if (isBunnyCdnConfigured()) {
       try {
@@ -3127,6 +3170,16 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       } catch (e) {
         console.error('[ID Card] Regenerate - PDF generation error:', e);
       }
+    }
+
+    // If Bunny isn't configured or PDF generation/upload failed, fall back to our public PDF endpoint.
+    // (This generates on-demand; we forceRender to avoid trying to re-fetch stored URLs.)
+    if (!pdfUrl) {
+      const baseUrl = await resolveTenantBaseUrl(req, tenantId);
+      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
+      await (prisma as any).reporterIDCard
+        .update({ where: { id: idCard.id }, data: { pdfUrl } })
+        .catch(() => null);
     }
 
     res.status(200).json({

@@ -36,9 +36,9 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       tenant: { include: { entity: true, idCardSettings: true } },
       designation: true,
       state: true,
-      district: true,
-      mandal: true,
-      assemblyConstituency: true,
+      district: { include: { state: true } },
+      mandal: { include: { district: { include: { state: true } } } },
+      assemblyConstituency: { include: { district: { include: { state: true } } } },
     }
   });
 
@@ -48,16 +48,26 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   const entity = reporter.tenant?.entity;
   const profile = reporter.user?.profile;
 
-  async function resolveLocationPartsFromFlexibleId(flexibleId: string): Promise<string[]> {
+  const reporterLevel = String(reporter.level || '').toUpperCase();
+  const includeMandalInWorkPlace = reporterLevel === 'MANDAL';
+
+  async function resolveLocationPartsFromFlexibleId(
+    flexibleId: string,
+    opts?: { includeSelectedName?: boolean }
+  ): Promise<string[]> {
     const id = String(flexibleId || '').trim();
     if (!id) return [];
+    const includeSelectedName = opts?.includeSelectedName !== false;
 
     // Try Mandal
     const mandal = await (prisma as any).mandal
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (mandal?.name) {
-      const parts = [mandal.name];
+      const parts: string[] = [];
+      if (includeSelectedName && (includeMandalInWorkPlace || reporterLevel === 'CONSTITUENCY')) {
+        parts.push(mandal.name);
+      }
       if (mandal.district?.name) parts.push(mandal.district.name);
       if (mandal.district?.state?.name) parts.push(mandal.district.state.name);
       return parts;
@@ -68,7 +78,10 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
       .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
       .catch(() => null);
     if (assembly?.name) {
-      const parts = [assembly.name];
+      const parts: string[] = [];
+      if (includeSelectedName && (reporterLevel === 'ASSEMBLY' || reporterLevel === 'CONSTITUENCY')) {
+        parts.push(assembly.name);
+      }
       if (assembly.district?.name) parts.push(assembly.district.name);
       if (assembly.district?.state?.name) parts.push(assembly.district.state.name);
       return parts;
@@ -97,19 +110,42 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   const designationName = reporter.designation?.name || 'Reporter';
   const designationNativeName = reporter.designation?.nativeName || null;
 
-  if (reporter.mandal?.name) {
-    locationParts.push(reporter.mandal.name);
-    if (reporter.district?.name) locationParts.push(reporter.district.name);
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (reporter.assemblyConstituency?.name) {
+  const derivedDistrict =
+    reporter.district ||
+    reporter.mandal?.district ||
+    reporter.assemblyConstituency?.district ||
+    null;
+
+  const derivedState =
+    reporter.state ||
+    (derivedDistrict as any)?.state ||
+    reporter.mandal?.district?.state ||
+    reporter.assemblyConstituency?.district?.state ||
+    null;
+
+  // Work Place rule:
+  // - MANDAL level: Mandal, District, State
+  // - CONSTITUENCY level: show selected `constituencyId` location name (mandal/assembly/district/state)
+  // - ASSEMBLY level: Assembly, District, State
+  // - All other levels: District, State
+  if (reporterLevel === 'CONSTITUENCY' && (reporter as any).constituencyId) {
+    const parts = await resolveLocationPartsFromFlexibleId(String((reporter as any).constituencyId), {
+      includeSelectedName: true
+    });
+    if (parts.length) locationParts.push(...parts);
+  } else if (reporterLevel === 'ASSEMBLY' && reporter.assemblyConstituency?.name) {
     locationParts.push(reporter.assemblyConstituency.name);
-    if (reporter.district?.name) locationParts.push(reporter.district.name);
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (reporter.district?.name) {
-    locationParts.push(reporter.district.name);
-    if (reporter.state?.name) locationParts.push(reporter.state.name);
-  } else if (reporter.state?.name) {
-    locationParts.push(reporter.state.name);
+    if (derivedDistrict?.name) locationParts.push(derivedDistrict.name);
+    if (derivedState?.name) locationParts.push(derivedState.name);
+  } else if (includeMandalInWorkPlace && reporter.mandal?.name) {
+    locationParts.push(reporter.mandal.name);
+    if (derivedDistrict?.name) locationParts.push(derivedDistrict.name);
+    if (derivedState?.name) locationParts.push(derivedState.name);
+  } else if (derivedDistrict?.name) {
+    locationParts.push(derivedDistrict.name);
+    if (derivedState?.name) locationParts.push(derivedState.name);
+  } else if (derivedState?.name) {
+    locationParts.push(derivedState.name);
   }
 
   let workplaceLocation = locationParts.join(', ').replace(/\s+/g, ' ').trim();
@@ -118,12 +154,11 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
   // of Mandal/Assembly/District/State (even if the legacy *_Id fields are empty).
   if (!workplaceLocation) {
     const fallbackIds = [
-      (reporter as any).constituencyId,
       (reporter as any).divisionId,
     ].filter(Boolean);
 
     for (const fid of fallbackIds) {
-      const parts = await resolveLocationPartsFromFlexibleId(String(fid));
+      const parts = await resolveLocationPartsFromFlexibleId(String(fid), { includeSelectedName: true });
       if (parts.length) {
         workplaceLocation = parts.join(', ').replace(/\s+/g, ' ').trim();
         break;
@@ -697,8 +732,10 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
     const pdfBuffer = await generatePdfBuffer(html);
 
     // 5. Upload to Bunny CDN
-    const key = `id-cards/${reporterId}_${data.reporter.cardNumber}.pdf`;
-    const pdfUrl = await bunnyStoragePutObject({
+    // Always include a unique suffix to avoid CDN caching collisions (even if cardNumber repeats).
+    const unique = Date.now();
+    const key = `id-cards/${reporterId}_${data.reporter.cardNumber}_${unique}.pdf`;
+    const { publicUrl: pdfUrl } = await bunnyStoragePutObject({
       key,
       body: pdfBuffer,
       contentType: 'application/pdf',

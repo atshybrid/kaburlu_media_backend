@@ -86,7 +86,11 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
     include: {
       idCard: true,
       designation: true,
-      user: true
+      user: true,
+      state: true,
+      district: { include: { state: true } },
+      mandal: { include: { district: { include: { state: true } } } },
+      assemblyConstituency: { include: { district: { include: { state: true } } } },
     }
   });
   if (!reporter || !reporter.idCard) return null;
@@ -98,41 +102,102 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
   const anyDomainRec = primaryDomainRec || await (prisma as any).domain.findFirst({ where: { tenantId: reporter.tenantId, status: 'ACTIVE' } }).catch(()=>null);
   const domainBase = anyDomainRec?.domain ? `https://${anyDomainRec.domain}` : null;
 
-  // Resolve place of work names based on what is selected (mandal/assembly/district/state)
-  // RC In-charge / Constituency designations often pick either mandal or district; show whichever is available.
-  let placeOfWork: string | null = null;
-  const stateName = reporter.stateId
-    ? await (prisma as any).state.findUnique({ where: { id: reporter.stateId } }).then((s: any) => s?.name || null).catch(() => null)
-    : null;
-  const districtName = reporter.districtId
-    ? await (prisma as any).district.findUnique({ where: { id: reporter.districtId } }).then((d: any) => d?.name || null).catch(() => null)
-    : null;
-  const mandalName = reporter.mandalId
-    ? await (prisma as any).mandal.findUnique({ where: { id: reporter.mandalId } }).then((m: any) => m?.name || null).catch(() => null)
-    : null;
-  const assemblyName = reporter.assemblyConstituencyId
-    ? await (prisma as any).assemblyConstituency
-        .findUnique({ where: { id: reporter.assemblyConstituencyId } })
-        .then((a: any) => a?.name || null)
-        .catch(() => null)
-    : null;
+  // Resolve place of work based on selected location.
+  // Rule (aligned with locked PDF):
+  // - MANDAL level: Mandal, District, State
+  // - CONSTITUENCY level: resolve `constituencyId` and show its location name (+ district/state when applicable)
+  // - ASSEMBLY level: Assembly, District, State
+  // - Others: District, State
+  const reporterLevel = String((reporter as any).level || '').toUpperCase();
+  const includeMandalInWorkPlace = reporterLevel === 'MANDAL';
+
+  const derivedDistrict =
+    (reporter as any).district ||
+    (reporter as any).mandal?.district ||
+    (reporter as any).assemblyConstituency?.district ||
+    null;
+
+  const derivedState =
+    (reporter as any).state ||
+    (derivedDistrict as any)?.state ||
+    (reporter as any).mandal?.district?.state ||
+    (reporter as any).assemblyConstituency?.district?.state ||
+    null;
+
+  async function resolveLocationPartsFromFlexibleId(flexibleId: string): Promise<string[]> {
+    const id = String(flexibleId || '').trim();
+    if (!id) return [];
+
+    const mandal = await (prisma as any).mandal
+      .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
+      .catch(() => null);
+    if (mandal?.name) {
+      const parts: string[] = [];
+      if (includeMandalInWorkPlace || reporterLevel === 'CONSTITUENCY') parts.push(mandal.name);
+      if (mandal.district?.name) parts.push(mandal.district.name);
+      if (mandal.district?.state?.name) parts.push(mandal.district.state.name);
+      return parts;
+    }
+
+    const assembly = await (prisma as any).assemblyConstituency
+      .findUnique({ where: { id }, include: { district: { include: { state: true } } } })
+      .catch(() => null);
+    if (assembly?.name) {
+      const parts: string[] = [];
+      if (reporterLevel === 'ASSEMBLY' || reporterLevel === 'CONSTITUENCY') parts.push(assembly.name);
+      if (assembly.district?.name) parts.push(assembly.district.name);
+      if (assembly.district?.state?.name) parts.push(assembly.district.state.name);
+      return parts;
+    }
+
+    const district = await (prisma as any).district
+      .findUnique({ where: { id }, include: { state: true } })
+      .catch(() => null);
+    if (district?.name) {
+      const parts = [district.name];
+      if (district.state?.name) parts.push(district.state.name);
+      return parts;
+    }
+
+    const state = await (prisma as any).state.findUnique({ where: { id } }).catch(() => null);
+    if (state?.name) return [state.name];
+
+    return [];
+  }
 
   const parts: string[] = [];
-  if (mandalName) {
-    parts.push(mandalName);
-    if (districtName) parts.push(districtName);
-    if (stateName) parts.push(stateName);
-  } else if (assemblyName) {
-    parts.push(assemblyName);
-    if (districtName) parts.push(districtName);
-    if (stateName) parts.push(stateName);
-  } else if (districtName) {
-    parts.push(districtName);
-    if (stateName) parts.push(stateName);
-  } else if (stateName) {
-    parts.push(stateName);
+  if (reporterLevel === 'CONSTITUENCY' && (reporter as any).constituencyId) {
+    const resolved = await resolveLocationPartsFromFlexibleId(String((reporter as any).constituencyId));
+    if (resolved.length) parts.push(...resolved);
+  } else if (reporterLevel === 'ASSEMBLY' && (reporter as any).assemblyConstituency?.name) {
+    parts.push((reporter as any).assemblyConstituency.name);
+    if (derivedDistrict?.name) parts.push(derivedDistrict.name);
+    if (derivedState?.name) parts.push(derivedState.name);
+  } else if (includeMandalInWorkPlace && (reporter as any).mandal?.name) {
+    parts.push((reporter as any).mandal.name);
+    if (derivedDistrict?.name) parts.push(derivedDistrict.name);
+    if (derivedState?.name) parts.push(derivedState.name);
+  } else if (derivedDistrict?.name) {
+    parts.push(derivedDistrict.name);
+    if (derivedState?.name) parts.push(derivedState.name);
+  } else if (derivedState?.name) {
+    parts.push(derivedState.name);
   }
-  placeOfWork = parts.length ? parts.join(', ') : null;
+
+  let placeOfWork: string | null = parts.join(', ').replace(/\s+/g, ' ').trim() || null;
+
+  // Fallback for newer hierarchy fields that may contain IDs of Mandal/Assembly/District/State
+  // even if legacy relations are empty.
+  if (!placeOfWork) {
+    const fallbackIds = [(reporter as any).divisionId].filter(Boolean);
+    for (const fid of fallbackIds) {
+      const resolvedParts = await resolveLocationPartsFromFlexibleId(String(fid));
+      if (resolvedParts.length) {
+        placeOfWork = resolvedParts.join(', ').replace(/\s+/g, ' ').trim() || null;
+        break;
+      }
+    }
+  }
 
   // Prefer reporter.profilePhotoUrl; else try UserProfile.profilePhotoUrl
   let photoUrl: string | null = reporter.profilePhotoUrl || null;
@@ -607,6 +672,7 @@ router.get('/json', async (req, res) => {
     const reporterId = req.query.reporterId ? String(req.query.reporterId) : undefined;
     const mobile = req.query.mobile ? String(req.query.mobile) : undefined;
     const fullName = req.query.fullName ? String(req.query.fullName) : undefined;
+    const debug = ['1', 'true', 'yes'].includes(String(req.query.debug || '').toLowerCase());
     if (!reporterId && !mobile && !fullName) {
       return res.status(400).json({ error: 'Provide reporterId or mobile or fullName' });
     }
@@ -624,7 +690,22 @@ router.get('/json', async (req, res) => {
       primaryColor: data.tenant.primaryColor || '#153e82',
       frontLogoUrl: data.tenant.frontLogoUrl || null,
       qrTargetUrl,
-      qrCodeUrl
+      qrCodeUrl,
+      ...(debug
+        ? {
+            debugReporter: {
+              id: reporter.id,
+              level: (reporter as any).level || null,
+              tenantId: (reporter as any).tenantId || null,
+              stateId: (reporter as any).stateId || null,
+              districtId: (reporter as any).districtId || null,
+              mandalId: (reporter as any).mandalId || null,
+              assemblyConstituencyId: (reporter as any).assemblyConstituencyId || null,
+              constituencyId: (reporter as any).constituencyId || null,
+              divisionId: (reporter as any).divisionId || null,
+            }
+          }
+        : null)
     };
     res.json(out);
   } catch (e) {
@@ -750,14 +831,14 @@ router.get('/pdf', async (req, res) => {
       }
     }
 
-    // 2) Fallback: generate on the fly with PDFKit (no Chromium dependencies)
+    // 2) Fallback: generate on the fly using the locked Puppeteer template
     const result = await generateIdCardPdfBuffer(reporter.id);
-    if (!result.ok) {
+    if (!result.ok || !result.pdfBuffer) {
       return res.status(500).json({ error: result.error || 'Failed to generate PDF' });
     }
 
     const pdfBuffer = result.pdfBuffer;
-    const fileName = `ID_CARD_${result.cardNumber}.pdf`;
+    const fileName = `ID_CARD_${result.cardNumber || reporter.id}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', pdfBuffer.length.toString());
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
