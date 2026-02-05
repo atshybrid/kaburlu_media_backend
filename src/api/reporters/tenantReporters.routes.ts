@@ -3054,7 +3054,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     if (keepCardNumber && previousCardNumber) {
       cardNumber = previousCardNumber;
     } else {
-      const existingCount = await (prisma as any).reporterIDCard.count({ where: { tenantId } });
+      const existingCount = await (prisma as any).reporterIDCard.count();
       const prefix = settings.cardNumberPrefix || 'KT';
       const now = new Date();
       const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
