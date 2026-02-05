@@ -634,7 +634,7 @@ export async function generateAndUploadIdCardPdf(reporterId: string): Promise<Id
     const html = buildIdCardHtml(data);
 
     // 4. Generate PDF with Puppeteer
-    const pdfBuffer = await generatePdfWithPuppeteer(html);
+    const pdfBuffer = await generatePdfBuffer(html);
 
     // 5. Upload to Bunny CDN
     const key = `id-cards/${reporterId}_${data.reporter.cardNumber}.pdf`;
@@ -688,7 +688,7 @@ export async function generateIdCardPdfBuffer(reporterId: string): Promise<{ok: 
     const html = buildIdCardHtml(data);
 
     // 4. Generate PDF buffer with Puppeteer
-    const pdfBuffer = await generatePdfWithPuppeteer(html);
+    const pdfBuffer = await generatePdfBuffer(html);
 
     return {
       ok: true,
