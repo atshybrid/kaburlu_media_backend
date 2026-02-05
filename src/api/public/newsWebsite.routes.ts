@@ -2439,35 +2439,59 @@ router.get('/homepage/smart', async (req, res) => {
       const storedStyle1 = isPlainObject(homepageConfig.style1Layout) ? homepageConfig.style1Layout : null;
       let layoutSections = storedStyle1?.sections || [];
 
-      // SMART FALLBACK: Auto-generate sections if none configured
+      // SMART FALLBACK: Auto-generate sections matching Style1 frontend requirements
+      // Style1 needs: Ticker (10-12), Hero (30 articles in 4 columns), Categories (4×5=20)
       if (layoutSections.length === 0) {
         layoutSections = [
           {
-            id: 'auto-flash',
-            key: 'flashTicker',
+            id: 'auto-ticker',
+            key: 'ticker',
             name: 'Breaking News',
             isActive: true,
-            config: { articlesLimit: 15 }
+            config: { articlesLimit: 12 }
+          },
+          {
+            id: 'auto-latest',
+            key: 'latest',
+            name: 'Latest News',
+            isActive: true,
+            config: { articlesLimit: 20 }
+          },
+          {
+            id: 'auto-mustread',
+            key: 'mustRead',
+            name: 'Must Read',
+            isActive: true,
+            config: { articlesLimit: 10 }
+          },
+          {
+            id: 'auto-trending',
+            key: 'trending',
+            name: 'Top Articles',
+            isActive: true,
+            config: { articlesLimit: 10 }
           },
           {
             id: 'auto-hero',
-            key: 'heroSection',
-            name: 'Top Stories',
+            key: 'hero',
+            name: 'Hero Section',
             isActive: true,
             layout: {
               columns: [
-                { key: 'main', position: 1, name: 'Featured', label: 'Featured Stories', articlesLimit: 6 }
+                { key: 'heroLead', position: 1, name: 'Hero Lead', articlesLimit: 1 },
+                { key: 'heroGrid', position: 2, name: 'Hero Grid', articlesLimit: 13 }
               ]
             }
           },
           {
             id: 'auto-categories',
-            key: 'categorySection',
-            name: 'Categories',
+            key: 'categories',
+            name: 'Category Sections',
             isActive: true,
             config: {
-              categories: ['national', 'state', 'politics', 'entertainment', 'sports', 'business', 'technology'],
-              articlesPerCategory: 5
+              categories: ['national', 'politics', 'entertainment', 'sports', 'business', 'technology', 'education', 'health'],
+              articlesPerCategory: 5,
+              maxCategories: 4
             }
           }
         ];
@@ -2491,19 +2515,181 @@ router.get('/homepage/smart', async (req, res) => {
           continue;
         }
 
-        // FLASH TICKER
-        if (sectionKey === 'flashTicker') {
+        // TICKER (Breaking News - 10-12 articles)
+        if (sectionKey === 'ticker') {
           const limit = sectionConfig.articlesLimit || 12;
           const articles = await p.tenantWebArticle.findMany({
             where: articleWhere,
-            orderBy: { [sortBy]: 'desc' },
+            orderBy: { publishedAt: 'desc' }, // Always latest for ticker
             take: limit,
             select: articleSelect
           });
 
           sections.push({
             id: section.id,
-            key: sectionKey,
+            key: 'ticker',
+            name: section.name || 'Breaking News',
+            visible: articles.length > 0,
+            limit,
+            articles
+          });
+        }
+
+        // LATEST NEWS (Top 20 latest articles)
+        else if (sectionKey === 'latest') {
+          const limit = sectionConfig.articlesLimit || 20;
+          const articles = await p.tenantWebArticle.findMany({
+            where: articleWhere,
+            orderBy: { publishedAt: 'desc' },
+            take: limit,
+            select: articleSelect
+          });
+
+          sections.push({
+            id: section.id,
+            key: 'latest',
+            name: section.name || 'Latest News',
+            visible: articles.length > 0,
+            limit,
+            articles
+          });
+        }
+
+        // MUST READ (Top 10 most viewed articles)
+        else if (sectionKey === 'mustRead') {
+          const limit = sectionConfig.articlesLimit || 10;
+          const articles = await p.tenantWebArticle.findMany({
+            where: articleWhere,
+            orderBy: { viewCount: 'desc' },
+            take: limit,
+            select: articleSelect
+          });
+
+          sections.push({
+            id: section.id,
+            key: 'mustRead',
+            name: section.name || 'Must Read',
+            visible: articles.length > 0,
+            limit,
+            articles
+          });
+        }
+
+        // TRENDING (Top 10 trending articles)
+        else if (sectionKey === 'trending') {
+          const limit = sectionConfig.articlesLimit || 10;
+          const articles = await p.tenantWebArticle.findMany({
+            where: articleWhere,
+            orderBy: [
+              { viewCount: 'desc' },
+              { publishedAt: 'desc' }
+            ],
+            take: limit,
+            select: articleSelect
+          });
+
+          sections.push({
+            id: section.id,
+            key: 'trending',
+            name: section.name || 'Top Articles',
+            visible: articles.length > 0,
+            limit,
+            articles
+          });
+        }
+
+        // HERO SECTION (Main featured articles with layout columns)
+        else if (sectionKey === 'hero') {
+          const columns = section.layout?.columns || [];
+          const heroColumns: any[] = [];
+
+          for (const col of columns) {
+            const colLimit = col.articlesLimit || 6;
+            const colArticles = await p.tenantWebArticle.findMany({
+              where: articleWhere,
+              orderBy: { [sortBy]: 'desc' },
+              take: colLimit,
+              select: articleSelect
+            });
+
+            heroColumns.push({
+              key: col.key,
+              position: col.position,
+              name: col.name,
+              limit: colLimit,
+              articles: colArticles
+            });
+          }
+
+          sections.push({
+            id: section.id,
+            key: 'hero',
+            name: section.name || 'Hero Section',
+            visible: heroColumns.some(c => c.articles.length > 0),
+            columns: heroColumns
+          });
+        }
+
+        // CATEGORIES (Category-wise article sections)
+        else if (sectionKey === 'categories') {
+          const categorySlugs = sectionConfig.categories || ['national', 'entertainment', 'politics', 'sports'];
+          const articlesPerCategory = sectionConfig.articlesPerCategory || 5;
+          const maxCategories = sectionConfig.maxCategories || 10; // Limit total categories shown
+          const categoryData: any[] = [];
+
+          let processedCount = 0;
+          for (const slug of categorySlugs) {
+            if (processedCount >= maxCategories) break;
+            
+            const category = categoryMap.get(slug);
+            if (!category) {
+              continue; // Skip missing categories silently
+            }
+
+            const catArticles = await p.tenantWebArticle.findMany({
+              where: { ...articleWhere, categoryId: category.id },
+              orderBy: { [sortBy]: 'desc' },
+              take: articlesPerCategory,
+              select: articleSelect
+            });
+
+            if (catArticles.length > 0) {
+              categoryData.push({
+                slug: category.slug,
+                name: category.name,
+                visible: true,
+                articlesLimit: articlesPerCategory,
+                articles: catArticles
+              });
+              processedCount++;
+            }
+          }
+
+          sections.push({
+            id: section.id,
+            key: 'categories',
+            name: section.name || 'Category Sections',
+            visible: categoryData.length > 0,
+            categoriesShown: categoryData.length,
+            categoriesTotal: categorySlugs.length,
+            articlesPerCategory,
+            categories: categoryData
+          });
+        }
+
+        // FLASH TICKER (Legacy - same as ticker)
+        else if (sectionKey === 'flashTicker') {
+          const limit = sectionConfig.articlesLimit || 12;
+          const articles = await p.tenantWebArticle.findMany({
+            where: articleWhere,
+            orderBy: { publishedAt: 'desc' },
+            take: limit,
+            select: articleSelect
+          });
+
+          sections.push({
+            id: section.id,
+            key: 'flashTicker',
             name: section.name,
             visible: articles.length > 0,
             limit,
@@ -2512,7 +2698,7 @@ router.get('/homepage/smart', async (req, res) => {
           });
         }
 
-        // HERO SECTION
+        // HERO SECTION (Legacy)
         else if (sectionKey === 'heroSection') {
           const columns = section.layout?.columns || [];
           const heroColumns: any[] = [];
@@ -2545,7 +2731,7 @@ router.get('/homepage/smart', async (req, res) => {
           });
         }
 
-        // CATEGORY SECTION
+        // CATEGORY SECTION (Legacy)
         else if (sectionKey === 'categorySection') {
           const categorySlugs = sectionConfig.categories || ['national', 'entertainment', 'politics', 'sports'];
           const articlesPerCategory = sectionConfig.articlesPerCategory || 5;
