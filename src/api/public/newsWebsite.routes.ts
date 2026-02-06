@@ -3169,7 +3169,7 @@ router.get('/homepage/smart', async (req, res) => {
  *       404:
  *         description: Article not found
  */
-router.get('/articles/:slug', async (req, res) => {
+router.get('/articles/:slug', async (req, res, next) => {
   const tenant = (res.locals as any).tenant;
   const domain = (res.locals as any).domain;
   
@@ -3182,6 +3182,22 @@ router.get('/articles/:slug', async (req, res) => {
 
   try {
     const { slug } = req.params;
+
+    // Avoid swallowing known static endpoints mounted on the parent router.
+    // Example: /api/v1/public/articles/trending was being treated as slug="trending".
+    const reserved = new Set([
+      'home',
+      'latest',
+      'must-read',
+      'related',
+      'trending',
+      'by-location',
+      'by-category',
+      'page-layout',
+    ]);
+    if (reserved.has(String(slug).toLowerCase())) {
+      return next();
+    }
 
     // Fetch article with all relations
     const article = await p.tenantWebArticle.findFirst({

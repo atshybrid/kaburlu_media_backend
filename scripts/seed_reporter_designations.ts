@@ -14,8 +14,8 @@ const p: any = prisma;
 
 // Default designation set (global). This script seeds ONLY tenantId=null rows
 // so all tenants can use the same designations.
-// Only use levels defined in ReporterLevel enum: STATE | DISTRICT | ASSEMBLY | MANDAL
-const defaults: { level: 'STATE' | 'DISTRICT' | 'ASSEMBLY' | 'MANDAL'; code: string; name: string }[] = [
+// Levels defined in ReporterLevel enum: STATE | DISTRICT | DIVISION | CONSTITUENCY | ASSEMBLY | MANDAL
+const defaults: { level: 'STATE' | 'DISTRICT' | 'DIVISION' | 'CONSTITUENCY' | 'ASSEMBLY' | 'MANDAL'; code: string; name: string }[] = [
   // --- STATE LEVEL ---
   { level: 'STATE', code: 'EDITOR_IN_CHIEF', name: 'Editor-in-Chief' },
   { level: 'STATE', code: 'STATE_EDITOR', name: 'State Editor' },
@@ -39,6 +39,12 @@ const defaults: { level: 'STATE' | 'DISTRICT' | 'ASSEMBLY' | 'MANDAL'; code: str
   { level: 'DISTRICT', code: 'DISTRICT_SPECIAL_CORRESPONDENT', name: 'District Special Correspondent' },
   { level: 'DISTRICT', code: 'DISTRICT_STRINGER', name: 'District Stringer' },
   { level: 'DISTRICT', code: 'DISTRICT_PHOTO_JOURNALIST', name: 'District Photo Journalist' },
+
+  // --- DIVISION LEVEL (RC / division scope) ---
+  { level: 'DIVISION', code: 'RC_INCHARGE', name: 'RC In-charge' },
+
+  // --- CONSTITUENCY LEVEL ---
+  { level: 'CONSTITUENCY', code: 'CONSTITUENCY_REPORTER', name: 'Constituency Reporter' },
 
   // --- ASSEMBLY CONSTITUENCY LEVEL ---
   { level: 'ASSEMBLY', code: 'ASSEMBLY_CONSTITUENCY_REPORTER', name: 'Assembly Constituency Reporter' },

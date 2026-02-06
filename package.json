@@ -56,6 +56,7 @@
     "prod:pm2:delete": "npx pm2 delete ecosystem.config.cjs",
     "prod:pm2:logs": "npx pm2 logs",
     "prompts:web": "ts-node scripts/update_web_prompt.ts",
+    "prompts:newsroom": "ts-node scripts/update_newsroom_ai_agent_prompt.ts",
     "postinstall": "prisma generate"
   },
   "engines": {

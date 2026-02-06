@@ -3,9 +3,67 @@ import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { requireSuperAdmin } from '../middlewares/authz';
 import bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
+
+function toPrismaSafeErrorResponse(e: unknown): { status: number; body: any } | null {
+  if (e instanceof Prisma.PrismaClientKnownRequestError) {
+    if (e.code === 'P2002') {
+      const target = (e.meta as any)?.target;
+      const targetText = Array.isArray(target) ? target.join(', ') : target;
+      return {
+        status: 409,
+        body: {
+          error: 'Conflict - duplicate record',
+          code: e.code,
+          details: targetText ? { target: targetText } : e.meta,
+        },
+      };
+    }
+
+    if (e.code === 'P2003') {
+      return {
+        status: 400,
+        body: {
+          error: 'Invalid reference (foreign key constraint)',
+          code: e.code,
+          details: e.meta,
+        },
+      };
+    }
+
+    if (e.code === 'P2025') {
+      return {
+        status: 404,
+        body: {
+          error: 'Record not found',
+          code: e.code,
+          details: e.meta,
+        },
+      };
+    }
+  }
+
+  // Prisma validation errors (shape differs by Prisma version)
+  const anyErr = e as any;
+  if (anyErr?.name === 'PrismaClientValidationError') {
+    const exposeDetails =
+      process.env.EXPOSE_API_ERROR_DETAILS === 'true' || process.env.NODE_ENV !== 'production';
+    return {
+      status: 400,
+      body: {
+        error: 'Validation error',
+        ...(exposeDetails
+          ? { details: typeof anyErr?.message === 'string' ? anyErr.message : String(anyErr) }
+          : {}),
+      },
+    };
+  }
+
+  return null;
+}
 
 /**
  * @swagger
@@ -538,6 +596,16 @@ router.post('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, re
     const cleanMobile = String(mobileNumber).replace(/\D/g, '');
     if (cleanMobile.length < 10) return res.status(400).json({ error: 'Invalid mobile number' });
 
+    const cleanFullName = String(fullName).trim();
+    if (cleanFullName.length < 2) return res.status(400).json({ error: 'fullName is too short' });
+
+    if (mpin != null) {
+      const mpinStr = String(mpin).trim();
+      if (!/^\d{4,8}$/.test(mpinStr)) {
+        return res.status(400).json({ error: 'mpin must be 4-8 digits' });
+      }
+    }
+
     // Check tenant exists
     const tenant = await (prisma as any).tenant.findUnique({
       where: { id: tenantId },
@@ -566,9 +634,13 @@ router.post('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, re
       console.log('[Admin] Created TENANT_ADMIN role:', role.id);
     }
 
-    // Get default language
-    const language = await (prisma as any).language.findFirst({ where: { isDefault: true } }) ||
-                     await (prisma as any).language.findFirst();
+    // Pick a default language (schema has no isDefault)
+    const preferredLangCode = String(process.env.DEFAULT_LANGUAGE_CODE || 'te').trim();
+    const language =
+      (await (prisma as any).language.findFirst({ where: { code: preferredLangCode, isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst({ where: { code: 'en', isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst({ where: { isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst());
 
     // Get state (from param or tenant's first reporter's state)
     let state = null;
@@ -651,13 +723,13 @@ router.post('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, re
       profile = await (prisma as any).userProfile.create({
         data: {
           userId: user.id,
-          fullName: String(fullName).trim(),
+          fullName: cleanFullName,
         }
       });
     } else {
       profile = await (prisma as any).userProfile.update({
         where: { userId: user.id },
-        data: { fullName: String(fullName).trim() }
+        data: { fullName: cleanFullName }
       });
     }
 
@@ -674,7 +746,7 @@ router.post('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, re
         // Tenant Admin: no login restrictions
         manualLoginEnabled: false,
         manualLoginDays: null,
-        manualLoginEndsAt: null,
+        manualLoginExpiresAt: null,
       }
     });
 
@@ -710,9 +782,8 @@ router.post('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, re
     });
   } catch (e: any) {
     console.error('create tenant admin error', e);
-    if (e.code === 'P2002') {
-      return res.status(409).json({ error: 'User or reporter already exists', details: e.meta });
-    }
+    const mapped = toPrismaSafeErrorResponse(e);
+    if (mapped) return res.status(mapped.status).json(mapped.body);
     res.status(500).json({ error: 'Failed to create tenant admin' });
   }
 });
@@ -894,9 +965,13 @@ router.put('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, res
       });
     }
 
-    // Get default language
-    const language = await (prisma as any).language.findFirst({ where: { isDefault: true } }) ||
-                     await (prisma as any).language.findFirst();
+    // Pick a default language (schema has no isDefault)
+    const preferredLangCode = String(process.env.DEFAULT_LANGUAGE_CODE || 'te').trim();
+    const language =
+      (await (prisma as any).language.findFirst({ where: { code: preferredLangCode, isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst({ where: { code: 'en', isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst({ where: { isDeleted: false } })) ||
+      (await (prisma as any).language.findFirst());
 
     // Get state
     let state = null;
@@ -994,7 +1069,7 @@ router.put('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, res
           // Tenant Admin: no login restrictions
           manualLoginEnabled: false,
           manualLoginDays: null,
-          manualLoginEndsAt: null,
+          manualLoginExpiresAt: null,
           designationId: designation?.id || reporter.designationId,
         }
       });
@@ -1013,7 +1088,7 @@ router.put('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, res
           // Tenant Admin: no login restrictions
           manualLoginEnabled: false,
           manualLoginDays: null,
-          manualLoginEndsAt: null,
+          manualLoginExpiresAt: null,
         }
       });
       if (action === 'updated') action = 'linked';
@@ -1057,9 +1132,8 @@ router.put('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, res
     });
   } catch (e: any) {
     console.error('upsert tenant admin error', e);
-    if (e.code === 'P2002') {
-      return res.status(409).json({ error: 'Conflict - duplicate record', details: e.meta });
-    }
+    const mapped = toPrismaSafeErrorResponse(e);
+    if (mapped) return res.status(mapped.status).json(mapped.body);
     res.status(500).json({ error: 'Failed to upsert tenant admin' });
   }
 });

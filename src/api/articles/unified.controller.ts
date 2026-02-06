@@ -35,6 +35,44 @@ function isHttpUrl(u: any): boolean {
   return Boolean(s) && /^https?:\/\//i.test(s);
 }
 
+function toPositiveIntOrNull(v: any): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.trunc(n);
+  return i > 0 ? i : null;
+}
+
+function buildImagePlacementPlan(images: any[], aiMeta: any | null): Array<{ url: string; caption: string | null; alt: string | null; afterParagraph: number | null }> {
+  if (!Array.isArray(images) || images.length === 0) return [];
+
+  const mustPhotos: any[] = Array.isArray(aiMeta?.media_requirements?.must_photos)
+    ? aiMeta.media_requirements.must_photos
+    : [];
+
+  return images
+    .map((img: any, idx: number) => {
+      const url = String(img?.url || '').trim();
+      if (!isHttpUrl(url)) return null;
+
+      const directAfter = toPositiveIntOrNull(img?.afterParagraph ?? img?.after_paragraph);
+      const aiAfter = toPositiveIntOrNull(mustPhotos?.[idx]?.after_paragraph ?? mustPhotos?.[idx]?.afterParagraph);
+      const afterParagraph = directAfter ?? aiAfter ?? null;
+
+      const captionFromImage = img?.caption != null ? String(img.caption).trim() : '';
+      const captionFromAi = mustPhotos?.[idx]?.caption_suggestion != null ? String(mustPhotos[idx].caption_suggestion).trim() : '';
+      const caption = (captionFromImage || captionFromAi) ? (captionFromImage || captionFromAi) : null;
+
+      const altFromImage = img?.alt != null ? String(img.alt).trim() : '';
+      const altFromAi = mustPhotos?.[idx]?.alt_text != null
+        ? String(mustPhotos[idx].alt_text).trim()
+        : (mustPhotos?.[idx]?.alt_suggestion?.en != null ? String(mustPhotos[idx].alt_suggestion.en).trim() : '');
+      const alt = (altFromImage || altFromAi) ? (altFromImage || altFromAi) : null;
+
+      return { url, caption, alt, afterParagraph };
+    })
+    .filter(Boolean) as any;
+}
+
 function generateExternalArticleId(seq: number): string {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -127,6 +165,182 @@ async function resolveTenantId(req: Request): Promise<{ tenantId: string | null;
   }
 }
 
+function mapPrismaErrorToHttp(e: unknown): { status: number; body: any } | null {
+  const anyErr: any = e as any;
+  const code = anyErr?.code;
+  const meta = anyErr?.meta;
+
+  if (code === 'P2002') {
+    return { status: 409, body: { error: 'Conflict', details: 'Unique constraint failed', meta } };
+  }
+
+  if (code === 'P2003') {
+    return { status: 400, body: { error: 'Invalid reference', details: 'Foreign key constraint failed', meta } };
+  }
+
+  if (code === 'P2025') {
+    return { status: 404, body: { error: 'Not found', details: anyErr?.message || 'Record not found' } };
+  }
+
+  // Prisma validation error
+  if (anyErr?.name === 'PrismaClientValidationError') {
+    return { status: 400, body: { error: 'Validation error', details: anyErr?.message } };
+  }
+
+  return null;
+}
+
+async function resolveTenantIdFromPayload(user: any, payload: any): Promise<{ tenantId: string | null; error?: string }> {
+  if (!user) return { tenantId: null, error: 'Unauthorized' };
+
+  const roleName = String(user?.role?.name || '').toUpperCase();
+  const payloadTenantId = payload?.tenantId || payload?.baseArticle?.publisher?.tenantId;
+
+  if (roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN') {
+    if (!payloadTenantId) {
+      return { tenantId: null, error: 'SUPER_ADMIN must provide tenantId in payload' };
+    }
+    return { tenantId: String(payloadTenantId) };
+  }
+
+  if (roleName === 'TENANT_ADMIN' || roleName === 'DESK_EDITOR' || roleName === 'EDITOR') {
+    if (payloadTenantId) {
+      try {
+        const hasAccess = await prisma.reporter.findFirst({
+          where: { userId: user.id, tenantId: String(payloadTenantId) }
+        });
+        if (hasAccess) return { tenantId: String(payloadTenantId) };
+      } catch (e) {
+        console.error('[UnifiedArticle] Error checking reporter access:', e);
+      }
+      return { tenantId: String(payloadTenantId) };
+    }
+
+    try {
+      const reporter = await prisma.reporter.findFirst({
+        where: { userId: user.id },
+        select: { tenantId: true }
+      });
+      if (reporter?.tenantId) return { tenantId: reporter.tenantId };
+    } catch (e) {
+      console.error('[UnifiedArticle] Error finding reporter for user:', e);
+    }
+
+    return { tenantId: null, error: `${roleName} not assigned to any tenant` };
+  }
+
+  try {
+    const reporter = await prisma.reporter.findFirst({
+      where: { userId: user.id },
+      select: { tenantId: true }
+    });
+    return { tenantId: reporter?.tenantId || null };
+  } catch (e) {
+    console.error('[UnifiedArticle] Error finding reporter for REPORTER role:', e);
+    return { tenantId: null, error: 'Failed to resolve tenant' };
+  }
+}
+
+async function resolveCategoryIdFromPayload(input: {
+  categoryId?: string | null;
+  categoryName?: string | null;
+  aiDetectedCategory?: string | null;
+  aiSelectedCategoryName?: string | null;
+}): Promise<{ categoryId: string | null; categoryNameUsed: string | null }> {
+  const categoryId = input.categoryId ? String(input.categoryId) : null;
+  if (categoryId) return { categoryId, categoryNameUsed: null };
+
+  const categoryNameCandidate =
+    (input.categoryName && String(input.categoryName).trim()) ||
+    (input.aiSelectedCategoryName && String(input.aiSelectedCategoryName).trim()) ||
+    (input.aiDetectedCategory && String(input.aiDetectedCategory).trim()) ||
+    null;
+
+  if (!categoryNameCandidate) return { categoryId: null, categoryNameUsed: null };
+
+  const found = await prisma.category.findFirst({
+    where: {
+      isDeleted: false,
+      OR: [
+        { name: { equals: categoryNameCandidate, mode: 'insensitive' } },
+        { translations: { some: { name: { equals: categoryNameCandidate, mode: 'insensitive' } } } },
+      ]
+    },
+    select: { id: true, name: true }
+  }).catch(() => null);
+
+  return { categoryId: found?.id || null, categoryNameUsed: found?.name || categoryNameCandidate };
+}
+
+function normalizeUnifiedArticlePayload(input: any): { payload: any; aiMeta: any | null } {
+  const raw = input && typeof input === 'object' ? input : {};
+
+  const aiMetaCandidate = {
+    detected_category: raw.detected_category ?? raw.detectedCategory ?? null,
+    selected_category: raw.selected_category ?? raw.selectedCategory ?? null,
+    media_requirements: raw.media_requirements ?? raw.mediaRequirements ?? null,
+    image_placement_hints: raw.image_placement_hints ?? raw.imagePlacementHints ?? null,
+    internal_evidence: raw.internal_evidence ?? raw.internalEvidence ?? null,
+    status: raw.status ?? null,
+  };
+  const aiMetaHasAny = Object.values(aiMetaCandidate).some(v => v != null);
+  const aiMeta = aiMetaHasAny ? aiMetaCandidate : null;
+
+  const payload: any = { ...raw };
+
+  // Map AI rewrite output keys (snake_case) to unified creation keys (camelCase)
+  if (!payload.printArticle && raw.print_article) {
+    payload.printArticle = {
+      headline: raw.print_article.headline,
+      subtitle: raw.print_article.subtitle ?? null,
+      body: raw.print_article.body,
+      highlights: raw.print_article.highlights ?? null,
+      responses: raw.print_article.responses_or_testimonials ?? null,
+    };
+  }
+
+  if (!payload.webArticle && raw.web_article) {
+    const seoIn = raw.web_article.seo || {};
+    payload.webArticle = {
+      headline: raw.web_article.headline,
+      lead: raw.web_article.lead,
+      body: raw.web_article.body,
+      sections: raw.web_article.sections,
+      seo: {
+        slug: seoIn.slug ?? seoIn.url_slug ?? seoIn.urlSlug,
+        metaTitle: seoIn.metaTitle ?? seoIn.meta_title,
+        metaDescription: seoIn.metaDescription ?? seoIn.meta_description,
+        keywords: seoIn.keywords,
+      },
+    };
+  } else if (payload.webArticle && raw.web_article?.seo && !payload.webArticle.seo) {
+    const seoIn = raw.web_article.seo || {};
+    payload.webArticle.seo = {
+      slug: seoIn.slug ?? seoIn.url_slug ?? seoIn.urlSlug,
+      metaTitle: seoIn.metaTitle ?? seoIn.meta_title,
+      metaDescription: seoIn.metaDescription ?? seoIn.meta_description,
+      keywords: seoIn.keywords,
+    };
+  }
+
+  if (!payload.shortNews && raw.short_mobile_article) {
+    payload.shortNews = {
+      h1: raw.short_mobile_article.h1,
+      h2: raw.short_mobile_article.h2,
+      content: raw.short_mobile_article.body,
+    };
+  }
+
+  // Allow publishControl to be driven by AI status.publish_ready
+  if (!payload.publishControl && raw.status && typeof raw.status === 'object') {
+    if (typeof raw.status.publish_ready === 'boolean') {
+      payload.publishControl = { publishReady: raw.status.publish_ready };
+    }
+  }
+
+  return { payload, aiMeta };
+}
+
 async function resolveDomainId(tenantId: string, payloadDomainId?: string): Promise<{ domainId: string | null; domainName: string | null }> {
   // If domainId provided in payload, use it
   if (payloadDomainId) {
@@ -151,7 +365,7 @@ async function resolveDomainId(tenantId: string, payloadDomainId?: string): Prom
 }
 
 // Build web article HTML content
-function buildWebContentHtml(webArticle: any): string {
+function buildWebContentHtml(webArticle: any, imagePlacementPlan?: Array<{ url: string; caption: string | null; alt: string | null; afterParagraph: number | null }>): string {
   const parts: string[] = [];
   
   if (webArticle.headline) {
@@ -161,6 +375,26 @@ function buildWebContentHtml(webArticle: any): string {
   if (webArticle.lead) {
     parts.push(`<p class="lead">${webArticle.lead}</p>`);
   }
+
+  const plan = Array.isArray(imagePlacementPlan) ? imagePlacementPlan : [];
+  const imagesByAfter: Record<number, Array<{ url: string; caption: string | null; alt: string | null }>> = {};
+  for (const p of plan) {
+    const after = toPositiveIntOrNull(p?.afterParagraph);
+    if (!after) continue;
+    if (!imagesByAfter[after]) imagesByAfter[after] = [];
+    imagesByAfter[after].push({ url: p.url, caption: p.caption ?? null, alt: p.alt ?? null });
+  }
+
+  const pushImagesAfter = (paragraphIndex: number) => {
+    const imgs = imagesByAfter[paragraphIndex];
+    if (!imgs || imgs.length === 0) return;
+    for (const img of imgs) {
+      const alt = img.alt ? ` alt="${img.alt}"` : '';
+      parts.push(`<figure><img src="${img.url}"${alt} loading="lazy"></img>${img.caption ? `<figcaption>${img.caption}</figcaption>` : ''}</figure>`);
+    }
+  };
+
+  let bodyParagraphIndex = 0; // counts ONLY body paragraphs (excludes lead)
   
   if (Array.isArray(webArticle.sections)) {
     for (const section of webArticle.sections) {
@@ -170,12 +404,16 @@ function buildWebContentHtml(webArticle: any): string {
       if (Array.isArray(section.paragraphs)) {
         for (const p of section.paragraphs) {
           parts.push(`<p>${p}</p>`);
+          bodyParagraphIndex += 1;
+          pushImagesAfter(bodyParagraphIndex);
         }
       }
     }
   } else if (Array.isArray(webArticle.body)) {
     for (const p of webArticle.body) {
       parts.push(`<p>${p}</p>`);
+      bodyParagraphIndex += 1;
+      pushImagesAfter(bodyParagraphIndex);
     }
   }
   
@@ -232,7 +470,7 @@ function buildPlainText(webArticle: any): string {
  */
 export const createUnifiedArticle = async (req: Request, res: Response) => {
   try {
-    const payload = req.body;
+    const { payload, aiMeta } = normalizeUnifiedArticlePayload(req.body);
     
     // ========== VALIDATION ==========
     if (!payload.baseArticle) {
@@ -251,12 +489,26 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'printArticle.headline is required' });
     }
 
+    if (!payload.baseArticle.languageCode || !String(payload.baseArticle.languageCode).trim()) {
+      return res.status(400).json({ error: 'baseArticle.languageCode is required' });
+    }
+
+    if (!Array.isArray(payload.printArticle.body) || payload.printArticle.body.length === 0) {
+      return res.status(400).json({ error: 'printArticle.body must be a non-empty array' });
+    }
+
+    const resolved = payload.location?.resolved;
+    const hasAtLeastDistrictOrState = Boolean(resolved?.district || resolved?.state);
+    if (!hasAtLeastDistrictOrState) {
+      return res.status(400).json({ error: 'location.resolved must include at least district or state' });
+    }
+
     // ========== USER & TENANT ==========
     const user: any = (req as any).user;
     const authorId = user.id;
     const roleName = String(user?.role?.name || '').toUpperCase();
     
-    const { tenantId, error: tenantError } = await resolveTenantId(req);
+    const { tenantId, error: tenantError } = await resolveTenantIdFromPayload(user, payload);
     if (!tenantId) {
       return res.status(400).json({ error: tenantError || 'Could not determine tenant' });
     }
@@ -298,7 +550,23 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     const media = payload.media || {};
     
     const languageCode = String(baseArticle.languageCode || 'te').trim();
-    const categoryId = baseArticle.category?.categoryId || null;
+
+    const categoryFromPayloadId = baseArticle.category?.categoryId || null;
+    const categoryFromPayloadName = baseArticle.category?.categoryName || null;
+    const categoryResolve = await resolveCategoryIdFromPayload({
+      categoryId: categoryFromPayloadId,
+      categoryName: categoryFromPayloadName,
+      aiDetectedCategory: (aiMeta as any)?.detected_category || payload.detected_category || null,
+      aiSelectedCategoryName: (aiMeta as any)?.selected_category?.name || payload.selected_category?.name || null,
+    });
+    const categoryId = categoryResolve.categoryId;
+
+    if (!categoryId) {
+      return res.status(400).json({
+        error: 'baseArticle.category.categoryId (or categoryName) is required',
+        details: 'ShortNews requires a valid categoryId. Provide categoryId, or categoryName/detected_category that matches an existing Category.'
+      });
+    }
     
     // Location IDs
     const stateId = location.resolved?.state?.id || null;
@@ -320,6 +588,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     // Media
     const images = Array.isArray(media.images) ? media.images : [];
     const coverImageUrl = images[0]?.url || null;
+    const imagePlacementPlan = buildImagePlacementPlan(images, aiMeta);
     
     // Web SEO
     const seoSlug = webArticle.seo?.slug || slugFromAnyLanguage(headline, 120);
@@ -377,7 +646,8 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
               slug: seoSlug,
               metaTitle: seoMetaTitle,
               metaDescription: seoMetaDescription,
-            }
+            },
+            ...(aiMeta ? { ai: aiMeta } : {})
           }
         }
       });
@@ -426,7 +696,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
       // 2. Create TenantWebArticle (if webArticle data exists)
       let tenantWebArticle = null;
       if (webArticle.headline || webArticle.lead || webArticle.sections?.length > 0) {
-        const contentHtml = buildWebContentHtml(webArticle);
+        const contentHtml = buildWebContentHtml(webArticle, imagePlacementPlan);
         const plainText = buildPlainText(webArticle);
         
         // Build canonical URL in new format: https://domain/categorySlug/articleSlug
@@ -456,7 +726,9 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           blocks: webArticle.sections || [],
           meta: {
             languageCode,
-            canonicalUrl
+            canonicalUrl,
+            ...(aiMeta ? { ai: aiMeta } : {}),
+            ...(imagePlacementPlan.length ? { imagePlacementPlan } : {})
           }
         };
 
@@ -502,6 +774,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
             status: effectiveStatus,
             isBreaking: payload.isBreaking || false,
             slug: seoSlug,
+            headings: (shortNews.h1 || shortNews.h2) ? { h1: shortNews.h1 || null, h2: shortNews.h2 || null } : undefined,
             publishDate: effectiveStatus === 'PUBLISHED' ? new Date() : null
           }
         });
@@ -575,9 +848,12 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
 
   } catch (e: any) {
     console.error('[UnifiedArticle] Error:', e);
-    return res.status(500).json({ 
+    const mapped = mapPrismaErrorToHttp(e);
+    if (mapped) return res.status(mapped.status).json(mapped.body);
+
+    return res.status(500).json({
       error: 'Failed to create articles',
-      details: e.message 
+      details: e?.message
     });
   }
 };

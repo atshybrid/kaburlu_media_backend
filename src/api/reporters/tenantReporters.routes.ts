@@ -528,17 +528,19 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
   
   // DIVISION level: can use districtId or mandalId
   if (level === 'DIVISION') {
-    const districtId = String(body.districtId || '');
+    const divisionId = String(body.divisionId || '');
+    const districtIdFallback = String(body.districtId || '');
     const mandalIdFallback = String(body.mandalId || '');
-    return { field: 'divisionId', id: districtId || mandalIdFallback };
+    return { field: 'divisionId', id: divisionId || districtIdFallback || mandalIdFallback };
   }
   
   // CONSTITUENCY level: can use districtId, mandalId, or assemblyConstituencyId
   if (level === 'CONSTITUENCY') {
-    const districtId = String(body.districtId || '');
-    const mandalId = String(body.mandalId || '');
-    const assemblyId = String(body.assemblyConstituencyId || '');
-    return { field: 'constituencyId', id: districtId || mandalId || assemblyId };
+    const constituencyId = String(body.constituencyId || '');
+    const districtIdFallback = String(body.districtId || '');
+    const mandalIdFallback = String(body.mandalId || '');
+    const assemblyIdFallback = String(body.assemblyConstituencyId || '');
+    return { field: 'constituencyId', id: constituencyId || districtIdFallback || mandalIdFallback || assemblyIdFallback };
   }
   
   if (level === 'MANDAL') return { field: 'mandalId', id: String(body.mandalId || '') };
@@ -548,7 +550,9 @@ function getLocationKeyFromLevel(level: ReporterLevelInput, body: any): { field:
     const assemblyId = String(body.assemblyConstituencyId || '');
     const mandalIdFallback = String(body.mandalId || '');
     const districtIdFallback = String(body.districtId || '');
-    return { field: 'assemblyConstituencyId', id: assemblyId || mandalIdFallback || districtIdFallback };
+    const constituencyIdFallback = String(body.constituencyId || '');
+    const divisionIdFallback = String(body.divisionId || '');
+    return { field: 'assemblyConstituencyId', id: assemblyId || mandalIdFallback || districtIdFallback || constituencyIdFallback || divisionIdFallback };
   }
   return { field: 'assemblyConstituencyId', id: String(body.assemblyConstituencyId || '') };
 }
@@ -578,7 +582,7 @@ function pickReporterLimitMax(settingsData: any, input: { designationId: string;
   const wildcardLocation = rules.find(r =>
     String(r?.designationId || '') === input.designationId &&
     String(r?.level || '') === input.level &&
-    !r?.stateId && !r?.districtId && !r?.mandalId && !r?.assemblyConstituencyId
+    !r?.stateId && !r?.districtId && !r?.divisionId && !r?.constituencyId && !r?.mandalId && !r?.assemblyConstituencyId
   );
   if (typeof wildcardLocation?.max === 'number') return wildcardLocation.max;
 
@@ -901,7 +905,7 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     if (!isAllowedCreatorRole(roleName)) return res.status(403).json({ error: 'Forbidden' });
 
     const body = req.body || {};
-    const { designationId, level, stateId, districtId, mandalId, assemblyConstituencyId } = body;
+    const { designationId, level, stateId, districtId, divisionId, constituencyId, mandalId, assemblyConstituencyId } = body;
     const fullName: string | undefined = body.fullName;
     const mobileNumber: string | undefined = body.mobileNumber;
 
@@ -938,12 +942,14 @@ router.post('/tenants/:tenantId/reporters', passport.authenticate('jwt', { sessi
     const lvl = String(level) as ReporterLevelInput;
     if (!['STATE', 'DISTRICT', 'DIVISION', 'CONSTITUENCY', 'MANDAL', 'ASSEMBLY'].includes(lvl)) return res.status(400).json({ error: 'Invalid level' });
 
-    const locationKey = getLocationKeyFromLevel(lvl, { stateId, districtId, mandalId, assemblyConstituencyId });
+    const locationKey = getLocationKeyFromLevel(lvl, { stateId, districtId, divisionId, constituencyId, mandalId, assemblyConstituencyId });
     if (!locationKey.id) {
       if (lvl === 'STATE') return res.status(400).json({ error: 'stateId required for STATE level' });
       if (lvl === 'DISTRICT') return res.status(400).json({ error: 'districtId required for DISTRICT level' });
       if (lvl === 'MANDAL') return res.status(400).json({ error: 'mandalId required for MANDAL level' });
-      return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
+      if (lvl === 'DIVISION') return res.status(400).json({ error: 'divisionId (or districtId/mandalId) required for DIVISION level' });
+      if (lvl === 'CONSTITUENCY') return res.status(400).json({ error: 'constituencyId (or districtId/mandalId/assemblyConstituencyId) required for CONSTITUENCY level' });
+      return res.status(400).json({ error: 'assemblyConstituencyId (or mandalId/districtId) required for ASSEMBLY level' });
     }
 
     // If a REPORTER is creating another reporter, require created reporter to have subscription enabled.
@@ -1959,6 +1965,8 @@ router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { se
           designationId: true,
           stateId: true,
           districtId: true,
+          divisionId: true,
+          constituencyId: true,
           mandalId: true,
           assemblyConstituencyId: true,
           subscriptionActive: true,
@@ -1972,28 +1980,86 @@ router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { se
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
 
     const nextLevel: ReporterLevelInput = (body.level ? String(body.level) : String(reporter.level)) as ReporterLevelInput;
-    if (!['STATE', 'DISTRICT', 'MANDAL', 'ASSEMBLY'].includes(nextLevel)) {
+    if (!['STATE', 'DISTRICT', 'DIVISION', 'CONSTITUENCY', 'MANDAL', 'ASSEMBLY'].includes(nextLevel)) {
       return res.status(400).json({ error: 'Invalid level' });
     }
 
     const stateId = body.stateId ?? reporter.stateId;
     const districtId = body.districtId ?? reporter.districtId;
+    const divisionId = body.divisionId ?? reporter.divisionId;
+    const constituencyId = body.constituencyId ?? reporter.constituencyId;
     const mandalId = body.mandalId ?? reporter.mandalId;
     const assemblyConstituencyId = body.assemblyConstituencyId ?? reporter.assemblyConstituencyId;
-    const locationKey = getLocationKeyFromLevel(nextLevel, { stateId, districtId, mandalId, assemblyConstituencyId });
+    const locationKey = getLocationKeyFromLevel(nextLevel, { stateId, districtId, divisionId, constituencyId, mandalId, assemblyConstituencyId });
     if (!locationKey.id) {
       if (nextLevel === 'STATE') return res.status(400).json({ error: 'stateId required for STATE level' });
       if (nextLevel === 'DISTRICT') return res.status(400).json({ error: 'districtId required for DISTRICT level' });
+      if (nextLevel === 'DIVISION') return res.status(400).json({ error: 'divisionId (or districtId/mandalId) required for DIVISION level' });
+      if (nextLevel === 'CONSTITUENCY') return res.status(400).json({ error: 'constituencyId (or districtId/mandalId/assemblyConstituencyId) required for CONSTITUENCY level' });
       if (nextLevel === 'MANDAL') return res.status(400).json({ error: 'mandalId required for MANDAL level' });
-      return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
+      return res.status(400).json({ error: 'assemblyConstituencyId (or mandalId/districtId) required for ASSEMBLY level' });
+    }
+
+    // ASSEMBLY level: resolve mandalId or districtId to assemblyConstituencyId
+    let resolvedAssemblyId: string | null = null;
+    if (nextLevel === 'ASSEMBLY') {
+      const candidateId = String(locationKey.id);
+      const isMandal = await (prisma as any).mandal.findUnique({ where: { id: candidateId }, select: { districtId: true } }).catch(() => null);
+      if (isMandal?.districtId) {
+        const assembly = await (prisma as any).assemblyConstituency.findFirst({ where: { districtId: isMandal.districtId }, select: { id: true } }).catch(() => null);
+        if (!assembly?.id) return res.status(400).json({ error: 'No assembly constituency found for mandal district' });
+        resolvedAssemblyId = String(assembly.id);
+      } else {
+        const isDistrict = await (prisma as any).district.findUnique({ where: { id: candidateId }, select: { id: true } }).catch(() => null);
+        if (isDistrict?.id) {
+          const assembly = await (prisma as any).assemblyConstituency.findFirst({ where: { districtId: candidateId }, select: { id: true } }).catch(() => null);
+          if (!assembly?.id) return res.status(400).json({ error: 'No assembly constituency found for district' });
+          resolvedAssemblyId = String(assembly.id);
+        } else {
+          const assembly = await (prisma as any).assemblyConstituency.findUnique({ where: { id: candidateId }, select: { id: true } }).catch(() => null);
+          if (!assembly?.id) return res.status(400).json({ error: 'Invalid assemblyConstituencyId, mandalId, or districtId' });
+          resolvedAssemblyId = String(assembly.id);
+        }
+      }
+    }
+
+    // Enforce per-tenant limits (if configured). Exclude current reporter.
+    if (body.designationId || body.level || body.stateId || body.districtId || body.divisionId || body.constituencyId || body.mandalId || body.assemblyConstituencyId) {
+      const effectiveDesignationId = String(body.designationId || reporter.designationId || '');
+      if (effectiveDesignationId) {
+        const tenantSettingsRow = await (prisma as any).tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
+        const limitLocationId = nextLevel === 'ASSEMBLY' ? String(resolvedAssemblyId) : String(locationKey.id);
+        const maxAllowed = pickReporterLimitMax((tenantSettingsRow as any)?.data, {
+          designationId: effectiveDesignationId,
+          level: nextLevel,
+          location: { field: locationKey.field, id: limitLocationId },
+        });
+        if (typeof maxAllowed === 'number') {
+          const where: any = { tenantId, active: true, designationId: effectiveDesignationId, level: nextLevel, id: { not: reporter.id } };
+          where[locationKey.field] = limitLocationId;
+          const current = await (prisma as any).reporter.count({ where });
+          if (current >= maxAllowed) {
+            return res.status(409).json({
+              error: 'Reporter limit reached',
+              maxAllowed,
+              current,
+              designationId: effectiveDesignationId,
+              level: nextLevel,
+              [locationKey.field]: limitLocationId,
+            });
+          }
+        }
+      }
     }
 
     const updateData: any = {
       level: nextLevel,
       stateId: nextLevel === 'STATE' ? locationKey.id : null,
       districtId: nextLevel === 'DISTRICT' ? locationKey.id : null,
+      divisionId: nextLevel === 'DIVISION' ? locationKey.id : null,
+      constituencyId: nextLevel === 'CONSTITUENCY' ? locationKey.id : null,
       mandalId: nextLevel === 'MANDAL' ? locationKey.id : null,
-      assemblyConstituencyId: nextLevel === 'ASSEMBLY' ? locationKey.id : null,
+      assemblyConstituencyId: nextLevel === 'ASSEMBLY' ? resolvedAssemblyId : null,
     };
 
     if (typeof body.subscriptionActive === 'boolean') {
@@ -2042,6 +2108,8 @@ router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { se
         level: true,
         stateId: true,
         districtId: true,
+        divisionId: true,
+        constituencyId: true,
         mandalId: true,
         assemblyConstituencyId: true,
         subscriptionActive: true,
@@ -2057,6 +2125,78 @@ router.put('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { se
   } catch (e: any) {
     console.error('tenant reporter update error', e);
     return res.status(500).json({ error: 'Failed to update reporter' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/name:
+ *   patch:
+ *     summary: Update reporter full name
+ *     description: |
+ *       Updates the reporter's `UserProfile.fullName`.
+ *
+ *       Roles allowed: SUPER_ADMIN, TENANT_ADMIN (and other tenant editorial roles via existing scoping).
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [fullName]
+ *             properties:
+ *               fullName: { type: string }
+ *           examples:
+ *             set:
+ *               summary: Set full name
+ *               value: { fullName: "Ravi Kumar" }
+ *     responses:
+ *       200:
+ *         description: Updated
+ *         content:
+ *           application/json:
+ *             example: { success: true, reporterId: "cmrep_123", tenantId: "cmtenant_456", fullName: "Ravi Kumar" }
+ *       400: { description: Validation error }
+ *       404: { description: Reporter not found }
+ */
+router.patch('/tenants/:tenantId/reporters/:id/name', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const scope = await requireTenantEditorialScope(req, res);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const tenantId = String(req.params.tenantId || '').trim();
+    const reporterId = String(req.params.id || '').trim();
+    const fullNameRaw = (req.body as any)?.fullName;
+    const fullName = typeof fullNameRaw === 'string' ? fullNameRaw.trim() : '';
+
+    if (!tenantId || !reporterId) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+    if (!fullName) return res.status(400).json({ error: 'fullName is required' });
+
+    const reporter = await (prisma as any).reporter.findFirst({ where: { id: reporterId, tenantId }, select: { id: true, tenantId: true, userId: true } }).catch(() => null);
+    if (!reporter?.id) return res.status(404).json({ error: 'Reporter not found' });
+    if (!reporter.userId) return res.status(400).json({ error: 'Reporter user linkage missing' });
+
+    await (prisma as any).userProfile.upsert({
+      where: { userId: reporter.userId },
+      update: { fullName },
+      create: { userId: reporter.userId, fullName },
+    });
+
+    return res.json({ success: true, reporterId: reporter.id, tenantId: reporter.tenantId, fullName });
+  } catch (e: any) {
+    console.error('tenant reporter name patch error', e);
+    return res.status(500).json({ error: 'Failed to update reporter name' });
   }
 });
 
@@ -2227,6 +2367,297 @@ router.patch('/tenants/:tenantId/reporters/:id/active', passport.authenticate('j
   } catch (e: any) {
     console.error('reporter active toggle error', e);
     return res.status(500).json({ error: 'Failed to update reporter active status' });
+  }
+});
+
+// PATCH /tenants/:tenantId/reporters/:id/assignment - change level/designation/location within same tenant
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/assignment:
+ *   patch:
+ *     summary: Change reporter level/designation/location (transfer)
+ *     description: |
+ *       Allows SUPER_ADMIN or tenant-scoped TENANT_ADMIN to transfer a reporter within the same tenant.
+ *
+ *       This endpoint validates:
+ *       - designation belongs to this tenant (or global) and matches the target level
+ *       - required location field for the target level
+ *       - tenantSettings reporterLimits (excludes the current reporter from the count)
+ *
+ *       Notes:
+ *       - If `designationId` is provided without `level`, level is derived from designation.
+ *       - For `ASSEMBLY` level you can pass `assemblyConstituencyId` OR `mandalId` OR `districtId` and the system resolves to an assembly constituency.
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               designationId: { type: string, description: 'ReporterDesignation id. If provided, must match target level.' }
+ *               level: { type: string, enum: [STATE, DISTRICT, DIVISION, CONSTITUENCY, ASSEMBLY, MANDAL] }
+ *               stateId: { type: string }
+ *               districtId: { type: string }
+ *               divisionId: { type: string }
+ *               constituencyId: { type: string }
+ *               mandalId: { type: string }
+ *               assemblyConstituencyId: { type: string }
+ *           examples:
+ *             transferMandal:
+ *               summary: Transfer within same level (MANDAL)
+ *               value:
+ *                 mandalId: "mandal_new"
+ *             rcInchargeDivision:
+ *               summary: RC in-charge (DIVISION) using divisionId
+ *               value:
+ *                 level: "DIVISION"
+ *                 designationId: "desg_rc_incharge"
+ *                 divisionId: "division_001"
+ *             changeDesignationSameLevel:
+ *               summary: Change designation within same level
+ *               value:
+ *                 designationId: "desg_new"
+ *             promoteToDistrict:
+ *               summary: Change level + designation + location
+ *               value:
+ *                 level: "DISTRICT"
+ *                 designationId: "desg_district"
+ *                 districtId: "district_1"
+ *             assemblyByMandal:
+ *               summary: Set ASSEMBLY level using mandalId (auto resolves)
+ *               value:
+ *                 level: "ASSEMBLY"
+ *                 designationId: "desg_assembly"
+ *                 mandalId: "mandal_123"
+ *     responses:
+ *       200:
+ *         description: Updated successfully
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Reporter not found
+ *       409:
+ *         description: Reporter limit reached
+ */
+router.patch('/tenants/:tenantId/reporters/:id/assignment', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId || '').trim();
+    const reporterId = String(req.params.id || '').trim();
+    const actor: any = (req as any).user;
+    const body = req.body || {};
+
+    if (!tenantId || !reporterId) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+
+    const requestedDesignationId = typeof body.designationId === 'string' ? String(body.designationId).trim() : '';
+    const requestedLevelRaw = typeof body.level === 'string' ? String(body.level).trim() : '';
+    const requestedLevel = requestedLevelRaw ? (requestedLevelRaw as ReporterLevelInput) : undefined;
+
+    const hasAnyLocationField =
+      typeof body.stateId === 'string' ||
+      typeof body.districtId === 'string' ||
+      typeof body.divisionId === 'string' ||
+      typeof body.constituencyId === 'string' ||
+      typeof body.mandalId === 'string' ||
+      typeof body.assemblyConstituencyId === 'string';
+
+    if (!requestedDesignationId && !requestedLevel && !hasAnyLocationField) {
+      return res.status(400).json({ error: 'At least one of designationId, level, or location fields must be provided' });
+    }
+
+    let updated: any;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        updated = await prisma.$transaction(
+          async (tx: any) => {
+            const reporter = await tx.reporter.findFirst({
+              where: { id: reporterId, tenantId },
+              select: {
+                id: true,
+                tenantId: true,
+                userId: true,
+                designationId: true,
+                level: true,
+                stateId: true,
+                districtId: true,
+                divisionId: true,
+                constituencyId: true,
+                mandalId: true,
+                assemblyConstituencyId: true,
+                active: true,
+              },
+            });
+            if (!reporter) throw httpError(404, { error: 'Reporter not found' });
+
+            // Prevent accidental self-transfer for tenant admins.
+            if (reporter.userId && actor?.id && String(reporter.userId) === String(actor.id) && String(actor?.role?.name) !== 'SUPER_ADMIN') {
+              throw httpError(400, { error: 'Cannot change assignment of your own reporter profile' });
+            }
+
+            const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }).catch(() => null);
+            if (!tenant) throw httpError(400, { error: 'Invalid tenantId' });
+
+            // Resolve designation + target level.
+            let designation: any = null;
+            if (requestedDesignationId) {
+              designation = await tx.reporterDesignation
+                .findUnique({ where: { id: requestedDesignationId }, select: { id: true, level: true, tenantId: true } })
+                .catch(() => null);
+              if (!designation) throw httpError(400, { error: 'Invalid designationId' });
+              if (designation.tenantId && String(designation.tenantId) !== String(tenantId)) {
+                throw httpError(400, { error: 'designationId does not belong to this tenant' });
+              }
+            }
+
+            const targetLevel: ReporterLevelInput =
+              (requestedLevel as ReporterLevelInput) || (designation?.level as ReporterLevelInput) || (String(reporter.level) as ReporterLevelInput);
+            if (!['STATE', 'DISTRICT', 'DIVISION', 'CONSTITUENCY', 'MANDAL', 'ASSEMBLY'].includes(targetLevel)) {
+              throw httpError(400, { error: 'Invalid level' });
+            }
+
+            if (!requestedDesignationId && requestedLevel && String(reporter.level) !== String(requestedLevel)) {
+              throw httpError(400, { error: 'designationId is required when changing level' });
+            }
+
+            const targetDesignationId = requestedDesignationId || String(reporter.designationId);
+            if (designation && String(designation.level) !== String(targetLevel)) {
+              throw httpError(400, { error: 'designationId does not match requested level' });
+            }
+
+            if (!designation && requestedDesignationId) {
+              throw httpError(400, { error: 'Invalid designationId' });
+            }
+
+            // Location resolution. Merge requested fields over current reporter row.
+            const mergedLocation = {
+              stateId: typeof body.stateId === 'string' ? String(body.stateId).trim() : reporter.stateId,
+              districtId: typeof body.districtId === 'string' ? String(body.districtId).trim() : reporter.districtId,
+              divisionId: typeof body.divisionId === 'string' ? String(body.divisionId).trim() : reporter.divisionId,
+              constituencyId: typeof body.constituencyId === 'string' ? String(body.constituencyId).trim() : reporter.constituencyId,
+              mandalId: typeof body.mandalId === 'string' ? String(body.mandalId).trim() : reporter.mandalId,
+              assemblyConstituencyId:
+                typeof body.assemblyConstituencyId === 'string' ? String(body.assemblyConstituencyId).trim() : reporter.assemblyConstituencyId,
+            };
+
+            const locationKey = getLocationKeyFromLevel(targetLevel, mergedLocation);
+            if (!locationKey.id) {
+              if (targetLevel === 'STATE') throw httpError(400, { error: 'stateId required for STATE level' });
+              if (targetLevel === 'DISTRICT') throw httpError(400, { error: 'districtId required for DISTRICT level' });
+              if (targetLevel === 'MANDAL') throw httpError(400, { error: 'mandalId required for MANDAL level' });
+              if (targetLevel === 'ASSEMBLY') throw httpError(400, { error: 'assemblyConstituencyId (or mandalId/districtId) required for ASSEMBLY level' });
+              throw httpError(400, { error: 'Location is required for this level' });
+            }
+
+            // ASSEMBLY resolver: accept assemblyConstituencyId OR mandalId OR districtId and resolve to an assembly constituency id.
+            let resolvedAssemblyId: string | null = null;
+            if (targetLevel === 'ASSEMBLY') {
+              const candidateId = String(locationKey.id);
+              const isMandal = await tx.mandal.findUnique({ where: { id: candidateId }, select: { districtId: true } }).catch(() => null);
+              if (isMandal?.districtId) {
+                const assembly = await tx.assemblyConstituency
+                  .findFirst({ where: { districtId: isMandal.districtId }, select: { id: true } })
+                  .catch(() => null);
+                if (!assembly?.id) throw httpError(400, { error: 'No assembly constituency found for mandal district' });
+                resolvedAssemblyId = String(assembly.id);
+              } else {
+                const isDistrict = await tx.district.findUnique({ where: { id: candidateId }, select: { id: true } }).catch(() => null);
+                if (isDistrict?.id) {
+                  const assembly = await tx.assemblyConstituency
+                    .findFirst({ where: { districtId: candidateId }, select: { id: true } })
+                    .catch(() => null);
+                  if (!assembly?.id) throw httpError(400, { error: 'No assembly constituency found for district' });
+                  resolvedAssemblyId = String(assembly.id);
+                } else {
+                  const assembly = await tx.assemblyConstituency.findUnique({ where: { id: candidateId }, select: { id: true } }).catch(() => null);
+                  if (!assembly?.id) throw httpError(400, { error: 'Invalid assemblyConstituencyId, mandalId, or districtId' });
+                  resolvedAssemblyId = String(assembly.id);
+                }
+              }
+            }
+
+            if (targetLevel === 'ASSEMBLY' && !resolvedAssemblyId) {
+              throw httpError(400, { error: 'Failed to resolve assembly constituency' });
+            }
+
+            const limitLocationId = targetLevel === 'ASSEMBLY' ? String(resolvedAssemblyId) : String(locationKey.id);
+
+            // Enforce per-tenant limits (if configured). Exclude current reporter.
+            const tenantSettingsRow = await tx.tenantSettings.findUnique({ where: { tenantId }, select: { data: true } }).catch(() => null);
+            const maxAllowed = pickReporterLimitMax((tenantSettingsRow as any)?.data, {
+              designationId: targetDesignationId,
+              level: targetLevel,
+              location: { field: locationKey.field, id: limitLocationId },
+            });
+
+            if (typeof maxAllowed === 'number') {
+              const where: any = {
+                tenantId,
+                active: true,
+                designationId: targetDesignationId,
+                level: targetLevel,
+                id: { not: reporter.id },
+              };
+              where[locationKey.field] = limitLocationId;
+              const current = await tx.reporter.count({ where });
+              if (current >= maxAllowed) {
+                throw httpError(409, {
+                  error: 'Reporter limit reached',
+                  maxAllowed,
+                  current,
+                  designationId: targetDesignationId,
+                  level: targetLevel,
+                  [locationKey.field]: limitLocationId,
+                });
+              }
+            }
+
+            const updateData: any = {
+              designationId: targetDesignationId,
+              level: targetLevel,
+              stateId: targetLevel === 'STATE' ? String(locationKey.id) : null,
+              districtId: targetLevel === 'DISTRICT' ? String(locationKey.id) : null,
+              divisionId: targetLevel === 'DIVISION' ? String(locationKey.id) : null,
+              constituencyId: targetLevel === 'CONSTITUENCY' ? String(locationKey.id) : null,
+              mandalId: targetLevel === 'MANDAL' ? String(locationKey.id) : null,
+              assemblyConstituencyId: targetLevel === 'ASSEMBLY' ? String(resolvedAssemblyId) : null,
+            };
+
+            return tx.reporter.update({
+              where: { id: reporter.id },
+              data: updateData,
+              include: includeReporterContact,
+            });
+          },
+          { isolationLevel: 'Serializable' }
+        );
+        break;
+      } catch (e: any) {
+        if (isRetryableTransactionError(e) && attempt < 1) continue;
+        throw e;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Reporter assignment updated',
+      reporter: mapReporterContact(updated),
+    });
+  } catch (e: any) {
+    if (e?.status) return res.status(Number(e.status)).json(e.payload || { error: 'Request failed' });
+    console.error('reporter assignment update error', e);
+    return res.status(500).json({ error: 'Failed to update reporter assignment' });
   }
 });
 

@@ -2563,7 +2563,7 @@ router.get('/tenants/by-domain/:domain', async (req, res) => {
  *       404:
  *         description: Article not found
  */
-router.get('/articles/:slug', async (req, res) => {
+router.get('/articles/:slug', async (req, res, next) => {
   const domain = (res.locals as any).domain;
   const tenant = (res.locals as any).tenant;
   if (!domain || !tenant) return res.status(500).json({ error: 'Domain context missing' });
@@ -2576,6 +2576,23 @@ router.get('/articles/:slug', async (req, res) => {
       return slugRaw;
     }
   })();
+
+  // Prevent the catch-all article-detail route from swallowing known static endpoints.
+  // This avoids false 404s like "Article not found" when calling /articles/latest, /articles/trending, etc.
+  const reserved = new Set([
+    'home',
+    'latest',
+    'must-read',
+    'related',
+    'trending',
+    'by-location',
+    'by-category',
+    'page-layout',
+  ]);
+  if (reserved.has(String(slug).toLowerCase())) {
+    return next();
+  }
+
   const languageCode = req.query.languageCode ? String(req.query.languageCode) : undefined;
 
   const [domainCats, domainLangs, activeDomainCount] = await Promise.all([

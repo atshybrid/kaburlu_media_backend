@@ -245,9 +245,9 @@ async function openaiChatMessages(messages: Array<{ role: 'system' | 'user'; con
  *                   type: object
  *                   properties:
  *                     h1: { type: string }
- *                     h2: { type: string, nullable: true }
+ *                     h2: { type: string }
  *                     body: { type: string }
- *                 images:
+ *                 media_requirements:
  *                   type: object
  *                 internal_evidence:
  *                   type: object
@@ -358,23 +358,15 @@ router.post(
         return res.status(400).json({ error: `Prompt not found for key: ${promptKey}` });
       }
 
-      // Build categories list for AI to pick from
-      const categoriesListStr = categoryNames.join(', ');
+      // Build user message as STRICT JSON input (vendor-neutral)
+      const inputPayload = {
+        RAW_NEWS_TEXT: rawText,
+        AVAILABLE_CATEGORIES: categoryNames,
+        NEWSPAPER_NAME: newspaperName,
+        LANGUAGE: language,
+      };
 
-      // Build user message with structured input
-      // AI will pick ONE category from the provided list
-      const userMessage = `
-RAW_NEWS_TEXT:
-${rawText}
-
-AVAILABLE_CATEGORIES (pick EXACTLY ONE from this list):
-${categoriesListStr}
-
-NEWSPAPER_NAME: ${newspaperName}
-
-LANGUAGE:
-${JSON.stringify(language, null, 2)}
-`.trim();
+      const userMessage = JSON.stringify(inputPayload, null, 2);
 
       const messages: Array<{ role: 'system' | 'user'; content: string }> = [
         { role: 'system', content: systemPrompt },
@@ -689,20 +681,15 @@ router.post(
         return res.status(400).json({ error: 'Prompt not found' });
       }
 
-      // Build AI message
-      const categoriesListStr = categoryNames.join(', ');
-      const userMessage = `
-RAW_NEWS_TEXT:
-${rawText}
+      // Build AI message as STRICT JSON input (vendor-neutral)
+      const inputPayload = {
+        RAW_NEWS_TEXT: rawText,
+        AVAILABLE_CATEGORIES: categoryNames,
+        NEWSPAPER_NAME: newspaperName,
+        LANGUAGE: language,
+      };
 
-AVAILABLE_CATEGORIES (pick EXACTLY ONE):
-${categoriesListStr}
-
-NEWSPAPER_NAME: ${newspaperName}
-
-LANGUAGE:
-${JSON.stringify(language, null, 2)}
-`.trim();
+      const userMessage = JSON.stringify(inputPayload, null, 2);
 
       const messages: Array<{ role: 'system' | 'user'; content: string }> = [
         { role: 'system', content: systemPrompt },

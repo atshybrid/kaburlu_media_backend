@@ -43,6 +43,14 @@ const router = Router();
  *       - location.resolved (at least state or district)
  *       - printArticle.headline
  *       - printArticle.body[]
+ *
+ *       **AI Rewrite Compatibility:**
+ *       If you are posting the output of `POST /api/v1/ai/rewrite/unified` directly,
+ *       you may send these snake_case keys and the server will auto-map them:
+ *       - `print_article` → `printArticle`
+ *       - `web_article` → `webArticle` (including `seo.url_slug` → `seo.slug`)
+ *       - `short_mobile_article` → `shortNews` (maps `body` → `content`)
+ *       - `status.publish_ready` → `publishControl.publishReady`
  *     tags: [News Room]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
@@ -156,6 +164,9 @@ const router = Router();
  *                         url: { type: string }
  *                         caption: { type: string }
  *                         alt: { type: string }
+ *                         afterParagraph:
+ *                           type: integer
+ *                           description: "Optional. If provided, inserts this image after the Nth body paragraph in webArticle contentHtml. Also stored in contentJson.meta.imagePlacementPlan."
  *               publishControl:
  *                 type: object
  *                 properties:
@@ -164,6 +175,72 @@ const router = Router();
  *                     description: "If false, article stays PENDING even if reporter has autoPublish=true"
  *                   reason:
  *                     type: string
+ *
+ *               # Optional: AI rewrite output keys (snake_case) - auto-mapped by server
+ *               print_article:
+ *                 type: object
+ *                 description: "AI rewrite print_article (alternative to printArticle)"
+ *               web_article:
+ *                 type: object
+ *                 description: "AI rewrite web_article (alternative to webArticle)"
+ *               short_mobile_article:
+ *                 type: object
+ *                 description: "AI rewrite short_mobile_article (alternative to shortNews)"
+ *               media_requirements:
+ *                 type: object
+ *               image_placement_hints:
+ *                 type: array
+ *                 items: { type: object }
+ *               internal_evidence:
+ *                 type: object
+ *               status:
+ *                 type: object
+ *           example:
+ *             tenantId: "clxyz123..."
+ *             baseArticle:
+ *               languageCode: "te"
+ *               category:
+ *                 categoryName: "Accident"
+ *             location:
+ *               inputText: "హైదరాబాద్"
+ *               resolved:
+ *                 district: { id: "cldist...", name: "Hyderabad" }
+ *                 state: { id: "clstate...", name: "Telangana" }
+ *               dateline:
+ *                 placeName: "హైదరాబాద్"
+ *                 formatted: "హైదరాబాద్, ఫిబ్రవరి 6"
+ *             media:
+ *               images:
+ *                 - url: "https://cdn.example.com/photo1.jpg"
+ *                   caption: "ప్రమాద స్థలం"
+ *                   alt: "రోడ్డు ప్రమాదం"
+ *
+ *             # AI rewrite output blocks (snake_case) - optional
+ *             detected_category: "Accident"
+ *             print_article:
+ *               headline: "రోడ్డు ప్రమాదంలో ఇద్దరికి గాయాలు"
+ *               subtitle: null
+ *               body:
+ *                 - "శుక్రవారం రాత్రి నగరంలో జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరికి గాయాలయ్యాయి."
+ *                 - "పోలీసులు కేసు నమోదు చేసి దర్యాప్తు చేస్తున్నారు."
+ *             web_article:
+ *               headline: "రోడ్డు ప్రమాదంలో ఇద్దరికి గాయాలు"
+ *               lead: "నగరంలో శుక్రవారం రాత్రి జరిగిన ప్రమాదంలో ఇద్దరు గాయపడ్డారు."
+ *               body:
+ *                 - "పోలీసుల ప్రకారం..."
+ *               seo:
+ *                 url_slug: "hyderabad-road-accident-injured"
+ *                 meta_title: "రోడ్డు ప్రమాదం: ఇద్దరికి గాయాలు"
+ *                 meta_description: "హైదరాబాద్‌లో జరిగిన రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు."
+ *                 keywords: ["హైదరాబాద్", "రోడ్డు ప్రమాదం"]
+ *             short_mobile_article:
+ *               h1: "రోడ్డు ప్రమాదం"
+ *               h2: "ఇద్దరికి గాయాలు"
+ *               body: "నగరంలో రోడ్డు ప్రమాదంలో ఇద్దరు గాయపడ్డారు. పోలీసులు కేసు నమోదు చేశారు."
+ *             status:
+ *               publish_ready: false
+ *               validation_issues: ["Need at least 1 clear photo"]
+ *               approval_status: "REVIEW_REQUIRED"
  *     responses:
  *       201:
  *         description: All 3 articles created successfully
