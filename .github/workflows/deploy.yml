@@ -19,6 +19,7 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
             set -e
+            set -o pipefail
 
             echo "▶ Move to home directory"
             cd ~
@@ -51,9 +52,10 @@ jobs:
 
             echo "▶ Write ENV file from GitHub Secrets"
             echo "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
+            chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
-            rm -rf node_modules dist
+            rm -rf node_modules
             if [ -f package-lock.json ]; then
               npm ci
             else
@@ -66,14 +68,38 @@ jobs:
             echo "▶ Run database migrations (production)"
             npx prisma migrate deploy
 
-            echo "▶ Build production dist"
+            echo "▶ Build production dist (safe: keep previous dist until build succeeds)"
+            DIST_BACKUP=""
+            if [ -d dist ]; then
+              DIST_BACKUP="dist_prev_$(date +%Y%m%d_%H%M%S)"
+              mv dist "$DIST_BACKUP"
+            fi
+
+            set +e
             npm run build
+            BUILD_RC=$?
+            set -e
 
-            echo "▶ Restart PM2 cleanly"
-            pm2 delete kaburlu-api || true
+            if [ $BUILD_RC -ne 0 ]; then
+              echo "❌ Build failed (exit $BUILD_RC)"
+              if [ -n "$DIST_BACKUP" ] && [ -d "$DIST_BACKUP" ]; then
+                echo "▶ Restoring previous dist from $DIST_BACKUP"
+                rm -rf dist || true
+                mv "$DIST_BACKUP" dist
+              fi
+              exit $BUILD_RC
+            fi
 
+            if [ -n "$DIST_BACKUP" ] && [ -d "$DIST_BACKUP" ]; then
+              rm -rf "$DIST_BACKUP"
+            fi
+
+            echo "▶ Restart PM2 via ecosystem (low downtime)"
             echo "▶ Using Chromium executable: $CHROME_BIN"
-            PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN" pm2 start dist/index.js --name kaburlu-api
+            export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
+            pm2 startOrReload ecosystem.config.cjs --update-env
             pm2 save
+
+            pm2 status || true
 
             echo "✅ Deployment completed successfully"
