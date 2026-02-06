@@ -2150,6 +2150,86 @@ router.patch('/tenants/:tenantId/reporters/:id/login-access', passport.authentic
   }
 });
 
+// PATCH /tenants/:tenantId/reporters/:id/active - deactivate/reactivate (best practice vs delete)
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}/active:
+ *   patch:
+ *     summary: Activate/deactivate reporter (best practice)
+ *     description: |
+ *       Best practice alternative to delete. Keeps history (payments, id card history, etc.) intact.
+ *
+ *       - `active=false`: disable reporter access
+ *       - `active=true`: re-enable reporter
+ *
+ *       Roles allowed: SUPER_ADMIN, TENANT_ADMIN (tenant-scoped).
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [active]
+ *             properties:
+ *               active: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Updated successfully
+ *       404:
+ *         description: Reporter not found
+ */
+router.patch('/tenants/:tenantId/reporters/:id/active', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    const actor: any = (req as any).user;
+    const active = (req.body as any)?.active;
+
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+    if (typeof active !== 'boolean') return res.status(400).json({ error: 'active(boolean) required' });
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      select: { id: true, tenantId: true, userId: true, active: true },
+    });
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Prevent accidental self-deactivate for tenant admins.
+    if (reporter.userId && actor?.id && String(reporter.userId) === String(actor.id) && String(actor?.role?.name) !== 'SUPER_ADMIN') {
+      return res.status(400).json({ error: 'Cannot change active status of your own reporter profile' });
+    }
+
+    const updated = await (prisma as any).reporter.update({
+      where: { id: reporter.id },
+      data: { active },
+      select: { id: true, tenantId: true, active: true, updatedAt: true },
+    });
+
+    return res.json({
+      success: true,
+      reporterId: updated.id,
+      tenantId: updated.tenantId,
+      active: updated.active,
+      updatedAt: updated.updatedAt,
+      message: active ? 'Reporter activated' : 'Reporter deactivated',
+    });
+  } catch (e: any) {
+    console.error('reporter active toggle error', e);
+    return res.status(500).json({ error: 'Failed to update reporter active status' });
+  }
+});
+
 /**
  * @swagger
  * /tenants/{tenantId}/reporters/{id}/profile-photo:
@@ -3281,5 +3361,98 @@ router.delete('/tenants/:tenantId/reporters/:id/id-card/pdf', passport.authentic
   } catch (e: any) {
     console.error('delete id-card pdf error', e);
     return res.status(500).json({ error: 'Failed to clear PDF URL' });
+  }
+});
+
+/**
+ * @swagger
+ * /tenants/{tenantId}/reporters/{id}:
+ *   delete:
+ *     summary: Safe delete tenant reporter (releases mobile number)
+ *     description: |
+ *       Deletes the Reporter record and scrubs the linked User's identifiers so the same mobile number
+ *       can be reused to create a reporter in a different tenant.
+ *
+ *       Scrub behavior:
+ *       - User.mobileNumber -> null
+ *       - User.email -> null
+ *       - User.mpin -> null
+ *       - User.firebaseUid -> null
+ *       - User.status -> "DELETED"
+ *
+ *       Roles allowed: SUPER_ADMIN, TENANT_ADMIN (tenant-scoped).
+ *     tags: [TenantReporters]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted successfully
+ *       404:
+ *         description: Reporter not found
+ */
+router.delete('/tenants/:tenantId/reporters/:id', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdminScoped, async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId || '').trim();
+    const id = String(req.params.id || '').trim();
+    const actor: any = (req as any).user;
+
+    if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
+
+    const reporter = await (prisma as any).reporter.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        tenantId: true,
+        userId: true,
+        user: { select: { id: true, mobileNumber: true, email: true, status: true } },
+      },
+    });
+
+    if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
+
+    // Prevent accidental self-delete for tenant admins.
+    if (reporter.userId && actor?.id && String(reporter.userId) === String(actor.id) && String(actor?.role?.name) !== 'SUPER_ADMIN') {
+      return res.status(400).json({ error: 'Cannot delete your own reporter profile' });
+    }
+
+    const oldMobile = reporter.user?.mobileNumber ? String(reporter.user.mobileNumber) : null;
+
+    await prisma.$transaction(async (tx: any) => {
+      // Delete reporter (cascades to ID card/quota/payments where schema specifies onDelete: Cascade).
+      await tx.reporter.delete({ where: { id: reporter.id } });
+
+      // Scrub user identifiers to release mobile/email uniqueness.
+      if (reporter.userId) {
+        await tx.user.update({
+          where: { id: reporter.userId },
+          data: {
+            mobileNumber: null,
+            email: null,
+            mpin: null,
+            firebaseUid: null,
+            status: 'DELETED',
+          },
+        }).catch(() => null);
+      }
+    });
+
+    return res.json({
+      success: true,
+      deletedReporterId: reporter.id,
+      tenantId: reporter.tenantId,
+      releasedMobileNumber: oldMobile,
+      message: 'Reporter deleted successfully',
+    });
+  } catch (e: any) {
+    console.error('safe delete reporter error', e);
+    return res.status(500).json({ error: 'Failed to delete reporter' });
   }
 });
