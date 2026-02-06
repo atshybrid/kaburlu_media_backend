@@ -31,8 +31,10 @@ jobs:
             echo "▶ Enter project directory"
             cd kaburlu_media_backend
 
-            echo "▶ Pull latest code"
-            git pull origin main
+            echo "▶ Sync code to origin/main (discard any local changes)"
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
 
             echo "▶ Verify Chromium is installed (manual server prerequisite)"
             CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
@@ -52,7 +54,11 @@ jobs:
 
             echo "▶ Clean install dependencies"
             rm -rf node_modules dist
-            npm install
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
 
             echo "▶ Generate Prisma client"
             npx prisma generate
