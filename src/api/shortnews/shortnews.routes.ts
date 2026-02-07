@@ -9,7 +9,8 @@ const router = Router();
  * /shortnews/AIarticle:
  *   post:
  *     summary: AI generate short news draft (helper only, no save)
- *     description: Accept raw field note text (<=500 words) and returns optimized short news draft (title <=35 chars, content <=60 words) plus optional category suggestion. If the suggested category doesn't exist, the server will auto-create a Category and a CategoryTranslation for the user's language and return their IDs.
+ *     description: Accept raw field note text (<=500 words) and returns optimized short news draft (title <=35 chars, content <=60 words) plus optional category suggestion.
+ *       If categoryNames are provided, the AI will be constrained to pick from those and the server will try to match an existing category (no auto-create by default).
  *     tags: [ShortNews]
  *     security:
  *       - bearerAuth: []
@@ -25,6 +26,44 @@ const router = Router();
  *                 type: string
  *                 description: User raw note text (<=500 words)
  *                 example: "today morning heavy rain caused water logging near market area traffic slow police managing"
+ *               titleHint:
+ *                 type: string
+ *                 description: Optional title hint (used as guidance only)
+ *                 example: "Road accident update"
+ *               categoryNames:
+ *                 type: array
+ *                 description: Optional list of category names to choose from (existing categories)
+ *                 items:
+ *                   type: string
+ *                 example: ["Politics", "Crime", "Weather", "Community"]
+ *               autoCreateCategory:
+ *                 type: boolean
+ *                 description: Force auto-create if AI suggests a new category (default true only when categoryNames not provided)
+ *                 example: false
+ *               outputLanguageCode:
+ *                 type: string
+ *                 description: "Optional output language override (default: inferred from rawText script; fallback to user's language)"
+ *                 example: "te"
+ *               titleMinChars:
+ *                 type: integer
+ *                 description: "Optional minimum title length (best-effort). Default: 50 when categoryNames provided."
+ *                 example: 50
+ *               titleMaxChars:
+ *                 type: integer
+ *                 description: "Optional maximum title length (hard cap enforced server-side). Default: 60 when categoryNames provided; otherwise 35."
+ *                 example: 60
+ *               subtitleMaxChars:
+ *                 type: integer
+ *                 description: Optional maximum subtitle length (headings.h2.text)
+ *                 example: 50
+ *               minWords:
+ *                 type: integer
+ *                 description: Optional minimum word count for content (best-effort)
+ *                 example: 58
+ *               maxWords:
+ *                 type: integer
+ *                 description: Optional maximum word count for content (hard cap)
+ *                 example: 60
  *     responses:
  *       200:
  *         description: AI draft generated
@@ -33,20 +72,36 @@ const router = Router();
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     title: { type: string, description: "<=35 chars" }
- *                     content: { type: string, description: "<=60 words" }
- *                     languageCode: { type: string }
- *                     suggestedCategoryName: { type: string }
- *                     suggestedCategoryId: { type: string, nullable: true }
- *                     matchedCategoryName: { type: string, nullable: true }
- *                     createdCategory: { type: boolean, description: "True if a new category was created" }
- *                     categoryTranslationId: { type: string, nullable: true, description: "Translation row id for user's language if created/found" }
+ *                     title:
+ *                       type: string
+ *                       description: "<=35 chars"
+ *                     content:
+ *                       type: string
+ *                       description: "<=60 words"
+ *                     languageCode:
+ *                       type: string
+ *                     suggestedCategoryName:
+ *                       type: string
+ *                     suggestedCategoryId:
+ *                       type: string
+ *                       nullable: true
+ *                     matchedCategoryName:
+ *                       type: string
+ *                       nullable: true
+ *                     createdCategory:
+ *                       type: boolean
+ *                       description: "True if a new category was created"
+ *                     categoryTranslationId:
+ *                       type: string
+ *                       nullable: true
+ *                       description: "Translation row id for user's language if created/found"
  *       400:
- *         description: Validation error (missing rawText or >100 words)
+ *         description: Validation error (missing rawText or >500 words)
  *       401:
  *         description: Unauthorized
  *       500:

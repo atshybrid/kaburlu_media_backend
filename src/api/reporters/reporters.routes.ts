@@ -1211,7 +1211,8 @@ router.get('/designations', async (req, res) => {
   const whereGlobal: any = { tenantId: null };
   if (level) whereGlobal.level = level;
   const global = await (prisma as any).reporterDesignation.findMany({ where: whereGlobal });
-  return res.json(global.sort((a: any, b: any) => String(a.level).localeCompare(String(b.level))));
+  const filtered = (global as any[]).filter((r: any) => String(r?.code || '').trim().toUpperCase() !== 'TENANT_ADMIN');
+  return res.json(filtered.sort((a: any, b: any) => String(a.level).localeCompare(String(b.level))));
 });
 
 /**
@@ -1246,6 +1247,10 @@ router.post('/designations', passport.authenticate('jwt', { session: false }), a
     const { tenantId, level, code, name } = req.body || {};
     if (!level || !code || !name) return res.status(400).json({ error: 'level, code, name required' });
     if (tenantId) return res.status(400).json({ error: 'tenantId is not allowed; designations are global' });
+
+    if (String(code).trim().toUpperCase() === 'TENANT_ADMIN') {
+      return res.status(400).json({ error: 'TENANT_ADMIN designation cannot be created' });
+    }
 
     const created = await (prisma as any).reporterDesignation.create({ data: { tenantId: null, level, code, name } });
     res.status(201).json(created);

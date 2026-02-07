@@ -131,7 +131,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
     // Check tenant exists
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, name: true, slug: true }
+      select: { id: true, name: true, slug: true, stateId: true }
     });
     if (!tenant) {
       return res.status(404).json({ success: false, error: 'Tenant not found' });
@@ -164,10 +164,22 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
       return res.status(500).json({ success: false, error: 'No language found in system' });
     }
 
-    // Get state
+    // Get state (prefer explicit input; else tenant.stateId; else tenant entity publicationStateId)
     let state = null;
-    if (stateId) {
-      state = await prisma.state.findUnique({ where: { id: stateId } });
+    const requestedStateId = stateId ? String(stateId).trim() : '';
+    const tenantStateId = tenant?.stateId ? String(tenant.stateId).trim() : '';
+    let entityStateId = '';
+
+    if (!requestedStateId && !tenantStateId) {
+      const entity = await prisma.tenantEntity
+        .findUnique({ where: { tenantId }, select: { publicationStateId: true } })
+        .catch(() => null);
+      entityStateId = entity?.publicationStateId ? String(entity.publicationStateId).trim() : '';
+    }
+
+    const effectiveStateId = requestedStateId || tenantStateId || entityStateId;
+    if (effectiveStateId) {
+      state = await prisma.state.findUnique({ where: { id: effectiveStateId } });
     }
     if (!state) {
       state = await prisma.state.findFirst({ orderBy: { name: 'asc' } });

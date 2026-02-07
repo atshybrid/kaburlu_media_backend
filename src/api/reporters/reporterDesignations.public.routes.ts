@@ -50,6 +50,8 @@ const router = Router();
 router.get('/', async (req, res) => {
   const { tenantId, level } = req.query as Record<string, string>;
 
+  const isTenantAdmin = (row: any) => String(row?.code || '').trim().toUpperCase() === 'TENANT_ADMIN';
+
   const whereGlobal: any = { tenantId: null };
   const whereTenant: any = tenantId ? { tenantId } : null;
 
@@ -58,10 +60,13 @@ router.get('/', async (req, res) => {
     if (whereTenant) whereTenant.level = level;
   }
 
-  const [globalRows, tenantRows] = await Promise.all([
+  const [globalRowsRaw, tenantRowsRaw] = await Promise.all([
     (prisma as any).reporterDesignation.findMany({ where: whereGlobal }),
     whereTenant ? (prisma as any).reporterDesignation.findMany({ where: whereTenant }) : [],
   ]);
+
+  const globalRows = (globalRowsRaw as any[]).filter(r => !isTenantAdmin(r));
+  const tenantRows = (tenantRowsRaw as any[]).filter(r => !isTenantAdmin(r));
 
   if (!tenantId) {
     const list = (globalRows as any[]).sort((a: any, b: any) => String(a.level).localeCompare(String(b.level)));

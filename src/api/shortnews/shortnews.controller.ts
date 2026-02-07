@@ -10,6 +10,7 @@ import { aiEnabledFor } from '../../lib/aiConfig';
 import { getPrompt, renderPrompt } from '../../lib/prompts';
 import { aiGenerateText } from '../../lib/aiProvider';
 import { generateAiShortNewsFromPrompt } from './shortnews.ai';
+import { detectLanguageCodeFromText, languageNameFromCode, normalizeLanguageCode } from '../../lib/languageDetect';
 import { sendToTopic } from '../../lib/fcm';
 import prismaClient from '../../lib/prisma';
 import { translateAndSaveCategoryInBackground } from '../categories/categories.service';
@@ -52,7 +53,19 @@ function normalizeHeadings(input?: any, h2Alt?: any, h3Alt?: any): HeadingsPaylo
 export const aiGenerateShortNewsArticle = async (req: Request, res: Response) => {
   try {
     if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
-    const { rawText } = req.body || {};
+    const {
+      rawText,
+      titleHint,
+      categoryNames,
+      autoCreateCategory,
+      outputLanguageCode,
+      languageCode: languageCodeBody,
+      titleMinChars,
+      titleMaxChars,
+      subtitleMaxChars,
+      minWords,
+      maxWords,
+    } = req.body || {};
     if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
       return res.status(400).json({ success: false, error: 'rawText is required' });
     }
@@ -60,12 +73,71 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
     if (wordCount > 500) {
       return res.status(400).json({ success: false, error: 'rawText must be 500 words or less' });
     }
+
+    const categoryCandidates: string[] = Array.isArray(categoryNames)
+      ? categoryNames
+          .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+          .filter((x: string) => x.length > 0)
+          .slice(0, 50)
+      : [];
+
+    const titleHintClean = typeof titleHint === 'string' ? titleHint.trim().slice(0, 80) : '';
+
+    // Defaults:
+    // - Legacy mode (no categoryNames): title <= 35 chars (existing behavior)
+    // - Reporter-style mode (categoryNames provided): title 50-60 chars + subtitle <= 50 chars
+    const reporterStyle = categoryCandidates.length > 0;
+    const defaultTitleMin = reporterStyle ? 50 : undefined;
+    const defaultTitleMax = reporterStyle ? 60 : 35;
+
+    const titleMin = Number.isFinite(Number(titleMinChars)) ? Number(titleMinChars) : defaultTitleMin;
+    const titleMax = Number.isFinite(Number(titleMaxChars)) ? Number(titleMaxChars) : defaultTitleMax;
+    const subtitleMax = Number.isFinite(Number(subtitleMaxChars)) ? Number(subtitleMaxChars) : 50;
+    const minWordsNum = Number.isFinite(Number(minWords)) ? Number(minWords) : 58;
+    const maxWordsNum = Number.isFinite(Number(maxWords)) ? Number(maxWords) : 60;
+
     const languageId = (req.user as any).languageId;
-    if (!languageId) return res.status(400).json({ success: false, error: 'User language not set' });
-    const lang = await prismaClient.language.findUnique({ where: { id: languageId } });
-    const languageCode = lang?.code || 'en';
+    const userLang = languageId
+      ? await prismaClient.language.findUnique({ where: { id: languageId } }).catch(() => null)
+      : null;
+
+    const requestedLang = normalizeLanguageCode(outputLanguageCode ?? languageCodeBody);
+    const detected = detectLanguageCodeFromText(rawText);
+    const inferredLang = requestedLang || detected?.code || userLang?.code || 'en';
+
+    // Ensure we only return a language code we support in DB (best-effort).
+    const outLangRow = await prismaClient.language.findFirst({ where: { code: inferredLang } }).catch(() => null);
+    const languageCode = outLangRow?.code || inferredLang || 'en';
     const tpl = await getPrompt('SHORTNEWS_AI_ARTICLE' as any);
-    const prompt = renderPrompt(tpl, { languageCode, content: rawText });
+
+    let prompt = renderPrompt(tpl, { languageCode, content: rawText, title: titleHintClean, titleHint: titleHintClean, categoryNames: categoryCandidates });
+
+    const outLangName = languageNameFromCode(languageCode);
+    prompt += `\n\nLANGUAGE REQUIREMENT (STRICT):`;
+    prompt += `\n- Input text may be in ${outLangName} or mixed; you MUST write title/content/headings in ${outLangName} (language code: ${languageCode}).`;
+    prompt += `\n- Do NOT translate into a different language. Preserve the input language.`;
+    if (categoryCandidates.length > 0) {
+      prompt += `\n- Category output must still follow the allowed list exactly (even if it is in English).`;
+    }
+    if (titleHintClean) {
+      prompt += `\n\nTitle hint (optional): ${titleHintClean}`;
+    }
+    // Hard constraints (best-effort). We still enforce caps server-side.
+    if (Number.isFinite(titleMax) && titleMax > 0) {
+      prompt += `\n\nTitle length: aim for <= ${Math.floor(titleMax)} characters.`;
+      if (Number.isFinite(titleMin as any) && (titleMin as number) > 0) {
+        prompt += ` Try to keep title between ${Math.floor(titleMin as number)} and ${Math.floor(titleMax)} characters.`;
+      }
+    }
+    if (Number.isFinite(subtitleMax) && subtitleMax > 0) {
+      prompt += `\nSubtitle: include headings.h2.text (<= ${Math.floor(subtitleMax)} characters) if possible.`;
+    }
+    prompt += `\nContent length: BETWEEN ${Math.floor(minWordsNum)} and ${Math.floor(maxWordsNum)} WORDS for content.`;
+    if (categoryCandidates.length > 0) {
+      prompt += `\n\nIMPORTANT: Choose category ONLY from this list (pick the best match):\n- ${categoryCandidates.join('\n- ')}`;
+      prompt += `\nReturn JSON key suggestedCategoryName EXACTLY as one of the list values.`;
+    }
+
     const draft = await generateAiShortNewsFromPrompt(
       rawText,
       prompt,
@@ -73,11 +145,23 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
         const r = await aiGenerateText({ prompt: p, purpose: 'shortnews_ai_article' });
         return String(r?.text || '');
       },
-      { minWords: 58, maxWords: 60, maxAttempts: 3 }
+      {
+        minWords: minWordsNum,
+        maxWords: maxWordsNum,
+        maxAttempts: 3,
+        titleMaxChars: titleMax,
+        titleMinChars: Number.isFinite(titleMin as any) ? (titleMin as number) : undefined,
+        subtitleMaxChars: subtitleMax,
+      }
     );
     let suggestedCategoryName = draft.suggestedCategoryName;
     if (!suggestedCategoryName) suggestedCategoryName = 'Community';
-    let matchedCategory: { id: string; name: string } | null = null;
+
+    const autoCreate = typeof autoCreateCategory === 'boolean'
+      ? autoCreateCategory
+      : categoryCandidates.length === 0; // default: only auto-create when no candidates provided
+
+    let matchedCategory: { id: string; name: string; slug: string } | null = null;
     let createdCategory = false;
     let categoryTranslationId: string | null = null;
     let localizedCategoryName: string | null = null;
@@ -86,32 +170,47 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
         suggestedName: suggestedCategoryName,
         languageCode,
         similarityThreshold: 0.9,
-        autoCreate: true,
+        autoCreate,
       });
       if (resolved?.categoryId) {
-        const cat = await prismaClient.category.findUnique({ where: { id: resolved.categoryId }, select: { id: true, name: true } }).catch(() => null);
+        const cat = await prismaClient.category.findUnique({ where: { id: resolved.categoryId }, select: { id: true, name: true, slug: true } }).catch(() => null);
         if (cat?.id) matchedCategory = cat;
         createdCategory = Boolean(resolved?.created);
         localizedCategoryName = suggestedCategoryName;
-        // Ensure translation exists for this language code
-        const tr = await prismaClient.categoryTranslation.upsert({
-          where: { categoryId_language: { categoryId: resolved.categoryId, language: languageCode as any } },
-          update: { name: suggestedCategoryName },
-          create: { categoryId: resolved.categoryId, language: languageCode as any, name: suggestedCategoryName },
-          select: { id: true }
-        });
-        categoryTranslationId = tr.id;
+
+        // Only write/ensure translation when we actually auto-created or when client didn't constrain categories.
+        // When categoryCandidates are provided, avoid mutating translations during draft generation.
+        if (autoCreate && (resolved?.created || categoryCandidates.length === 0)) {
+          const tr = await prismaClient.categoryTranslation.upsert({
+            where: { categoryId_language: { categoryId: resolved.categoryId, language: languageCode as any } },
+            update: { name: suggestedCategoryName },
+            create: { categoryId: resolved.categoryId, language: languageCode as any, name: suggestedCategoryName },
+            select: { id: true }
+          });
+          categoryTranslationId = tr.id;
+        } else {
+          const tr = await prismaClient.categoryTranslation.findUnique({
+            where: { categoryId_language: { categoryId: resolved.categoryId, language: languageCode as any } },
+            select: { id: true, name: true },
+          }).catch(() => null);
+          categoryTranslationId = tr?.id || null;
+          if (tr?.name) localizedCategoryName = tr.name;
+        }
       }
     } catch {}
     return res.json({
       success: true,
       data: {
         title: draft.title,
+        subtitle: (draft.headings as any)?.h2?.text || null,
         content: draft.content,
         languageCode,
         suggestedCategoryName,
         suggestedCategoryId: matchedCategory?.id || null,
         matchedCategoryName: matchedCategory?.name || null,
+        detectedCategoryName: matchedCategory?.name || null,
+        detectedCategoryId: matchedCategory?.id || null,
+        detectedCategorySlug: matchedCategory?.slug || null,
         createdCategory,
         categoryTranslationId,
         languageCategoryId: categoryTranslationId,
@@ -130,15 +229,21 @@ export const aiGenerateShortNewsArticle = async (req: Request, res: Response) =>
 export const aiRewriteShortNews = async (req: Request, res: Response) => {
   try {
     if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
-    const { rawText, title } = req.body || {};
+    const { rawText, title, outputLanguageCode, languageCode: languageCodeBody } = req.body || {};
     if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
       return res.status(400).json({ success: false, error: 'rawText is required' });
     }
-    // Determine language from user principal
+
     const languageId = (req.user as any).languageId;
-    if (!languageId) return res.status(400).json({ success: false, error: 'User language not set' });
-    const lang = await prismaClient.language.findUnique({ where: { id: languageId } });
-    const languageCode = lang?.code || 'en';
+    const userLang = languageId
+      ? await prismaClient.language.findUnique({ where: { id: languageId } }).catch(() => null)
+      : null;
+    const requestedLang = normalizeLanguageCode(outputLanguageCode ?? languageCodeBody);
+    const detected = detectLanguageCodeFromText(rawText);
+    const inferredLang = requestedLang || detected?.code || userLang?.code || 'en';
+    const outLangRow = await prismaClient.language.findFirst({ where: { code: inferredLang } }).catch(() => null);
+    const languageCode = outLangRow?.code || inferredLang || 'en';
+
     const tpl = await getPrompt('SHORTNEWS_REWRITE' as any);
     const prompt = renderPrompt(tpl, { languageCode, title: title || '', content: rawText });
   const aiJsonRes = await aiGenerateText({ prompt, purpose: 'rewrite' });

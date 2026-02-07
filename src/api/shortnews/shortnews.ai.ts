@@ -18,6 +18,9 @@ export interface GenerateShortNewsOptions {
   minWords?: number; // minimum acceptable content words before retry
   maxWords?: number; // absolute cap (hard trimmed after success)
   maxAttempts?: number; // AI attempts before fallback
+  titleMaxChars?: number; // hard cap for title length
+  titleMinChars?: number; // retry until title meets min length (best-effort)
+  subtitleMaxChars?: number; // cap for headings text
 }
 
 interface InternalResult {
@@ -38,7 +41,14 @@ export async function generateAiShortNewsFromPrompt(
   aiFn: (prompt: string) => Promise<string>,
   opts: GenerateShortNewsOptions = {}
 ): Promise<GeneratedShortNewsDraft> {
-  const { minWords = 58, maxWords = 60, maxAttempts = 3 } = opts;
+  const {
+    minWords = 58,
+    maxWords = 60,
+    maxAttempts = 3,
+    titleMaxChars = 35,
+    titleMinChars,
+    subtitleMaxChars = 50,
+  } = opts;
   let attempts = 0;
   let parsed: any = null;
 
@@ -67,6 +77,14 @@ export async function generateAiShortNewsFromPrompt(
       // under min, retry
       continue;
     }
+
+    if (typeof titleMinChars === 'number' && titleMinChars > 0) {
+      const titleLen = parsed.title.trim().length;
+      if (titleLen < titleMinChars && attempts < maxAttempts) {
+        // too short title, retry
+        continue;
+      }
+    }
     break; // success
   }
 
@@ -79,13 +97,15 @@ export async function generateAiShortNewsFromPrompt(
     // Title: first 6 words (or fewer) joined, then truncated to 35 chars
     const titleSeed = words.slice(0, 6).join(' ');
     let title = titleSeed.replace(/(^.|\s+.)/g, m => m.toUpperCase());
-    if (title.length > 35) title = title.slice(0, 35).trim();
+    if (title.length > titleMaxChars) title = title.slice(0, titleMaxChars).trim();
     parsed = { title, content, suggestedCategoryName: 'Community' };
     fallbackUsed = true;
   }
 
-  // Enforce final caps (title <= 35 chars, content <= maxWords)
-  if (parsed.title.length > 35) parsed.title = parsed.title.slice(0, 35).trim();
+  // Enforce final caps (title <= titleMaxChars, content <= maxWords)
+  if (typeof parsed.title === 'string' && parsed.title.length > titleMaxChars) {
+    parsed.title = parsed.title.slice(0, titleMaxChars).trim();
+  }
   const finalWords = parsed.content.trim().split(/\s+/);
   if (finalWords.length > maxWords) parsed.content = finalWords.slice(0, maxWords).join(' ');
   if (typeof parsed.suggestedCategoryName !== 'string' || !parsed.suggestedCategoryName.trim()) {
@@ -93,7 +113,7 @@ export async function generateAiShortNewsFromPrompt(
   }
 
   // Normalize optional headings if present
-  const clip = (s: any) => (typeof s === 'string' ? s.trim().slice(0, 50) : undefined);
+  const clip = (s: any) => (typeof s === 'string' ? s.trim().slice(0, subtitleMaxChars) : undefined);
   const normHead = (obj: any) => {
     if (!obj || typeof obj !== 'object') return undefined;
     const text = clip(obj.text ?? obj.content);

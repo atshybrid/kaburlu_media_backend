@@ -70,6 +70,7 @@ import prisma from '../../lib/prisma';
 import { getRazorpayClientForTenant, getRazorpayConfigForTenant } from '../reporterPayments/razorpay.service';
 
 type TenantAdminLoginContext = {
+  reporterId: string;
   tenantId: string;
   domainId?: string;
   tenant?: { id: string; name: string; slug: string; nativeName?: string | null };
@@ -122,6 +123,7 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
   const reporter = await prisma.reporter.findUnique({
     where: { userId },
     select: {
+      id: true,
       tenantId: true,
       tenant: {
         select: {
@@ -172,6 +174,7 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
   };
 
   return {
+    reporterId: reporter.id,
     tenantId: reporter.tenantId,
     domainId: domain?.id,
     tenant: tenantWithNativeName,
@@ -780,6 +783,7 @@ export const login = async (loginDto: MpinLoginDto) => {
     try {
       const ctx = await getTenantAdminLoginContext(user.id);
       if (ctx) {
+        (result as any).reporterId = ctx.reporterId;
         (result as any).tenantId = ctx.tenantId;
         (result as any).domainId = ctx.domainId;
         (result as any).tenant = ctx.tenant;

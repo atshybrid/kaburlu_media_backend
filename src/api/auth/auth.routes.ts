@@ -42,6 +42,8 @@ const router = Router();
  *                   role: REPORTER
  *                   languageId: lang_1
  *                 # Present for TENANT_ADMIN and REPORTER users
+ *                 # Tenant admins also have a linked Reporter row; reporterId is useful for ID card operations
+ *                 reporterId: <reporter_id>
  *                 tenantId: <tenant_id>
  *                 tenant:
  *                   id: <tenant_id>

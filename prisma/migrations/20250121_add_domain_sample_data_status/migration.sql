@@ -3,6 +3,14 @@
 
 DO $$
 BEGIN
+  -- If Domain table doesn't exist yet (fresh/shadow DB), skip safely.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Domain'
+  ) THEN
+    RETURN;
+  END IF;
+
   -- Add sampleDataStatus column if it doesn't exist
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns 
@@ -29,4 +37,12 @@ BEGIN
 END $$;
 
 -- Create index on sampleDataStatus for efficient filtering
-CREATE INDEX IF NOT EXISTS "Domain_sampleDataStatus_idx" ON "Domain"("sampleDataStatus");
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Domain'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS "Domain_sampleDataStatus_idx" ON "Domain"("sampleDataStatus");
+  END IF;
+END $$;

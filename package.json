@@ -57,6 +57,8 @@
     "prod:pm2:logs": "npx pm2 logs",
     "prompts:web": "ts-node scripts/update_web_prompt.ts",
     "prompts:newsroom": "ts-node scripts/update_newsroom_ai_agent_prompt.ts",
+    "fix:tenant-admins:publisher:dry": "ts-node scripts/assign_publisher_designation_to_all_tenant_admins.ts --dry-run",
+    "fix:tenant-admins:publisher": "ts-node scripts/assign_publisher_designation_to_all_tenant_admins.ts",
     "postinstall": "prisma generate"
   },
   "engines": {

@@ -489,6 +489,7 @@ export const loginWithGoogleController = async (req: Request, res: Response) => 
       try {
         const ctx = await getTenantAdminLoginContext(user.id);
         if (ctx) {
+          result.reporterId = ctx.reporterId;
           result.tenantId = ctx.tenantId;
           result.domainId = ctx.domainId;
           result.tenant = ctx.tenant;
