@@ -4864,9 +4864,17 @@ router.get('/idcard', async (req, res) => {
   // Pull settings
   const settings = await pAny.tenantIdCardSettings.findUnique({ where: { tenantId: tenant.id } }).catch(()=>null);
 
-  // Place of work
+  // Place of work - Only Publisher uses tenant's state
   const parts: string[] = [];
-  if (reporterWithCard.stateId) {
+  const designationName = reporterWithCard.designation?.name || '';
+  const isPublisher = designationName.toLowerCase() === 'publisher' || designationName.toLowerCase() === 'ప్రచురణకర్త';
+  
+  if (isPublisher && tenant.stateId) {
+    // Publisher uses tenant's state
+    const s = await pAny.state.findUnique({ where: { id: tenant.stateId } }).catch(()=>null);
+    if (s?.name) parts.push(s.name);
+  } else if (reporterWithCard.stateId) {
+    // All other designations use their own stateId
     const s = await pAny.state.findUnique({ where: { id: reporterWithCard.stateId } }).catch(()=>null);
     if (s?.name) parts.push(s.name);
   }

@@ -95,7 +95,7 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
   });
   if (!reporter || !reporter.idCard) return null;
 
-  const tenant = await (prisma as any).tenant.findUnique({ where: { id: reporter.tenantId } });
+  const tenant = await (prisma as any).tenant.findUnique({ where: { id: reporter.tenantId }, include: { state: true } });
   const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId: reporter.tenantId } });
   const entity = await (prisma as any).tenantEntity.findUnique({ where: { tenantId: reporter.tenantId } }).catch(() => null);
   const primaryDomainRec = await (prisma as any).domain.findFirst({ where: { tenantId: reporter.tenantId, status: 'ACTIVE', isPrimary: true } }).catch(()=>null);
@@ -117,12 +117,16 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
     (reporter as any).assemblyConstituency?.district ||
     null;
 
-  const derivedState =
-    (reporter as any).state ||
-    (derivedDistrict as any)?.state ||
-    (reporter as any).mandal?.district?.state ||
-    (reporter as any).assemblyConstituency?.district?.state ||
-    null;
+  // Only Publisher designation uses tenant's state (other STATE level designations are manually assigned)
+  const designationName = (reporter as any).designation?.name || '';
+  const isPublisher = designationName.toLowerCase() === 'publisher' || designationName.toLowerCase() === 'ప్రచురణకర్త';
+  const derivedState = isPublisher && tenant?.state
+    ? tenant.state
+    : ((reporter as any).state ||
+      (derivedDistrict as any)?.state ||
+      (reporter as any).mandal?.district?.state ||
+      (reporter as any).assemblyConstituency?.district?.state ||
+      null);
 
   async function resolveLocationPartsFromFlexibleId(flexibleId: string): Promise<string[]> {
     const id = String(flexibleId || '').trim();

@@ -33,7 +33,7 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     include: {
       idCard: true,
       user: { include: { profile: true } },
-      tenant: { include: { entity: true, idCardSettings: true } },
+      tenant: { include: { entity: true, idCardSettings: true, state: true } },
       designation: true,
       state: true,
       district: { include: { state: true } },
@@ -129,14 +129,18 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     reporter.assemblyConstituency?.district ||
     null;
 
-  const derivedState =
-    reporter.state ||
-    (derivedDistrict as any)?.state ||
-    reporter.mandal?.district?.state ||
-    reporter.assemblyConstituency?.district?.state ||
-    null;
+  // Only Publisher designation uses tenant's state (other STATE level designations are manually assigned)
+  const isPublisher = designationName?.toLowerCase() === 'publisher' || designationName?.toLowerCase() === 'ప్రచురణకర్త';
+  const derivedState = isPublisher && reporter.tenant?.state
+    ? reporter.tenant.state
+    : (reporter.state ||
+      (derivedDistrict as any)?.state ||
+      reporter.mandal?.district?.state ||
+      reporter.assemblyConstituency?.district?.state ||
+      null);
 
   // Work Place rule:
+  // - STATE level: Use tenant's state (not reporter's stateId)
   // - MANDAL level: Mandal, District, State
   // - CONSTITUENCY level: show selected `constituencyId` location name (mandal/assembly/district/state)
   // - ASSEMBLY level: Assembly, District, State
