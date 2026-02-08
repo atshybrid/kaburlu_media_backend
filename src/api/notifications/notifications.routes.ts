@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import { sendPush, sendPushToUser, broadcastPush } from '../../lib/push';
 import { isExpoPushToken } from '../../lib/expoPush';
+import { isAPNSToken } from '../../lib/apnsPush';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
 
@@ -26,7 +27,8 @@ router.get('/status', async (_req, res) => {
     });
     
     const expoTokens = allDevices.filter(d => isExpoPushToken(d.pushToken!));
-    const fcmTokens = allDevices.filter(d => !isExpoPushToken(d.pushToken!));
+    const apnsTokens = allDevices.filter(d => !isExpoPushToken(d.pushToken!) && isAPNSToken(d.pushToken!));
+    const fcmTokens = allDevices.filter(d => !isExpoPushToken(d.pushToken!) && !isAPNSToken(d.pushToken!));
     
     // Check Firebase config
     const { projectId, clientEmail, privateKey } = config.firebase;
@@ -36,12 +38,18 @@ router.get('/status', async (_req, res) => {
       devices: {
         total: allDevices.length,
         expoTokens: expoTokens.length,
+        apnsTokens: apnsTokens.length,
         fcmTokens: fcmTokens.length,
       },
       services: {
         expo: {
           enabled: true,
           endpoint: 'https://exp.host/--/api/v2/push/send',
+        },
+        apns: {
+          enabled: !!(projectId && clientEmail && privateKey),
+          description: 'Apple Push via Firebase Admin SDK',
+          hasCredentials: !!(clientEmail && privateKey),
         },
         firebase: {
           enabled: !!(projectId && clientEmail && privateKey),
@@ -90,7 +98,12 @@ router.post('/test-token', passport.authenticate('jwt', { session: false }), asy
     const { token, title, body, data } = req.body as { token?: string; title?: string; body?: string; data?: Record<string, string> };
     if (!token || !title || !body) return res.status(400).json({ error: 'token, title, body required' });
     
-    const tokenType = isExpoPushToken(token) ? 'Expo' : 'FCM';
+    let tokenType = 'FCM'; // Default
+    if (isExpoPushToken(token)) {
+      tokenType = 'Expo';
+    } else if (isAPNSToken(token)) {
+      tokenType = 'APNS';
+    }
     console.log(`[Notifications] test-token: Sending ${tokenType} notification to: ${token.substring(0, 30)}...`);
     
     const result = await sendPush([token], { title, body, data });

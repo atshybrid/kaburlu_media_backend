@@ -3,11 +3,13 @@
  * 
  * Automatically detects token type and routes to appropriate service:
  * - ExponentPushToken[xxx] → Expo Push API
+ * - APNS token (64-128 hex chars) → Apple Push via Firebase
  * - FCM token (cVJ8xxx) → Firebase Cloud Messaging
  */
 
 import { sendToTokens as sendToFCMTokens, sendToUser as sendToUserFCM } from './fcm';
 import { sendToExpoTokens, sendToUserExpo, isExpoPushToken, broadcastExpo } from './expoPush';
+import { sendToAPNSTokens, sendToUserAPNS, isAPNSToken } from './apnsPush';
 import prisma from './prisma';
 
 export interface PushPayload {
@@ -24,10 +26,11 @@ export interface PushResult {
   errors: any[];
   expoResult?: any;
   fcmResult?: any;
+  apnsResult?: any;
 }
 
 /**
- * Send push notification to tokens (auto-detects Expo vs FCM)
+ * Send push notification to tokens (auto-detects Expo vs APNS vs FCM)
  */
 export async function sendPush(tokens: string[], payload: PushPayload): Promise<PushResult> {
   if (!tokens.length) {
@@ -37,9 +40,10 @@ export async function sendPush(tokens: string[], payload: PushPayload): Promise<
 
   // Separate tokens by type
   const expoTokens = tokens.filter(isExpoPushToken);
-  const fcmTokens = tokens.filter(t => !isExpoPushToken(t));
+  const apnsTokens = tokens.filter(t => !isExpoPushToken(t) && isAPNSToken(t));
+  const fcmTokens = tokens.filter(t => !isExpoPushToken(t) && !isAPNSToken(t));
 
-  console.log(`[Push] Tokens: ${expoTokens.length} Expo, ${fcmTokens.length} FCM`);
+  console.log(`[Push] Tokens: ${expoTokens.length} Expo, ${apnsTokens.length} APNS, ${fcmTokens.length} FCM`);
 
   const results: PushResult = { successCount: 0, failureCount: 0, errors: [] };
 
@@ -55,6 +59,21 @@ export async function sendPush(tokens: string[], payload: PushPayload): Promise<
       console.error('[Push] Expo send failed:', e);
       results.failureCount += expoTokens.length;
       results.errors.push({ type: 'expo', error: e.message });
+    }
+  }
+
+  // Send to APNS tokens
+  if (apnsTokens.length > 0) {
+    try {
+      const apnsResult = await sendToAPNSTokens(apnsTokens, payload);
+      results.successCount += apnsResult.successCount;
+      results.failureCount += apnsResult.failureCount;
+      results.errors.push(...apnsResult.errors);
+      results.apnsResult = apnsResult;
+    } catch (e: any) {
+      console.error('[Push] APNS send failed:', e);
+      results.failureCount += apnsTokens.length;
+      results.errors.push({ type: 'apns', error: e.message });
     }
   }
 
