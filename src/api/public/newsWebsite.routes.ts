@@ -503,7 +503,8 @@ router.get('/config', async (_req, res) => {
             title: 'Quick Links',
             links: [
               { label: 'About Us', href: '/about-us' },
-              { label: 'Contact', href: '/contact-us' },
+              { label: 'Contact', href: '/contact' },
+              { label: 'Contact Us', href: '/contact-us' },
               { label: 'Advertise', href: '/advertise' }
             ]
           },
@@ -512,7 +513,10 @@ router.get('/config', async (_req, res) => {
             links: [
               { label: 'Privacy Policy', href: '/privacy-policy' },
               { label: 'Terms & Conditions', href: '/terms' },
-              { label: 'Disclaimer', href: '/disclaimer' }
+              { label: 'Terms of Service', href: '/terms-of-service' },
+              { label: 'Disclaimer', href: '/disclaimer' },
+              { label: 'Editorial Policy', href: '/editorial-policy' },
+              { label: 'AI Policy', href: '/ai-policy' }
             ]
           }
         ],
