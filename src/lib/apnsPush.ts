@@ -81,7 +81,8 @@ export async function sendToAPNSTokens(
     await Promise.all(
       response.responses.map(async (r, idx) => {
         if (!r.success && r.error) {
-          const errorInfo = r.error.errorInfo || r.error;
+          const errAny = r.error as any;
+          const errorInfo = errAny?.errorInfo || r.error;
           console.error(`[APNS] Token ${idx} failed:`, errorInfo);
           errors.push(r.error);
 

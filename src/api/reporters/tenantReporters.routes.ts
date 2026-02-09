@@ -8,8 +8,41 @@ import { generateAndUploadIdCardPdf, isBunnyCdnConfigured } from '../../lib/idCa
 
 const router = Router();
 
+function getRequestBaseUrl(req: any): string {
+  const host = req?.get ? String(req.get('x-forwarded-host') || req.get('host') || '').trim() : '';
+  const proto = req?.get
+    ? String(req.get('x-forwarded-proto') || req.protocol || 'http').trim()
+    : String(req?.protocol || 'http').trim();
+  if (!host) return '';
+  return `${proto}://${host}`.replace(/\/+$/g, '');
+}
+
 async function resolveTenantBaseUrl(req: any, tenantId: string): Promise<string> {
   const envBase = String(process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || '').trim();
+  if (envBase) return envBase.replace(/\/+$/g, '');
+
+  // Local/dev: if request is coming from localhost, prefer the request host so
+  // PDFs can be fetched from the same local server without needing public DNS.
+  const requestBase = getRequestBaseUrl(req);
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(requestBase)) return requestBase;
+
+  const primary = await (prisma as any).domain
+    .findFirst({ where: { tenantId, status: 'ACTIVE', isPrimary: true }, select: { domain: true } })
+    .catch(() => null);
+  const any =
+    primary ||
+    (await (prisma as any).domain
+      .findFirst({ where: { tenantId, status: 'ACTIVE' }, select: { domain: true } })
+      .catch(() => null));
+  if (any?.domain) return `https://${String(any.domain).trim()}`;
+
+  if (requestBase) return requestBase;
+
+  return 'https://api.kaburlumedia.com';
+}
+
+async function resolveTenantPublicBaseUrl(req: any, tenantId: string): Promise<string> {
+  const envBase = String(process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL || '').trim();
   if (envBase) return envBase.replace(/\/+$/g, '');
 
   const primary = await (prisma as any).domain
@@ -22,9 +55,8 @@ async function resolveTenantBaseUrl(req: any, tenantId: string): Promise<string>
       .catch(() => null));
   if (any?.domain) return `https://${String(any.domain).trim()}`;
 
-  const host = req?.get ? String(req.get('host') || '').trim() : '';
-  const proto = req?.protocol ? String(req.protocol).trim() : 'http';
-  if (host) return `${proto}://${host}`;
+  const requestBase = getRequestBaseUrl(req);
+  if (requestBase) return requestBase;
 
   return 'https://api.kaburlumedia.com';
 }
@@ -2857,7 +2889,18 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
 
     if (reporter.idCard) {
-      return res.status(201).json(reporter.idCard);
+      const requestBase = getRequestBaseUrl(req);
+      const pdfRequestUrl = requestBase
+        ? `${requestBase}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`
+        : null;
+      const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
+      const pdfDynamicUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
+      return res.status(201).json({
+        ...reporter.idCard,
+        alreadyExists: true,
+        pdfRequestUrl,
+        pdfDynamicUrl,
+      });
     }
 
     // Generation pre-conditions
@@ -2979,8 +3022,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     // If Bunny is not configured (common in local/dev), still set a usable pdfUrl
     // pointing to our own PDF endpoint. Use forceRender=true to avoid recursive fetches.
     if (!idCard.pdfUrl) {
-      const baseUrl = await resolveTenantBaseUrl(req, tenantId);
-      const fallbackPdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
+      const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
+      const fallbackPdfUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
       await (prisma as any).reporterIDCard.update({
         where: { id: idCard.id },
         data: { pdfUrl: fallbackPdfUrl },
@@ -2988,7 +3031,17 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       idCard.pdfUrl = fallbackPdfUrl;
     }
 
-    return res.status(201).json(idCard);
+    const requestBase = getRequestBaseUrl(req);
+    const pdfRequestUrl = requestBase
+      ? `${requestBase}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`
+      : null;
+    const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
+    const pdfDynamicUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
+    return res.status(201).json({
+      ...idCard,
+      pdfRequestUrl,
+      pdfDynamicUrl,
+    });
   } catch (e) {
     console.error('tenant reporter id-card error', e);
     return res.status(500).json({ error: 'Failed to generate reporter ID card' });
@@ -3664,19 +3717,26 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     if (keepCardNumber && previousCardNumber) {
       cardNumber = previousCardNumber;
     } else {
-      const existingCount = await (prisma as any).reporterIDCard.count();
-      const prefix = settings.cardNumberPrefix || 'KT';
-      const now = new Date();
-      const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      const seq = String(existingCount + 1).padStart(3, '0');
-      cardNumber = `${prefix}${yyyymm}${seq}`;
+      const existingCount = await (prisma as any).reporterIDCard.count({
+        where: { reporter: { tenantId } },
+      });
+      const prefix: string = settings.idPrefix || 'ID';
+      const digits: number = settings.idDigits || 6;
+      const nextNumber = existingCount + 1;
+      const padded = String(nextNumber).padStart(digits, '0');
+      cardNumber = `${prefix}${padded}`;
     }
 
     // Calculate validity
-    const validityMonths = settings.validityMonths || 12;
     const issuedAt = new Date();
-    const expiresAt = new Date(issuedAt);
-    expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    let expiresAt: Date;
+    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+      expiresAt = new Date(settings.fixedValidUntil);
+    } else if (typeof settings.validityDays === 'number' && settings.validityDays > 0) {
+      expiresAt = new Date(issuedAt.getTime() + settings.validityDays * 24 * 60 * 60 * 1000);
+    } else {
+      expiresAt = new Date(issuedAt.getTime() + 365 * 24 * 60 * 60 * 1000);
+    }
 
     // Create new ID card
     const idCard = await (prisma as any).reporterIDCard.create({
@@ -3716,16 +3776,25 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     // If Bunny isn't configured or PDF generation/upload failed, fall back to our public PDF endpoint.
     // (This generates on-demand; we forceRender to avoid trying to re-fetch stored URLs.)
     if (!pdfUrl) {
-      const baseUrl = await resolveTenantBaseUrl(req, tenantId);
-      pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
+      const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
+      pdfUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
       await (prisma as any).reporterIDCard
         .update({ where: { id: idCard.id }, data: { pdfUrl } })
         .catch(() => null);
     }
 
+    const requestBase = getRequestBaseUrl(req);
+    const pdfRequestUrl = requestBase
+      ? `${requestBase}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`
+      : null;
+    const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
+    const pdfDynamicUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(id)}&forceRender=true`;
+
     res.status(200).json({
       ...idCard,
       pdfUrl,
+      pdfRequestUrl,
+      pdfDynamicUrl,
       previousCardNumber,
       reason: reason || null,
       message: 'ID card regenerated successfully',

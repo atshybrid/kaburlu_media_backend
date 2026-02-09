@@ -124,17 +124,25 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
     const existingCount = await (prisma as any).reporterIDCard.count({
       where: { reporter: { tenantId: reporter.tenantId } }
     });
-    const prefix = settings.cardNumberPrefix || 'KT';
+    const prefix: string = settings.idPrefix || 'ID';
+    const digits: number = settings.idDigits || 6;
     const now = new Date();
-    const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-    const seq = String(existingCount + 1).padStart(3, '0');
-    const cardNumber = `${prefix}${yyyymm}${seq}`;
+    const nextNumber = existingCount + 1;
+    const padded = String(nextNumber).padStart(digits, '0');
+    const cardNumber = `${prefix}${padded}`;
     
     // Calculate validity
-    const validityMonths = settings.validityMonths || 12;
     const issuedAt = now;
-    const expiresAt = new Date(now);
-    expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    let expiresAt: Date;
+    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+      expiresAt = new Date(settings.fixedValidUntil);
+    } else if (typeof settings.validityDays === 'number' && settings.validityDays > 0) {
+      expiresAt = new Date(issuedAt.getTime() + settings.validityDays * 24 * 60 * 60 * 1000);
+    } else {
+      const validityMonths = settings.validityMonths || 12;
+      expiresAt = new Date(issuedAt);
+      expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    }
     
     // Create ID card
     const idCard = await (prisma as any).reporterIDCard.create({
@@ -359,18 +367,25 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
       const existingCount = await (prisma as any).reporterIDCard.count({
         where: { reporter: { tenantId: reporter.tenantId } }
       });
-      const prefix = settings.cardNumberPrefix || 'KT';
-      const now = new Date();
-      const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      const seq = String(existingCount + 1).padStart(3, '0');
-      cardNumber = `${prefix}${yyyymm}${seq}`;
+      const prefix: string = settings.idPrefix || 'ID';
+      const digits: number = settings.idDigits || 6;
+      const nextNumber = existingCount + 1;
+      const padded = String(nextNumber).padStart(digits, '0');
+      cardNumber = `${prefix}${padded}`;
     }
     
     // Create new ID card
-    const validityMonths = settings.validityMonths || 12;
     const now = new Date();
-    const expiresAt = new Date(now);
-    expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    let expiresAt: Date;
+    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+      expiresAt = new Date(settings.fixedValidUntil);
+    } else if (typeof settings.validityDays === 'number' && settings.validityDays > 0) {
+      expiresAt = new Date(now.getTime() + settings.validityDays * 24 * 60 * 60 * 1000);
+    } else {
+      const validityMonths = settings.validityMonths || 12;
+      expiresAt = new Date(now);
+      expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    }
     
     const idCard = await (prisma as any).reporterIDCard.create({
       data: {

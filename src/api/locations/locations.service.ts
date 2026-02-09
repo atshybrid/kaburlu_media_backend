@@ -6,6 +6,50 @@ import { CreateLocationDto, UpdateLocationDto } from './locations.dto';
 
 const prisma = new PrismaClient();
 
+const normalizeLocationSearchText = (input: string) => {
+    const s = String(input || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+    // Keep letters/numbers from any script; drop punctuation/symbols.
+    return s
+        .replace(/[’'`\"“”]/g, '')
+        .replace(/[._/\\-]+/g, ' ')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
+const buildLocationSearchVariants = (rawQuery: string) => {
+    const raw = String(rawQuery || '').trim();
+    const normalized = normalizeLocationSearchText(raw);
+
+    const variants = new Set<string>();
+    if (raw) variants.add(raw);
+    if (normalized) variants.add(normalized);
+    if (normalized) variants.add(normalized.replace(/\s+/g, ''));
+
+    // Small Latin-only spelling heuristics (common user inputs):
+    // - trailing 'y' vs 'i' (e.g., reddy → reddi)
+    if (/^[a-z0-9 ]+$/.test(normalized)) {
+        if (normalized.endsWith('y')) variants.add(normalized.slice(0, -1) + 'i');
+        if (normalized.endsWith('i')) variants.add(normalized.slice(0, -1) + 'y');
+
+        // Initials: user types "g konduru" but DB may store "G. Konduru"
+        // Add dotted variant when query starts with a single-letter token.
+        const m = normalized.match(/^([a-z])\s+(.+)$/);
+        if (m) variants.add(`${m[1]}. ${m[2]}`);
+    }
+
+    // Keep variant count small to avoid huge Prisma OR clauses.
+    return Array.from(variants)
+        .map((v) => v.trim())
+        .filter((v) => v.length >= 2)
+        .slice(0, 6);
+};
+
 // Create a single location
 export const createLocation = (data: CreateLocationDto) => {
     const { timestampUtc, ...rest } = data as any;
@@ -121,15 +165,18 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
 
     if (!q) return [];
 
+    const qVariants = buildLocationSearchVariants(q);
+    const orNameOrTranslationsContains = qVariants.flatMap((v) => [
+        { name: { contains: v, mode: 'insensitive' as const } },
+        { translations: { some: { name: { contains: v, mode: 'insensitive' as const } } } },
+    ]);
+
     const [states, districts, mandals, villages] = await Promise.all([
         wantState
             ? prisma.state.findMany({
                 where: {
                     isDeleted: false,
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
-                    ],
+                    OR: orNameOrTranslationsContains as any,
                 },
                 select: { id: true, name: true },
                 take: limit,
@@ -140,10 +187,7 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             ? prisma.district.findMany({
                 where: {
                     isDeleted: false,
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
-                    ],
+                    OR: orNameOrTranslationsContains as any,
                 },
                 select: { id: true, name: true, state: { select: { id: true, name: true } } },
                 take: limit,
@@ -154,10 +198,7 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             ? prisma.mandal.findMany({
                 where: {
                     isDeleted: false,
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
-                    ],
+                    OR: orNameOrTranslationsContains as any,
                 },
                 select: {
                     id: true,
@@ -172,10 +213,7 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
             ? (prisma as any).village.findMany({
                 where: {
                     isDeleted: false,
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { translations: { some: { name: { contains: q, mode: 'insensitive' } } } },
-                    ],
+                    OR: orNameOrTranslationsContains as any,
                     ...(tenantId ? { tenantId } : {}),
                 },
                 select: {

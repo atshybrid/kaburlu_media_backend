@@ -576,6 +576,19 @@ router.get('/config', async (_req, res) => {
       staticPages: 86400 // 24 hours
     };
 
+    // Static/legal pages map for frontend routing (slug = tenantStaticPage.slug)
+    const staticPages = [
+      { slug: 'about-us', label: 'About Us', endpoint: '/public/about-us' },
+      { slug: 'contact', label: 'Contact', endpoint: '/public/contact' },
+      { slug: 'contact-us', label: 'Contact Us', endpoint: '/public/contact-us' },
+      { slug: 'privacy-policy', label: 'Privacy Policy', endpoint: '/public/privacy-policy' },
+      { slug: 'terms-of-service', label: 'Terms of Service', endpoint: '/public/terms-of-service' },
+      { slug: 'terms', label: 'Terms', endpoint: '/public/terms' },
+      { slug: 'disclaimer', label: 'Disclaimer', endpoint: '/public/disclaimer' },
+      { slug: 'editorial-policy', label: 'Editorial Policy', endpoint: '/public/editorial-policy' },
+      { slug: 'ai-policy', label: 'AI Policy', endpoint: '/public/ai-policy' },
+    ];
+
     return res.json({
       version: '2.0',
       timestamp: new Date().toISOString(),
@@ -611,6 +624,7 @@ router.get('/config', async (_req, res) => {
         fontFamily: theme.typography.fontFamily
       },
       theme,
+      staticPages,
       seo: {
         meta: seoMeta,
         openGraph: seoOpenGraph,

@@ -49,6 +49,10 @@ function formatIdCardNumber(cardNumber: string, issuedAt: Date): string {
   const mo = String(issuedAt.getUTCMonth() + 1).padStart(2, '0');
   const yyyymm = `${y}${mo}`;
 
+  // Only legacy short sequences (e.g. KT017) should get YYYYMM injected.
+  // Newer numbering uses tenant-configured idDigits (often 4/6+) and should be shown as-is.
+  if (rest.length > 3) return `${prefix}${rest}`;
+
   // If already has YYYYMM right after prefix, do not re-insert.
   if (rest.startsWith(yyyymm)) return `${prefix}${rest}`;
 

@@ -4541,6 +4541,14 @@ async function getStaticPageForTenant(tenantId: string, slug: string) {
     .catch(() => null);
 }
 
+async function getStaticPageForTenantAny(tenantId: string, slugs: string[]) {
+  for (const s of slugs) {
+    const page = await getStaticPageForTenant(tenantId, s);
+    if (page) return page;
+  }
+  return null;
+}
+
 /**
  * @swagger
  * /public/about-us:
@@ -4625,6 +4633,33 @@ router.get('/contact-us', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
   if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
   const page = await getStaticPageForTenant(tenant.id, 'contact-us');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/contact:
+ *   get:
+ *     summary: Get Contact page for this domain (alias)
+ *     description: |
+ *       Alias endpoint. Tries slugs in order: `contact` → `contact-us`.
+ *     tags: [Public - Website, Legal Pages]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Contact page content }
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
+ */
+router.get('/contact', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenantAny(tenant.id, ['contact', 'contact-us']);
   if (!page) return res.status(404).json({ error: 'Not found' });
   res.json(page);
 });
@@ -4719,6 +4754,33 @@ router.get('/terms', async (_req, res) => {
 
 /**
  * @swagger
+ * /public/terms-of-service:
+ *   get:
+ *     summary: Get Terms of Service page for this domain (alias)
+ *     description: |
+ *       Alias endpoint. Tries slugs in order: `terms-of-service` → `terms`.
+ *     tags: [Public - Website, Legal Pages]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Terms page content }
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
+ */
+router.get('/terms-of-service', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenantAny(tenant.id, ['terms-of-service', 'terms']);
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
  * /public/disclaimer:
  *   get:
  *     summary: Get Disclaimer page for this domain
@@ -4801,6 +4863,33 @@ router.get('/editorial-policy', async (_req, res) => {
   const tenant = (res.locals as any).tenant;
   if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
   const page = await getStaticPageForTenant(tenant.id, 'editorial-policy');
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  res.json(page);
+});
+
+/**
+ * @swagger
+ * /public/ai-policy:
+ *   get:
+ *     summary: Get AI Policy page for this domain
+ *     description: |
+ *       Fetches tenant static page with slug `ai-policy`.
+ *     tags: [Public - Website, Legal Pages]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         description: Optional override for tenant/domain detection when testing locally.
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: AI Policy page content }
+ *       404: { description: Page not found or not published }
+ *       500: { description: Domain context missing }
+ */
+router.get('/ai-policy', async (_req, res) => {
+  const tenant = (res.locals as any).tenant;
+  if (!tenant) return res.status(500).json({ error: 'Domain context missing' });
+  const page = await getStaticPageForTenant(tenant.id, 'ai-policy');
   if (!page) return res.status(404).json({ error: 'Not found' });
   res.json(page);
 });
