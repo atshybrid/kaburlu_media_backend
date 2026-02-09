@@ -4,6 +4,7 @@ import prisma from '../../lib/prisma';
 import { sendToUser } from '../../lib/fcm';
 import { config } from '../../config/env';
 import { sendWhatsappOtpTemplate } from '../../lib/whatsapp';
+import { getRazorpayClientForTenant } from '../reporterPayments/razorpay.service';
 
 export class OtpService {
     async requestOtp(data: RequestOtpDto) {
@@ -195,6 +196,100 @@ export class OtpService {
                 const totalAmountRupees = outstanding.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
                 const totalAmountPaise = totalAmountRupees * 100;
 
+                // Create Razorpay order if not already created (same logic as auth.service.ts)
+                let razorpayKeyId: string | null = null;
+                let razorpayOrder: any = null;
+                let reporterPaymentId: string | null = null;
+
+                try {
+                    // Get Razorpay config
+                    const razorpayConfig = await (prisma as any).razorpayConfig.findFirst({
+                        where: {
+                            OR: [{ tenantId: reporter.tenantId }, { tenantId: null }],
+                            active: true,
+                        },
+                        orderBy: { tenantId: 'desc' },
+                        select: { keyId: true },
+                    });
+
+                    razorpayKeyId = razorpayConfig?.keyId || null;
+
+                    if (razorpayKeyId) {
+                        // Check if there's already a pending payment with a valid order
+                        const existingPendingPayment = await (prisma as any).reporterPayment.findFirst({
+                            where: {
+                                reporterId: reporter.id,
+                                tenantId: reporter.tenantId,
+                                status: 'PENDING',
+                                expiresAt: { gt: new Date() }
+                            },
+                            orderBy: { createdAt: 'desc' }
+                        });
+
+                        if (existingPendingPayment?.razorpayOrderId) {
+                            // Reuse existing pending order
+                            razorpayOrder = { id: existingPendingPayment.razorpayOrderId };
+                            reporterPaymentId = existingPendingPayment.id;
+                            console.log('[MpinStatus] Reusing existing Razorpay order:', razorpayOrder.id);
+                        } else {
+                            // Create new Razorpay order
+                            const razorpay = await getRazorpayClientForTenant(reporter.tenantId);
+                            const now = new Date();
+                            const year = now.getUTCFullYear();
+                            const month = now.getUTCMonth() + 1;
+
+                            const shortReporterId = reporter.id.slice(0, 12);
+                            let receipt = `REP-${shortReporterId}-${Date.now()}`;
+                            if (receipt.length > 40) receipt = receipt.slice(0, 40);
+
+                            // Determine payment type
+                            const hasOnboarding = outstanding.some((o: any) => o.type === 'ONBOARDING');
+                            const paymentType = hasOnboarding ? 'ONBOARDING' : 'MONTHLY_SUBSCRIPTION';
+
+                            razorpayOrder = await (razorpay as any).orders.create({
+                                amount: totalAmountPaise, // Razorpay expects amount in PAISE
+                                currency: 'INR',
+                                receipt,
+                                notes: { tenantId: reporter.tenantId, reporterId: reporter.id, type: paymentType },
+                            });
+
+                            const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+                            const paymentRecord = await (prisma as any).reporterPayment.create({
+                                data: {
+                                    reporterId: reporter.id,
+                                    tenantId: reporter.tenantId,
+                                    type: paymentType,
+                                    year,
+                                    month,
+                                    amount: totalAmountRupees, // Store in rupees
+                                    currency: 'INR',
+                                    status: 'PENDING',
+                                    razorpayOrderId: razorpayOrder.id,
+                                    meta: razorpayOrder,
+                                    expiresAt,
+                                },
+                            });
+
+                            reporterPaymentId = paymentRecord.id;
+                            console.log('[MpinStatus] Created Razorpay order:', razorpayOrder.id, 'for reporter:', reporter.id);
+
+                            // Update outstanding array with the newly created order
+                            outstanding.forEach((item: any) => {
+                                if ((item.type === paymentType) || 
+                                    (paymentType === 'ONBOARDING' && (item.type === 'ONBOARDING' || item.type === 'MONTHLY_SUBSCRIPTION'))) {
+                                    item.razorpayOrderId = razorpayOrder.id;
+                                    item.paymentId = paymentRecord.id;
+                                    item.status = 'PENDING';
+                                }
+                            });
+                        }
+                    }
+                } catch (rpErr) {
+                    console.error('[MpinStatus] Failed to create Razorpay order:', rpErr);
+                    // Continue without Razorpay order - frontend can call /payments/order manually
+                }
+
                 return {
                     paymentRequired: true,
                     code: 'PAYMENT_REQUIRED',
@@ -226,8 +321,8 @@ export class OtpService {
                             amount: subscriptionAmountRupees,
                             amountPaise: subscriptionAmountRupees * 100,
                             displayAmount: `₹${subscriptionAmountRupees.toFixed(2)}`,
-                            year: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
-                            month: outstanding.find(o => o.type === 'MONTHLY_SUBSCRIPTION')?.month
+                            year: outstanding.find((o: any) => o.type === 'MONTHLY_SUBSCRIPTION')?.year,
+                            month: outstanding.find((o: any) => o.type === 'MONTHLY_SUBSCRIPTION')?.month
                         },
                         total: {
                             label: 'Total Amount',
@@ -235,6 +330,16 @@ export class OtpService {
                             amountPaise: totalAmountPaise,
                             displayAmount: `₹${totalAmountRupees.toFixed(2)}`
                         }
+                    },
+                    // Include Razorpay details for mobile app
+                    razorpay: {
+                        keyId: razorpayKeyId,
+                        orderId: razorpayOrder?.id || null,
+                        amount: totalAmountPaise,
+                        amountRupees: totalAmountRupees,
+                        currency: 'INR',
+                        reporterPaymentId: reporterPaymentId || null,
+                        orderCreated: !!razorpayOrder
                     }
                 };
             }
