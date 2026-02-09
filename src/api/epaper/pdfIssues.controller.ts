@@ -3,7 +3,7 @@ import prisma from '../../lib/prisma';
 import { resolveAdminTenantContext } from './adminTenantContext';
 import { convertPdfToPngPages } from '../../lib/pdfToPng';
 import { convertPngToWebp } from '../../lib/pngToWebp';
-import { convertPngToJpeg } from '../../lib/pngToJpeg';
+import { convertPngToJpeg, convertPngToOgJpeg } from '../../lib/pngToJpeg';
 import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
 import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
 import { config } from '../../config/env';
@@ -202,7 +202,20 @@ async function upsertPdfIssueFromBuffer(params: {
 
   const coverImageUrl = pages[0]?.imageUrl || null;
   const coverImageUrlWebp = pages[0]?.imageUrlWebp || null;
-  const coverImageUrlJpeg = jpegSupported ? (pages[0]?.imageUrlJpeg || null) : null;
+  let coverImageUrlJpeg = jpegSupported ? (pages[0]?.imageUrlJpeg || null) : null;
+
+  // Dedicated OG JPEG (small + share-friendly). Keep full page JPEGs for per-page sharing.
+  if (jpegSupported && pageBuffers[0]) {
+    try {
+      const ogJpegKey = `${keys.pagePrefix}/cover-og.jpg`;
+      const ogJpegBuf = await convertPngToOgJpeg(pageBuffers[0]);
+      const ogUpload = await putPublicObject({ key: ogJpegKey, body: ogJpegBuf, contentType: 'image/jpeg' });
+      coverImageUrlJpeg = ogUpload.publicUrl;
+    } catch (ogErr) {
+      console.warn('⚠️  OG JPEG conversion failed for cover page:', ogErr);
+      // keep fallback (page-0001.jpg) if available
+    }
+  }
 
   // 4) Upsert/replace DB record
   const existing = await p.epaperPdfIssue.findFirst({
@@ -663,7 +676,24 @@ export const backfillPdfIssueJpeg = async (req: Request, res: Response) => {
     });
 
     const first = work.find((x) => x.pageNumber === 1) || work[0];
-    const coverJpeg = first?.imageUrlJpeg || null;
+    let coverJpeg = first?.imageUrlJpeg || null;
+
+    // Prefer a dedicated OG cover JPEG (resize + compress) for social sharing.
+    // Only generate if coverImageUrlJpeg is missing.
+    if (!issue.coverImageUrlJpeg && issue.pages?.length) {
+      try {
+        const firstPage = (issue.pages || []).find((pg: any) => Number(pg.pageNumber) === 1) || issue.pages[0];
+        if (firstPage?.imageUrl) {
+          const ogJpegKey = `${keys.pagePrefix}/cover-og.jpg`;
+          const pngBuf = await downloadPublicImageToBuffer(firstPage.imageUrl, maxBytes);
+          const ogJpegBuf = await convertPngToOgJpeg(pngBuf);
+          const upload = await putPublicObject({ key: ogJpegKey, body: ogJpegBuf, contentType: 'image/jpeg' });
+          coverJpeg = upload.publicUrl;
+        }
+      } catch (ogErr) {
+        console.warn('⚠️  OG cover JPEG backfill failed:', ogErr);
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
