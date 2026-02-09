@@ -54,7 +54,8 @@ export class OtpController {
                         reporter: result.reporter,
                         tenant: result.tenant,
                         outstanding: result.outstanding,
-                        breakdown: result.breakdown
+                        breakdown: result.breakdown,
+                        razorpay: result.razorpay
                     }
                 });
             }
