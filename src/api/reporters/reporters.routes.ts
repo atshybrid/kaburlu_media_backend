@@ -407,12 +407,12 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     const prefix: string = settings.idPrefix || 'ID';
     const digits: number = settings.idDigits || 6;
 
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
+
     const existingCount = await (prisma as any).reporterIDCard.count({
       where: { reporter: { tenantId } }
     });
-    const nextNumber = existingCount + 1;
-    const padded = String(nextNumber).padStart(digits, '0');
-    const cardNumber = `${prefix}${padded}`;
+    const startNumber = existingCount + 1;
 
     const issuedAt = new Date();
     let expiresAt: Date;
@@ -432,15 +432,31 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     }
     // If Bunny CDN is configured, pdfUrl will be updated after async upload completes
 
-    const idCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: reporter.id,
-        cardNumber,
-        issuedAt,
-        expiresAt,
-        pdfUrl: initialPdfUrl
+    let idCard: any = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = buildCardNumber(startNumber + attempt);
+      try {
+        idCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: reporter.id,
+            cardNumber: candidate,
+            issuedAt,
+            expiresAt,
+            pdfUrl: initialPdfUrl
+          }
+        });
+        break;
+      } catch (e: any) {
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
       }
-    });
+    }
+
+    if (!idCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
+    }
 
     // Generate PDF and upload to Bunny CDN (async, don't block response)
     if (isBunnyCdnConfigured()) {
@@ -452,7 +468,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
             reporterId: reporter.id,
             tenantId,
             pdfUrl: result.pdfUrl!,
-            cardNumber,
+            cardNumber: idCard.cardNumber,
           }).then(waResult => {
             if (waResult.ok) {
               console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${waResult.messageId}`);
@@ -470,7 +486,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
         reporterId: reporter.id,
         tenantId,
         pdfUrl: initialPdfUrl!,
-        cardNumber,
+        cardNumber: idCard.cardNumber,
       }).then(result => {
         if (result.ok) {
           console.log(`[ID Card] Auto-sent via WhatsApp to reporter ${reporter.id}, messageId: ${result.messageId}`);
@@ -707,20 +723,13 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
 
     const prefix: string = settings.idPrefix || 'ID';
     const digits: number = settings.idDigits || 6;
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
 
-    let cardNumber: string;
-    if (keepCardNumber && previousCardNumber) {
-      // Keep the same card number
-      cardNumber = previousCardNumber;
-    } else {
-      // Generate new card number
-      const existingCount = await (prisma as any).reporterIDCard.count({
-        where: { reporter: { tenantId } }
-      });
-      const nextNumber = existingCount + 1;
-      const padded = String(nextNumber).padStart(digits, '0');
-      cardNumber = `${prefix}${padded}`;
-    }
+    const requestedCardNumber = keepCardNumber && previousCardNumber ? previousCardNumber : null;
+    const existingCount = await (prisma as any).reporterIDCard.count({
+      where: { reporter: { tenantId } }
+    });
+    const startNumber = existingCount + 1;
 
     const issuedAt = new Date();
     let expiresAt: Date;
@@ -740,17 +749,36 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
     }
     // If Bunny CDN is configured, pdfUrl will be updated after async upload completes
 
-    const newIdCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: reporter.id,
-        cardNumber,
-        issuedAt,
-        expiresAt,
-        pdfUrl: initialPdfUrl
+    let newIdCard: any = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = requestedCardNumber || buildCardNumber(startNumber + attempt);
+      try {
+        newIdCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: reporter.id,
+            cardNumber: candidate,
+            issuedAt,
+            expiresAt,
+            pdfUrl: initialPdfUrl
+          }
+        });
+        break;
+      } catch (e: any) {
+        if (requestedCardNumber && e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          return res.status(409).json({ error: 'Requested card number is already in use', cardNumber: requestedCardNumber });
+        }
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
       }
-    });
+    }
 
-    console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${cardNumber}, by=${user?.id}, reason=${reason}`);
+    if (!newIdCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
+    }
+
+    console.log(`ID Card regenerated: reporterId=${reporter.id}, previousCard=${previousCardNumber}, newCard=${newIdCard.cardNumber}, by=${user?.id}, reason=${reason}`);
 
     // Generate PDF and upload to Bunny CDN (async, don't block response)
     if (isBunnyCdnConfigured()) {

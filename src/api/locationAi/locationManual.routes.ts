@@ -846,7 +846,13 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
     const needsTranslation = targetLanguage !== 'en';
 
     // Step 1: AI detection - is it district or mandal?
-    let locationType = forceType;
+    let locationType = typeof forceType === 'string' ? forceType.trim().toLowerCase() : forceType;
+    if (locationType && !['district', 'mandal'].includes(locationType)) {
+      return res.status(400).json({
+        error: 'Invalid forceType. Use "district" or "mandal" (case-insensitive).',
+        received: forceType,
+      });
+    }
     let parentDistrictId: string | null = null;
     let translatedName: string | null = null;
 
@@ -876,7 +882,7 @@ Respond ONLY with valid JSON in this exact format:
         cleanResponse = cleanResponse.replace(/^```json\s*\n?/i, '').replace(/\n?```\s*$/i, '');
         
         const detection = JSON.parse(cleanResponse);
-        locationType = detection.type;
+        locationType = typeof detection.type === 'string' ? detection.type.trim().toLowerCase() : detection.type;
         
         if (!['district', 'mandal'].includes(locationType)) {
           return res.status(400).json({ 
@@ -1047,10 +1053,16 @@ Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${t
 
     } else {
       // Create mandal
+      if (!parentDistrictId) {
+        return res.status(400).json({
+          error: 'Parent district is required to create a mandal',
+          hint: 'Provide parentDistrictName (and optionally stateId/stateName) or omit forceType to auto-detect',
+        });
+      }
       const existing = await prisma.mandal.findFirst({
         where: {
           name: { equals: areaName.trim(), mode: 'insensitive' },
-          districtId: parentDistrictId!,
+          districtId: parentDistrictId,
           isDeleted: false
         }
       });
@@ -1065,7 +1077,7 @@ Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${t
       const mandal = await prisma.mandal.create({
         data: {
           name: areaName.trim(),
-          districtId: parentDistrictId!,
+          districtId: parentDistrictId,
           isDeleted: false
         }
       });

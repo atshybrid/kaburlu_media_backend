@@ -89,7 +89,9 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
       const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
       return res.status(200).json({
         ...reporter.idCard,
-        pdfUrl: reporter.idCard.pdfUrl || `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`,
+        // Prefer a force-render URL when we don't have a stored Bunny URL yet.
+        // This ensures latest TenantIdCardSettings (e.g. officeAddress) are reflected.
+        pdfUrl: reporter.idCard.pdfUrl || `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true`,
         alreadyExists: true
       });
     }
@@ -120,43 +122,59 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
       });
     }
     
-    // Generate card number
+    // Generate card number (retry on collisions)
     const existingCount = await (prisma as any).reporterIDCard.count({
       where: { reporter: { tenantId: reporter.tenantId } }
     });
     const prefix: string = settings.idPrefix || 'ID';
     const digits: number = settings.idDigits || 6;
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
     const now = new Date();
-    const nextNumber = existingCount + 1;
-    const padded = String(nextNumber).padStart(digits, '0');
-    const cardNumber = `${prefix}${padded}`;
-    
-    // Calculate validity
-    const issuedAt = now;
-    let expiresAt: Date;
-    if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
-      expiresAt = new Date(settings.fixedValidUntil);
-    } else if (typeof settings.validityDays === 'number' && settings.validityDays > 0) {
-      expiresAt = new Date(issuedAt.getTime() + settings.validityDays * 24 * 60 * 60 * 1000);
-    } else {
-      const validityMonths = settings.validityMonths || 12;
-      expiresAt = new Date(issuedAt);
-      expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+    const startNumber = existingCount + 1;
+
+    let idCard: any = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = buildCardNumber(startNumber + attempt);
+      try {
+        idCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: reporter.id,
+            cardNumber: candidate,
+            issuedAt: now,
+            expiresAt: (() => {
+              if (settings.validityType === 'FIXED_END_DATE' && settings.fixedValidUntil) {
+                return new Date(settings.fixedValidUntil);
+              }
+              if (typeof settings.validityDays === 'number' && settings.validityDays > 0) {
+                return new Date(now.getTime() + settings.validityDays * 24 * 60 * 60 * 1000);
+              }
+              const validityMonths = settings.validityMonths || 12;
+              const d = new Date(now);
+              d.setMonth(d.getMonth() + validityMonths);
+              return d;
+            })(),
+          }
+        });
+        break;
+      } catch (e: any) {
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!idCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
     }
     
-    // Create ID card
-    const idCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: reporter.id,
-        cardNumber,
-        issuedAt,
-        expiresAt,
-      }
-    });
+    // Validity is already computed above during create
     
     // Generate PDF and send via WhatsApp (async)
     const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
-    let pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}`;
+    // Default to forceRender so settings changes show up immediately.
+    // Add a cache-buster to avoid any intermediary caching.
+    let pdfUrl = `${baseUrl}/api/v1/id-cards/pdf?reporterId=${reporter.id}&forceRender=true&ts=${Date.now()}`;
     
     if (isBunnyCdnConfigured()) {
       generateAndUploadIdCardPdf(reporter.id).then(result => {
@@ -165,7 +183,7 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
             reporterId: reporter.id,
             tenantId: reporter.tenantId,
             pdfUrl: result.pdfUrl,
-            cardNumber,
+            cardNumber: idCard.cardNumber,
           }).catch(e => console.error('[ID Card] Me generate - WhatsApp error:', e));
         }
       }).catch(e => console.error('[ID Card] Me generate - PDF error:', e));
@@ -174,7 +192,7 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
         reporterId: reporter.id,
         tenantId: reporter.tenantId,
         pdfUrl,
-        cardNumber,
+        cardNumber: idCard.cardNumber,
       }).catch(e => console.error('[ID Card] Me generate - WhatsApp error:', e));
     }
     
@@ -359,20 +377,15 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
       return res.status(404).json({ error: 'Tenant ID card settings not configured' });
     }
     
-    // Generate card number
-    let cardNumber: string;
-    if (keepCardNumber && previousCardNumber) {
-      cardNumber = previousCardNumber;
-    } else {
-      const existingCount = await (prisma as any).reporterIDCard.count({
-        where: { reporter: { tenantId: reporter.tenantId } }
-      });
-      const prefix: string = settings.idPrefix || 'ID';
-      const digits: number = settings.idDigits || 6;
-      const nextNumber = existingCount + 1;
-      const padded = String(nextNumber).padStart(digits, '0');
-      cardNumber = `${prefix}${padded}`;
-    }
+    // Generate card number (retry on collisions)
+    const requestedCardNumber = keepCardNumber && previousCardNumber ? previousCardNumber : null;
+    const existingCount = await (prisma as any).reporterIDCard.count({
+      where: { reporter: { tenantId: reporter.tenantId } }
+    });
+    const prefix: string = settings.idPrefix || 'ID';
+    const digits: number = settings.idDigits || 6;
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
+    const startNumber = existingCount + 1;
     
     // Create new ID card
     const now = new Date();
@@ -387,14 +400,33 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
       expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
     }
     
-    const idCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: reporter.id,
-        cardNumber,
-        issuedAt: now,
-        expiresAt,
+    let idCard: any = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = requestedCardNumber || buildCardNumber(startNumber + attempt);
+      try {
+        idCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: reporter.id,
+            cardNumber: candidate,
+            issuedAt: now,
+            expiresAt,
+          }
+        });
+        break;
+      } catch (e: any) {
+        if (requestedCardNumber && e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          return res.status(409).json({ error: 'Requested card number is already in use', cardNumber: requestedCardNumber });
+        }
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
       }
-    });
+    }
+
+    if (!idCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
+    }
     
     // Generate PDF and send via WhatsApp
     const baseUrl = process.env.API_BASE_URL || 'https://api.kaburlumedia.com';
@@ -407,7 +439,7 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
             reporterId: reporter.id,
             tenantId: reporter.tenantId,
             pdfUrl: result.pdfUrl,
-            cardNumber,
+            cardNumber: idCard.cardNumber,
           }).catch(e => console.error('[ID Card] Regenerate me - WhatsApp error:', e));
         }
       }).catch(e => console.error('[ID Card] Regenerate me - PDF error:', e));
@@ -416,7 +448,7 @@ router.post('/id-card/regenerate', passport.authenticate('jwt', { session: false
         reporterId: reporter.id,
         tenantId: reporter.tenantId,
         pdfUrl,
-        cardNumber,
+        cardNumber: idCard.cardNumber,
       }).catch(e => console.error('[ID Card] Regenerate me - WhatsApp error:', e));
     }
     

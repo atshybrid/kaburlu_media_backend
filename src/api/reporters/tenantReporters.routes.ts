@@ -2874,14 +2874,18 @@ router.delete('/tenants/:tenantId/reporters/:id/profile-photo', passport.authent
  *       201: { description: Issued }
  */
 router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  let stage = 'init';
   try {
+    stage = 'scope';
     const scope = await requireTenantEditorialScope(req, res);
     if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
 
+    stage = 'parse-params';
     const tenantId = String(req.params.tenantId || '').trim();
     const id = String(req.params.id || '').trim();
     if (!tenantId || !id) return res.status(400).json({ error: 'tenantId and reporter id are required' });
 
+    stage = 'fetch-reporter';
     const reporter = await (prisma as any).reporter.findFirst({
       where: { id, tenantId },
       include: { idCard: true },
@@ -2889,10 +2893,12 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     if (!reporter) return res.status(404).json({ error: 'Reporter not found' });
 
     if (reporter.idCard) {
+      stage = 'already-exists-shape';
       const requestBase = getRequestBaseUrl(req);
       const pdfRequestUrl = requestBase
         ? `${requestBase}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`
         : null;
+      stage = 'already-exists-public-base-url';
       const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
       const pdfDynamicUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
       return res.status(201).json({
@@ -2923,6 +2929,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     // - If idCardCharge > 0: onboarding payment must be PAID
     // - If subscriptionActive=true: current month subscription payment must be PAID
     if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+      stage = 'payment-onboarding-check';
       const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
         where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
         select: { id: true },
@@ -2933,6 +2940,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     }
 
     if (reporter.subscriptionActive) {
+      stage = 'payment-subscription-check';
       // Use Asia/Kolkata month/year to avoid UTC month boundary issues
       const fmt = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric' });
       const parts = fmt.formatToParts(new Date());
@@ -2962,18 +2970,23 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       }
     }
 
+    stage = 'fetch-id-card-settings';
     const settings = await (prisma as any).tenantIdCardSettings.findUnique({ where: { tenantId } });
     if (!settings) return res.status(404).json({ error: 'Tenant ID card settings not configured' });
 
     const prefix: string = settings.idPrefix || 'ID';
-    const digits: number = settings.idDigits || 6;
+    const digits: number = typeof settings.idDigits === 'number' ? settings.idDigits : 6;
+    if (!Number.isFinite(digits) || digits < 1 || digits > 20) {
+      return res.status(400).json({ error: 'Invalid idDigits in tenant ID card settings', details: { idDigits: settings.idDigits } });
+    }
 
+    stage = 'count-existing-idcards';
     const existingCount = await (prisma as any).reporterIDCard.count({
       where: { reporter: { tenantId } },
     });
-    const nextNumber = existingCount + 1;
-    const padded = String(nextNumber).padStart(digits, '0');
-    const cardNumber = `${prefix}${padded}`;
+    const startNumber = existingCount + 1;
+
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
 
     const issuedAt = new Date();
     let expiresAt: Date;
@@ -2984,21 +2997,42 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       expiresAt = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000);
     }
 
-    const idCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: reporter.id,
-        cardNumber,
-        issuedAt,
-        expiresAt,
-        pdfUrl: null,
-      },
-    });
+    let idCard: any = null;
+    // Retry card number allocation to avoid collisions when cards were deleted or parallel requests happen.
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = buildCardNumber(startNumber + attempt);
+      try {
+        stage = 'create-idcard-row';
+        idCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: reporter.id,
+            cardNumber: candidate,
+            issuedAt,
+            expiresAt,
+            pdfUrl: null,
+          },
+        });
+        break;
+      } catch (e: any) {
+        // Unique collision on cardNumber: try next number.
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!idCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
+    }
 
     // Generate PDF if Bunny CDN is configured
     if (isBunnyCdnConfigured()) {
       try {
+        stage = 'bunny-generate-upload';
         const result = await generateAndUploadIdCardPdf(reporter.id);
         if (result.ok && result.pdfUrl) {
+          stage = 'bunny-update-db';
           await (prisma as any).reporterIDCard.update({
             where: { id: idCard.id },
             data: { pdfUrl: result.pdfUrl },
@@ -3006,11 +3040,12 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
           idCard.pdfUrl = result.pdfUrl;
 
           // Send via WhatsApp
+          stage = 'bunny-send-whatsapp';
           await sendIdCardViaWhatsApp({
             reporterId: reporter.id,
             tenantId,
             pdfUrl: result.pdfUrl,
-            cardNumber,
+            cardNumber: idCard.cardNumber,
           });
         }
       } catch (pdfErr) {
@@ -3022,8 +3057,10 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     // If Bunny is not configured (common in local/dev), still set a usable pdfUrl
     // pointing to our own PDF endpoint. Use forceRender=true to avoid recursive fetches.
     if (!idCard.pdfUrl) {
+      stage = 'fallback-public-base-url';
       const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
       const fallbackPdfUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
+      stage = 'fallback-update-db';
       await (prisma as any).reporterIDCard.update({
         where: { id: idCard.id },
         data: { pdfUrl: fallbackPdfUrl },
@@ -3031,10 +3068,12 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       idCard.pdfUrl = fallbackPdfUrl;
     }
 
+    stage = 'shape-response';
     const requestBase = getRequestBaseUrl(req);
     const pdfRequestUrl = requestBase
       ? `${requestBase}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`
       : null;
+    stage = 'shape-public-base-url';
     const publicBaseUrl = await resolveTenantPublicBaseUrl(req, tenantId);
     const pdfDynamicUrl = `${publicBaseUrl}/api/v1/id-cards/pdf?reporterId=${encodeURIComponent(reporter.id)}&forceRender=true`;
     return res.status(201).json({
@@ -3043,8 +3082,15 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       pdfDynamicUrl,
     });
   } catch (e) {
-    console.error('tenant reporter id-card error', e);
-    return res.status(500).json({ error: 'Failed to generate reporter ID card' });
+    const anyErr: any = e;
+    console.error('tenant reporter id-card error', { stage, err: anyErr?.stack || anyErr?.message || anyErr });
+    // Return safe debugging info (no stack) so callers can act on known issues.
+    return res.status(500).json({
+      error: 'Failed to generate reporter ID card',
+      stage,
+      prismaCode: anyErr?.code || null,
+      prismaMeta: anyErr?.meta || null,
+    });
   }
 });
 
@@ -3713,19 +3759,19 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       return res.status(400).json({ error: 'Tenant ID card settings not configured' });
     }
 
-    let cardNumber: string;
+    let requestedCardNumber: string | null = null;
     if (keepCardNumber && previousCardNumber) {
-      cardNumber = previousCardNumber;
-    } else {
-      const existingCount = await (prisma as any).reporterIDCard.count({
-        where: { reporter: { tenantId } },
-      });
-      const prefix: string = settings.idPrefix || 'ID';
-      const digits: number = settings.idDigits || 6;
-      const nextNumber = existingCount + 1;
-      const padded = String(nextNumber).padStart(digits, '0');
-      cardNumber = `${prefix}${padded}`;
+      requestedCardNumber = previousCardNumber;
     }
+
+    const prefix: string = settings.idPrefix || 'ID';
+    const digits: number = settings.idDigits || 6;
+    const buildCardNumber = (n: number) => `${prefix}${String(n).padStart(digits, '0')}`;
+
+    const existingCount = await (prisma as any).reporterIDCard.count({
+      where: { reporter: { tenantId } },
+    });
+    const startNumber = existingCount + 1;
 
     // Calculate validity
     const issuedAt = new Date();
@@ -3738,15 +3784,35 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
       expiresAt = new Date(issuedAt.getTime() + 365 * 24 * 60 * 60 * 1000);
     }
 
-    // Create new ID card
-    const idCard = await (prisma as any).reporterIDCard.create({
-      data: {
-        reporterId: id,
-        cardNumber,
-        issuedAt,
-        expiresAt,
+    // Create new ID card (retry on cardNumber collision)
+    let idCard: any = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = requestedCardNumber || buildCardNumber(startNumber + attempt);
+      try {
+        idCard = await (prisma as any).reporterIDCard.create({
+          data: {
+            reporterId: id,
+            cardNumber: candidate,
+            issuedAt,
+            expiresAt,
+          }
+        });
+        break;
+      } catch (e: any) {
+        // If user requested a specific card number and it collides, don't keep retrying.
+        if (requestedCardNumber && e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          return res.status(409).json({ error: 'Requested card number is already in use', cardNumber: requestedCardNumber });
+        }
+        if (e?.code === 'P2002' && Array.isArray(e?.meta?.target) && e.meta.target.includes('cardNumber')) {
+          continue;
+        }
+        throw e;
       }
-    });
+    }
+
+    if (!idCard) {
+      return res.status(409).json({ error: 'Failed to allocate unique ID card number. Please retry.' });
+    }
 
     // Generate PDF and send via WhatsApp
     let pdfUrl: string | null = null;
@@ -3765,7 +3831,7 @@ router.post('/tenants/:tenantId/reporters/:id/id-card/regenerate', passport.auth
             reporterId: id,
             tenantId,
             pdfUrl: result.pdfUrl,
-            cardNumber,
+            cardNumber: idCard.cardNumber,
           }).catch(e => console.error('[ID Card] Regenerate - WhatsApp error:', e));
         }
       } catch (e) {

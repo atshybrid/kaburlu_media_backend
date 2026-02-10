@@ -14,7 +14,7 @@ const auth = passport.authenticate('jwt', { session: false });
  *   get:
  *     summary: List tenants
  *     description: |
- *       Returns basic tenants by default. Pass `full=true` to include domains and entity details for each tenant.
+ *       Returns basic tenants by default. Pass `full=true` to include domains, entity details, and `brandImageUrl` (from TenantTheme.logoUrl).
  *     tags: [Tenants]
  *     parameters:
  *       - in: query
@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
   if (!full || !tenants.length) return res.json(tenants);
 
   const ids = tenants.map((t: any) => t.id);
-  const [domains, entities] = await Promise.all([
+  const [domains, entities, themes] = await Promise.all([
     (prisma as any).domain.findMany({
       where: { tenantId: { in: ids } },
       orderBy: [{ isPrimary: 'desc' }, { domain: 'asc' }]
@@ -47,6 +47,10 @@ router.get('/', async (req, res) => {
         printingDistrict: true,
         printingMandal: true,
       }
+    }),
+    (prisma as any).tenantTheme.findMany({
+      where: { tenantId: { in: ids } },
+      select: { tenantId: true, logoUrl: true }
     })
   ]);
 
@@ -67,8 +71,12 @@ router.get('/', async (req, res) => {
   const entityByTenant: Record<string, any> = {};
   for (const e of entities) entityByTenant[e.tenantId] = e;
 
+  const themeByTenant: Record<string, any> = {};
+  for (const th of themes || []) themeByTenant[th.tenantId] = th;
+
   const shaped = tenants.map((t: any) => ({
     ...t,
+    brandImageUrl: themeByTenant[t.id]?.logoUrl || null,
     domains: domainsByTenant[t.id] || [],
     entity: entityByTenant[t.id] || null
   }));
