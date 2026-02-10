@@ -205,15 +205,24 @@ const router = Router();
  *                         googleAnalytics: { type: string, nullable: true }
  *                         googleTagManager: { type: string, nullable: true }
  *                         enabled: { type: boolean }
+ *                     verification:
+ *                       type: object
+ *                       properties:
+ *                         googleSiteVerification: { type: string, nullable: true }
+ *                         bingSiteVerification: { type: string, nullable: true }
  *                     ads:
  *                       type: object
  *                       properties:
  *                         adsense: { type: string, nullable: true }
+ *                         adManagerNetworkCode: { type: string, nullable: true }
+ *                         googleAdsConversionId: { type: string, nullable: true }
+ *                         googleAdsConversionLabel: { type: string, nullable: true }
  *                         enabled: { type: boolean }
  *                     push:
  *                       type: object
  *                       properties:
  *                         vapidPublicKey: { type: string, nullable: true }
+ *                         fcmSenderId: { type: string, nullable: true }
  *                         enabled: { type: boolean }
  *                     social:
  *                       type: object
@@ -410,18 +419,38 @@ router.get('/config', async (_req, res) => {
     }));
 
     // Integrations (public keys only)
+    // IMPORTANT: Never expose secrets here (e.g., VAPID private key, FCM server key, service-account JSON).
     const integ = effectiveDomainSettings?.integrations || {};
     const integrations = {
       analytics: {
-        googleAnalyticsId: integ?.analytics?.googleAnalyticsMeasurementId ?? integ?.analytics?.gaMeasurementId ?? null,
-        gtmId: integ?.analytics?.googleTagManagerId ?? integ?.analytics?.gtmContainerId ?? null
+        googleAnalyticsId:
+          integ?.analytics?.googleAnalyticsMeasurementId ??
+          integ?.analytics?.gaMeasurementId ??
+          integ?.analytics?.googleAnalyticsId ??
+          null,
+        gtmId:
+          integ?.analytics?.googleTagManagerId ??
+          integ?.analytics?.gtmContainerId ??
+          integ?.analytics?.gtmId ??
+          null,
+      },
+      searchConsole: {
+        googleSiteVerification:
+          integ?.searchConsole?.googleSiteVerification ??
+          integ?.searchConsole?.googleVerification ??
+          null,
+        bingSiteVerification: integ?.searchConsole?.bingSiteVerification ?? null,
       },
       ads: {
-        adsenseClientId: integ?.ads?.adsenseClientId ?? integ?.ads?.adsensePublisherId ?? null
+        adsenseClientId: integ?.ads?.adsenseClientId ?? integ?.ads?.adsensePublisherId ?? integ?.ads?.adsense ?? null,
+        adManagerNetworkCode: integ?.ads?.adManagerNetworkCode ?? integ?.ads?.googleAdManagerNetworkCode ?? null,
+        googleAdsConversionId: integ?.ads?.googleAdsConversionId ?? integ?.ads?.googleAdsCustomerId ?? null,
+        googleAdsConversionLabel: integ?.ads?.googleAdsConversionLabel ?? null,
       },
       push: {
-        vapidPublicKey: integ?.push?.webPushVapidPublicKey ?? integ?.push?.vapidPublicKey ?? null
-      }
+        vapidPublicKey: integ?.push?.webPushVapidPublicKey ?? integ?.push?.vapidPublicKey ?? null,
+        fcmSenderId: integ?.push?.fcmSenderId ?? integ?.push?.firebaseSenderId ?? null,
+      },
     };
 
     // Layout
@@ -660,16 +689,35 @@ router.get('/config', async (_req, res) => {
           googleAnalyticsId: integrations.analytics.googleAnalyticsId,
           gtmId: integrations.analytics.gtmId
         },
+        // Frontend expects verification tokens here
+        verification: {
+          googleSiteVerification: integrations.searchConsole.googleSiteVerification,
+          bingSiteVerification: integrations.searchConsole.bingSiteVerification
+        },
+        searchConsole: {
+          googleSiteVerification: integrations.searchConsole.googleSiteVerification,
+          bingSiteVerification: integrations.searchConsole.bingSiteVerification,
+          enabled: !!(integrations.searchConsole.googleSiteVerification || integrations.searchConsole.bingSiteVerification)
+        },
         ads: {
           adsense: integrations.ads.adsenseClientId,
-          enabled: !!integrations.ads.adsenseClientId,
+          adManagerNetworkCode: integrations.ads.adManagerNetworkCode,
+          googleAdsConversionId: integrations.ads.googleAdsConversionId,
+          googleAdsConversionLabel: integrations.ads.googleAdsConversionLabel,
+          enabled: !!(
+            integrations.ads.adsenseClientId ||
+            integrations.ads.adManagerNetworkCode ||
+            integrations.ads.googleAdsConversionId ||
+            integrations.ads.googleAdsConversionLabel
+          ),
 
           // Legacy fields
           adsenseClientId: integrations.ads.adsenseClientId
         },
         push: {
           vapidPublicKey: integrations.push.vapidPublicKey,
-          enabled: !!integrations.push.vapidPublicKey
+          fcmSenderId: integrations.push.fcmSenderId,
+          enabled: !!(integrations.push.vapidPublicKey || integrations.push.fcmSenderId)
         },
         social: {
           facebookAppId: effectiveDomainSettings?.integrations?.social?.facebookAppId ?? null,

@@ -80,6 +80,7 @@ import analyticsRoutes from './api/analytics/analytics.routes';
 import gdprRoutes from './api/gdpr/gdpr.routes';
 import universalLinksRoutes from './api/universal-links/universal-links.routes';
 import tenantAdminsRoutes from './api/tenantAdmins/tenantAdmins.routes';
+import newspaperArticlesRoutes from './api/newspaperArticles/newspaperArticles.routes';
 
 const app = express();
 
@@ -353,6 +354,7 @@ apiV1.use('/articles', articlesUnifiedRoutes);  // Unified 3-in-1 article creati
 apiV1.use('/articles/list', articleListRoutes);  // Role-based article listing (superadmin, tenant, reporter)
 apiV1.use('/articles', articlesRoutes);
 apiV1.use('/articles/read', articleReadRoutes);
+apiV1.use('/newspaper-articles', newspaperArticlesRoutes);
 apiV1.use('/reporter', reporterArticlesRoutes);  // Reporter dashboard - own articles only (authorId from JWT)
 apiV1.use('/', articleQuotaRoutes);  // Admin quota management (tenant & reporter quotas)
 apiV1.use('/', reporterQuotaRoutes);  // Reporter self-service quota check
