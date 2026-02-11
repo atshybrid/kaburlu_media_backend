@@ -58,8 +58,13 @@ jobs:
               echo "❌ Secret ENV_KABURLU_BACKEND_BASE64 is empty/missing"
               exit 1
             fi
-            # Some copy/paste flows add CRLF/newlines; strip them to keep GNU base64 happy.
-            printf '%s' "$ENV_B64" | tr -d '\r\n' | base64 --decode > .env
+            # Some copy/paste flows add CRLF/newlines/spaces; strip them to keep GNU base64 happy.
+            # (We intentionally do NOT print the secret contents in logs.)
+            if ! printf '%s' "$ENV_B64" | tr -d '\r\n\t ' | base64 --decode > .env; then
+              echo "❌ Failed to decode ENV_KABURLU_BACKEND_BASE64 (invalid base64)."
+              echo "Fix: re-create the secret from your local .env using: base64 -i .env | tr -d '\\n'"
+              exit 1
+            fi
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
