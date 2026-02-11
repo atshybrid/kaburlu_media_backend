@@ -37,13 +37,20 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            echo "▶ Auto-install Chromium if not present"
-            if ! snap list chromium &>/dev/null; then
-              echo "▶ Installing Chromium via snap..."
-              sudo snap install chromium
+            echo "▶ Detect Chromium installation"
+            if [ -f "/snap/bin/chromium" ]; then
+              CHROME_BIN="/snap/bin/chromium"
+            elif [ -f "/usr/bin/chromium" ]; then
+              CHROME_BIN="/usr/bin/chromium"
+            elif [ -f "/usr/bin/chromium-browser" ]; then
+              CHROME_BIN="/usr/bin/chromium-browser"
+            else
+              echo "❌ Chromium not found. Please install manually:"
+              echo "   sudo apt-get update && sudo apt-get install -y chromium-browser"
+              echo "   OR: sudo snap install chromium"
+              exit 1
             fi
-            CHROME_BIN="/snap/bin/chromium"
-            echo "▶ Chromium installed: $CHROME_BIN"
+            echo "▶ Using Chromium: $CHROME_BIN"
 
             echo "▶ Write ENV file from GitHub Secrets (base64 encoded)"
             echo "${{ secrets.ENV_KABURLU_BACKEND_BASE64 }}" | base64 -d > .env
