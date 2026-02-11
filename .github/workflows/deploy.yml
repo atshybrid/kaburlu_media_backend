@@ -53,11 +53,9 @@ jobs:
             echo "▶ Using Chromium: $CHROME_BIN"
 
             echo "▶ Write ENV file from GitHub Secrets"
-            if [ -z "${{ secrets.ENV_KABURLU_BACKEND }}" ]; then
-              echo "❌ Secret ENV_KABURLU_BACKEND is empty/missing"
-              exit 1
-            fi
-            printf '%s' "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
+            cat > .env << 'ENVEOF'
+            ${{ secrets.ENV_KABURLU_BACKEND }}
+            ENVEOF
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
