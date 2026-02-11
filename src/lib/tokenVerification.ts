@@ -1,11 +1,17 @@
 import { getAdmin } from './firebase';
 import { OAuth2Client } from 'google-auth-library';
+import { config } from '../config/env';
 
-// Google OAuth2 client ID from environment
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+function parseGoogleClientIds(): string[] {
+  const raw = (process.env.GOOGLE_CLIENT_ID || (process.env as any).GOOGLE_WEB_CLIENT_ID || config.google?.clientId || '') as string;
+  return raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
 
-// Initialize OAuth2 client for Google token verification
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+// Initialize OAuth2 client lazily (client ID is passed as audience during verification)
+const googleClient = new OAuth2Client();
 
 export interface TokenVerificationResult {
   success: boolean;
@@ -101,21 +107,22 @@ export async function verifyToken(tokens: {
   // Method 2: Try Google OAuth token verification (fallback)
   if (googleIdToken) {
     console.log('[Token Verification] Attempting Google OAuth verification...');
-    
-    if (!GOOGLE_CLIENT_ID) {
-      console.error('[Token Verification] ERROR: GOOGLE_CLIENT_ID not configured');
+
+    const googleClientIds = parseGoogleClientIds();
+    if (googleClientIds.length === 0) {
+      console.error('[Token Verification] ERROR: Google OAuth Client ID not configured');
       return {
         success: false,
         firebaseUid: '',
         verificationMethod: 'google',
-        error: 'Google Client ID not configured in environment'
+        error: 'Google Client ID not configured in environment (set GOOGLE_CLIENT_ID or GOOGLE_WEB_CLIENT_ID)'
       };
     }
 
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken: googleIdToken,
-        audience: GOOGLE_CLIENT_ID
+        audience: googleClientIds
       });
       
       const payload = ticket.getPayload();

@@ -176,7 +176,8 @@ export const config = {
   },
 
   google: {
-    clientId: process.env.GOOGLE_CLIENT_ID,
+    // Accept legacy + common aliases. Supports comma-separated list.
+    clientId: process.env.GOOGLE_CLIENT_ID || (process.env as any).GOOGLE_WEB_CLIENT_ID,
     translateApiKey: process.env.GOOGLE_TRANSLATE_API_KEY,
   },
 
