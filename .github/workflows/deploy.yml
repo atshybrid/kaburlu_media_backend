@@ -123,10 +123,38 @@ jobs:
             fi
 
             echo "▶ Health check (local)"
-            # Avoid sourcing .env (contains multiline keys). Default to PORT=3001.
+            # Avoid sourcing .env (contains multiline keys). Parse PORT safely.
+            PORT_FROM_ENV="$(grep -E '^PORT=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d '\r' | xargs)"
+            if [ -n "$PORT_FROM_ENV" ]; then
+              PORT="$PORT_FROM_ENV"
+            else
+              PORT=3001
+            fi
+            HEALTH_URL_V4="http://127.0.0.1:${PORT}/health/ai"
+            HEALTH_URL_HOST="http://localhost:${PORT}/health/ai"
+            echo "▶ Health check (local): $HEALTH_URL_V4"
             if command -v curl >/dev/null 2>&1; then
-              if ! curl -fsS --max-time 10 "http://127.0.0.1:3001/health/ai" >/dev/null; then
-                echo "❌ Health check failed: http://127.0.0.1:3001/health/ai"
+              OK=0
+              ATTEMPTS=20
+              SLEEP_SECONDS=2
+              i=1
+              while [ $i -le $ATTEMPTS ]; do
+                if curl -fsS --max-time 3 "$HEALTH_URL_V4" >/dev/null 2>&1 || curl -fsS --max-time 3 "$HEALTH_URL_HOST" >/dev/null 2>&1; then
+                  OK=1
+                  echo "✅ Health check passed (attempt $i/$ATTEMPTS)"
+                  break
+                fi
+                echo "… waiting for server ($i/$ATTEMPTS)"
+                sleep $SLEEP_SECONDS
+                i=$((i + 1))
+              done
+
+              if [ $OK -ne 1 ]; then
+                echo "❌ Health check failed: $HEALTH_URL_V4"
+                echo "▶ Listening ports (ss -ltnp)"
+                ss -ltnp 2>/dev/null | head -n 200 || true
+                echo "▶ PM2 describe kaburlu-api"
+                pm2 describe kaburlu-api || true
                 echo "▶ Last kaburlu-api logs"
                 pm2 logs kaburlu-api --lines 200 --nostream || true
                 exit 1
