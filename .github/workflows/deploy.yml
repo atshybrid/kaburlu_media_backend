@@ -37,23 +37,19 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            echo "▶ Verify Chromium is installed (manual server prerequisite)"
+            echo "▶ Auto-install Chromium if not present"
             CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
             if [ -z "$CHROME_BIN" ]; then
-              echo "❌ Chromium not found on server PATH. Install it manually on the droplet, then re-run deploy."
-              echo "Suggested commands (Ubuntu):"
-              echo "  sudo apt-get update"
-              echo "  sudo apt-get install -y --no-install-recommends chromium"
-              echo "  # or: sudo apt-get install -y --no-install-recommends chromium-browser"
-              exit 1
+              echo "▶ Installing Chromium via apt..."
+              sudo apt-get update -qq
+              sudo apt-get install -y --no-install-recommends chromium-browser
+              CHROME_BIN="$(command -v chromium || command -v chromium-browser)"
             fi
             echo "▶ Chromium found: $CHROME_BIN"
             "$CHROME_BIN" --version || true
 
             echo "▶ Write ENV file from GitHub Secrets"
-            cat > .env << 'EOF'
-${{ secrets.ENV_KABURLU_BACKEND }}
-EOF
+            printf '%s\n' "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
