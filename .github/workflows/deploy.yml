@@ -38,18 +38,15 @@ jobs:
             git clean -fd
 
             echo "▶ Auto-install Chromium if not present"
-            CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
-            if [ -z "$CHROME_BIN" ]; then
-              echo "▶ Installing Chromium via apt..."
-              sudo apt-get update -qq
-              sudo apt-get install -y --no-install-recommends chromium-browser
-              CHROME_BIN="$(command -v chromium || command -v chromium-browser)"
+            if ! snap list chromium &>/dev/null; then
+              echo "▶ Installing Chromium via snap..."
+              sudo snap install chromium
             fi
-            echo "▶ Chromium found: $CHROME_BIN"
-            "$CHROME_BIN" --version || true
+            CHROME_BIN="/snap/bin/chromium"
+            echo "▶ Chromium installed: $CHROME_BIN"
 
-            echo "▶ Write ENV file from GitHub Secrets"
-            printf '%s\n' "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
+            echo "▶ Write ENV file from GitHub Secrets (base64 encoded)"
+            echo "${{ secrets.ENV_KABURLU_BACKEND_BASE64 }}" | base64 -d > .env
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
