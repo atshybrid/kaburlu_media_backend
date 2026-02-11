@@ -52,19 +52,12 @@ jobs:
             fi
             echo "▶ Using Chromium: $CHROME_BIN"
 
-            echo "▶ Write ENV file from GitHub Secrets (base64 encoded)"
-            ENV_B64="${{ secrets.ENV_KABURLU_BACKEND_BASE64 }}"
-            if [ -z "$ENV_B64" ]; then
-              echo "❌ Secret ENV_KABURLU_BACKEND_BASE64 is empty/missing"
+            echo "▶ Write ENV file from GitHub Secrets"
+            if [ -z "${{ secrets.ENV_KABURLU_BACKEND }}" ]; then
+              echo "❌ Secret ENV_KABURLU_BACKEND is empty/missing"
               exit 1
             fi
-            # Some copy/paste flows add CRLF/newlines/spaces; strip them to keep GNU base64 happy.
-            # (We intentionally do NOT print the secret contents in logs.)
-            if ! printf '%s' "$ENV_B64" | tr -d '\r\n\t ' | base64 --decode > .env; then
-              echo "❌ Failed to decode ENV_KABURLU_BACKEND_BASE64 (invalid base64)."
-              echo "Fix: re-create the secret from your local .env using: base64 -i .env | tr -d '\\n'"
-              exit 1
-            fi
+            printf '%s' "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
