@@ -51,7 +51,9 @@ jobs:
             "$CHROME_BIN" --version || true
 
             echo "▶ Write ENV file from GitHub Secrets"
-            echo "${{ secrets.ENV_KABURLU_BACKEND }}" > .env
+            cat > .env << 'EOF'
+${{ secrets.ENV_KABURLU_BACKEND }}
+EOF
             chmod 600 .env || true
 
             echo "▶ Clean install dependencies"
