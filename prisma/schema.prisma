@@ -85,6 +85,11 @@ model ShortNews {
   reads                  ShortNewsRead[]
 }
 
+enum ShortNewsOptionType {
+  POSITIVE
+  NEGATIVE
+}
+
 model User {
   mobileNumber           String?                @unique
   roleId                 String
@@ -1832,6 +1837,7 @@ model ShortNewsOption {
   id          String    @id @default(cuid())
   shortNewsId String
   userId      String
+  type        ShortNewsOptionType @default(POSITIVE)
   content     String    @db.VarChar(50)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

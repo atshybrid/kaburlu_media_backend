@@ -72,15 +72,25 @@ function validateContent(content: unknown): string | null {
   return null;
 }
 
+function normalizeType(type: unknown): 'POSITIVE' | 'NEGATIVE' | null {
+  if (type == null) return null;
+  if (typeof type !== 'string') return null;
+  const v = type.trim().toUpperCase();
+  if (v === 'POSITIVE' || v === 'NEGATIVE') return v as any;
+  return null;
+}
+
 router.post('/', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
     const user = req.user as any;
-    const { shortNewsId, content } = req.body || {};
+    const { shortNewsId, content, type } = req.body || {};
     if (!user?.id) return res.status(401).json({ error: 'Unauthorized' });
     if (!shortNewsId || typeof shortNewsId !== 'string') return res.status(400).json({ error: 'shortNewsId is required' });
 
     const err = validateContent(content);
     if (err) return res.status(400).json({ error: err });
+
+    const normalizedType = normalizeType(type) || 'POSITIVE';
 
     // Ensure shortnews exists
     const exists = await prisma.shortNews.findUnique({ where: { id: shortNewsId } });
@@ -89,7 +99,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
     // Create or conflict if exists (unique constraint)
     try {
       const rec = await prisma.shortNewsOption.create({
-        data: { shortNewsId, userId: user.id, content: String(content).trim() },
+        data: { shortNewsId, userId: user.id, type: normalizedType as any, content: String(content).trim() },
       });
       return res.status(201).json({ success: true, data: rec });
     } catch (e: any) {
@@ -101,6 +111,63 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
   } catch (e: any) {
     console.error('create shortnews option failed:', e);
     return res.status(500).json({ error: 'Failed to create option' });
+  }
+});
+
+/**
+ * @swagger
+ * /shortnews-options/by-shortnews/{shortNewsId}/counts:
+ *   get:
+ *     summary: Get counts for POSITIVE/NEGATIVE options for a short news item
+ *     tags: [ShortNews Options]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: shortNewsId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Counts
+ *         content:
+ *           application/json:
+ *             examples:
+ *               counts:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     shortNewsId: "sn123"
+ *                     positive: 12
+ *                     negative: 3
+ *                     total: 15
+ *       401: { description: Unauthorized }
+ *       404: { description: ShortNews not found }
+ */
+router.get('/by-shortnews/:shortNewsId/counts', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    const { shortNewsId } = req.params;
+    const exists = await prisma.shortNews.findUnique({ where: { id: shortNewsId } });
+    if (!exists) return res.status(404).json({ error: 'ShortNews not found' });
+
+    const rows = await (prisma as any).shortNewsOption.groupBy({
+      by: ['type'],
+      where: { shortNewsId },
+      _count: { _all: true },
+    });
+
+    let positive = 0;
+    let negative = 0;
+    for (const r of rows || []) {
+      const t = String(r.type || '').toUpperCase();
+      const c = Number(r?._count?._all || 0);
+      if (t === 'POSITIVE') positive = c;
+      if (t === 'NEGATIVE') negative = c;
+    }
+
+    return res.json({ success: true, data: { shortNewsId, positive, negative, total: positive + negative } });
+  } catch (e) {
+    console.error('shortnews option counts failed:', e);
+    return res.status(500).json({ error: 'Failed to fetch' });
   }
 });
 
@@ -209,6 +276,7 @@ router.get('/by-shortnews/:shortNewsId', passport.authenticate('jwt', { session:
       id: i.id,
       shortNewsId: i.shortNewsId,
       userId: i.userId,
+      type: i.type,
       content: i.content,
       createdAt: i.createdAt,
       user: {
@@ -279,6 +347,7 @@ router.get('/by-user/:userId/shortnews/:shortNewsId', passport.authenticate('jwt
       id: rec.id,
       shortNewsId: rec.shortNewsId,
       userId: rec.userId,
+      type: (rec as any).type,
       content: rec.content,
       createdAt: rec.createdAt,
       user: {
