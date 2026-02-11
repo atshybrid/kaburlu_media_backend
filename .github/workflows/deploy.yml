@@ -115,4 +115,33 @@ jobs:
 
             pm2 status || true
 
+            echo "▶ Verify PM2 processes are online"
+            if ! pm2 pid kaburlu-api | grep -qE '^[1-9]'; then
+              echo "❌ PM2 process kaburlu-api is not running"
+              pm2 describe kaburlu-api || true
+              echo "▶ Last kaburlu-api logs"
+              pm2 logs kaburlu-api --lines 200 --nostream || true
+              exit 1
+            fi
+            if ! pm2 pid kaburlu-ai-cron | grep -qE '^[1-9]'; then
+              echo "❌ PM2 process kaburlu-ai-cron is not running"
+              pm2 describe kaburlu-ai-cron || true
+              echo "▶ Last kaburlu-ai-cron logs"
+              pm2 logs kaburlu-ai-cron --lines 200 --nostream || true
+              exit 1
+            fi
+
+            echo "▶ Health check (local)"
+            # Avoid sourcing .env (contains multiline keys). Default to PORT=3001.
+            if command -v curl >/dev/null 2>&1; then
+              if ! curl -fsS --max-time 10 "http://127.0.0.1:3001/health/ai" >/dev/null; then
+                echo "❌ Health check failed: http://127.0.0.1:3001/health/ai"
+                echo "▶ Last kaburlu-api logs"
+                pm2 logs kaburlu-api --lines 200 --nostream || true
+                exit 1
+              fi
+            else
+              echo "⚠️ curl not found; skipping HTTP health check"
+            fi
+
             echo "✅ Deployment completed successfully"
