@@ -1,0 +1,38 @@
+/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+scripts/fix-telugu-location-names.ts(93,9): error TS2367: This comparison appears to be unintentional because the types 'Promise<string>' and '"unknown"' have no overlap.
+scripts/fix-telugu-location-names.ts(100,61): error TS2345: Argument of type 'Promise<string>' is not assignable to parameter of type 'string'.
+scripts/fix-telugu-location-names.ts(114,11): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(119,9): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(161,9): error TS2367: This comparison appears to be unintentional because the types 'Promise<string>' and '"unknown"' have no overlap.
+scripts/fix-telugu-location-names.ts(170,7): error TS2345: Argument of type 'Promise<string>' is not assignable to parameter of type 'string'.
+scripts/fix-telugu-location-names.ts(187,11): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(192,9): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(236,9): error TS2367: This comparison appears to be unintentional because the types 'Promise<string>' and '"unknown"' have no overlap.
+scripts/fix-telugu-location-names.ts(245,7): error TS2345: Argument of type 'Promise<string>' is not assignable to parameter of type 'string'.
+scripts/fix-telugu-location-names.ts(262,11): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(267,9): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(314,9): error TS2367: This comparison appears to be unintentional because the types 'Promise<string>' and '"unknown"' have no overlap.
+scripts/fix-telugu-location-names.ts(323,7): error TS2345: Argument of type 'Promise<string>' is not assignable to parameter of type 'string'.
+scripts/fix-telugu-location-names.ts(340,11): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+scripts/fix-telugu-location-names.ts(345,9): error TS2322: Type 'Promise<string>' is not assignable to type 'string'.
+
+    at createTSError (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:863:19)
+    at getOutput (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:1077:36)
+    at Object.compile (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:1433:41)
+    at Module.m._compile (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:1617:30)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1934:10)
+    at Object.require.extensions.<computed> [as .ts] (/Volumes/Storage/kaburlu_softwares/kaburlu_media_backend/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1524:32)
+    at Module._load (node:internal/modules/cjs/loader:1326:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [
+    2367, 2345, 2322, 2322,
+    2367, 2345, 2322, 2322,
+    2367, 2345, 2322, 2322,
+    2367, 2345, 2322, 2322
+  ]
+}

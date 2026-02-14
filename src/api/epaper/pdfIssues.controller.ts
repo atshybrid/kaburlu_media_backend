@@ -8,6 +8,7 @@ import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
 import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
 import { config } from '../../config/env';
 import axios from 'axios';
+import { trackEpaperPageCount } from '../../services/wallet/billing.service';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const p: any = prisma;
@@ -314,6 +315,14 @@ async function upsertPdfIssueFromBuffer(params: {
       subEdition: { select: { id: true, name: true, slug: true } },
     },
   });
+
+  // Track page count for billing
+  try {
+    await trackEpaperPageCount(tenantId, pages.length, issueDate);
+  } catch (error) {
+    console.error('Failed to track ePaper page count:', error);
+    // Don't fail the upload if tracking fails
+  }
 
   return {
     issue: full,

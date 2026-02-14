@@ -480,6 +480,14 @@ model Tenant {
   webArticles                  TenantWebArticle[]            @relation("Tenant_WebArticles")
   villages                     Village[]
   articleQuota                 TenantArticleQuota?
+  
+  // Wallet & Subscription System
+  wallet                       TenantWallet?
+  pricing                      TenantPricing[]
+  usageMonthly                 TenantUsageMonthly[]
+  subscriptionLocked           Boolean                       @default(false)
+  lockedReason                 String?
+  lockedAt                     DateTime?
 }
 
 /// Tenant ePaper publication edition definition (State-level or umbrella edition).
@@ -867,6 +875,7 @@ model BillingInvoice {
   subscription      TenantSubscription?      @relation(fields: [subscriptionId], references: [id])
   tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lineItems         BillingInvoiceLineItem[]
+  usageMonthly      TenantUsageMonthly?
 
   @@index([tenantId, periodStart, periodEnd])
   @@index([status, createdAt])
@@ -884,6 +893,90 @@ model BillingInvoiceLineItem {
   invoice         BillingInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
+}
+
+/// Tenant wallet for prepaid balance management
+model TenantWallet {
+  id                 String              @id @default(cuid())
+  tenantId           String              @unique
+  balanceMinor       Int                 @default(0) // Current available balance in paise
+  lockedBalanceMinor Int                 @default(0) // Balance reserved for pending invoices
+  currency           BillingCurrency     @default(INR)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions       WalletTransaction[]
+
+  @@index([tenantId])
+}
+
+/// Wallet transaction history
+model WalletTransaction {
+  id                String                @id @default(cuid())
+  walletId          String
+  type              WalletTransactionType
+  amountMinor       Int // Positive for credit, negative for debit
+  balanceAfterMinor Int // Snapshot of balance after this transaction
+  description       String
+  referenceType     String? // INVOICE, TOPUP, REFUND, ADJUSTMENT
+  referenceId       String? // Related invoice/payment ID
+  meta              Json?
+  createdAt         DateTime              @default(now())
+  createdBy         String? // User ID who performed the action
+  wallet            TenantWallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+/// Tenant-specific pricing configuration
+model TenantPricing {
+  id                     String          @id @default(cuid())
+  tenantId               String
+  service                TenantService
+  currency               BillingCurrency @default(INR)
+  // ePaper specific pricing
+  minEpaperPages         Int?            @default(8)
+  pricePerPageMinor      Int? // Price per ePaper page in paise
+  // Fixed service pricing
+  monthlyFeeMinor        Int? // For NEWS_WEBSITE, PRINT_SERVICE, etc.
+  // Bulk payment discounts
+  discount6MonthPercent  Decimal?        @default(5.0) @db.Decimal(5, 2)
+  discount12MonthPercent Decimal?        @default(15.0) @db.Decimal(5, 2)
+  isActive               Boolean         @default(true)
+  effectiveFrom          DateTime        @default(now())
+  effectiveUntil         DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  tenant                 Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, service, effectiveFrom])
+  @@index([tenantId, isActive])
+}
+
+/// Monthly usage tracking for billing
+model TenantUsageMonthly {
+  id                     String          @id @default(cuid())
+  tenantId               String
+  periodStart            DateTime // First day of billing month
+  periodEnd              DateTime // Last day of billing month
+  // ePaper usage
+  epaperPageCount        Int             @default(0)
+  epaperChargeMinor      Int             @default(0)
+  // Other services
+  newsWebsiteActive      Boolean         @default(false)
+  newsWebsiteChargeMinor Int             @default(0)
+  printChargeMinor       Int             @default(0)
+  otherChargesMinor      Int             @default(0)
+  totalChargeMinor       Int             @default(0)
+  invoiceId              String?         @unique
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  tenant                 Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice                BillingInvoice? @relation(fields: [invoiceId], references: [id])
+
+  @@unique([tenantId, periodStart])
+  @@index([periodStart, periodEnd])
 }
 
 model DomainCategory {
@@ -2198,6 +2291,26 @@ enum BillingComponent {
   NEWS_DOMAIN
   EPAPER_SUBDOMAIN
   NEWSPAPER_DESIGN_PAGE
+  EPAPER_PAGE            // Per-page billing for ePaper
+  NEWS_WEBSITE_MONTHLY   // Monthly news website fee
+  PRINT_MONTHLY          // Monthly print service
+  CUSTOM_SERVICE         // Other custom services
+}
+
+enum WalletTransactionType {
+  CREDIT        // Money added to wallet
+  DEBIT         // Money deducted from wallet
+  LOCK          // Balance reserved for pending invoice
+  UNLOCK        // Released locked balance
+  REFUND        // Money returned to wallet
+  ADJUSTMENT    // Manual balance correction
+}
+
+enum TenantService {
+  EPAPER              // ePaper service (page-based)
+  NEWS_WEBSITE        // News website service (fixed monthly)
+  PRINT_SERVICE       // Print service (fixed monthly)
+  CUSTOM_SERVICE      // Other custom services
 }
 
 enum SubscriptionStatus {
@@ -2213,6 +2326,7 @@ enum InvoiceStatus {
   OPEN
   PAID
   VOID
+  PAST_DUE  // Invoice not paid and overdue
 }
 
 /// Invoice purpose. SUBSCRIPTION is the regular period invoice; TOPUP is prepaid credit purchase.

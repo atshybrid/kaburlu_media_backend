@@ -109,7 +109,12 @@ const swaggerDefinition = {
     { name: 'Digital Daily Newspaper', description: 'Mobile app ePaper APIs - Swipeable newspaper gallery, all-tenants view, and issue pages for Digital Daily Newspaper app' },
     // Admin & WhatsApp
     { name: 'Admin', description: 'Administrative operations - Tenant admin management, system configuration' },
-    { name: 'WhatsApp Templates', description: 'WhatsApp Business API template management - Sync, list, and manage message templates' }
+    { name: 'WhatsApp Templates', description: 'WhatsApp Business API template management - Sync, list, and manage message templates' },
+    // Tenant Subscription & Wallet System
+    { name: 'Tenant Subscription - Wallet Management', description: 'Admin wallet operations - Top-up, bulk payments, adjustments, transaction history, and balance management' },
+    { name: 'Tenant Subscription - Pricing Configuration', description: 'Admin pricing setup - Configure tenant-specific rates, minimum pages, discounts, and activation dates (effectiveFrom/effectiveUntil)' },
+    { name: 'Tenant Subscription - Billing & Usage', description: 'Admin billing operations - Monthly charges, usage tracking, invoice generation, and account lock/unlock' },
+    { name: 'Tenant Subscription - Self-Service', description: 'Tenant self-service - Check balance, view transactions, current usage, invoices, and request top-ups' }
   ],
   components: {
     securitySchemes: {

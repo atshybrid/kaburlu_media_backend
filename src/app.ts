@@ -39,6 +39,9 @@ import publicReporterJoinRoutes from './api/public/publicReporterJoin.routes';
 import tenantsRoutes from './api/tenants/tenants.routes';
 import domainsRoutes from './api/domains/domains.routes';
 import billingRoutes from './api/billing/billing.routes';
+import walletAdminRoutes from './api/wallet/wallet.routes';
+import walletTenantRoutes from './api/wallet/tenant.routes';
+import pricingRoutes from './api/wallet/pricing.routes';
 import reportersRoutes from './api/reporters/reporters.routes';
 import reportersMeIdCardRoutes from './api/reporters/reporters.me.idcard.routes';
 import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
@@ -316,6 +319,10 @@ app.use('/', assemblyConstituenciesRoutes);
 app.use('/', tenantReportersRoutes);
 // Billing routes include both /billing/* and /tenants/:tenantId/billing/*
 app.use('/', billingRoutes);
+// Wallet & Subscription System (admin + tenant self-service + pricing)
+app.use('/', walletAdminRoutes);
+app.use('/', walletTenantRoutes);
+app.use('/', pricingRoutes);
 app.use('/translate', translateRoutes);
 app.use('/profiles', profileRoutes);
 app.use('/media', mediaRoutes);
@@ -384,6 +391,10 @@ apiV1.use('/', assemblyConstituenciesRoutes);
 // Tenant-scoped reporter management under versioned API as well
 apiV1.use('/', tenantReportersRoutes);
 apiV1.use('/', billingRoutes);
+// Wallet & Subscription System
+apiV1.use('/', walletAdminRoutes);    // Admin wallet management
+apiV1.use('/', walletTenantRoutes);   // Tenant self-service
+apiV1.use('/', pricingRoutes);        // Pricing configuration
 apiV1.use('/translate', translateRoutes);
 apiV1.use('/profiles', profileRoutes);
 apiV1.use('/media', mediaRoutes);

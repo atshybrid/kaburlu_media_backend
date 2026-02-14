@@ -730,10 +730,12 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *     summary: AI-powered location creation (auto-detects district/mandal)
  *     description: |
  *       Smart endpoint that uses AI to:
+ *       - Accept location names in any language (English, Telugu, Hindi, etc.)
+ *       - Auto-translate to English for primary record if input is non-English
+ *       - Create translation records for the original language
  *       - Identify if area is district or mandal
- *       - Find correct parent (state/district)
- *       - Auto-translate to tenant language if Telugu
- *       - Create location with translations
+ *       - Find correct parent (state/district) across all states
+ *       - Auto-detect parent district for mandals
  *     tags: [Location AI]
  *     security: [{bearerAuth: []}]
  *     requestBody:
@@ -746,8 +748,8 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *             properties:
  *               areaName:
  *                 type: string
- *                 example: "Kamareddy"
- *                 description: Name of area to add (English)
+ *                 example: "పెండ్లిమర్రి"
+ *                 description: Name of area to add (can be in any language - English, Telugu, Hindi, etc.)
  *               stateId:
  *                 type: string
  *                 description: State ID (required for districts, optional for mandals if parentDistrictName provided)
@@ -757,7 +759,7 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *                 example: "Telangana"
  *               languageCode:
  *                 type: string
- *                 description: Language code for translation (default 'en')
+ *                 description: Language code of the input areaName (default 'en'). Used to create translation records.
  *                 example: "te"
  *                 enum: [en, te, hi, kn, ta, ml]
  *               forceType:
@@ -766,7 +768,8 @@ router.delete('/states/:stateId/translations/languages', auth, requireSuperOrTen
  *                 description: Override AI detection (optional)
  *               parentDistrictName:
  *                 type: string
- *                 description: For mandals - specify parent district name (optional, AI will detect if not provided)
+ *                 description: For mandals - specify parent district name (searches across all states)
+ *                 example: "YSR Kadapa"
  *     responses:
  *       201:
  *         description: Location created successfully
@@ -814,11 +817,15 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
       }
     } else if (parentDistrictName) {
       // For mandals: infer state from parent district
+      // Search across all states or within provided state if specified
+      const districtWhere: any = {
+        name: { equals: parentDistrictName.trim(), mode: 'insensitive' },
+        isDeleted: false
+      };
+      
+      // If stateName was provided, prefer districts in that state but don't make it exclusive
       const parentDistrict = await prisma.district.findFirst({
-        where: {
-          name: { equals: parentDistrictName.trim(), mode: 'insensitive' },
-          isDeleted: false
-        },
+        where: districtWhere,
         include: { 
           state: { include: { translations: true } }
         }
@@ -827,7 +834,8 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
       if (!parentDistrict) {
         return res.status(404).json({ 
           error: 'Parent district not found',
-          hint: 'Provide stateId/stateName along with parentDistrictName'
+          district: parentDistrictName,
+          hint: 'Make sure the district name is spelled correctly'
         });
       }
       
@@ -841,9 +849,42 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
 
     const stateName_actual = state.name;
 
-    // Determine translation language (default to English)
+    // Determine input language and prepare for translation
     const targetLanguage = languageCode?.toLowerCase() || 'en';
-    const needsTranslation = targetLanguage !== 'en';
+    
+    // Detect if input is in non-English script (Telugu, Hindi, etc.)
+    const isNonEnglishInput = /[^\x00-\x7F]/.test(areaName); // Contains non-ASCII characters
+    
+    let englishName = areaName.trim();
+    let translatedName: string | null = null;
+    
+    // If input is non-English, translate TO English for primary record
+    if (isNonEnglishInput && targetLanguage !== 'en') {
+      const languageMap: { [key: string]: string } = {
+        'te': 'Telugu',
+        'hi': 'Hindi',
+        'kn': 'Kannada',
+        'ta': 'Tamil',
+        'ml': 'Malayalam'
+      };
+      
+      const sourceLanguageName = languageMap[targetLanguage] || targetLanguage.toUpperCase();
+      
+      const toEnglishPrompt = `Translate this ${sourceLanguageName} location name to English:
+
+${sourceLanguageName}: ${areaName}
+State: ${stateName_actual}
+
+Provide ONLY the English name, nothing else. Use proper English spelling.`;
+
+      const englishAI = await aiGenerateText({
+        prompt: toEnglishPrompt,
+        purpose: 'translation'
+      });
+
+      englishName = englishAI.text.trim().replace(/['"]/g, '');
+      translatedName = areaName.trim(); // Original input becomes the translation
+    }
 
     // Step 1: AI detection - is it district or mandal?
     let locationType = typeof forceType === 'string' ? forceType.trim().toLowerCase() : forceType;
@@ -854,15 +895,14 @@ router.post('/smart-add', auth, requireSuperOrTenantAdmin, async (req, res) => {
       });
     }
     let parentDistrictId: string | null = null;
-    let translatedName: string | null = null;
 
     if (!locationType) {
       const detectionPrompt = `You are a location classifier for Indian administrative divisions.
       
 State: ${stateName_actual}
-Area Name: ${areaName}
+Area Name: ${englishName}
 
-Determine if "${areaName}" is a DISTRICT or MANDAL (sub-district) in ${stateName_actual} state.
+Determine if "${englishName}" is a DISTRICT or MANDAL (sub-district) in ${stateName_actual} state.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -929,10 +969,10 @@ Respond ONLY with valid JSON in this exact format:
         const districtDetectionPrompt = `You are helping identify which district a mandal belongs to.
 
 State: ${stateName_actual}
-Mandal Name: ${areaName}
+Mandal Name: ${englishName}
 Available Districts: ${districts.map(d => d.name).join(', ')}
 
-Which district does "${areaName}" mandal belong to?
+Which district does "${englishName}" mandal belong to?
 
 Respond ONLY with valid JSON:
 {
@@ -972,40 +1012,12 @@ Respond ONLY with valid JSON:
       }
     }
 
-    // Step 3: Get translation if needed
-    if (needsTranslation) {
-      const languageMap: { [key: string]: string } = {
-        'te': 'Telugu',
-        'hi': 'Hindi',
-        'kn': 'Kannada',
-        'ta': 'Tamil',
-        'ml': 'Malayalam'
-      };
-      
-      const targetLanguageName = languageMap[targetLanguage] || targetLanguage.toUpperCase();
-      
-      const translationPrompt = `Translate this location name to ${targetLanguageName} script:
-
-English: ${areaName}
-Location Type: ${locationType}
-State: ${stateName_actual}
-
-Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${targetLanguageName} script.`;
-
-      const translationAI = await aiGenerateText({
-        prompt: translationPrompt,
-        purpose: 'translation'
-      });
-
-      translatedName = translationAI.text.trim().replace(/['"]/g, '');
-    }
-
-    // Step 4: Create location
+    // Step 3: Create location with English name
     if (locationType === 'district') {
       // Check if exists
       const existing = await prisma.district.findFirst({
         where: {
-          name: { equals: areaName.trim(), mode: 'insensitive' },
+          name: { equals: englishName, mode: 'insensitive' },
           stateId: state.id,
           isDeleted: false
         }
@@ -1020,7 +1032,7 @@ Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${t
 
       const district = await prisma.district.create({
         data: { 
-          name: areaName.trim(),
+          name: englishName,
           stateId: state.id,
           isDeleted: false 
         }
@@ -1061,7 +1073,7 @@ Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${t
       }
       const existing = await prisma.mandal.findFirst({
         where: {
-          name: { equals: areaName.trim(), mode: 'insensitive' },
+          name: { equals: englishName, mode: 'insensitive' },
           districtId: parentDistrictId,
           isDeleted: false
         }
@@ -1076,7 +1088,7 @@ Provide ONLY the ${targetLanguageName} translation, nothing else. Use proper ${t
 
       const mandal = await prisma.mandal.create({
         data: {
-          name: areaName.trim(),
+          name: englishName,
           districtId: parentDistrictId,
           isDeleted: false
         }
