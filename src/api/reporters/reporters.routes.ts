@@ -374,6 +374,8 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
       return res.status(403).json({ error: 'Onboarding payment must be PAID to generate ID card' });
     }
 
+    // IMPORTANT: Monthly subscription payment check ONLY if subscriptionActive=true
+    // If admin toggles subscription OFF, this check is completely skipped (no payment required)
     if (reporter.subscriptionActive) {
       // Use Asia/Kolkata month/year to avoid UTC month boundary issues
       const fmt = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric' });
