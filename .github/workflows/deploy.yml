@@ -69,16 +69,15 @@ jobs:
             echo "▶ Generate Prisma client"
             npx prisma generate
 
-            echo "▶ Force-resolve failed wallet migration (mark as applied to allow re-run)"
-            set +e
-            # Try rolled-back first (if it was rolled back)
-            npx prisma migrate resolve --rolled-back 20260212120000_tenant_subscription_wallet 2>/dev/null || true
-            # If migration is stuck in failed state, mark as applied to force skip
-            npx prisma migrate resolve --applied 20260212120000_tenant_subscription_wallet 2>/dev/null || true
-            set -e
-
-            echo "▶ Run database migrations (production)"
-            npx prisma migrate deploy
+            # ▶ MIGRATIONS DISABLED - Database is shared between local and server
+            # Migrations are applied locally before push. GitHub Actions only deploys code.
+            # echo "▶ Force-resolve failed wallet migration (mark as applied to allow re-run)"
+            # set +e
+            # npx prisma migrate resolve --rolled-back 20260212120000_tenant_subscription_wallet 2>/dev/null || true
+            # npx prisma migrate resolve --applied 20260212120000_tenant_subscription_wallet 2>/dev/null || true
+            # set -e
+            # echo "▶ Run database migrations (production)"
+            # npx prisma migrate deploy
 
             echo "▶ Build production dist (safe: keep previous dist until build succeeds)"
             DIST_BACKUP=""
