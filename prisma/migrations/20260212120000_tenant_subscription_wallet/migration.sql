@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS "TenantUsageMonthly" (
     CONSTRAINT "TenantUsageMonthly_pkey" PRIMARY KEY ("id")
 );
 
+-- 7b. Add missing columns to TenantUsageMonthly if table exists but columns don't (recovery from partial migration)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'year') THEN
+        ALTER TABLE "TenantUsageMonthly" ADD COLUMN "year" INTEGER NOT NULL DEFAULT 2026;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'month') THEN
+        ALTER TABLE "TenantUsageMonthly" ADD COLUMN "month" INTEGER NOT NULL DEFAULT 1;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'service') THEN
+        ALTER TABLE "TenantUsageMonthly" ADD COLUMN "service" "TenantService" NOT NULL DEFAULT 'EPAPER';
+    END IF;
+END $$;
+
 -- 8. Add subscription lock fields to Tenant (safe)
 DO $$ 
 BEGIN
@@ -105,14 +119,23 @@ BEGIN
     END IF;
 END $$;
 
--- 9. Create unique indexes (safe)
+-- 9. Create unique indexes (safe - only if columns exist)
 DO $$ 
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'TenantWallet_tenantId_key') THEN
+    -- Only create TenantWallet index if table and column exist
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TenantWallet')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantWallet' AND column_name = 'tenantId')
+       AND NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'TenantWallet_tenantId_key') THEN
         CREATE UNIQUE INDEX "TenantWallet_tenantId_key" ON "TenantWallet"("tenantId");
     END IF;
     
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'TenantUsageMonthly_tenantId_year_month_service_key') THEN
+    -- Only create TenantUsageMonthly index if all columns exist
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TenantUsageMonthly')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'tenantId')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'year')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'month')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'TenantUsageMonthly' AND column_name = 'service')
+       AND NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'TenantUsageMonthly_tenantId_year_month_service_key') THEN
         CREATE UNIQUE INDEX "TenantUsageMonthly_tenantId_year_month_service_key" 
         ON "TenantUsageMonthly"("tenantId", "year", "month", "service");
     END IF;
