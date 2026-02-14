@@ -902,6 +902,39 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 tenantId: true,
+                level: true,
+                active: true,
+                profilePhotoUrl: true,
+                designation: {
+                  select: {
+                    name: true,
+                    nativeName: true
+                  }
+                },
+                state: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                district: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                mandal: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                assemblyConstituency: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
                 tenant: {
                   select: {
                     id: true,
@@ -1060,6 +1093,45 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         nativeName: tenantData.entity?.nativeName || null,
       } : null;
 
+      // Build workplace info for reporters
+      const workPlace: any = {};
+      if (reporterProfile) {
+        if (reporterProfile.state) {
+          workPlace.state = {
+            id: reporterProfile.state.id,
+            name: reporterProfile.state.name
+          };
+        }
+        if (reporterProfile.district) {
+          workPlace.district = {
+            id: reporterProfile.district.id,
+            name: reporterProfile.district.name
+          };
+        }
+        if (reporterProfile.mandal) {
+          workPlace.mandal = {
+            id: reporterProfile.mandal.id,
+            name: reporterProfile.mandal.name
+          };
+        }
+        if (reporterProfile.assemblyConstituency) {
+          workPlace.assembly = {
+            id: reporterProfile.assemblyConstituency.id,
+            name: reporterProfile.assemblyConstituency.name
+          };
+        }
+        if (reporterProfile.level) {
+          workPlace.level = reporterProfile.level;
+        }
+        // Create readable work location string
+        const locations = [
+          reporterProfile.mandal?.name,
+          reporterProfile.district?.name,
+          reporterProfile.state?.name
+        ].filter(Boolean);
+        workPlace.location = locations.length > 0 ? locations.join(', ') : null;
+      }
+
       // Build SEO object
       const seoData = i.seo as any;
       const seo = {
@@ -1120,11 +1192,20 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         author: {
           id: author?.id || null,
           fullName: author?.profile?.fullName || null,
-          profilePhotoUrl: author?.profile?.profilePhotoUrl || null,
+          profilePhotoUrl: reporterProfile?.profilePhotoUrl || author?.profile?.profilePhotoUrl || null,
           email: author?.email || null,
           mobileNumber: author?.mobileNumber || null,
           roleName: author?.role?.name || null,
           reporterType: author?.role?.name || null,
+          // Reporter-specific details
+          isReporter: !!reporterProfile,
+          designation: reporterProfile?.designation ? {
+            name: reporterProfile.designation.name,
+            nativeName: reporterProfile.designation.nativeName || null
+          } : null,
+          workPlace: Object.keys(workPlace).length > 0 ? workPlace : null,
+          reporterLevel: reporterProfile?.level || null,
+          active: reporterProfile?.active ?? null,
         },
         // Tenant info with brand logo
         tenant: tenantInfo,
@@ -1169,6 +1250,39 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 tenantId: true,
+                level: true,
+                active: true,
+                profilePhotoUrl: true,
+                designation: {
+                  select: {
+                    name: true,
+                    nativeName: true
+                  }
+                },
+                state: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                district: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                mandal: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
+                assemblyConstituency: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                },
                 tenant: {
                   select: {
                     id: true,
@@ -1267,7 +1381,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       });
     }
 
-    // Extract tenant info from reporter profile
+    // Extract tenant info from reporter profile with detailed workplace info
     const reporterProfile = author?.reporterProfile as any;
     const tenantData = reporterProfile?.tenant;
     const tenantInfo = tenantData ? {
@@ -1280,6 +1394,45 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       faviconUrl: tenantData.theme?.faviconUrl || null,
       nativeName: tenantData.entity?.nativeName || null,
     } : null;
+
+    // Build workplace info for reporters
+    const workPlace: any = {};
+    if (reporterProfile) {
+      if (reporterProfile.state) {
+        workPlace.state = {
+          id: reporterProfile.state.id,
+          name: reporterProfile.state.name
+        };
+      }
+      if (reporterProfile.district) {
+        workPlace.district = {
+          id: reporterProfile.district.id,
+          name: reporterProfile.district.name
+        };
+      }
+      if (reporterProfile.mandal) {
+        workPlace.mandal = {
+          id: reporterProfile.mandal.id,
+          name: reporterProfile.mandal.name
+        };
+      }
+      if (reporterProfile.assemblyConstituency) {
+        workPlace.assembly = {
+          id: reporterProfile.assemblyConstituency.id,
+          name: reporterProfile.assemblyConstituency.name
+        };
+      }
+      if (reporterProfile.level) {
+        workPlace.level = reporterProfile.level;
+      }
+      // Create readable work location string
+      const locations = [
+        reporterProfile.mandal?.name,
+        reporterProfile.district?.name,
+        reporterProfile.state?.name
+      ].filter(Boolean);
+      workPlace.location = locations.length > 0 ? locations.join(', ') : null;
+    }
 
     // Build SEO object
     const seoData = item.seo as any;
@@ -1339,11 +1492,20 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       author: {
         id: author?.id || null,
         fullName: author?.profile?.fullName || null,
-        profilePhotoUrl: author?.profile?.profilePhotoUrl || null,
+        profilePhotoUrl: reporterProfile?.profilePhotoUrl || author?.profile?.profilePhotoUrl || null,
         email: author?.email || null,
         mobileNumber: author?.mobileNumber || null,
         roleName: author?.role?.name || null,
         reporterType: author?.role?.name || null,
+        // Reporter-specific details
+        isReporter: !!reporterProfile,
+        designation: reporterProfile?.designation ? {
+          name: reporterProfile.designation.name,
+          nativeName: reporterProfile.designation.nativeName || null
+        } : null,
+        workPlace: Object.keys(workPlace).length > 0 ? workPlace : null,
+        reporterLevel: reporterProfile?.level || null,
+        active: reporterProfile?.active ?? null,
       },
       // Tenant info with brand logo
       tenant: tenantInfo,

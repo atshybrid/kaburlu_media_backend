@@ -21,7 +21,35 @@ const normalizeLocationSearchText = (input: string) => {
         .replace(/\s+/g, ' ')
         .trim();
 };
-
+/**
+ * Calculate match score for ranking search results
+ * Higher score = better match
+ */
+const calculateMatchScore = (query: string, itemName: string): number => {
+    const normalizedQuery = normalizeLocationSearchText(query);
+    const normalizedItem = normalizeLocationSearchText(itemName);
+    
+    // Exact match (highest priority)
+    if (normalizedItem === normalizedQuery) return 1000;
+    
+    // Starts with query (high priority)
+    if (normalizedItem.startsWith(normalizedQuery)) return 500;
+    
+    // Contains query (medium priority)
+    if (normalizedItem.includes(normalizedQuery)) return 250;
+    
+    // Calculate similarity based on common characters
+    const queryChars = normalizedQuery.split('');
+    const itemChars = normalizedItem.split('');
+    let matchingChars = 0;
+    
+    for (const char of queryChars) {
+        if (itemChars.includes(char)) matchingChars++;
+    }
+    
+    const similarity = matchingChars / Math.max(queryChars.length, itemChars.length);
+    return similarity * 100;
+};
 const buildLocationSearchVariants = (rawQuery: string) => {
     const raw = String(rawQuery || '').trim();
     const normalized = normalizeLocationSearchText(raw);
@@ -41,13 +69,126 @@ const buildLocationSearchVariants = (rawQuery: string) => {
         // Add dotted variant when query starts with a single-letter token.
         const m = normalized.match(/^([a-z])\s+(.+)$/);
         if (m) variants.add(`${m[1]}. ${m[2]}`);
+
+        // Common spelling mistakes in Indian place names (Telugu/Hindi transliteration):
+        // 1. Double consonants: kadapa vs kaddapa, guntur vs gunttur
+        // Remove double consonants
+        const noDoubles = normalized.replace(/([bcdfghjklmnpqrstvwxyz])\1+/g, '$1');
+        if (noDoubles !== normalized) variants.add(noDoubles);
+        
+        // Add double consonants to single ones (limited to avoid explosion)
+        // Only for short queries to prevent too many variants
+        if (normalized.length <= 10) {
+            const withDoubles = normalized.replace(/([bcdfghjklmnpqrstvwxyz])(?![bcdfghjklmnpqrstvwxyz])/g, '$1$1');
+            if (withDoubles !== normalized && withDoubles.length <= normalized.length + 3) {
+                variants.add(withDoubles);
+            }
+        }
+
+        // 2. Common character substitutions in transliteration:
+        const substitutions: Record<string, string[]> = {
+            'dh': ['d'], 'd': ['dh'],
+            'th': ['t'], 't': ['th'],
+            'ph': ['p'], 'p': ['ph'],
+            'v': ['b', 'w'], 'b': ['v'], 'w': ['v'],
+            'kh': ['k'], 'k': ['kh'],
+            'gh': ['g'], 'g': ['gh'],
+            'ch': ['c'], 'c': ['ch'],
+            'sh': ['s'], 's': ['sh']
+        };
+
+        for (const [pattern, replacements] of Object.entries(substitutions)) {
+            if (normalized.includes(pattern)) {
+                for (const repl of replacements) {
+                    const variant = normalized.replace(new RegExp(pattern, 'g'), repl);
+                    if (variant !== normalized) variants.add(variant);
+                }
+            }
+        }
+
+        // 3. Vowel variations (common in speech-to-text or fast typing):
+        // Remove repeated vowels: 'aa' -> 'a', 'ee' -> 'e'
+        const noDoubleVowels = normalized.replace(/([aeiou])\1+/g, '$1');
+        if (noDoubleVowels !== normalized) variants.add(noDoubleVowels);
+
+        // Common vowel substitutions (u/oo, i/e, a/aa, o/oo)
+        const vowelSubstitutions: Array<[RegExp, string]> = [
+            [/oo/g, 'u'], [/u/g, 'oo'],
+            [/ee/g, 'i'], [/i/g, 'e'], [/e/g, 'i'],
+            [/aa/g, 'a'],
+            [/o/g, 'oo'], [/oo/g, 'o'],  // Handle o vs oo (Chittoor vs Chittor, Kurnool vs Kurnol)
+        ];
+
+        for (const [pattern, repl] of vowelSubstitutions) {
+            const variant = normalized.replace(pattern, repl);
+            if (variant !== normalized && variant.length >= 3) {
+                variants.add(variant);
+            }
+        }
+
+        // Handle sha/sa confusion (common in Telugu transliteration)
+        if (normalized.includes('sha')) {
+            variants.add(normalized.replace(/sha/g, 'sa'));
+        }
+        if (normalized.includes('sa')) {
+            variants.add(normalized.replace(/sa/g, 'sha'));
+        }
+
+        // Handle 'ul' vs 'ool' pattern (kurnul vs kurnool)
+        if (normalized.includes('ul')) {
+            variants.add(normalized.replace(/ul/g, 'ool'));
+        }
+        if (normalized.includes('ool')) {
+            variants.add(normalized.replace(/ool/g, 'ul'));
+        }
+
+        // Handle visha/visa confusion (extra 'i' in Visakhapatnam)
+        // Common mistake: adding 'h' after 'i' -> "vishakapatnam" instead of "visakhapatnam"
+        if (normalized.includes('isha')) {
+            variants.add(normalized.replace(/isha/g, 'isa'));
+        }
+        if (normalized.includes('isa')) {
+            variants.add(normalized.replace(/isa/g, 'isha'));
+        }
+
+        // Handle "akha" vs "haka" transposition (vishakapatnam vs visakhapatnam)
+        if (normalized.includes('haka')) {
+            variants.add(normalized.replace(/haka/g, 'akha'));
+        }
+        if (normalized.includes('akha')) {
+            variants.add(normalized.replace(/akha/g, 'haka'));
+        }
+
+        // 4. Common prefix/suffix variations:
+        if (normalized.startsWith('sri ')) variants.add('shri ' + normalized.slice(4));
+        if (normalized.startsWith('shri ')) variants.add('sri ' + normalized.slice(5));
+        if (normalized.endsWith('abad')) variants.add(normalized.slice(0, -4) + 'bad');
+        if (normalized.endsWith('bad') && !normalized.endsWith('abad')) {
+            variants.add(normalized.slice(0, -3) + 'abad');
+        }
+        if (normalized.endsWith('puram')) variants.add(normalized.slice(0, -5) + 'pura');
+        if (normalized.endsWith('pura')) variants.add(normalized.slice(0, -4) + 'puram');
+        if (normalized.endsWith('palle')) variants.add(normalized.slice(0, -5) + 'palli');
+        if (normalized.endsWith('palli')) variants.add(normalized.slice(0, -5) + 'palle');
+
+        // 5. Common abbreviations/nicknames (Andhra Pradesh specific)
+        const nicknames: Record<string, string[]> = {
+            'vizag': ['visakhapatnam', 'vishakhapatnam'],
+            'rjy': ['rajahmundry', 'rajamahendravaram'],
+            'vjd': ['vijayawada']
+        };
+
+        const lowerNormalized = normalized.toLowerCase();
+        if (nicknames[lowerNormalized]) {
+            nicknames[lowerNormalized].forEach(full => variants.add(full));
+        }
     }
 
-    // Keep variant count small to avoid huge Prisma OR clauses.
+    // Keep variant count reasonable (increased from 15 to 20 for better coverage)
     return Array.from(variants)
         .map((v) => v.trim())
         .filter((v) => v.length >= 2)
-        .slice(0, 6);
+        .slice(0, 20);
 };
 
 // Create a single location
@@ -166,8 +307,19 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
     if (!q) return [];
 
     const qVariants = buildLocationSearchVariants(q);
+    
+    // Create search conditions with priority:
+    // 1. Exact match (highest priority)
+    // 2. Starts with (high priority)
+    // 3. Contains (medium priority)
     const orNameOrTranslationsContains = qVariants.flatMap((v) => [
-        { name: { contains: v, mode: 'insensitive' as const } },
+        // English name matches
+        { name: { equals: v, mode: 'insensitive' as const } },        // Exact match
+        { name: { startsWith: v, mode: 'insensitive' as const } },    // Starts with
+        { name: { contains: v, mode: 'insensitive' as const } },       // Contains
+        // Translation matches
+        { translations: { some: { name: { equals: v, mode: 'insensitive' as const } } } },
+        { translations: { some: { name: { startsWith: v, mode: 'insensitive' as const } } } },
         { translations: { some: { name: { contains: v, mode: 'insensitive' as const } } } },
     ]);
 
@@ -336,7 +488,24 @@ export const searchGeoLocations = async (params: { q: string; limit?: number; ty
         });
     }
 
-    return items.slice(0, limit);
+    // Score and sort results by relevance
+    const scoredItems = items.map(item => ({
+        ...item,
+        _score: calculateMatchScore(q, item.name)
+    }));
+
+    // Sort by score (descending), then by name (ascending)
+    scoredItems.sort((a, b) => {
+        if (b._score !== a._score) {
+            return b._score - a._score;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+
+    // Remove score from output and apply limit
+    const rankedItems = scoredItems.map(({ _score, ...item }) => item);
+
+    return rankedItems.slice(0, limit);
 };
 
 export const createVillage = async (data: { tenantId: string; mandalId: string; name: string }) => {
