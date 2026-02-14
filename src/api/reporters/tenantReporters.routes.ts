@@ -2926,17 +2926,20 @@ router.post('/tenants/:tenantId/reporters/:id/id-card', passport.authenticate('j
     }
 
     // Payment requirements
-    // - If idCardCharge > 0: onboarding payment must be PAID
+    // - Check onboarding payment first (if already PAID, skip idCardCharge check)
+    // - If no payment AND idCardCharge > 0: require PAID onboarding payment
     // - If subscriptionActive=true: current month subscription payment must be PAID
-    if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
-      stage = 'payment-onboarding-check';
-      const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
-        where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
-        select: { id: true },
-      });
-      if (!onboardingPaid) {
-        return res.status(403).json({ error: 'Onboarding payment must be PAID to generate ID card' });
-      }
+    
+    // First check if onboarding payment already exists and is PAID
+    stage = 'payment-onboarding-check';
+    const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
+      where: { tenantId, reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' },
+      select: { id: true },
+    });
+    
+    // Only enforce idCardCharge if onboarding payment doesn't exist yet
+    if (!onboardingPaid && typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+      return res.status(403).json({ error: 'Onboarding payment must be PAID to generate ID card' });
     }
 
     if (reporter.subscriptionActive) {

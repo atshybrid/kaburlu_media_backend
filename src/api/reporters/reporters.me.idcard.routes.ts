@@ -96,18 +96,21 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
       });
     }
     
-    // Check payment requirements
-    if (typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
-      const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
-        where: { reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' }
+    // Check payment requirements  
+    // - Check onboarding payment first (if already PAID, skip idCardCharge check)
+    // - If no payment AND idCardCharge > 0: require PAID onboarding payment
+    const onboardingPaid = await (prisma as any).reporterPayment.findFirst({
+      where: { reporterId: reporter.id, type: 'ONBOARDING', status: 'PAID' }
+    });
+    
+    // Only enforce idCardCharge if onboarding payment doesn't exist yet
+    if (!onboardingPaid && typeof reporter.idCardCharge === 'number' && reporter.idCardCharge > 0) {
+      return res.status(402).json({
+        error: 'Onboarding payment required',
+        code: 'PAYMENT_REQUIRED',
+        details: 'ID card fee must be paid before generating ID card',
+        amount: reporter.idCardCharge
       });
-      if (!onboardingPaid) {
-        return res.status(402).json({
-          error: 'Onboarding payment required',
-          code: 'PAYMENT_REQUIRED',
-          details: 'ID card fee must be paid before generating ID card',
-          amount: reporter.idCardCharge
-        });
       }
     }
     
