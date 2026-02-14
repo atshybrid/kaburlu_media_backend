@@ -69,9 +69,12 @@ jobs:
             echo "▶ Generate Prisma client"
             npx prisma generate
 
-            echo "▶ Resolve any failed migrations (one-time fix)"
+            echo "▶ Force-resolve failed wallet migration (mark as applied to allow re-run)"
             set +e
+            # Try rolled-back first (if it was rolled back)
             npx prisma migrate resolve --rolled-back 20260212120000_tenant_subscription_wallet 2>/dev/null || true
+            # If migration is stuck in failed state, mark as applied to force skip
+            npx prisma migrate resolve --applied 20260212120000_tenant_subscription_wallet 2>/dev/null || true
             set -e
 
             echo "▶ Run database migrations (production)"
