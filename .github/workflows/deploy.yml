@@ -69,6 +69,11 @@ jobs:
             echo "▶ Generate Prisma client"
             npx prisma generate
 
+            echo "▶ Resolve any failed migrations (one-time fix)"
+            set +e
+            npx prisma migrate resolve --rolled-back 20260212120000_tenant_subscription_wallet 2>/dev/null || true
+            set -e
+
             echo "▶ Run database migrations (production)"
             npx prisma migrate deploy
 
