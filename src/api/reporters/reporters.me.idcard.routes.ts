@@ -111,7 +111,6 @@ router.post('/id-card', passport.authenticate('jwt', { session: false }), async 
         details: 'ID card fee must be paid before generating ID card',
         amount: reporter.idCardCharge
       });
-      }
     }
     
     // Get tenant ID card settings
