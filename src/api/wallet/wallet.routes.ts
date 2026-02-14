@@ -19,8 +19,9 @@ import { requireSuperAdmin } from '../../middleware/subscriptionAccess';
 
 const router = Router();
 
-// All wallet routes require JWT auth
-router.use(passport.authenticate('jwt', { session: false }));
+// All wallet routes require JWT auth (scoped so this router can be mounted at '/'
+// without blocking unrelated paths like /api/v1/auth/login).
+router.use('/admin', passport.authenticate('jwt', { session: false }));
 
 /**
  * @swagger

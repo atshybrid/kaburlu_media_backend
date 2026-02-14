@@ -16,9 +16,9 @@ import { requireSuperAdmin } from '../../middleware/subscriptionAccess';
 
 const router = Router();
 
-// All pricing routes require JWT auth and super admin
-router.use(passport.authenticate('jwt', { session: false }));
-router.use(requireSuperAdmin);
+// All pricing routes require JWT auth (scoped so this router can be mounted at '/')
+router.use('/admin', passport.authenticate('jwt', { session: false }));
+router.use('/admin', requireSuperAdmin);
 
 /**
  * @swagger

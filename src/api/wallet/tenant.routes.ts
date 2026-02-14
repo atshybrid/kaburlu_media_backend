@@ -14,8 +14,8 @@ import {
 
 const router = Router();
 
-// All tenant routes require JWT auth
-router.use(passport.authenticate('jwt', { session: false }));
+// All tenant wallet routes require JWT auth (scoped so this router can be mounted at '/')
+router.use('/tenant', passport.authenticate('jwt', { session: false }));
 
 /**
  * @swagger
