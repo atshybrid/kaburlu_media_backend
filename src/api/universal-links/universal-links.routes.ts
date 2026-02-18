@@ -5,7 +5,8 @@ const router = Router();
 
 // App Store URLs - Update these with your actual app store links
 const APP_STORE_URL = process.env.IOS_APP_STORE_URL || 'https://apps.apple.com/app/kaburlu/id123456789';
-const PLAY_STORE_URL = process.env.ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.kaburlu.app';
+const PLAY_STORE_URL = process.env.ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.media.kaburlu';
+const ANDROID_PACKAGE = process.env.ANDROID_PACKAGE_NAME || 'com.media.kaburlu';
 
 /**
  * @swagger
@@ -46,23 +47,139 @@ router.get('/.well-known/apple-app-site-association', (_req: Request, res: Respo
  *         description: Android Asset Links JSON
  */
 router.get('/.well-known/assetlinks.json', (_req: Request, res: Response) => {
-  // Replace with your actual package name and SHA256 fingerprint
+  const packageName = process.env.ANDROID_PACKAGE_NAME || 'com.media.kaburlu';
+  const sha256Fingerprints = process.env.ANDROID_SHA256_FINGERPRINT
+    ? process.env.ANDROID_SHA256_FINGERPRINT.split(',').map(s => s.trim())
+    : ['CE:03:35:2C:60:BE:5D:A8:2D:60:DE:63:B7:3A:C7:BE:5F:24:3B:3B:71:89:A2:95:51:DF:DA:62:1F:57:EE:86'];
+
   const assetLinks = [
     {
       relation: ['delegate_permission/common.handle_all_urls'],
       target: {
         namespace: 'android_app',
-        package_name: process.env.ANDROID_PACKAGE_NAME || 'com.kaburlu.app',
-        sha256_cert_fingerprints: [
-          process.env.ANDROID_SHA256_FINGERPRINT || 'SHA256_FINGERPRINT_HERE'
-        ]
+        package_name: packageName,
+        sha256_cert_fingerprints: sha256Fingerprints
       }
     }
   ];
-  
+
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
   res.json(assetLinks);
 });
+
+// ─── Deep-link web fallback pages ───────────────────────────────────────────
+
+/**
+ * GET /article/:id
+ * Web fallback for Android App Links / iOS Universal Links.
+ * - If user has the app → Android opens it directly via App Link (never hits this route).
+ * - If user does NOT have the app → browser lands here → smart redirect to Play Store.
+ */
+router.get('/article/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!id) { res.status(400).send('Missing article id'); return; }
+
+  const ua = req.headers['user-agent'] || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const appSchemeUrl = `kaburlu://article/${encodeURIComponent(id)}`;
+  const storeUrl = isIOS ? APP_STORE_URL : PLAY_STORE_URL;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opening in Kaburlu…</title>
+  <!-- Android App Link meta -->
+  <meta property="al:android:package" content="${ANDROID_PACKAGE}" />
+  <meta property="al:android:url" content="${appSchemeUrl}" />
+  <meta property="al:android:app_name" content="Kaburlu" />
+  <!-- iOS Universal Link meta -->
+  <meta property="al:ios:url" content="${appSchemeUrl}" />
+  <meta property="al:ios:app_name" content="Kaburlu" />
+</head>
+<body>
+  <p>Opening article in Kaburlu app…</p>
+  <script>
+    (function () {
+      var appUrl = '${appSchemeUrl}';
+      var storeUrl = '${storeUrl}';
+      var isAndroid = ${isAndroid};
+      var isIOS = ${isIOS};
+      if (isAndroid || isIOS) {
+        var start = Date.now();
+        window.location = appUrl;
+        setTimeout(function () {
+          if (Date.now() - start < 2500) {
+            window.location = storeUrl;
+          }
+        }, 2000);
+      } else {
+        // Desktop: just redirect to Play Store listing
+        window.location = storeUrl;
+      }
+    })();
+  <\/script>
+</body>
+</html>`);
+});
+
+/**
+ * GET /category/:slug
+ * Web fallback for category deep links.
+ */
+router.get('/category/:slug', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  if (!slug) { res.status(400).send('Missing category slug'); return; }
+
+  const ua = req.headers['user-agent'] || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const appSchemeUrl = `kaburlu://category/${encodeURIComponent(slug)}`;
+  const storeUrl = isIOS ? APP_STORE_URL : PLAY_STORE_URL;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opening in Kaburlu…</title>
+  <meta property="al:android:package" content="${ANDROID_PACKAGE}" />
+  <meta property="al:android:url" content="${appSchemeUrl}" />
+  <meta property="al:android:app_name" content="Kaburlu" />
+  <meta property="al:ios:url" content="${appSchemeUrl}" />
+  <meta property="al:ios:app_name" content="Kaburlu" />
+</head>
+<body>
+  <p>Opening category in Kaburlu app…</p>
+  <script>
+    (function () {
+      var appUrl = '${appSchemeUrl}';
+      var storeUrl = '${storeUrl}';
+      var isAndroid = ${isAndroid};
+      var isIOS = ${isIOS};
+      if (isAndroid || isIOS) {
+        var start = Date.now();
+        window.location = appUrl;
+        setTimeout(function () {
+          if (Date.now() - start < 2500) {
+            window.location = storeUrl;
+          }
+        }, 2000);
+      } else {
+        window.location = storeUrl;
+      }
+    })();
+  <\/script>
+</body>
+</html>`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Helper: Detect device type from user agent
