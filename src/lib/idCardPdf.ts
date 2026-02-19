@@ -165,7 +165,8 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     locationParts.push(derivedState.name);
   }
 
-  let workplaceLocation = locationParts.join(', ').replace(/\s+/g, ' ').trim();
+  // Only the most specific location name (first part) is shown on the card.
+  let workplaceLocation = locationParts[0]?.replace(/\s+/g, ' ').trim() || '';
 
   // Fallback for newer hierarchy fields (divisionId/constituencyId) that may contain IDs
   // of Mandal/Assembly/District/State (even if the legacy *_Id fields are empty).
@@ -177,7 +178,7 @@ async function buildIdCardData(reporterId: string): Promise<any | null> {
     for (const fid of fallbackIds) {
       const parts = await resolveLocationPartsFromFlexibleId(String(fid), { includeSelectedName: true });
       if (parts.length) {
-        workplaceLocation = parts.join(', ').replace(/\s+/g, ' ').trim();
+        workplaceLocation = parts[0]?.replace(/\s+/g, ' ').trim() || '';
         break;
       }
     }
@@ -481,7 +482,7 @@ function buildIdCardHtml(data: any): string {
           <tr>
             <td style="width: 30%; font-weight: bold; padding: 0.15mm 0; white-space: nowrap;">Work Place</td>
             <td style="width: 5%; text-align: center; white-space: nowrap;">:</td>
-            <td style="width: 65%; padding: 0.15mm 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${String(reporter.workplaceLocation || '').trim() || '-'}</td>
+            <td style="width: 65%; padding: 0.15mm 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${String(reporter.workplaceLocation || '').split(',')[0].trim() || '-'}</td>
           </tr>
           <tr>
             <td style="width: 30%; font-weight: bold; padding: 0.15mm 0; white-space: nowrap;">Contact No</td>

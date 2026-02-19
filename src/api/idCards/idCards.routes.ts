@@ -198,7 +198,8 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
     parts.push(derivedState.name);
   }
 
-  let placeOfWork: string | null = parts.join(', ').replace(/\s+/g, ' ').trim() || null;
+  // Only the most specific location name (first part) is shown on the card.
+  let placeOfWork: string | null = parts[0]?.replace(/\s+/g, ' ').trim() || null;
 
   // Fallback for newer hierarchy fields that may contain IDs of Mandal/Assembly/District/State
   // even if legacy relations are empty.
@@ -207,7 +208,7 @@ async function buildIdCardData(reporterId: string): Promise<CardData | null> {
     for (const fid of fallbackIds) {
       const resolvedParts = await resolveLocationPartsFromFlexibleId(String(fid));
       if (resolvedParts.length) {
-        placeOfWork = resolvedParts.join(', ').replace(/\s+/g, ' ').trim() || null;
+        placeOfWork = resolvedParts[0]?.replace(/\s+/g, ' ').trim() || null;
         break;
       }
     }
@@ -506,7 +507,7 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
           <tr><td class="label">Name</td><td class="colon">:</td><td class="value">${data.reporter.fullName || '-'}</td></tr>
           <tr><td class="label">ID Number</td><td class="colon">:</td><td class="value">${(data.reporter.cardNumber || '').toUpperCase() || '-'}</td></tr>
           <tr><td class="label">Desig</td><td class="colon">:</td><td class="value">${data.reporter.designation || '-'}</td></tr>
-          <tr><td class="label">Work Place</td><td class="colon">:</td><td class="value">${data.reporter.placeOfWork || '-'}</td></tr>
+          <tr><td class="label">Work Place</td><td class="colon">:</td><td class="value">${(data.reporter.placeOfWork || '').split(',')[0].trim() || '-'}</td></tr>
           <tr><td class="label">Phone</td><td class="colon">:</td><td class="value">${data.reporter.mobile || '-'}</td></tr>
           <tr><td class="label">Valid</td><td class="colon">:</td><td class="value">${validDate}</td></tr>
         </table>
@@ -614,7 +615,7 @@ function buildIdCardHtml(data: CardData, opts?: { print?: boolean }): string {
             <tr><td class="label">Name</td><td class="colon">:</td><td class="value">${data.reporter.fullName || '-'}</td></tr>
             <tr><td class="label">ID Number</td><td class="colon">:</td><td class="value">${(data.reporter.cardNumber || '').toUpperCase() || '-'}</td></tr>
             <tr><td class="label">Desig</td><td class="colon">:</td><td class="value">${data.reporter.designation || '-'}</td></tr>
-            <tr><td class="label">Work Place</td><td class="colon">:</td><td class="value">${data.reporter.placeOfWork || '-'}</td></tr>
+            <tr><td class="label">Work Place</td><td class="colon">:</td><td class="value">${(data.reporter.placeOfWork || '').split(',')[0].trim() || '-'}</td></tr>
             <tr><td class="label">Phone</td><td class="colon">:</td><td class="value">${data.reporter.mobile || '-'}</td></tr>
             <tr><td class="label">Valid</td><td class="colon">:</td><td class="value">${validDate}</td></tr>
           </table>

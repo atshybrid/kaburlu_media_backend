@@ -6,7 +6,7 @@
     "state_en": "Andhra Pradesh",
     "state_te": "ఆంధ్రప్రదేశ్",
     "state_hi": "आंध्र प्रदेश",
-    "total_mandals": 30
+    "total_mandals": 20
   },
   "mandals": [
     { "name_en": "Rajampet", "name_te": "రాజంపేట", "name_hi": "राजमपेट" },
@@ -14,7 +14,6 @@
     { "name_en": "Kodur", "name_te": "కోడూరు", "name_hi": "कोडूर" },
     { "name_en": "Chitvel", "name_te": "చిట్వేల్", "name_hi": "चिटवेल" },
     { "name_en": "Pullampeta", "name_te": "పుల్లంపేట", "name_hi": "पुल्लमपेट" },
-    { "name_en": "T. Sundupalle", "name_te": "టి. సుందుపల్లె", "name_hi": "टी. सुंदुपल्ले" },
     { "name_en": "Veeraballi", "name_te": "వీరబల్లి", "name_hi": "वीरबल्लि" },
     { "name_en": "Nandalur", "name_te": "నందలూరు", "name_hi": "नंदलूर" },
     { "name_en": "Penagalur", "name_te": "పెనగలూరు", "name_hi": "पेनगलूर" },
@@ -23,19 +22,10 @@
     { "name_en": "Rayachoti", "name_te": "రాయచోటి", "name_hi": "रायचोटी" },
     { "name_en": "Lakkireddypalle", "name_te": "లక్కిరెడ్డిపల్లె", "name_hi": "लक्किरेड्डीपल्ले" },
     { "name_en": "Ramapuram", "name_te": "రామాపురం", "name_hi": "रामापुरम" },
-    { "name_en": "Kalakada", "name_te": "కలకడ", "name_hi": "कलकडा" },
     { "name_en": "Valmikipuram", "name_te": "వాల్మీకిపురం", "name_hi": "वाल्मीकीपुरम" },
-    { "name_en": "Kurabalakota", "name_te": "కురబలకోట", "name_hi": "कुरबलकोटा" },
     { "name_en": "Gurramkonda", "name_te": "గుర్రంకొండ", "name_hi": "गुर्रमकोंडा" },
-    { "name_en": "Peddamandyam", "name_te": "పెద్దమండ్యం", "name_hi": "पेड्डामंड्यम" },
-    { "name_en": "Thamballapalle", "name_te": "తంబళ్లపల్లె", "name_hi": "थम्बल्लपल्ले" },
-    { "name_en": "Mulakalacheruvu", "name_te": "ములకలచెరువు", "name_hi": "मुलकलचेरुवु" },
-    { "name_en": "Madanapalle", "name_te": "మదనపల్లె", "name_hi": "मदनपल्ले" },
-    { "name_en": "Nimmanapalle", "name_te": "నిమ్మనపల్లె", "name_hi": "निम्मनपल्ले" },
-    { "name_en": "Ramasamudram", "name_te": "రామసముద్రం", "name_hi": "रामसमुद्रम" },
     { "name_en": "Pileru", "name_te": "పిలేరు", "name_hi": "पिलेरु" },
     { "name_en": "Kalikiri", "name_te": "కలికిరి", "name_hi": "कलिकिरी" },
-    { "name_en": "Pedda Thippasamudram", "name_te": "పెద్ద తిప్పసముద్రం", "name_hi": "पेड्डा तिप्पसमुद्रम" },
     { "name_en": "B. Kothakota", "name_te": "బి. కొత్తకోట", "name_hi": "बी. कोथाकोटा" },
     { "name_en": "Pakala", "name_te": "పాకాల", "name_hi": "पाकाला" },
     { "name_en": "Chinnamandem", "name_te": "చిన్నమండెం", "name_hi": "चिन्नमंडेम" }

@@ -6,7 +6,7 @@
     "state_en": "Andhra Pradesh",
     "state_te": "ఆంధ్రప్రదేశ్",
     "state_hi": "आंध्र प्रदेश",
-    "total_mandals": 25
+    "total_mandals": 38
   },
   "mandals": [
     { "name_en": "Bapatla", "name_te": "బాపట్ల", "name_hi": "बापटला" },
@@ -15,7 +15,7 @@
     { "name_en": "Nizampatnam", "name_te": "నిజాంపట్నం", "name_hi": "निज़ामपट्टनम" },
     { "name_en": "Repalle", "name_te": "రేపల్లె", "name_hi": "रेपल्ले" },
     { "name_en": "Cherukupalle", "name_te": "చెరుకుపల్లి", "name_hi": "चेरुकुपल्ले" },
-    { "name_en": "Tsundur", "name_te": "త్సుండూరు", "name_hi": "त्सुंदूर" },
+    { "name_en": "Tsunduru", "name_te": "చుండూరు", "name_hi": "चुंदूरु" },
     { "name_en": "Vemuru", "name_te": "వేమూరు", "name_hi": "वेमूरु" },
     { "name_en": "Amruthalur", "name_te": "అమృతలూరు", "name_hi": "अमृतलूर" },
     { "name_en": "Kollur", "name_te": "కొల్లూరు", "name_hi": "कोल्लूर" },
@@ -33,6 +33,19 @@
     { "name_en": "Emani", "name_te": "ఈమని", "name_hi": "ईमनी" },
     { "name_en": "Duggirala", "name_te": "దుగ్గిరాల", "name_hi": "दुग्गिराला" },
     { "name_en": "Pedakakani", "name_te": "పెదకాకాని", "name_hi": "पेदकाकानी" },
-    { "name_en": "Mangalagiri Rural", "name_te": "మంగళగిరి గ్రామీణం", "name_hi": "मंगलगिरि ग्रामीण" }
+    { "name_en": "Mangalagiri Rural", "name_te": "మంగళగిరి గ్రామీణం", "name_hi": "मंगलगिरि ग्रामीण" },
+    { "name_en": "Chirala", "name_te": "చీరాల", "name_hi": "चीराला" },
+    { "name_en": "Vetapalem", "name_te": "వేటపాలెం", "name_hi": "वेटापालेम" },
+    { "name_en": "Chinaganjam", "name_te": "చినగంజాం", "name_hi": "चिनागंजाम" },
+    { "name_en": "Karamchedu", "name_te": "కారంచేడు", "name_hi": "करमचेडु" },
+    { "name_en": "Inkollu", "name_te": "ఇంకొల్లు", "name_hi": "इंकोल्लु" },
+    { "name_en": "Parchur", "name_te": "పర్చూరు", "name_hi": "परचूरु" },
+    { "name_en": "Martur", "name_te": "మార్తూరు", "name_hi": "मार्तूरु" },
+    { "name_en": "Yeddanapudi", "name_te": "యెద్దనపూడి", "name_hi": "येद्दनपुडि" },
+    { "name_en": "J. Panguluru", "name_te": "జె. పంగులూరు", "name_hi": "जे. पंगुलूरु" },
+    { "name_en": "Addanki", "name_te": "అద్దంకి", "name_hi": "अद्दंकि" },
+    { "name_en": "Ballikuruva", "name_te": "బల్లికురువ", "name_hi": "बल्लिकुरुवा" },
+    { "name_en": "Korisapadu", "name_te": "కొరిసపాడు", "name_hi": "कोरिसपाडु" },
+    { "name_en": "Santhamaguluru", "name_te": "శాంతమగులూరు", "name_hi": "शांतमगुलूरु" }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Madanapalle",
+    "name_te": "మదనపల్లె",
+    "name_hi": "मदनपल्ले",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 11
+  },
+  "mandals": [
+    { "name_en": "Madanapalle", "name_te": "మదనపల్లె", "name_hi": "मदनपल्ले" },
+    { "name_en": "Nimmanapalle", "name_te": "నిమ్మనపల్లె", "name_hi": "निम्मनपल्ले" },
+    { "name_en": "Ramasamudram", "name_te": "రామసముద్రం", "name_hi": "रामसमुद्रम" },
+    { "name_en": "Thamballapalle", "name_te": "తంబళ్లపల్లె", "name_hi": "थम्बल्लपल्ले" },
+    { "name_en": "Mulakalacheruvu", "name_te": "ములకలచెరువు", "name_hi": "मुलकलचेरुवु" },
+    { "name_en": "Pedda Thippasamudram", "name_te": "పెద్ద తిప్పసముద్రం", "name_hi": "पेड्डा तिप्पसमुद्रम" },
+    { "name_en": "Kurabalakota", "name_te": "కురబలకోట", "name_hi": "कुरबलकोटा" },
+    { "name_en": "Peddamandyam", "name_te": "పెద్దమండ్యం", "name_hi": "पेड्डामंड्यम" },
+    { "name_en": "Kalakada", "name_te": "కలకడ", "name_hi": "कलकडा" },
+    { "name_en": "Kambhamvaripalle", "name_te": "కంభంవారిపల్లె", "name_hi": "कंभमवरिपल्ले" },
+    { "name_en": "T. Sundupalle", "name_te": "టి. సుందుపల్లె", "name_hi": "टी. सुंदुपल्ले" }
+  ]
+}
