@@ -1,0 +1,34 @@
+{
+  "district": {
+    "name_en": "Markapuram",
+    "name_te": "మార్కాపురం",
+    "name_hi": "मार्कापुरम",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 21
+  },
+  "mandals": [
+    { "name_en": "Ardhaveedu", "name_te": "అర్ధవీడు", "name_hi": "अर्धवीडु" },
+    { "name_en": "Bestavaripeta", "name_te": "బేస్తవారిపేట", "name_hi": "बेस्तवारिपेटा" },
+    { "name_en": "Cumbum", "name_te": "కంబం", "name_hi": "कंबम" },
+    { "name_en": "Dornala", "name_te": "దొర్నాల", "name_hi": "दोर्नाल" },
+    { "name_en": "Giddalur", "name_te": "గిద్దలూరు", "name_hi": "गिद्दलूरु" },
+    { "name_en": "Komarolu", "name_te": "కొమరోలు", "name_hi": "कोमारोलु" },
+    { "name_en": "Konakanamitla", "name_te": "కొనకనమిట్ల", "name_hi": "कोनकनमिट्ला" },
+    { "name_en": "Markapuram", "name_te": "మార్కాపురం", "name_hi": "मार्कापुरम" },
+    { "name_en": "Pedda Araveedu", "name_te": "పెద్ద అర్ధవీడు", "name_hi": "पेड्डा अर्धवीडु" },
+    { "name_en": "Podili", "name_te": "పొదిలి", "name_hi": "पोदिली" },
+    { "name_en": "Pullalacheruvu", "name_te": "పుల్లలచెరువు", "name_hi": "पुल्ललचेरुवु" },
+    { "name_en": "Racherla", "name_te": "రాచర్ల", "name_hi": "राचेरला" },
+    { "name_en": "Tarlupadu", "name_te": "తర్లుపాడు", "name_hi": "तरलुपाडु" },
+    { "name_en": "Tripuranthakam", "name_te": "త్రిపురాంతకం", "name_hi": "त्रिपुरांतकम" },
+    { "name_en": "Yerragondapalem", "name_te": "యర్రగొండపాలెం", "name_hi": "येर्रगोंडापालेम" },
+    { "name_en": "Chandrasekharapuram", "name_te": "చంద్రశేఖరపురం", "name_hi": "चंद्रशेखरपुरम" },
+    { "name_en": "Hanumanthunipadu", "name_te": "హనుమంతునిపాడు", "name_hi": "हनुमंथुनिपाडु" },
+    { "name_en": "Kanigiri", "name_te": "కనిగిరి", "name_hi": "कनिगिरी" },
+    { "name_en": "Pamuru", "name_te": "పామూరు", "name_hi": "पामूरु" },
+    { "name_en": "Pedacherlopalle", "name_te": "పెదచెర్లోపల్లె", "name_hi": "पेदचेर्लोपल्ले" },
+    { "name_en": "Veligandla", "name_te": "వేలిగండ్ల", "name_hi": "वेलिगंडला" }
+  ]
+}
