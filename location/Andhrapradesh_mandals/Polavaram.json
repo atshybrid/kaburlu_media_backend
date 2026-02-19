@@ -1,0 +1,24 @@
+{
+  "district": {
+    "name_en": "Polavaram",
+    "name_te": "పోలవరం",
+    "name_hi": "पोलावरम",
+    "state_en": "Andhra Pradesh",
+    "state_te": "ఆంధ్రప్రదేశ్",
+    "state_hi": "आंध्र प्रदेश",
+    "total_mandals": 11
+  },
+  "mandals": [
+    { "name_en": "Rampachodavaram", "name_te": "రంపచోడవరం", "name_hi": "रामपचोडवरम" },
+    { "name_en": "Maredumilli", "name_te": "మారేడుమిల్లి", "name_hi": "मारेडुमिल्ली" },
+    { "name_en": "Devipatnam", "name_te": "దేవీపట్నం", "name_hi": "देवीपटनम" },
+    { "name_en": "Gangavaram", "name_te": "గంగవరం", "name_hi": "गंगावरम" },
+    { "name_en": "Addateegala", "name_te": "అడ్డతీగల", "name_hi": "अड्डातीगाला" },
+    { "name_en": "Y. Ramavaram", "name_te": "వై. రామవరం", "name_hi": "वाई रामावरम" },
+    { "name_en": "Chinturu", "name_te": "చింతూరు", "name_hi": "चिंतूर" },
+    { "name_en": "Kunavaram", "name_te": "కునవరం", "name_hi": "कुनावरम" },
+    { "name_en": "Vara Ramachandrapuram", "name_te": "వరరామచంద్రపురం", "name_hi": "वररामचंद्रपुरम" },
+    { "name_en": "Yetapaka", "name_te": "యేటపాక", "name_hi": "येटापाका" },
+    { "name_en": "Nellipaka", "name_te": "నెల్లిపాక", "name_hi": "नेल्लीपाका" }
+  ]
+}
