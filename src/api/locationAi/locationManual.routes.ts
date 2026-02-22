@@ -13,7 +13,7 @@ const auth = passport.authenticate('jwt', { session: false });
  *   post:
  *     summary: Manually create a state with translations
  *     tags: [Location AI]
- *     security: [{bearer Auth: []}]
+ *     security: [{bearerAuth: []}]
  *     requestBody:
  *       required: true
  *       content:
@@ -1126,6 +1126,417 @@ Respond ONLY with valid JSON:
       error: 'Failed to create location',
       message: error.message 
     });
+  }
+});
+
+/**
+ * @swagger
+ * /location/smart-add-district:
+ *   post:
+ *     summary: Add a new district and auto-move its mandals from old districts
+ *     description: |
+ *       When a new district is created (e.g. AP reorganisation):
+ *       1. Creates the district in DB (or finds existing)
+ *       2. Uses AI to get the official mandal list for that district
+ *       3. Verifies each mandal using Google Places API
+ *       4. Moves verified mandals from wrong districts → new district
+ *       5. Deduplicates any resulting duplicate rows
+ *     tags: [Location AI]
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [districtName, stateName]
+ *             properties:
+ *               districtName:
+ *                 type: string
+ *                 example: "Anakapalli"
+ *               stateName:
+ *                 type: string
+ *                 example: "Andhra Pradesh"
+ *               translations:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     language: {type: string, example: "te"}
+ *                     name: {type: string, example: "అనకాపల్లి"}
+ *               skipGoogleVerify:
+ *                 type: boolean
+ *                 description: Skip Google Places verification (use AI only). Default false.
+ *     responses:
+ *       200:
+ *         description: District processed with mandal move results
+ */
+router.post('/smart-add-district', auth, requireSuperOrTenantAdmin, async (req, res) => {
+  try {
+    const { districtName, stateName, translations, skipGoogleVerify = false } = req.body;
+
+    if (!districtName || !stateName) {
+      return res.status(400).json({ error: 'districtName and stateName are required' });
+    }
+
+    // ── 1. Find state ────────────────────────────────────────────────
+    const state = await prisma.state.findFirst({
+      where: { name: { equals: stateName.trim(), mode: 'insensitive' } },
+    });
+    if (!state) {
+      return res.status(404).json({ error: `State "${stateName}" not found` });
+    }
+
+    // ── 2. Ensure district exists ────────────────────────────────────
+    let district = await prisma.district.findFirst({
+      where: { name: { equals: districtName.trim(), mode: 'insensitive' }, stateId: state.id },
+    });
+    let districtCreated = false;
+    if (!district) {
+      district = await prisma.district.create({
+        data: { name: districtName.trim(), stateId: state.id, isDeleted: false },
+      });
+      districtCreated = true;
+    }
+
+    // Upsert translations
+    if (Array.isArray(translations)) {
+      for (const t of translations) {
+        if (t.language && t.name) {
+          await prisma.districtTranslation.upsert({
+            where: { districtId_language: { districtId: district.id, language: t.language } },
+            update: { name: t.name },
+            create: { districtId: district.id, language: t.language, name: t.name },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // ── 3. AI → get official mandal list for this district ───────────
+    const aiPrompt = `List ALL mandals (administrative sub-divisions / tehsils) in ${districtName.trim()} district, ${stateName.trim()}, India.
+Return ONLY a JSON array of English mandal names. No explanation. No extra text.
+Example: ["Mandal1", "Mandal2", "Mandal3"]`;
+
+    const aiResponse = await aiGenerateText({ prompt: aiPrompt, purpose: 'translation' });
+    let aiMandals: string[] = [];
+    try {
+      let clean = aiResponse.text.trim().replace(/^```json\s*/i, '').replace(/\n?```\s*$/i, '');
+      const parsed = JSON.parse(clean);
+      if (Array.isArray(parsed)) aiMandals = parsed.map((m: any) => String(m).trim()).filter(Boolean);
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON for mandal list', raw: aiResponse.text });
+    }
+
+    if (aiMandals.length === 0) {
+      return res.status(400).json({ error: 'AI returned empty mandal list', raw: aiResponse.text });
+    }
+
+    // ── 4. Optional Google Places verification ───────────────────────
+    const googleApiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '';
+    const verifiedMandals: string[] = [];
+    const unverifiedMandals: string[] = [];
+
+    if (!skipGoogleVerify && googleApiKey) {
+      for (const mandalName of aiMandals) {
+        try {
+          const query = encodeURIComponent(`${mandalName} mandal, ${districtName}, ${stateName}, India`);
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${googleApiKey}`;
+          const resp = await fetch(url);
+          const data: any = await resp.json();
+
+          if (data.status === 'OK' && data.results?.length > 0) {
+            // Check if result contains our district or state in address components
+            const addressComponents: any[] = data.results[0]?.address_components || [];
+            const hasState = addressComponents.some((c: any) =>
+              c.long_name?.toLowerCase().includes(stateName.toLowerCase()) ||
+              c.short_name?.toLowerCase().includes(stateName.toLowerCase())
+            );
+            if (hasState) {
+              verifiedMandals.push(mandalName);
+            } else {
+              unverifiedMandals.push(mandalName);
+            }
+          } else {
+            unverifiedMandals.push(mandalName);
+          }
+        } catch {
+          unverifiedMandals.push(mandalName);
+        }
+      }
+    } else {
+      // No Google key or skip → trust AI list entirely
+      verifiedMandals.push(...aiMandals);
+    }
+
+    const mandalsToProcess = verifiedMandals.length > 0 ? verifiedMandals : aiMandals;
+
+    // ── 5. Move mandals from wrong districts → this district ─────────
+    const results: { mandal: string; action: 'moved' | 'created' | 'already_correct' | 'error'; from?: string; error?: string }[] = [];
+
+    for (const mandalName of mandalsToProcess) {
+      try {
+        const allInState = await prisma.mandal.findMany({
+          where: { name: { equals: mandalName, mode: 'insensitive' }, district: { stateId: state.id } },
+          include: { district: { select: { name: true, id: true } } },
+        });
+
+        if (allInState.length === 0) {
+          // Not in DB yet → create
+          await prisma.mandal.create({ data: { name: mandalName, districtId: district.id, isDeleted: false } });
+          results.push({ mandal: mandalName, action: 'created' });
+        } else {
+          const correctOnes = allInState.filter(m => m.districtId === district.id);
+          const wrongOnes = allInState.filter(m => m.districtId !== district.id);
+
+          if (correctOnes.length > 0 && wrongOnes.length === 0) {
+            results.push({ mandal: mandalName, action: 'already_correct' });
+          } else {
+            for (const m of wrongOnes) {
+              await prisma.mandal.update({ where: { id: m.id }, data: { districtId: district.id } });
+              results.push({ mandal: mandalName, action: 'moved', from: m.district.name });
+            }
+          }
+
+          // ── 6. Deduplicate ───────────────────────────────────────────
+          const afterMove = await prisma.mandal.findMany({
+            where: { name: { equals: mandalName, mode: 'insensitive' }, districtId: district.id },
+            orderBy: { id: 'asc' },
+          });
+          if (afterMove.length > 1) {
+            const [, ...dups] = afterMove;
+            for (const dup of dups) {
+              await prisma.mandalTranslation.deleteMany({ where: { mandalId: dup.id } });
+              await prisma.mandal.delete({ where: { id: dup.id } });
+            }
+          }
+        }
+      } catch (err: any) {
+        results.push({ mandal: mandalName, action: 'error', error: err.message });
+      }
+    }
+
+    // ── 7. Summary ───────────────────────────────────────────────────
+    const summary = {
+      moved: results.filter(r => r.action === 'moved').length,
+      created: results.filter(r => r.action === 'created').length,
+      already_correct: results.filter(r => r.action === 'already_correct').length,
+      errors: results.filter(r => r.action === 'error').length,
+    };
+
+    const districtResult = await prisma.district.findUnique({
+      where: { id: district.id },
+      include: { translations: true, _count: { select: { mandals: true } } },
+    });
+
+    return res.status(districtCreated ? 201 : 200).json({
+      success: true,
+      districtCreated,
+      district: districtResult,
+      aiMandalsCount: aiMandals.length,
+      googleVerified: !skipGoogleVerify && googleApiKey ? verifiedMandals.length : null,
+      googleUnverified: !skipGoogleVerify && googleApiKey ? unverifiedMandals.length : null,
+      summary,
+      details: results,
+    });
+
+  } catch (error: any) {
+    console.error('smart-add-district error:', error);
+    return res.status(500).json({ error: 'Failed to process district', message: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /location/move-mandals:
+ *   post:
+ *     summary: Move one or many mandals to a different district
+ *     description: |
+ *       Move mandals from any wrong district to the correct target district.
+ *       Supports single or bulk moves in one call.
+ *       Automatically deduplicates if the same mandal already exists in target district.
+ *     tags: [Location AI]
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mandals, targetDistrict, stateName]
+ *             properties:
+ *               mandals:
+ *                 type: array
+ *                 description: One or more mandal names to move
+ *                 items:
+ *                   type: string
+ *                 example: ["Kasimkota", "Munagapaka", "Paravada"]
+ *               targetDistrict:
+ *                 type: string
+ *                 description: District name to move mandals into
+ *                 example: "Anakapalli"
+ *               stateName:
+ *                 type: string
+ *                 description: State name (to scope search)
+ *                 example: "Andhra Pradesh"
+ *     responses:
+ *       200:
+ *         description: Move results with summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 targetDistrict: {type: string}
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     moved: {type: number}
+ *                     already_correct: {type: number}
+ *                     not_found: {type: number}
+ *                     errors: {type: number}
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       mandal: {type: string}
+ *                       action: {type: string, enum: [moved, already_correct, not_found, error]}
+ *                       from: {type: string}
+ *                       error: {type: string}
+ */
+router.post('/move-mandals', auth, requireSuperOrTenantAdmin, async (req, res) => {
+  try {
+    const { mandals, targetDistrict, stateName } = req.body;
+
+    // ── Validate input ───────────────────────────────────────────────
+    if (!mandals || !Array.isArray(mandals) || mandals.length === 0) {
+      return res.status(400).json({ error: 'mandals must be a non-empty array' });
+    }
+    if (!targetDistrict) {
+      return res.status(400).json({ error: 'targetDistrict is required' });
+    }
+    if (!stateName) {
+      return res.status(400).json({ error: 'stateName is required' });
+    }
+
+    // ── Find state ───────────────────────────────────────────────────
+    const state = await prisma.state.findFirst({
+      where: { name: { equals: stateName.trim(), mode: 'insensitive' } },
+    });
+    if (!state) {
+      return res.status(404).json({ error: `State "${stateName}" not found` });
+    }
+
+    // ── Find target district ─────────────────────────────────────────
+    const district = await prisma.district.findFirst({
+      where: {
+        name: { equals: targetDistrict.trim(), mode: 'insensitive' },
+        stateId: state.id,
+        isDeleted: false,
+      },
+    });
+    if (!district) {
+      // Show available districts to help
+      const available = await prisma.district.findMany({
+        where: { stateId: state.id, isDeleted: false },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+      });
+      return res.status(404).json({
+        error: `District "${targetDistrict}" not found in ${stateName}`,
+        availableDistricts: available.map(d => d.name),
+      });
+    }
+
+    // ── Process each mandal ──────────────────────────────────────────
+    const details: { mandal: string; action: string; from?: string; error?: string }[] = [];
+
+    for (const rawName of mandals) {
+      const mandalName = String(rawName).trim();
+      if (!mandalName) continue;
+
+      try {
+        // Find all rows with this name in the state
+        const found = await prisma.mandal.findMany({
+          where: {
+            name: { equals: mandalName, mode: 'insensitive' },
+            district: { stateId: state.id },
+            isDeleted: false,
+          },
+          include: { district: { select: { id: true, name: true } } },
+        });
+
+        if (found.length === 0) {
+          details.push({ mandal: mandalName, action: 'not_found' });
+          continue;
+        }
+
+        const alreadyCorrect = found.filter(m => m.districtId === district.id);
+        const wrongOnes = found.filter(m => m.districtId !== district.id);
+
+        if (wrongOnes.length === 0) {
+          details.push({ mandal: mandalName, action: 'already_correct' });
+          continue;
+        }
+
+        // Move all wrong ones
+        for (const m of wrongOnes) {
+          await prisma.mandal.update({
+            where: { id: m.id },
+            data: { districtId: district.id },
+          });
+          details.push({ mandal: mandalName, action: 'moved', from: m.district.name });
+        }
+
+        // Deduplicate: keep the one with most translations
+        const afterMove = await prisma.mandal.findMany({
+          where: {
+            name: { equals: mandalName, mode: 'insensitive' },
+            districtId: district.id,
+          },
+          include: { translations: { select: { id: true } } },
+          orderBy: { id: 'asc' },
+        });
+
+        if (afterMove.length > 1) {
+          // Keep row with most translations, else keep oldest (first id)
+          afterMove.sort((a, b) => b.translations.length - a.translations.length || a.id.localeCompare(b.id));
+          const [, ...dups] = afterMove;
+          for (const dup of dups) {
+            await prisma.mandalTranslation.deleteMany({ where: { mandalId: dup.id } });
+            await prisma.mandal.delete({ where: { id: dup.id } });
+          }
+        }
+
+      } catch (err: any) {
+        details.push({ mandal: mandalName, action: 'error', error: err.message });
+      }
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────
+    const summary = {
+      moved:           details.filter(d => d.action === 'moved').length,
+      already_correct: details.filter(d => d.action === 'already_correct').length,
+      not_found:       details.filter(d => d.action === 'not_found').length,
+      errors:          details.filter(d => d.action === 'error').length,
+    };
+
+    const districtResult = await prisma.district.findUnique({
+      where: { id: district.id },
+      select: { id: true, name: true, _count: { select: { mandals: true } } },
+    });
+
+    return res.json({
+      success: true,
+      targetDistrict: districtResult,
+      summary,
+      details,
+    });
+
+  } catch (error: any) {
+    console.error('move-mandals error:', error);
+    return res.status(500).json({ error: 'Failed to move mandals', message: error.message });
   }
 });
 
