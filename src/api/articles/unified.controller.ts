@@ -1120,20 +1120,57 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
       if (payload.title !== undefined) updateData.title = String(payload.title).trim();
       if (payload.heading !== undefined) updateData.heading = String(payload.heading).trim();
       if (payload.subTitle !== undefined) updateData.subTitle = String(payload.subTitle).trim();
-      if (payload.dateLine !== undefined) updateData.dateLine = String(payload.dateLine).trim();
+      if (payload.dateline !== undefined || payload.dateLine !== undefined) {
+        updateData.dateline = String(payload.dateline ?? payload.dateLine).trim();
+      }
       if (payload.status !== undefined) updateData.status = String(payload.status).toUpperCase();
       if (payload.content !== undefined) {
-        updateData.content = Array.isArray(payload.content) 
-          ? payload.content.map((p: string) => ({ type: 'paragraph', text: String(p || '').trim() }))
-          : payload.content;
+        if (Array.isArray(payload.content)) {
+          const paragraphs = payload.content
+            .map((p: any) => {
+              if (typeof p === 'string') return p.trim();
+              if (p && typeof p === 'object' && typeof p.text === 'string') return p.text.trim();
+              return '';
+            })
+            .filter(Boolean);
+          updateData.content = paragraphs.join('\n\n');
+        } else {
+          updateData.content = String(payload.content || '').trim();
+        }
       }
-      if (payload.bulletPoints !== undefined) updateData.bulletPoints = payload.bulletPoints;
-      if (payload.coverImageUrl !== undefined) updateData.coverImageUrl = payload.coverImageUrl;
-      if (payload.images !== undefined) updateData.images = payload.images;
+      if (payload.points !== undefined || payload.bulletPoints !== undefined) {
+        const rawPoints = payload.points ?? payload.bulletPoints;
+        if (!Array.isArray(rawPoints)) {
+          return res.status(400).json({ error: 'points must be an array of strings' });
+        }
+        updateData.points = rawPoints.map((x: any) => String(x || '').trim()).filter(Boolean);
+      }
+      if (payload.featuredImageUrl !== undefined || payload.coverImageUrl !== undefined) {
+        updateData.featuredImageUrl = String((payload.featuredImageUrl ?? payload.coverImageUrl) || '').trim() || null;
+      }
+      if (payload.mediaUrls !== undefined || payload.images !== undefined) {
+        const rawMedia = payload.mediaUrls ?? payload.images;
+        if (!Array.isArray(rawMedia)) {
+          return res.status(400).json({ error: 'mediaUrls must be an array' });
+        }
+        updateData.mediaUrls = rawMedia
+          .map((m: any) => (typeof m === 'string' ? m : (m?.url ?? '')))
+          .map((u: any) => String(u || '').trim())
+          .filter(Boolean);
+      }
+      if (payload.suggestedBlockTemplateId !== undefined) {
+        const v = String(payload.suggestedBlockTemplateId || '').trim();
+        updateData.suggestedBlockTemplateId = v || null;
+      }
+      if (payload.assignedBlockTemplateId !== undefined) {
+        const v = String(payload.assignedBlockTemplateId || '').trim();
+        updateData.assignedBlockTemplateId = v || null;
+      }
       if (payload.categoryId !== undefined) updateData.categoryId = payload.categoryId;
-      
-      if (updateData.status === 'PUBLISHED' && !existing.publishedAt) {
-        updateData.publishedAt = new Date();
+      if (updateData.content !== undefined) {
+        const text = String(updateData.content || '');
+        updateData.charCount = text.replace(/\s+/g, ' ').trim().length;
+        updateData.wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
       }
 
       updated = await (prisma as any).newspaperArticle.update({
@@ -1141,7 +1178,6 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
         data: updateData,
         select: {
           id: true,
-          externalId: true,
           title: true,
           status: true,
           updatedAt: true

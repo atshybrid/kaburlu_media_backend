@@ -395,6 +395,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const dateline = String(body.dateLine || body.dateline || '').trim() || formatDateline({ placeLabel, publishedAtIso: publishedAt, languageCode, newspaperName });
         const bulletPoints = Array.isArray(body.bulletPoints)
             ? body.bulletPoints.map((s: any) => String(s || '').trim()).filter(Boolean)
+            : Array.isArray(body.points)
+                ? body.points.map((s: any) => String(s || '').trim()).filter(Boolean)
             : [];
         const contentArr = Array.isArray(body.content) ? body.content : [];
         const paragraphTexts = contentArr
@@ -653,7 +655,13 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 districtId: locationRef?.districtId || null,
                 mandalId: locationRef?.mandalId || null,
                 villageId: locationRef?.villageId || null,
-                status: newspaperStatus
+                status: newspaperStatus,
+                featuredImageUrl: normalizedMedia.coverImageUrl || null,
+                mediaUrls: images,
+                suggestedBlockTemplateId: body.suggestedBlockTemplateId ? String(body.suggestedBlockTemplateId).trim() : null,
+                assignedBlockTemplateId: body.assignedBlockTemplateId ? String(body.assignedBlockTemplateId).trim() : null,
+                wordCount: contentText ? wordCount(contentText) : 0,
+                charCount: contentText ? contentText.replace(/\s+/g, ' ').trim().length : 0
             }
         });
 
