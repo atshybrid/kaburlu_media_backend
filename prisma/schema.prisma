@@ -1601,6 +1601,10 @@ model NewspaperArticle {
   featuredImageUrl         String?
   isBreaking               Boolean              @default(false)
   mediaUrls                String[]
+  mediaCaptions            String[]             @default([])
+  mediaMeta                Json?
+  contentParagraphs        String[]             @default([])
+  layoutSuggestion         Json?
   priority                 Int                  @default(0)
   suggestedBlockTemplateId String?
   wordCount                Int?

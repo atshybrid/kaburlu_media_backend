@@ -195,6 +195,31 @@ function normalizeNewspaperMedia(body: any): { images: string[]; videos: string[
     return { images, videos, coverImageUrl };
 }
 
+function buildNewspaperMediaMeta(body: any, images: string[]): Array<{ url: string; caption: string | null; alt: string | null; afterParagraph: number | null }> {
+    const fromStructured = Array.isArray(body?.media?.images) ? body.media.images : [];
+    const metaByUrl = new Map<string, { url: string; caption: string | null; alt: string | null; afterParagraph: number | null }>();
+
+    for (const img of fromStructured) {
+        const url = String(img?.url || '').trim();
+        if (!isHttpUrl(url)) continue;
+        const caption = img?.caption != null ? String(img.caption).trim() : '';
+        const alt = img?.alt != null ? String(img.alt).trim() : '';
+        const apRaw = img?.afterParagraph ?? img?.after_paragraph;
+        const ap = Number(apRaw);
+        metaByUrl.set(url, {
+            url,
+            caption: caption || null,
+            alt: alt || null,
+            afterParagraph: Number.isFinite(ap) && ap > 0 ? Math.trunc(ap) : null,
+        });
+    }
+
+    return images.map((url) => {
+        const hit = metaByUrl.get(url);
+        return hit || { url, caption: null, alt: null, afterParagraph: null };
+    });
+}
+
 function buildWebJsonFromNewspaperPayload(payload: any, opts?: { domain?: string | null; languageCode?: string; categoryIds?: string[]; publishedAt?: string | null }) {
     const title = String(payload?.title || '').trim();
     const subTitle = payload?.subTitle ? String(payload.subTitle).trim() : '';
@@ -508,6 +533,8 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
         const normalizedMedia = normalizeNewspaperMedia(body);
         const images: string[] = normalizedMedia.images;
         const videos: string[] = normalizedMedia.videos;
+        const mediaMeta = buildNewspaperMediaMeta(body, images);
+        const mediaCaptions = mediaMeta.map((m) => m.caption || '');
 
         // Normalize payload for downstream helpers (ensures media.images/videos exist)
         const normalizedBody: any = {
@@ -658,6 +685,10 @@ export const createNewspaperArticle = async (req: Request, res: Response) => {
                 status: newspaperStatus,
                 featuredImageUrl: normalizedMedia.coverImageUrl || null,
                 mediaUrls: images,
+                mediaCaptions,
+                mediaMeta,
+                contentParagraphs: paragraphTexts,
+                layoutSuggestion: body.layoutSuggestion ?? body.paragraphSuggestion ?? body.suggestion ?? null,
                 suggestedBlockTemplateId: body.suggestedBlockTemplateId ? String(body.suggestedBlockTemplateId).trim() : null,
                 assignedBlockTemplateId: body.assignedBlockTemplateId ? String(body.assignedBlockTemplateId).trim() : null,
                 wordCount: contentText ? wordCount(contentText) : 0,
@@ -1216,6 +1247,47 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                 placeName: placeName !== undefined ? placeName : undefined,
                 content: content !== undefined ? content : undefined,
                 status: nextStatus !== undefined ? nextStatus : undefined,
+                mediaUrls: Array.isArray(req.body?.mediaUrls)
+                    ? req.body.mediaUrls.map((x: any) => String(x || '').trim()).filter(Boolean)
+                    : undefined,
+                mediaCaptions: Array.isArray(req.body?.mediaCaptions)
+                    ? req.body.mediaCaptions.map((x: any) => String(x || '').trim())
+                    : Array.isArray(req.body?.media?.images)
+                        ? req.body.media.images.map((x: any) => String(x?.caption || '').trim())
+                        : undefined,
+                mediaMeta: req.body?.mediaMeta !== undefined
+                    ? req.body.mediaMeta
+                    : Array.isArray(req.body?.media?.images)
+                        ? req.body.media.images.map((x: any) => ({
+                            url: String(x?.url || '').trim() || null,
+                            caption: x?.caption != null ? String(x.caption).trim() : null,
+                            alt: x?.alt != null ? String(x.alt).trim() : null,
+                            afterParagraph: Number.isFinite(Number(x?.afterParagraph ?? x?.after_paragraph))
+                                ? Math.trunc(Number(x?.afterParagraph ?? x?.after_paragraph))
+                                : null,
+                        })).filter((x: any) => x.url)
+                        : undefined,
+                contentParagraphs: Array.isArray(req.body?.contentParagraphs)
+                    ? req.body.contentParagraphs.map((x: any) => String(x || '').trim()).filter(Boolean)
+                    : Array.isArray(req.body?.content)
+                        ? req.body.content
+                            .filter((x: any) => x && typeof x === 'object' && String(x.type || '').toLowerCase() === 'paragraph')
+                            .map((x: any) => String(x.text || '').trim())
+                            .filter(Boolean)
+                        : undefined,
+                layoutSuggestion: req.body?.layoutSuggestion !== undefined
+                    ? req.body.layoutSuggestion
+                    : req.body?.paragraphSuggestion !== undefined
+                        ? req.body.paragraphSuggestion
+                        : req.body?.suggestion !== undefined
+                            ? req.body.suggestion
+                            : undefined,
+                suggestedBlockTemplateId: req.body?.suggestedBlockTemplateId !== undefined
+                    ? (String(req.body.suggestedBlockTemplateId || '').trim() || null)
+                    : undefined,
+                assignedBlockTemplateId: req.body?.assignedBlockTemplateId !== undefined
+                    ? (String(req.body.assignedBlockTemplateId || '').trim() || null)
+                    : undefined,
             }
         });
 

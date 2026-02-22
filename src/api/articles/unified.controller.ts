@@ -589,6 +589,7 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     const images = Array.isArray(media.images) ? media.images : [];
     const coverImageUrl = images[0]?.url || null;
     const imagePlacementPlan = buildImagePlacementPlan(images, aiMeta);
+    const mediaCaptions = imagePlacementPlan.map((m) => m.caption || '');
     
     // Web SEO
     const seoSlug = webArticle.seo?.slug || slugFromAnyLanguage(headline, 120);
@@ -686,6 +687,17 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
           isBreaking: payload.isBreaking || false,
           featuredImageUrl: coverImageUrl,
           mediaUrls: images.map((img: any) => img.url).filter(isHttpUrl),
+          mediaCaptions,
+          mediaMeta: imagePlacementPlan,
+          contentParagraphs: bodyParagraphs,
+          layoutSuggestion:
+            payload.layoutSuggestion ??
+            printArticle.layoutSuggestion ??
+            payload.paragraphSuggestion ??
+            payload.suggestion ??
+            (aiMeta as any)?.layoutSuggestion ??
+            (aiMeta as any)?.layout_suggestion ??
+            null,
           content: bodyParagraphs.join('\n\n'),
           points: highlights,
           wordCount: wordCount(bodyParagraphs.join(' ')),
@@ -1157,6 +1169,56 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
           .map((m: any) => (typeof m === 'string' ? m : (m?.url ?? '')))
           .map((u: any) => String(u || '').trim())
           .filter(Boolean);
+      }
+      if (payload.mediaCaptions !== undefined || payload.media?.images !== undefined) {
+        const rawCaptions = payload.mediaCaptions !== undefined
+          ? payload.mediaCaptions
+          : (Array.isArray(payload.media?.images) ? payload.media.images.map((m: any) => m?.caption ?? '') : undefined);
+        if (rawCaptions !== undefined) {
+          if (!Array.isArray(rawCaptions)) {
+            return res.status(400).json({ error: 'mediaCaptions must be an array' });
+          }
+          updateData.mediaCaptions = rawCaptions.map((x: any) => String(x || '').trim());
+        }
+      }
+      if (payload.mediaMeta !== undefined || payload.media?.images !== undefined) {
+        const rawMeta = payload.mediaMeta !== undefined
+          ? payload.mediaMeta
+          : (Array.isArray(payload.media?.images)
+            ? payload.media.images.map((m: any) => ({
+                url: String(m?.url || '').trim() || null,
+                caption: m?.caption != null ? String(m.caption).trim() : null,
+                alt: m?.alt != null ? String(m.alt).trim() : null,
+                afterParagraph: Number.isFinite(Number(m?.afterParagraph ?? m?.after_paragraph))
+                  ? Math.trunc(Number(m?.afterParagraph ?? m?.after_paragraph))
+                  : null,
+              })).filter((m: any) => m.url)
+            : undefined);
+
+        if (rawMeta !== undefined) {
+          if (!Array.isArray(rawMeta)) {
+            return res.status(400).json({ error: 'mediaMeta must be an array' });
+          }
+          updateData.mediaMeta = rawMeta;
+        }
+      }
+      if (payload.contentParagraphs !== undefined) {
+        if (!Array.isArray(payload.contentParagraphs)) {
+          return res.status(400).json({ error: 'contentParagraphs must be an array of strings' });
+        }
+        updateData.contentParagraphs = payload.contentParagraphs.map((x: any) => String(x || '').trim()).filter(Boolean);
+      } else if (Array.isArray(payload.content)) {
+        const paragraphs = payload.content
+          .map((p: any) => {
+            if (typeof p === 'string') return p.trim();
+            if (p && typeof p === 'object' && typeof p.text === 'string') return p.text.trim();
+            return '';
+          })
+          .filter(Boolean);
+        updateData.contentParagraphs = paragraphs;
+      }
+      if (payload.layoutSuggestion !== undefined || payload.paragraphSuggestion !== undefined || payload.suggestion !== undefined) {
+        updateData.layoutSuggestion = payload.layoutSuggestion ?? payload.paragraphSuggestion ?? payload.suggestion ?? null;
       }
       if (payload.suggestedBlockTemplateId !== undefined) {
         const v = String(payload.suggestedBlockTemplateId || '').trim();

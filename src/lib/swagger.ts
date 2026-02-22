@@ -187,18 +187,21 @@ const swaggerDefinition = {
           dateline: { type: 'string', nullable: true, description: 'Dateline string (e.g. "VIJAYAWADA, Feb 22")' },
           points: { type: 'array', items: { type: 'string' }, description: 'Bullet-point summary lines' },
           lead: { type: 'string', nullable: true, description: 'Opening paragraph / lead-in text' },
+          contentParagraphs: { type: 'array', items: { type: 'string' }, description: 'Structured content paragraphs for print layout' },
           content: { type: 'string', nullable: true, description: 'Full article body' },
           charCount: { type: 'integer', nullable: true, description: 'Stored character count for layout column calculations' },
           wordCount: { type: 'integer', nullable: true },
           featuredImageUrl: { type: 'string', nullable: true, format: 'uri' },
           media: {
             type: 'array',
-            description: 'Media items derived from mediaUrls. caption is null until the mediaCaptions field is populated.',
+            description: 'Media items derived from mediaUrls + mediaMeta/mediaCaptions.',
             items: {
               type: 'object',
               properties: {
                 url: { type: 'string', format: 'uri' },
-                caption: { type: 'string', nullable: true }
+                caption: { type: 'string', nullable: true },
+                alt: { type: 'string', nullable: true },
+                afterParagraph: { type: 'integer', nullable: true }
               }
             }
           },
@@ -231,6 +234,7 @@ const swaggerDefinition = {
           assignedBlockTemplate: { nullable: true, '$ref': '#/components/schemas/EpaperBlockTemplateSummary' },
           suggestedBlockTemplateId: { type: 'string', nullable: true, description: 'AI-suggested block template ID' },
           suggestedBlockTemplate: { nullable: true, '$ref': '#/components/schemas/EpaperBlockTemplateSummary' },
+          layoutSuggestion: { nullable: true, description: 'Any paragraph/layout suggestion object captured from editor/AI' },
           authorId: { type: 'string' },
           authorName: { type: 'string', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },

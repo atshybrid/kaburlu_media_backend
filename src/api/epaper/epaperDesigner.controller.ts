@@ -68,14 +68,21 @@ async function enrichArticlesWithLocationNames(articles: any[]) {
  * Keeps the response structure stable regardless of nullable fields.
  */
 function toDesignerBlock(article: any) {
-  // Build media array: [ { url, caption } ]
-  // mediaUrls is stored as String[]. Captions are not separately persisted yet,
-  // so we default caption to null for now (can be extended via mediaCaptions field).
+  // Build media array: [ { url, caption, alt, afterParagraph } ]
+  const mediaMeta: any[] = Array.isArray(article.mediaMeta) ? article.mediaMeta : [];
   const mediaUrls: string[] = Array.isArray(article.mediaUrls) ? article.mediaUrls : [];
-  const media = mediaUrls.map((url: string, idx: number) => ({
-    url,
-    caption: Array.isArray(article.mediaCaptions) ? (article.mediaCaptions[idx] ?? null) : null,
-  }));
+  const mediaCaptions: string[] = Array.isArray(article.mediaCaptions) ? article.mediaCaptions : [];
+
+  const media = mediaUrls.map((url: string, idx: number) => {
+    const meta = mediaMeta.find((m: any) => String(m?.url || '') === url);
+    const caption = meta?.caption ?? (mediaCaptions[idx] || null);
+    return {
+      url,
+      caption,
+      alt: meta?.alt ?? null,
+      afterParagraph: meta?.afterParagraph ?? null,
+    };
+  });
 
   return {
     // ── Core identity ────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ function toDesignerBlock(article: any) {
     dateline: article.dateline ?? null,
     points: Array.isArray(article.points) ? article.points : [],
     lead: article.lead ?? null,
+    contentParagraphs: Array.isArray(article.contentParagraphs) ? article.contentParagraphs : [],
     content: article.content ?? null,
 
     // ── Character / word counts ──────────────────────────────────────────────
@@ -152,6 +160,7 @@ function toDesignerBlock(article: any) {
           maxHeightInches: article.suggestedBlockTemplate.maxHeightInches,
         }
       : null,
+    layoutSuggestion: article.layoutSuggestion ?? null,
 
     // ── Author ───────────────────────────────────────────────────────────────
     authorId: article.authorId,
