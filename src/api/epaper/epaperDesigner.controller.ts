@@ -30,6 +30,39 @@ function parseDateOrNull(v: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+async function enrichArticlesWithLocationNames(articles: any[]) {
+  if (!Array.isArray(articles) || articles.length === 0) return articles;
+
+  const uniqueIds = (values: any[]) => Array.from(new Set(values.filter(Boolean).map((v) => String(v))));
+
+  const stateIds = uniqueIds(articles.map((a) => a.stateId));
+  const districtIds = uniqueIds(articles.map((a) => a.districtId));
+  const mandalIds = uniqueIds(articles.map((a) => a.mandalId));
+  const villageIds = uniqueIds(articles.map((a) => a.villageId));
+
+  const [states, districts, mandals, villages] = await Promise.all([
+    stateIds.length ? p.state.findMany({ where: { id: { in: stateIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    districtIds.length ? p.district.findMany({ where: { id: { in: districtIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    mandalIds.length ? p.mandal.findMany({ where: { id: { in: mandalIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    villageIds.length ? p.village.findMany({ where: { id: { in: villageIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+  ]);
+
+  const stateMap = new Map(states.map((s: any) => [String(s.id), s.name]));
+  const districtMap = new Map(districts.map((d: any) => [String(d.id), d.name]));
+  const mandalMap = new Map(mandals.map((m: any) => [String(m.id), m.name]));
+  const villageMap = new Map(villages.map((v: any) => [String(v.id), v.name]));
+
+  return articles.map((article) => ({
+    ...article,
+    _resolvedLocationNames: {
+      stateName: article.stateId ? stateMap.get(String(article.stateId)) ?? null : null,
+      districtName: article.districtId ? districtMap.get(String(article.districtId)) ?? null : null,
+      mandalName: article.mandalId ? mandalMap.get(String(article.mandalId)) ?? null : null,
+      villageName: article.villageId ? villageMap.get(String(article.villageId)) ?? null : null,
+    },
+  }));
+}
+
 /**
  * Map a raw NewspaperArticle DB row into a designer block payload.
  * Keeps the response structure stable regardless of nullable fields.
@@ -76,13 +109,13 @@ function toDesignerBlock(article: any) {
     // ── Location details ──────────────────────────────────────────────────────
     location: {
       stateId: article.stateId ?? null,
-      stateName: article.state?.name ?? null,
+      stateName: article._resolvedLocationNames?.stateName ?? null,
       districtId: article.districtId ?? null,
-      districtName: article.district?.name ?? null,
+      districtName: article._resolvedLocationNames?.districtName ?? null,
       mandalId: article.mandalId ?? null,
-      mandalName: article.mandal?.name ?? null,
+      mandalName: article._resolvedLocationNames?.mandalName ?? null,
       villageId: article.villageId ?? null,
-      villageName: article.village?.name ?? null,
+      villageName: article._resolvedLocationNames?.villageName ?? null,
       placeName: article.placeName ?? null,
     },
 
@@ -122,9 +155,12 @@ function toDesignerBlock(article: any) {
 
     // ── Author ───────────────────────────────────────────────────────────────
     authorId: article.authorId,
-    authorName: article.author
-      ? [article.author.firstName, article.author.lastName].filter(Boolean).join(' ') || article.author.email
-      : null,
+    authorName:
+      article.author?.profile?.fullName ??
+      ([article.author?.profile?.surname, article.author?.profile?.lastName].filter(Boolean).join(' ').trim() || null) ??
+      article.author?.email ??
+      article.author?.mobileNumber ??
+      null,
 
     // ── Timestamps ───────────────────────────────────────────────────────────
     createdAt: article.createdAt,
@@ -136,7 +172,14 @@ function toDesignerBlock(article: any) {
 const DESIGNER_INCLUDE = {
   category: { select: { id: true, name: true, slug: true } },
   language: { select: { id: true, name: true } },
-  author: { select: { id: true, firstName: true, lastName: true, email: true } },
+  author: {
+    select: {
+      id: true,
+      email: true,
+      mobileNumber: true,
+      profile: { select: { fullName: true, surname: true, lastName: true } },
+    },
+  },
   assignedBlockTemplate: {
     select: {
       id: true,
@@ -164,16 +207,6 @@ const DESIGNER_INCLUDE = {
     },
   },
 } as const;
-
-// The state/district/mandal/village relations need to be added dynamically
-// because they may not be defined on the model type yet.
-const DESIGNER_INCLUDE_LOCATION = {
-  ...DESIGNER_INCLUDE,
-  state: { select: { id: true, name: true } },
-  district: { select: { id: true, name: true } },
-  mandal: { select: { id: true, name: true } },
-  village: { select: { id: true, name: true } },
-} as any;
 
 // ============================================================================
 // GET /epaper/designer/articles
@@ -256,11 +289,12 @@ export const getDesignerArticles = async (req: Request, res: Response) => {
         orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: pageSize,
-        include: DESIGNER_INCLUDE_LOCATION,
+        include: DESIGNER_INCLUDE,
       }),
     ]);
 
-    const blocks = articles.map(toDesignerBlock);
+    const articlesWithLocations = await enrichArticlesWithLocationNames(articles);
+    const blocks = articlesWithLocations.map(toDesignerBlock);
 
     return res.json({
       page,
@@ -294,12 +328,14 @@ export const getDesignerArticle = async (req: Request, res: Response) => {
 
     const article = await p.newspaperArticle.findFirst({
       where: { id: articleId, tenantId: ctx.tenantId },
-      include: DESIGNER_INCLUDE_LOCATION,
+      include: DESIGNER_INCLUDE,
     });
 
     if (!article) return res.status(404).json({ error: 'Article not found' });
 
-    return res.json({ block: toDesignerBlock(article) });
+    const [articleWithLocations] = await enrichArticlesWithLocationNames([article]);
+
+    return res.json({ block: toDesignerBlock(articleWithLocations) });
   } catch (e: any) {
     console.error('[epaperDesigner] getDesignerArticle:', e);
     return res.status(500).json({ error: 'Failed to fetch designer article', details: String(e?.message ?? e) });
@@ -363,13 +399,15 @@ export const assignBlockTemplate = async (req: Request, res: Response) => {
       data: {
         assignedBlockTemplateId: templateBlockId ? String(templateBlockId).trim() : null,
       },
-      include: DESIGNER_INCLUDE_LOCATION,
+      include: DESIGNER_INCLUDE,
     });
+
+    const [updatedWithLocations] = await enrichArticlesWithLocationNames([updated]);
 
     return res.json({
       ok: true,
       message: templateBlockId ? 'Block template assigned successfully' : 'Block template cleared',
-      block: toDesignerBlock(updated),
+      block: toDesignerBlock(updatedWithLocations),
     });
   } catch (e: any) {
     console.error('[epaperDesigner] assignBlockTemplate:', e);
