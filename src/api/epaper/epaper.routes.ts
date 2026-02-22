@@ -68,6 +68,13 @@ import {
   bulkCreateClips,
   detectClips,
 } from './clips.controller';
+// Epaper Designer imports
+import {
+  getDesignerArticles,
+  getDesignerArticle,
+  assignBlockTemplate,
+  getDesignerTemplates,
+} from './epaperDesigner.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -2766,5 +2773,310 @@ router.delete('/clips/:clipId', auth, deleteClip);
  *         description: Issue not found
  */
 router.post('/clips/detect', auth, detectClips);
+
+// ============================================================================
+// EPAPER DESIGNER APIs
+// ============================================================================
+
+/**
+ * @swagger
+ * tags:
+ *   name: Epaper Designer
+ *   description: >
+ *     Block-wise article data for the Epaper Designer tool.
+ *     Retrieve NewspaperArticles pre-formatted as layout blocks (title, subTitle,
+ *     points, dateline, content, media with captions, category, location details,
+ *     charCount, template block IDs) and assign a block template to any article.
+ */
+
+/**
+ * @swagger
+ * /epaper/designer/articles:
+ *   get:
+ *     summary: List newspaper articles as designer blocks
+ *     description: |
+ *       Returns `NewspaperArticle` records pre-formatted as layout blocks for the
+ *       Epaper Designer UI.  Each block contains all fields needed to place the
+ *       article on a page: title, subTitle, heading, dateline, points, lead,
+ *       content, charCount, wordCount, featuredImageUrl, media (url + caption),
+ *       category, full location hierarchy, language, and both the assigned and
+ *       suggested block template descriptors.
+ *
+ *       **Auth:** JWT required.  Tenant is resolved the same way as all other
+ *       ePaper admin endpoints (X-Tenant-Id header, X-Tenant-Slug, reporter
+ *       profile linkage, or `tenantId` query param for SUPER_ADMIN).
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         schema: { type: string }
+ *         description: Tenant ID override (SUPER_ADMIN / admins without profile linkage)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         schema: { type: string }
+ *         description: Tenant slug override
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         schema: { type: string }
+ *         description: Tenant domain override
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (required for SUPER_ADMIN if no header override)
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [DRAFT, APPROVED, PUBLISHED, REJECTED] }
+ *         description: Filter by article status
+ *       - in: query
+ *         name: categoryId
+ *         schema: { type: string }
+ *         description: Filter by category ID
+ *       - in: query
+ *         name: languageId
+ *         schema: { type: string }
+ *         description: Filter by language ID
+ *       - in: query
+ *         name: stateId
+ *         schema: { type: string }
+ *         description: Filter by state
+ *       - in: query
+ *         name: districtId
+ *         schema: { type: string }
+ *         description: Filter by district
+ *       - in: query
+ *         name: mandalId
+ *         schema: { type: string }
+ *         description: Filter by mandal
+ *       - in: query
+ *         name: fromDate
+ *         schema: { type: string, format: date-time }
+ *         description: "Filter articles created on or after this date (ISO 8601)"
+ *       - in: query
+ *         name: toDate
+ *         schema: { type: string, format: date-time }
+ *         description: "Filter articles created on or before this date (ISO 8601)"
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *         description: Substring search across title, heading, and content
+ *       - in: query
+ *         name: hasTemplate
+ *         schema: { type: string, enum: ["true", "false"] }
+ *         description: "true = only articles with an assigned block template; false = only unassigned"
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *         description: Page number (1-based)
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *         description: Number of articles per page (max 200)
+ *     responses:
+ *       200:
+ *         description: Paginated list of designer blocks
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 page: { type: integer, example: 1 }
+ *                 pageSize: { type: integer, example: 50 }
+ *                 total: { type: integer, example: 120 }
+ *                 totalPages: { type: integer, example: 3 }
+ *                 blocks:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/DesignerBlock' }
+ *       400:
+ *         description: Tenant context missing
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/designer/articles', auth, getDesignerArticles);
+
+/**
+ * @swagger
+ * /epaper/designer/articles/{articleId}:
+ *   get:
+ *     summary: Get a single newspaper article as a designer block
+ *     description: |
+ *       Returns one `NewspaperArticle` formatted as a designer block with all
+ *       content fields, location hierarchy, media list, and template assignments.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: articleId
+ *         required: true
+ *         schema: { type: string }
+ *         description: NewspaperArticle ID
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (SUPER_ADMIN only)
+ *     responses:
+ *       200:
+ *         description: Single designer block
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 block: { $ref: '#/components/schemas/DesignerBlock' }
+ *       404:
+ *         description: Article not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/designer/articles/:articleId', auth, getDesignerArticle);
+
+/**
+ * @swagger
+ * /epaper/designer/articles/{articleId}/block-template:
+ *   patch:
+ *     summary: Assign (or clear) a template block ID on an article
+ *     description: |
+ *       Sets `assignedBlockTemplateId` on the given `NewspaperArticle`.
+ *       Pass `templateBlockId: null` to clear the assignment.
+ *
+ *       The supplied template must either be a global active template or belong
+ *       to the authenticated tenant.  Returns the updated article as a designer
+ *       block so the frontend can immediately re-render.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: articleId
+ *         required: true
+ *         schema: { type: string }
+ *         description: NewspaperArticle ID
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (SUPER_ADMIN only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               templateBlockId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: |
+ *                   ID of the `EpaperBlockTemplate` to assign.  Set to `null` to clear.
+ *                 example: "clx1abc123def456"
+ *           examples:
+ *             assign:
+ *               summary: Assign a template
+ *               value: { templateBlockId: "clx1abc123def456" }
+ *             clear:
+ *               summary: Clear assignment
+ *               value: { templateBlockId: null }
+ *     responses:
+ *       200:
+ *         description: Template assigned / cleared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 message: { type: string, example: "Block template assigned successfully" }
+ *                 block: { $ref: '#/components/schemas/DesignerBlock' }
+ *       400:
+ *         description: Invalid request (missing tenant or invalid templateBlockId)
+ *       404:
+ *         description: Article or template not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.patch('/designer/articles/:articleId/block-template', auth, assignBlockTemplate);
+
+/**
+ * @swagger
+ * /epaper/designer/templates:
+ *   get:
+ *     summary: List available block templates for the designer palette
+ *     description: |
+ *       Returns all `EpaperBlockTemplate` records accessible to the tenant:
+ *       global active templates **plus** tenant-specific templates.
+ *       Includes the full `components` JSON so the designer can render previews
+ *       and perform layout calculations.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (SUPER_ADMIN only)
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *           enum: [HEADER, ARTICLE, ADVERTISEMENT, FOOTER, DIVIDER, CUSTOM]
+ *         description: Filter by block category
+ *       - in: query
+ *         name: subCategory
+ *         schema: { type: string }
+ *         description: Filter by block sub-category
+ *       - in: query
+ *         name: columns
+ *         schema: { type: integer }
+ *         description: Filter by number of columns (e.g. 2, 3, 4, 6, 12)
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [DRAFT, ACTIVE, ARCHIVED] }
+ *         description: Filter by template status (default returns all statuses)
+ *     responses:
+ *       200:
+ *         description: List of block templates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count: { type: integer }
+ *                 templates:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/EpaperBlockTemplateSummary' }
+ *       400:
+ *         description: Tenant context missing
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/designer/templates', auth, getDesignerTemplates);
 
 export default router;

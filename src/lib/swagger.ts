@@ -114,7 +114,9 @@ const swaggerDefinition = {
     { name: 'Tenant Subscription - Wallet Management', description: 'Admin wallet operations - Top-up, bulk payments, adjustments, transaction history, and balance management' },
     { name: 'Tenant Subscription - Pricing Configuration', description: 'Admin pricing setup - Configure tenant-specific rates, minimum pages, discounts, and activation dates (effectiveFrom/effectiveUntil)' },
     { name: 'Tenant Subscription - Billing & Usage', description: 'Admin billing operations - Monthly charges, usage tracking, invoice generation, and account lock/unlock' },
-    { name: 'Tenant Subscription - Self-Service', description: 'Tenant self-service - Check balance, view transactions, current usage, invoices, and request top-ups' }
+    { name: 'Tenant Subscription - Self-Service', description: 'Tenant self-service - Check balance, view transactions, current usage, invoices, and request top-ups' },
+    // Epaper Designer
+    { name: 'Epaper Designer', description: 'Block-wise newspaper article data for the Epaper Designer tool – list articles as layout blocks, assign block templates, and browse the template palette' }
   ],
   components: {
     securitySchemes: {
@@ -171,7 +173,85 @@ const swaggerDefinition = {
       }
     },
     schemas: {
-      // ...existing code for schemas...
+      /** Designer block – a NewspaperArticle formatted for the Epaper Designer layout tool */
+      DesignerBlock: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'NewspaperArticle ID' },
+          status: { type: 'string', description: 'Article status (DRAFT / APPROVED / PUBLISHED / REJECTED)' },
+          isBreaking: { type: 'boolean' },
+          priority: { type: 'integer', description: 'Layout priority (higher = more prominent placement)' },
+          title: { type: 'string', nullable: true },
+          subTitle: { type: 'string', nullable: true },
+          heading: { type: 'string', nullable: true },
+          dateline: { type: 'string', nullable: true, description: 'Dateline string (e.g. "VIJAYAWADA, Feb 22")' },
+          points: { type: 'array', items: { type: 'string' }, description: 'Bullet-point summary lines' },
+          lead: { type: 'string', nullable: true, description: 'Opening paragraph / lead-in text' },
+          content: { type: 'string', nullable: true, description: 'Full article body' },
+          charCount: { type: 'integer', nullable: true, description: 'Stored character count for layout column calculations' },
+          wordCount: { type: 'integer', nullable: true },
+          featuredImageUrl: { type: 'string', nullable: true, format: 'uri' },
+          media: {
+            type: 'array',
+            description: 'Media items derived from mediaUrls. caption is null until the mediaCaptions field is populated.',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', format: 'uri' },
+                caption: { type: 'string', nullable: true }
+              }
+            }
+          },
+          category: {
+            nullable: true,
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              slug: { type: 'string', nullable: true }
+            }
+          },
+          location: {
+            type: 'object',
+            properties: {
+              stateId: { type: 'string', nullable: true },
+              stateName: { type: 'string', nullable: true },
+              districtId: { type: 'string', nullable: true },
+              districtName: { type: 'string', nullable: true },
+              mandalId: { type: 'string', nullable: true },
+              mandalName: { type: 'string', nullable: true },
+              villageId: { type: 'string', nullable: true },
+              villageName: { type: 'string', nullable: true },
+              placeName: { type: 'string', nullable: true }
+            }
+          },
+          languageId: { type: 'string', nullable: true },
+          languageName: { type: 'string', nullable: true },
+          assignedBlockTemplateId: { type: 'string', nullable: true, description: 'ID of the currently assigned EpaperBlockTemplate' },
+          assignedBlockTemplate: { nullable: true, '$ref': '#/components/schemas/EpaperBlockTemplateSummary' },
+          suggestedBlockTemplateId: { type: 'string', nullable: true, description: 'AI-suggested block template ID' },
+          suggestedBlockTemplate: { nullable: true, '$ref': '#/components/schemas/EpaperBlockTemplateSummary' },
+          authorId: { type: 'string' },
+          authorName: { type: 'string', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      /** Slim block template descriptor embedded inside a DesignerBlock */
+      EpaperBlockTemplateSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          code: { type: 'string', description: 'Unique short code (e.g. ARTICLE_3COL_FULL)' },
+          name: { type: 'string' },
+          category: { type: 'string', description: 'HEADER | ARTICLE | ADVERTISEMENT | FOOTER | DIVIDER | CUSTOM' },
+          subCategory: { type: 'string' },
+          columns: { type: 'integer', description: 'Column span (e.g. 2, 3, 4, 6, 12)' },
+          widthInches: { type: 'number', format: 'float', description: 'Physical block width in inches' },
+          minHeightInches: { type: 'number', format: 'float', nullable: true },
+          maxHeightInches: { type: 'number', format: 'float' }
+        }
+      }
     }
   },
 
