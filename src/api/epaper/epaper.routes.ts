@@ -21,6 +21,18 @@ import {
   updateEpaperSettings,
   initializeEpaperSettings,
 } from './settings.controller';
+import {
+  getEpaperDesignConfig,
+  upsertEpaperDesignConfig,
+  patchEpaperDesignConfig,
+  deleteEpaperDesignConfig,
+  listEpaperIssueDesignEntries,
+  createEpaperIssueDesignEntry,
+  updateEpaperIssueDesignEntry,
+  deleteEpaperIssueDesignEntry,
+  bootstrapEpaperDesignSerialIds,
+  getEpaperDesignSerialIds,
+} from './designConfig.controller';
 import { suggestBlockTemplate } from './suggestion.controller';
 import {
   listPublicationEditions,
@@ -776,6 +788,26 @@ router.post('/domain/settings/seo/auto', auth, autoGenerateEpaperDomainSeoForAdm
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
  *       - in: query
  *         name: category
  *         schema: { type: string, enum: [HEADER, CONTENT, FOOTER] }
@@ -830,6 +862,27 @@ router.get('/templates/:id', auth, getBlockTemplate);
  *     description: Creates a new block template in DRAFT status. Only tenant admins can create tenant-specific templates.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
  *     requestBody:
  *       required: true
  *       content:
@@ -1108,6 +1161,491 @@ router.put('/settings', auth, updateEpaperSettings);
  *         description: Settings already exist
  */
 router.post('/settings/initialize', auth, initializeEpaperSettings);
+
+// ============================================================================
+// EPAPER DESIGN CONFIG
+// Stores header/sub-header/footer details, template IDs, and issue metadata.
+// Backed by EpaperSettings.generationConfig.designConfig + issueEntries
+// ============================================================================
+
+/**
+ * @swagger
+ * /epaper/design-config:
+ *   get:
+ *     summary: Get ePaper design config (header/sub-header/footer + pricing + numbering)
+ *     description: |
+ *       Admin-only.
+ *       Reads from `EpaperSettings.generationConfig.designConfig` and returns current issue entries as well.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector
+ *       (`X-Tenant-Id` or `X-Tenant-Slug` or `X-Tenant-Domain` or `tenantId` query).
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     responses:
+ *       200:
+ *         description: Current design config and issue entries
+ *   post:
+ *     summary: Create/replace ePaper design config
+ *     description: |
+ *       Admin-only.
+ *       Upserts full design config for tenant.
+ *       `paperSellCost` means complete paper sell cost (not per-page cost).
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               footerText: { type: string }
+ *               headerTemplateStyleId: { type: string }
+ *               subHeaderTemplateStyleId: { type: string }
+ *               mainHeaderTemplateId: { type: string }
+ *               innerHeaderTemplateId: { type: string }
+ *               footerTemplateId: { type: string }
+ *               paperSellCost: { type: number, example: 6 }
+ *               defaultPageCount: { type: integer, example: 8 }
+ *               volumeStartYear: { type: integer, example: 2026 }
+ *               startVolumeNumber: { type: integer, example: 1 }
+ *               issueCounterMode: { type: string, enum: [DAY_OF_YEAR, SEQUENTIAL], example: DAY_OF_YEAR }
+ *               issueStartNumber: { type: integer, example: 1 }
+ *           examples:
+ *             sample:
+ *               value:
+ *                 headerData: "Kaburlu Daily Epaper"
+ *                 subHeaderData: "Hyderabad Edition"
+ *                 headerLogoUrl: "https://cdn.example.com/logo.png"
+ *                 subHeaderImageUrl: "https://cdn.example.com/sub-header.png"
+ *                 footerText: "Editor: Kaburlu Desk"
+ *                 mainHeaderTemplateId: "cm_main_header"
+ *                 innerHeaderTemplateId: "cm_inner_header"
+ *                 footerTemplateId: "cm_footer"
+ *                 paperSellCost: 6
+ *                 defaultPageCount: 8
+ *                 volumeStartYear: 2026
+ *                 startVolumeNumber: 1
+ *                 issueCounterMode: "DAY_OF_YEAR"
+ *                 issueStartNumber: 1
+ *     responses:
+ *       201:
+ *         description: Design config saved
+ *   patch:
+ *     summary: Patch ePaper design config
+ *     description: |
+ *       Admin-only partial update for design config fields.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               paperSellCost: { type: number, example: 7 }
+ *               defaultPageCount: { type: integer, example: 10 }
+ *     responses:
+ *       200:
+ *         description: Design config patched
+ *   delete:
+ *     summary: Delete ePaper design config
+ *     description: |
+ *       Admin-only. Removes designConfig + issueEntries from generationConfig.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     responses:
+ *       200:
+ *         description: Design config removed
+ */
+router.get('/design-config', auth, getEpaperDesignConfig);
+router.post('/design-config', auth, upsertEpaperDesignConfig);
+router.patch('/design-config', auth, patchEpaperDesignConfig);
+router.delete('/design-config', auth, deleteEpaperDesignConfig);
+
+/**
+ * @swagger
+ * /epaper/design-config/issues:
+ *   get:
+ *     summary: List ePaper issue design entries
+ *     description: |
+ *       Admin-only. Lists per-day issue entries with header/footer and numbering data.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *       - in: query
+ *         name: year
+ *         required: false
+ *         schema: { type: integer, example: 2026 }
+ *         description: Optional filter by year
+ *     responses:
+ *       200:
+ *         description: Issue entries list
+ *   post:
+ *     summary: Create ePaper issue design entry
+ *     description: |
+ *       Admin-only. Creates one issue entry for a specific date.
+ *       If `volumeNumber`/`issueNumber` are not provided, they are auto-generated from design config.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueDate]
+ *             properties:
+ *               issueDate: { type: string, format: date, example: "2026-03-08" }
+ *               volumeNumber: { type: integer, example: 1 }
+ *               issueNumber: { type: integer, example: 67 }
+ *               pageCount: { type: integer, example: 12 }
+ *               paperSellCost: { type: number, example: 6 }
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               headerTemplateStyleId: { type: string }
+ *               subHeaderTemplateStyleId: { type: string }
+ *               mainHeaderTemplateId: { type: string }
+ *               innerHeaderTemplateId: { type: string }
+ *               footerTemplateId: { type: string }
+ *           examples:
+ *             sample:
+ *               value:
+ *                 issueDate: "2026-03-08"
+ *                 pageCount: 12
+ *                 paperSellCost: 6
+ *                 headerData: "Kaburlu Sunday Special"
+ *                 subHeaderData: "Telangana Edition"
+ *     responses:
+ *       201:
+ *         description: Issue entry created
+ */
+router.get('/design-config/issues', auth, listEpaperIssueDesignEntries);
+router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
+
+/**
+ * @swagger
+ * /epaper/design-config/issues/{issueDate}:
+ *   put:
+ *     summary: Update ePaper issue design entry by date
+ *     description: |
+ *       Admin-only. Replaces/updates fields for the given issue date.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *       - in: path
+ *         name: issueDate
+ *         required: true
+ *         schema: { type: string, format: date }
+ *         description: Issue date in YYYY-MM-DD
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               issueDate: { type: string, format: date }
+ *               volumeNumber: { type: integer }
+ *               issueNumber: { type: integer }
+ *               pageCount: { type: integer }
+ *               paperSellCost: { type: number }
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               mainHeaderTemplateId: { type: string }
+ *               innerHeaderTemplateId: { type: string }
+ *               footerTemplateId: { type: string }
+ *     responses:
+ *       200:
+ *         description: Issue entry updated
+ *   delete:
+ *     summary: Delete ePaper issue design entry by date
+ *     description: |
+ *       Admin-only.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *       - in: path
+ *         name: issueDate
+ *         required: true
+ *         schema: { type: string, format: date }
+ *         description: Issue date in YYYY-MM-DD
+ *     responses:
+ *       200:
+ *         description: Issue entry deleted
+ */
+router.put('/design-config/issues/:issueDate', auth, updateEpaperIssueDesignEntry);
+router.delete('/design-config/issues/:issueDate', auth, deleteEpaperIssueDesignEntry);
+
+/**
+ * @swagger
+ * /epaper/design-config/serial-ids:
+ *   get:
+ *     summary: Get stored header/sub-header serial IDs for tenant
+ *     description: |
+ *       Admin-only.
+ *       Reads serial IDs from direct DB table `EpaperDesignSerial`.
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     responses:
+ *       200:
+ *         description: Tenant-wise serial IDs
+ */
+router.get('/design-config/serial-ids', auth, getEpaperDesignSerialIds);
+
+/**
+ * @swagger
+ * /epaper/design-config/serial-ids/bootstrap:
+ *   post:
+ *     summary: Create/push header and sub-header serial IDs up to 20
+ *     description: |
+ *       Admin-only.
+ *       Creates table `EpaperDesignSerial` if missing, then stores/upserts tenant IDs in format:
+ *       - `KABURLU_HEADER_001` ... `KABURLU_HEADER_020`
+ *       - `KABURLU_SUBHEADER_001` ... `KABURLU_SUBHEADER_020`
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               count:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 20
+ *                 default: 20
+ *                 example: 20
+ *     responses:
+ *       201:
+ *         description: IDs pushed successfully
+ */
+router.post('/design-config/serial-ids/bootstrap', auth, bootstrapEpaperDesignSerialIds);
 
 // ============================================================================
 // EPAPER PUBLIC CONFIG (mode + multi-edition)
