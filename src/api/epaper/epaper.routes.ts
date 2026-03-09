@@ -95,6 +95,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: Math.max(1, Math.floor(epaperPdfMaxMb * 1024 * 1024)) },
 });
+const designConfigUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: Math.max(1, Math.floor(Number(process.env.MEDIA_MAX_IMAGE_MB || 10) * 1024 * 1024)) },
+});
 
 // ============================================================================
 // EPAPER DOMAIN SETTINGS (Branding/SEO/Theme per EPAPER domain)
@@ -1176,6 +1180,7 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *     description: |
  *       Admin-only.
  *       Reads from `EpaperSettings.generationConfig.designConfig` and returns current issue entries as well.
+ *       Serial IDs are available from `/epaper/design-config/serial-ids`.
  *       Non-SUPER_ADMIN users must pass an explicit tenant selector
  *       (`X-Tenant-Id` or `X-Tenant-Slug` or `X-Tenant-Domain` or `tenantId` query).
  *     tags: [Block ePaper - Admin]
@@ -1209,7 +1214,9 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *     description: |
  *       Admin-only.
  *       Upserts full design config for tenant.
+ *       If same tenant already has a record, it updates the existing record (no duplicate create).
  *       `paperSellCost` means complete paper sell cost (not per-page cost).
+ *       Supports multipart file upload fields: `headerLeftImage`, `headerRightImage`.
  *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
@@ -1245,6 +1252,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *               subHeaderData: { type: string }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
  *               footerText: { type: string }
  *               headerTemplateStyleId: { type: string }
  *               subHeaderTemplateStyleId: { type: string }
@@ -1264,6 +1273,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *                 subHeaderData: "Hyderabad Edition"
  *                 headerLogoUrl: "https://cdn.example.com/logo.png"
  *                 subHeaderImageUrl: "https://cdn.example.com/sub-header.png"
+ *                 headerLeftImageUrl: "https://cdn.example.com/header-left.png"
+ *                 headerRightImageUrl: "https://cdn.example.com/header-right.png"
  *                 footerText: "Editor: Kaburlu Desk"
  *                 mainHeaderTemplateId: "cm_main_header"
  *                 innerHeaderTemplateId: "cm_inner_header"
@@ -1274,13 +1285,104 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *                 startVolumeNumber: 1
  *                 issueCounterMode: "DAY_OF_YEAR"
  *                 issueStartNumber: 1
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               paperSellCost: { type: number }
+ *               defaultPageCount: { type: integer }
+ *               headerLeftImage:
+ *                 type: string
+ *                 format: binary
+ *               headerRightImage:
+ *                 type: string
+ *                 format: binary
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
  *     responses:
+ *       200:
+ *         description: Existing design config updated for tenant
  *       201:
+ *         description: Design config created for tenant
+ *   put:
+ *     summary: Replace ePaper design config
+ *     description: |
+ *       Same behavior as POST for full upsert.
+ *       Supports multipart file upload fields: `headerLeftImage`, `headerRightImage`.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
+ *               footerText: { type: string }
+ *               headerTemplateStyleId: { type: string }
+ *               subHeaderTemplateStyleId: { type: string }
+ *               mainHeaderTemplateId: { type: string }
+ *               innerHeaderTemplateId: { type: string }
+ *               footerTemplateId: { type: string }
+ *               paperSellCost: { type: number }
+ *               defaultPageCount: { type: integer }
+ *               volumeStartYear: { type: integer }
+ *               startVolumeNumber: { type: integer }
+ *               issueCounterMode: { type: string, enum: [DAY_OF_YEAR, SEQUENTIAL] }
+ *               issueStartNumber: { type: integer }
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               footerText: { type: string }
+ *               paperSellCost: { type: number }
+ *               defaultPageCount: { type: integer }
+ *               headerLeftImage:
+ *                 type: string
+ *                 format: binary
+ *               headerRightImage:
+ *                 type: string
+ *                 format: binary
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
+ *     responses:
+ *       200:
  *         description: Design config saved
  *   patch:
  *     summary: Patch ePaper design config
  *     description: |
  *       Admin-only partial update for design config fields.
+ *       Supports multipart file upload fields: `headerLeftImage`, `headerRightImage`.
  *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
@@ -1314,9 +1416,30 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
  *               footerText: { type: string }
  *               paperSellCost: { type: number, example: 7 }
  *               defaultPageCount: { type: integer, example: 10 }
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               paperSellCost: { type: number }
+ *               defaultPageCount: { type: integer }
+ *               headerLeftImage:
+ *                 type: string
+ *                 format: binary
+ *               headerRightImage:
+ *                 type: string
+ *                 format: binary
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
  *     responses:
  *       200:
  *         description: Design config patched
@@ -1353,8 +1476,9 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *         description: Design config removed
  */
 router.get('/design-config', auth, getEpaperDesignConfig);
-router.post('/design-config', auth, upsertEpaperDesignConfig);
-router.patch('/design-config', auth, patchEpaperDesignConfig);
+router.post('/design-config', auth, designConfigUpload.fields([{ name: 'headerLeftImage', maxCount: 1 }, { name: 'headerRightImage', maxCount: 1 }]), upsertEpaperDesignConfig);
+router.put('/design-config', auth, designConfigUpload.fields([{ name: 'headerLeftImage', maxCount: 1 }, { name: 'headerRightImage', maxCount: 1 }]), upsertEpaperDesignConfig);
+router.patch('/design-config', auth, designConfigUpload.fields([{ name: 'headerLeftImage', maxCount: 1 }, { name: 'headerRightImage', maxCount: 1 }]), patchEpaperDesignConfig);
 router.delete('/design-config', auth, deleteEpaperDesignConfig);
 
 /**
@@ -1443,6 +1567,8 @@ router.delete('/design-config', auth, deleteEpaperDesignConfig);
  *               footerText: { type: string }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
  *               headerTemplateStyleId: { type: string }
  *               subHeaderTemplateStyleId: { type: string }
  *               mainHeaderTemplateId: { type: string }
@@ -1516,6 +1642,10 @@ router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
  *               footerText: { type: string }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
+ *               headerTemplateStyleId: { type: string }
+ *               subHeaderTemplateStyleId: { type: string }
  *               mainHeaderTemplateId: { type: string }
  *               innerHeaderTemplateId: { type: string }
  *               footerTemplateId: { type: string }

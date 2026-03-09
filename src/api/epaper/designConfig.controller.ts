@@ -2,11 +2,13 @@ import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { resolveAdminTenantContext } from './adminTenantContext';
 import { randomUUID } from 'crypto';
+import { putPublicObject } from '../../lib/objectStorage';
 
 type IssueCounterMode = 'DAY_OF_YEAR' | 'SEQUENTIAL';
 type SerialType = 'HEADER' | 'SUBHEADER';
 
 const MAX_SERIAL_COUNT = 20;
+const MAX_DESIGN_IMAGE_BYTES = Math.max(1, Number(process.env.MEDIA_MAX_IMAGE_MB || 10)) * 1024 * 1024;
 
 const TEMPLATE_CODE_ALIASES: Record<string, string> = {
   cm_main_header: 'BT_MAIN_HEADER',
@@ -25,6 +27,8 @@ type DesignConfig = {
   subHeaderData: string | null;
   headerLogoUrl: string | null;
   subHeaderImageUrl: string | null;
+  headerLeftImageUrl: string | null;
+  headerRightImageUrl: string | null;
   footerText: string | null;
   headerTemplateStyleId: string | null;
   subHeaderTemplateStyleId: string | null;
@@ -52,6 +56,8 @@ type IssueEntry = {
   footerText: string | null;
   headerLogoUrl: string | null;
   subHeaderImageUrl: string | null;
+  headerLeftImageUrl: string | null;
+  headerRightImageUrl: string | null;
   headerTemplateStyleId: string | null;
   subHeaderTemplateStyleId: string | null;
   mainHeaderTemplateId: string | null;
@@ -113,6 +119,78 @@ function normalizeIssueMode(value: any): IssueCounterMode {
   return 'DAY_OF_YEAR';
 }
 
+function getMulterFile(req: Request, fieldName: string): any | null {
+  const files: any = (req as any)?.files;
+  if (!files) return null;
+
+  if (Array.isArray(files)) {
+    return files.find((f: any) => String(f?.fieldname || '') === fieldName) || null;
+  }
+
+  const group = files[fieldName];
+  if (Array.isArray(group) && group[0]) return group[0];
+  return null;
+}
+
+function imageExtFromMime(mime: string, fallbackName: string): string {
+  const m = String(mime || '').toLowerCase();
+  if (m === 'image/jpeg') return 'jpg';
+  if (m === 'image/png') return 'png';
+  if (m === 'image/webp') return 'webp';
+  if (m === 'image/gif') return 'gif';
+  if (m === 'image/svg+xml') return 'svg';
+
+  const fallback = String(fallbackName || '').trim();
+  if (fallback.includes('.')) {
+    const ext = fallback.split('.').pop() || 'bin';
+    return ext.toLowerCase();
+  }
+  return 'bin';
+}
+
+async function uploadDesignImage(tenantId: string, file: any, slot: 'header-left' | 'header-right'): Promise<string> {
+  const mime = String(file?.mimetype || '').toLowerCase();
+  if (!mime.startsWith('image/')) {
+    throw new Error(`${slot} image must be a valid image file`);
+  }
+
+  const size = Number(file?.size || 0);
+  if (size <= 0 || !file?.buffer) {
+    throw new Error(`${slot} image is empty or invalid`);
+  }
+  if (size > MAX_DESIGN_IMAGE_BYTES) {
+    throw new Error(`${slot} image too large. Max ${Math.round(MAX_DESIGN_IMAGE_BYTES / (1024 * 1024))}MB`);
+  }
+
+  const ext = imageExtFromMime(mime, String(file?.originalname || 'upload.bin'));
+  const d = new Date();
+  const datePath = `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
+  const key = `epaper/design-config/${tenantId}/${slot}/${datePath}/${Date.now()}-${randomUUID()}.${ext}`;
+
+  const uploaded = await putPublicObject({
+    key,
+    body: file.buffer,
+    contentType: mime || 'application/octet-stream',
+  });
+
+  return uploaded.publicUrl;
+}
+
+async function mergeDesignConfigInputWithUploads(req: Request, tenantId: string): Promise<Record<string, any>> {
+  const input = { ...(req.body || {}) };
+  const headerLeftImage = getMulterFile(req, 'headerLeftImage');
+  const headerRightImage = getMulterFile(req, 'headerRightImage');
+
+  if (headerLeftImage) {
+    input.headerLeftImageUrl = await uploadDesignImage(tenantId, headerLeftImage, 'header-left');
+  }
+  if (headerRightImage) {
+    input.headerRightImageUrl = await uploadDesignImage(tenantId, headerRightImage, 'header-right');
+  }
+
+  return input;
+}
+
 function defaultDesignConfig(userId: string | null): DesignConfig {
   const currentYear = new Date().getUTCFullYear();
   return {
@@ -120,6 +198,8 @@ function defaultDesignConfig(userId: string | null): DesignConfig {
     subHeaderData: null,
     headerLogoUrl: null,
     subHeaderImageUrl: null,
+    headerLeftImageUrl: null,
+    headerRightImageUrl: null,
     footerText: null,
     headerTemplateStyleId: null,
     subHeaderTemplateStyleId: null,
@@ -138,9 +218,17 @@ function defaultDesignConfig(userId: string | null): DesignConfig {
 }
 
 async function getOrCreateSettings(tenantId: string) {
-  const existing = await prisma.epaperSettings.findUnique({ where: { tenantId } });
-  if (existing) return existing;
-  return prisma.epaperSettings.create({ data: { tenantId } });
+  return prisma.epaperSettings.upsert({
+    where: { tenantId },
+    update: {},
+    create: { tenantId },
+  });
+}
+
+function hasPersistedDesignConfig(settings: any): boolean {
+  const gen = asObject(settings?.generationConfig);
+  const current = asObject(gen.designConfig);
+  return Object.keys(current).length > 0;
 }
 
 function readDesignConfig(settings: any, userId: string | null): DesignConfig {
@@ -154,6 +242,8 @@ function readDesignConfig(settings: any, userId: string | null): DesignConfig {
     subHeaderData: current.subHeaderData === undefined ? d.subHeaderData : normalizeText(current.subHeaderData),
     headerLogoUrl: current.headerLogoUrl === undefined ? d.headerLogoUrl : normalizeText(current.headerLogoUrl),
     subHeaderImageUrl: current.subHeaderImageUrl === undefined ? d.subHeaderImageUrl : normalizeText(current.subHeaderImageUrl),
+    headerLeftImageUrl: current.headerLeftImageUrl === undefined ? d.headerLeftImageUrl : normalizeText(current.headerLeftImageUrl),
+    headerRightImageUrl: current.headerRightImageUrl === undefined ? d.headerRightImageUrl : normalizeText(current.headerRightImageUrl),
     footerText: current.footerText === undefined ? d.footerText : normalizeText(current.footerText),
     headerTemplateStyleId: current.headerTemplateStyleId === undefined ? d.headerTemplateStyleId : normalizeText(current.headerTemplateStyleId),
     subHeaderTemplateStyleId: current.subHeaderTemplateStyleId === undefined ? d.subHeaderTemplateStyleId : normalizeText(current.subHeaderTemplateStyleId),
@@ -196,6 +286,8 @@ function readIssueEntries(settings: any): IssueEntry[] {
       footerText: normalizeText((row as any)?.footerText),
       headerLogoUrl: normalizeText((row as any)?.headerLogoUrl),
       subHeaderImageUrl: normalizeText((row as any)?.subHeaderImageUrl),
+      headerLeftImageUrl: normalizeText((row as any)?.headerLeftImageUrl),
+      headerRightImageUrl: normalizeText((row as any)?.headerRightImageUrl),
       headerTemplateStyleId: normalizeText((row as any)?.headerTemplateStyleId),
       subHeaderTemplateStyleId: normalizeText((row as any)?.subHeaderTemplateStyleId),
       mainHeaderTemplateId: normalizeText((row as any)?.mainHeaderTemplateId),
@@ -244,6 +336,8 @@ function shapeIssueEntryFromInput(input: any, fallbackCfg: DesignConfig): Partia
     footerText: normalizeText(input.footerText ?? input.lastPageFooterText),
     headerLogoUrl: normalizeText(input.headerLogoUrl),
     subHeaderImageUrl: normalizeText(input.subHeaderImageUrl),
+    headerLeftImageUrl: normalizeText(input.headerLeftImageUrl ?? input.headerLeftImage),
+    headerRightImageUrl: normalizeText(input.headerRightImageUrl ?? input.headerRightImage),
     headerTemplateStyleId: normalizeText(input.headerTemplateStyleId ?? input.headerStyleId) || (mainHeaderIsSerial ? mainHeaderCandidate : null),
     subHeaderTemplateStyleId: normalizeText(input.subHeaderTemplateStyleId ?? input.subHeaderStyleId) || (innerHeaderIsSerial ? innerHeaderCandidate : null),
     mainHeaderTemplateId: mainHeaderIsSerial ? null : mainHeaderCandidate,
@@ -343,6 +437,12 @@ function extractConfigInput(body: any, current: DesignConfig, isPatch: boolean, 
     subHeaderData: body.subHeaderData !== undefined ? normalizeText(body.subHeaderData) : base.subHeaderData,
     headerLogoUrl: body.headerLogoUrl !== undefined ? normalizeText(body.headerLogoUrl) : base.headerLogoUrl,
     subHeaderImageUrl: body.subHeaderImageUrl !== undefined ? normalizeText(body.subHeaderImageUrl) : base.subHeaderImageUrl,
+    headerLeftImageUrl: body.headerLeftImageUrl !== undefined
+      ? normalizeText(body.headerLeftImageUrl)
+      : (body.headerLeftImage !== undefined ? normalizeText(body.headerLeftImage) : base.headerLeftImageUrl),
+    headerRightImageUrl: body.headerRightImageUrl !== undefined
+      ? normalizeText(body.headerRightImageUrl)
+      : (body.headerRightImage !== undefined ? normalizeText(body.headerRightImage) : base.headerRightImageUrl),
     footerText: body.footerText !== undefined ? normalizeText(body.footerText) : (body.lastPageFooterText !== undefined ? normalizeText(body.lastPageFooterText) : base.footerText),
     headerTemplateStyleId: body.headerTemplateStyleId !== undefined
       ? normalizeText(body.headerTemplateStyleId)
@@ -514,13 +614,11 @@ export const getEpaperDesignConfig = async (req: Request, res: Response) => {
     const settings = await getOrCreateSettings(ctx.tenantId);
     const designConfig = readDesignConfig(settings, ctx.userId || null);
     const issueEntries = readIssueEntries(settings);
-    const serialIds = await getOrBootstrapSerialRows(ctx.tenantId);
 
     return res.json({
       tenantId: ctx.tenantId,
       source: 'epaperSettings.generationConfig.designConfig',
       designConfig,
-      serialIds,
       issueEntries,
       totalIssues: issueEntries.length,
     });
@@ -538,8 +636,10 @@ export const upsertEpaperDesignConfig = async (req: Request, res: Response) => {
     if (!ctx.tenantId) return sendTenantRequired(res);
 
     const settings = await getOrCreateSettings(ctx.tenantId);
+    const hasExistingDesignConfig = hasPersistedDesignConfig(settings);
     const current = readDesignConfig(settings, ctx.userId || null);
-    const next = extractConfigInput(req.body || {}, current, false, ctx.userId || null);
+    const input = await mergeDesignConfigInputWithUploads(req, ctx.tenantId);
+    const next = extractConfigInput(input, current, false, ctx.userId || null);
 
     next.mainHeaderTemplateId = await resolveTemplateIdIfGiven(next.mainHeaderTemplateId, 'HEADER');
     next.innerHeaderTemplateId = await resolveTemplateIdIfGiven(next.innerHeaderTemplateId, 'HEADER');
@@ -548,8 +648,9 @@ export const upsertEpaperDesignConfig = async (req: Request, res: Response) => {
     const issueEntries = readIssueEntries(settings);
     await persistDesignConfig(ctx.tenantId, settings, next, issueEntries);
 
-    return res.status(201).json({
+    return res.status(hasExistingDesignConfig ? 200 : 201).json({
       success: true,
+      action: hasExistingDesignConfig ? 'updated' : 'created',
       tenantId: ctx.tenantId,
       designConfig: next,
       issueEntries,
@@ -557,6 +658,9 @@ export const upsertEpaperDesignConfig = async (req: Request, res: Response) => {
     });
   } catch (e: any) {
     const msg = e?.message || String(e);
+    if (String(msg).includes('image')) {
+      return res.status(400).json({ error: msg });
+    }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
       return res.status(400).json({ error: msg });
     }
@@ -574,7 +678,8 @@ export const patchEpaperDesignConfig = async (req: Request, res: Response) => {
 
     const settings = await getOrCreateSettings(ctx.tenantId);
     const current = readDesignConfig(settings, ctx.userId || null);
-    const next = extractConfigInput(req.body || {}, current, true, ctx.userId || null);
+    const input = await mergeDesignConfigInputWithUploads(req, ctx.tenantId);
+    const next = extractConfigInput(input, current, true, ctx.userId || null);
 
     next.mainHeaderTemplateId = await resolveTemplateIdIfGiven(next.mainHeaderTemplateId, 'HEADER');
     next.innerHeaderTemplateId = await resolveTemplateIdIfGiven(next.innerHeaderTemplateId, 'HEADER');
@@ -592,6 +697,9 @@ export const patchEpaperDesignConfig = async (req: Request, res: Response) => {
     });
   } catch (e: any) {
     const msg = e?.message || String(e);
+    if (String(msg).includes('image')) {
+      return res.status(400).json({ error: msg });
+    }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
       return res.status(400).json({ error: msg });
     }
@@ -702,6 +810,8 @@ export const createEpaperIssueDesignEntry = async (req: Request, res: Response) 
       footerText: merged.footerText ?? cfg.footerText,
       headerLogoUrl: merged.headerLogoUrl ?? cfg.headerLogoUrl,
       subHeaderImageUrl: merged.subHeaderImageUrl ?? cfg.subHeaderImageUrl,
+      headerLeftImageUrl: merged.headerLeftImageUrl ?? cfg.headerLeftImageUrl,
+      headerRightImageUrl: merged.headerRightImageUrl ?? cfg.headerRightImageUrl,
       headerTemplateStyleId: merged.headerTemplateStyleId ?? cfg.headerTemplateStyleId,
       subHeaderTemplateStyleId: merged.subHeaderTemplateStyleId ?? cfg.subHeaderTemplateStyleId,
       mainHeaderTemplateId: resolvedMainHeaderTemplateId,
@@ -785,6 +895,8 @@ export const updateEpaperIssueDesignEntry = async (req: Request, res: Response) 
       footerText: patch.footerText !== null && patch.footerText !== undefined ? patch.footerText : entries[idx].footerText,
       headerLogoUrl: patch.headerLogoUrl !== null && patch.headerLogoUrl !== undefined ? patch.headerLogoUrl : entries[idx].headerLogoUrl,
       subHeaderImageUrl: patch.subHeaderImageUrl !== null && patch.subHeaderImageUrl !== undefined ? patch.subHeaderImageUrl : entries[idx].subHeaderImageUrl,
+      headerLeftImageUrl: patch.headerLeftImageUrl !== null && patch.headerLeftImageUrl !== undefined ? patch.headerLeftImageUrl : entries[idx].headerLeftImageUrl,
+      headerRightImageUrl: patch.headerRightImageUrl !== null && patch.headerRightImageUrl !== undefined ? patch.headerRightImageUrl : entries[idx].headerRightImageUrl,
       headerTemplateStyleId: patch.headerTemplateStyleId !== null && patch.headerTemplateStyleId !== undefined ? patch.headerTemplateStyleId : entries[idx].headerTemplateStyleId,
       subHeaderTemplateStyleId: patch.subHeaderTemplateStyleId !== null && patch.subHeaderTemplateStyleId !== undefined ? patch.subHeaderTemplateStyleId : entries[idx].subHeaderTemplateStyleId,
       mainHeaderTemplateId: resolvedMainHeaderTemplateId,
