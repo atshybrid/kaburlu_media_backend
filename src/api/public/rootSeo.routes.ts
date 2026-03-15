@@ -343,4 +343,79 @@ router.get('/sitemap.xml', async (req, res) => {
   return res.type('application/xml').send(xml);
 });
 
+/**
+ * @swagger
+ * /ads.txt:
+ *   get:
+ *     summary: ads.txt for Google AdSense authorized sellers
+ *     description: |
+ *       Returns the Google AdSense `ads.txt` entry for the resolved domain.
+ *       Works for both NEWS and EPAPER domain kinds.
+ *
+ *       Domain resolution (multi-tenancy):
+ *       - Uses `X-Tenant-Domain` header or `?domain=` query for local testing
+ *       - Falls back to `Host` / `X-Forwarded-Host` in production
+ *
+ *       Single-tenancy: returns the first DomainSettings with an adsenseClientId.
+ *
+ *       Returns 404 if no `adsenseClientId` is configured for the domain.
+ *     tags: [EPF ePaper - Public]
+ *     parameters:
+ *       - $ref: '#/components/parameters/XTenantDomain'
+ *       - $ref: '#/components/parameters/DomainQuery'
+ *     responses:
+ *       200:
+ *         description: Google AdSense ads.txt entry
+ *         content:
+ *           text/plain:
+ *             examples:
+ *               sample:
+ *                 value: "google.com, ca-pub-5191460803448280, DIRECT, f08c47fec0942fa0"
+ *       404:
+ *         description: No adsenseClientId configured for this domain
+ */
+router.get('/ads.txt', async (req, res) => {
+  let adsenseClientId: string | null = null;
+
+  if (process.env.MULTI_TENANCY === 'true') {
+    const overrideHost = normalizeHost(req.headers['x-tenant-domain'] as any) || normalizeHost(req.query?.domain as any);
+    const host = overrideHost || normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
+
+    if (host) {
+      const domain = await p.domain.findUnique({ where: { domain: host } }).catch(() => null);
+      if (domain?.status === 'ACTIVE') {
+        const ds = await p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null);
+        const integ = asObject(asObject(ds?.data).integrations);
+        const ads = asObject(integ.ads);
+        if (typeof ads.adsenseClientId === 'string' && ads.adsenseClientId) {
+          adsenseClientId = ads.adsenseClientId;
+        }
+      }
+    }
+  } else {
+    // Non-multi-tenancy: scan DomainSettings for first configured adsenseClientId
+    const allDs = await p.domainSettings?.findMany?.({ take: 20 }).catch(() => null);
+    if (Array.isArray(allDs)) {
+      for (const ds of allDs) {
+        const integ = asObject(asObject(ds?.data).integrations);
+        const ads = asObject(integ.ads);
+        if (typeof ads.adsenseClientId === 'string' && ads.adsenseClientId) {
+          adsenseClientId = ads.adsenseClientId;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!adsenseClientId) {
+    return res.status(404).type('text/plain').send('Not Found');
+  }
+
+  // Normalise: ensure ca-pub- prefix
+  const clientId = adsenseClientId.startsWith('ca-') ? adsenseClientId : `ca-${adsenseClientId}`;
+
+  // Standard Google AdSense ads.txt line
+  return res.type('text/plain').send(`google.com, ${clientId}, DIRECT, f08c47fec0942fa0\n`);
+});
+
 export default router;
