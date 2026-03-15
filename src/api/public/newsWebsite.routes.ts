@@ -724,8 +724,9 @@ router.get('/config', async (_req, res) => {
           enabled: !!integrations.push.vapidPublicKey
         },
         auth: {
-          googleClientId: process.env.GOOGLE_CLIENT_ID || null,
-          googleEnabled: !!(process.env.GOOGLE_CLIENT_ID),
+          // GOOGLE_CLIENT_ID may be a comma-separated list; GIS initialize() needs exactly one
+          googleClientId: (process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_WEB_CLIENT_ID || '').split(',')[0].trim() || null,
+          googleEnabled: !!(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_WEB_CLIENT_ID),
         },
         social: {
           facebookAppId: effectiveDomainSettings?.integrations?.social?.facebookAppId ?? null,
