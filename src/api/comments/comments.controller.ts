@@ -4,6 +4,7 @@ import { plainToClass } from 'class-transformer';
 import { validate } from 'class-validator';
 import { CreateCommentDto, UpdateCommentDto, validatePolymorphicTarget } from './comments.dto';
 import { createComment, getComments, updateComment, deleteComment } from './comments.service';
+import prisma from '../../lib/prisma';
 
 export const createCommentController = async (req: Request, res: Response) => {
   try {
@@ -36,9 +37,29 @@ export const createCommentController = async (req: Request, res: Response) => {
 
 export const getCommentsController = async (req: Request, res: Response) => {
   try {
-    const { articleId, shortNewsId } = req.query as { articleId?: string; shortNewsId?: string };
+    let { articleId, shortNewsId, articleSlug } = req.query as { articleId?: string; shortNewsId?: string; articleSlug?: string };
+
+    // Resolve articleSlug → articleId (TenantWebArticle)
+    if (articleSlug && !articleId) {
+      const article = await prisma.tenantWebArticle.findFirst({
+        where: { slug: articleSlug },
+        select: { id: true },
+      });
+      if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
+      articleId = article.id;
+    }
+
+    // Also resolve inline slug passed as articleId (slug contains hyphens)
+    if (articleId && articleId.includes('-')) {
+      const bySlug = await prisma.tenantWebArticle.findFirst({
+        where: { slug: articleId },
+        select: { id: true },
+      });
+      if (bySlug) articleId = bySlug.id;
+    }
+
     if ((articleId && shortNewsId) || (!articleId && !shortNewsId)) {
-      return res.status(400).json({ success: false, message: 'Provide exactly one of articleId or shortNewsId as query param' });
+      return res.status(400).json({ success: false, message: 'Provide exactly one of articleId, articleSlug, or shortNewsId as query param' });
     }
     const comments = await getComments({ articleId, shortNewsId });
     res.status(200).json({ success: true, data: comments });

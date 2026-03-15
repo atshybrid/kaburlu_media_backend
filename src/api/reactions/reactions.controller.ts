@@ -6,6 +6,26 @@ import prisma from '../../lib/prisma';
 
 const contentReactions = new ContentReactionsService();
 
+/**
+ * Resolve a slug or CUID to a TenantWebArticle ID.
+ * Slugs contain hyphens; CUIDs are purely alphanumeric so there's no collision.
+ * Falls back to treating the value as an existing ID if no slug match found.
+ */
+async function resolveWebArticleId(slugOrId: string): Promise<string | null> {
+  // Try slug lookup (slugs always contain hyphens)
+  if (slugOrId.includes('-')) {
+    const bySlug = await prisma.tenantWebArticle.findFirst({
+      where: { slug: slugOrId },
+      select: { id: true },
+    });
+    if (bySlug) return bySlug.id;
+  }
+  // Try ID lookup in TenantWebArticle, then legacy Article
+  const webArt = await prisma.tenantWebArticle.findUnique({ where: { id: slugOrId }, select: { id: true } })
+    ?? await prisma.article.findUnique({ where: { id: slugOrId }, select: { id: true } });
+  return webArt ? slugOrId : null;
+}
+
 export const upsertReaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as any;
@@ -26,10 +46,10 @@ export const upsertReaction = async (req: Request, res: Response) => {
     let id = aId || sId;
     let contentType: ContentType;
     if (aId) {
-      // Check TenantWebArticle first (public website articles), then legacy Article as fallback
-      const webArt = await (prisma as any).tenantWebArticle?.findUnique({ where: { id: aId } })
-        ?? await prisma.article.findUnique({ where: { id: aId } });
-      if (webArt) {
+      // Resolve slug → ID if needed, then check TenantWebArticle / legacy Article
+      const resolvedId = await resolveWebArticleId(aId);
+      if (resolvedId) {
+        id = resolvedId;
         contentType = ContentType.ARTICLE;
       } else {
         // Fallback: maybe the client sent a ShortNews ID in articleId
@@ -63,10 +83,16 @@ export const upsertReaction = async (req: Request, res: Response) => {
 export const getReactionForArticle = async (req: Request, res: Response) => {
   try {
     const user = req.user as any;
-    const { articleId } = req.params;
+    let { articleId } = req.params;
     if (!articleId) return res.status(400).json({ success: false, error: 'articleId required' });
-    // ContentReaction stores IDs as free strings (no FK) — no existence check needed.
-    // Returns counts:0 / reaction:'NONE' for any ID without reactions, which is correct.
+    // Resolve slug → CUID if the caller passes a slug instead of an ID
+    if (articleId.includes('-')) {
+      const bySlug = await prisma.tenantWebArticle.findFirst({
+        where: { slug: articleId },
+        select: { id: true },
+      });
+      if (bySlug) articleId = bySlug.id;
+    }
     const result = await contentReactions.getReaction(user?.id || null, ContentType.ARTICLE, articleId);
     return res.status(200).json({ success: true, data: result });
   } catch (e) {
@@ -101,8 +127,22 @@ export const batchReactionStatus = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'articleIds or shortNewsIds array required' });
     }
   const contentType: ContentType = articleIds ? ContentType.ARTICLE : ContentType.SHORTNEWS;
-    // Optionally validate a subset (lightweight): we skip for performance; counts just ignore missing.
-    const data = await contentReactions.batch(user.id, contentType, ids);
+
+    // Resolve any slugs in articleIds to CUIDs
+    let resolvedIds: string[] = ids;
+    if (contentType === ContentType.ARTICLE) {
+      const slugInputs = ids.filter((id: string) => id.includes('-'));
+      if (slugInputs.length > 0) {
+        const found = await prisma.tenantWebArticle.findMany({
+          where: { slug: { in: slugInputs } },
+          select: { id: true, slug: true },
+        });
+        const slugToId = Object.fromEntries(found.map((a) => [a.slug, a.id]));
+        resolvedIds = ids.map((id: string) => slugToId[id] ?? id);
+      }
+    }
+
+    const data = await contentReactions.batch(user.id, contentType, resolvedIds);
     return res.status(200).json({ success: true, data });
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Failed to fetch batch status' });
