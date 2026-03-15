@@ -721,6 +721,10 @@ router.get('/config', async (_req, res) => {
           fcmSenderId: integrations.push.fcmSenderId,
           enabled: !!integrations.push.vapidPublicKey
         },
+        auth: {
+          googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+          googleEnabled: !!(process.env.GOOGLE_CLIENT_ID),
+        },
         social: {
           facebookAppId: effectiveDomainSettings?.integrations?.social?.facebookAppId ?? null,
           twitterHandle: seoTwitter.handle

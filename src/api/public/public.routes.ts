@@ -6,6 +6,8 @@ import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebA
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
 import { saveBrowserPushSubscription, deactivateBrowserPushSubscription } from '../../lib/webPushBrowser';
+import { verifyToken } from '../../lib/tokenVerification';
+import jwtLib from 'jsonwebtoken';
 import newsWebsiteRouter from './newsWebsite.routes';
 // NEW: Public crop session imports
 import {
@@ -104,6 +106,154 @@ function requireVerifiedEpaperDomain(req: any, res: any, next: any) {
 // Placeholder endpoints; real implementations added in next step
 router.get('/_health', (_req, res) => {
   res.json({ ok: true, domain: (res.locals as any).domain?.domain, tenant: (res.locals as any).tenant?.slug });
+});
+
+/**
+ * @swagger
+ * /public/reader/google-signin:
+ *   post:
+ *     summary: Reader sign-in / register with Google (single step)
+ *     description: |
+ *       Verifies a Google ID token (or Firebase ID token), then finds-or-creates a reader
+ *       account scoped to the resolved tenant/domain.
+ *
+ *       - If the user already exists (matched by `firebaseUid`): returns JWT immediately.
+ *       - If new user: auto-registers with CITIZEN_REPORTER role and returns JWT.
+ *       - No location or languageId required — minimal friction reader onboarding.
+ *       - The returned JWT can be passed as `Authorization: Bearer <jwt>` to reactions and
+ *         comments APIs.
+ *
+ *       Domain resolution: `X-Tenant-Domain` header or `Host`.
+ *     tags: [Public]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               googleIdToken:
+ *                 type: string
+ *                 description: Raw Google OAuth ID token from Google Sign-In
+ *               firebaseIdToken:
+ *                 type: string
+ *                 description: Firebase ID token (alternative)
+ *               displayName:
+ *                 type: string
+ *                 description: Optional display name (from Google profile)
+ *               photoUrl:
+ *                 type: string
+ *                 description: Optional photo URL (from Google profile)
+ *     responses:
+ *       200:
+ *         description: JWT issued
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               isNew: false
+ *               jwt: "eyJhbGci..."
+ *               refreshToken: "eyJhbGci..."
+ *               expiresIn: 2592000
+ *               user:
+ *                 userId: "clxxx"
+ *                 email: "reader@gmail.com"
+ *                 displayName: "Ravi Kumar"
+ *                 photoUrl: null
+ *       400:
+ *         description: Token missing or invalid
+ */
+router.post('/reader/google-signin', async (req, res) => {
+  try {
+    const { googleIdToken, firebaseIdToken, displayName, photoUrl } = req.body || {};
+    const p: any = prisma;
+
+    if (!googleIdToken && !firebaseIdToken) {
+      return res.status(400).json({ success: false, code: 'MISSING_TOKEN', message: 'googleIdToken or firebaseIdToken is required' });
+    }
+
+    const verification = await verifyToken({ googleIdToken, firebaseIdToken });
+    if (!verification.success) {
+      return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: verification.error || 'Token verification failed' });
+    }
+
+    const { firebaseUid, email } = verification;
+
+    // Resolve tenant from request context (set by tenantResolver middleware)
+    const tenant = (res.locals as any).tenant;
+    const tenantId = tenant?.id || null;
+
+    // Find CITIZEN_REPORTER role
+    const citizenRole = await p.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+    if (!citizenRole) {
+      return res.status(500).json({ success: false, message: 'Reader role not configured' });
+    }
+
+    // Find default language
+    const defaultLang = await p.language.findFirst({ orderBy: { createdAt: 'asc' } });
+
+    let isNew = false;
+    let user = await p.user.findFirst({ where: { firebaseUid } });
+
+    if (!user) {
+      isNew = true;
+      // Auto-create reader account
+      user = await p.user.create({
+        data: {
+          firebaseUid,
+          email: email || null,
+          roleId: citizenRole.id,
+          languageId: defaultLang?.id || '',
+          status: 'ACTIVE',
+          upgradedAt: new Date(),
+        },
+      });
+
+      // Upsert profile with display name from Google
+      if (displayName) {
+        await p.userProfile.upsert({
+          where: { userId: user.id },
+          update: { fullName: displayName, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+          create: { userId: user.id, fullName: displayName, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+        }).catch(() => null);
+      }
+    } else if (displayName || photoUrl) {
+      // Update profile for returning user if new info provided
+      await p.userProfile.upsert({
+        where: { userId: user.id },
+        update: { ...(displayName ? { fullName: displayName } : {}), ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+        create: { userId: user.id, fullName: displayName || null, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+      }).catch(() => null);
+    }
+
+    const role = await p.role.findUnique({ where: { id: user.roleId } });
+    const jwtSecret = process.env.JWT_SECRET || 'your-default-secret';
+    const refreshSecret = process.env.JWT_REFRESH_SECRET || 'your-default-refresh-secret';
+
+    const payload = { sub: user.id, role: role?.name, permissions: role?.permissions, tenantId };
+    const jwt = jwtLib.sign(payload, jwtSecret, { expiresIn: '30d' });
+    const refreshToken = jwtLib.sign({ sub: user.id }, refreshSecret, { expiresIn: '30d' });
+
+    const profile = await p.userProfile.findUnique({ where: { userId: user.id } }).catch(() => null);
+
+    return res.json({
+      success: true,
+      isNew,
+      jwt,
+      refreshToken,
+      expiresIn: 2592000, // 30 days
+      user: {
+        userId: user.id,
+        email: user.email,
+        displayName: profile?.fullName || displayName || null,
+        photoUrl: (profile as any)?.profilePictureUrl || photoUrl || null,
+        role: role?.name,
+      },
+    });
+  } catch (e: any) {
+    console.error('[Reader Google Sign-in]', e);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 router.post('/push/subscribe', async (req, res) => {
@@ -775,6 +925,10 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
         webPushVapidPublicKey: pushVapidPublicKey,
         fcmSenderId: pushFcmSenderId,
         enabled: pushEnabled,
+      },
+      auth: {
+        googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+        googleEnabled: !!(process.env.GOOGLE_CLIENT_ID),
       },
     },
     features: {
