@@ -789,14 +789,14 @@ router.delete(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// Standard 8-Slot Ads Config  (stored in TenantSettings.data.adsConfig)
-// Slot keys: home_top | home_mid | home_multiplex |
+// Standard 9-Slot Ads Config  (stored in TenantSettings.data.adsConfig)
+// Slot keys: home_top | home_mid | home_multiplex | home_sidebar |
 //            article_top | article_mid | article_multiplex |
 //            category_top | category_mid
 // ─────────────────────────────────────────────────────────────────
 
 const VALID_SLOT_KEYS = [
-  'home_top', 'home_mid', 'home_multiplex',
+  'home_top', 'home_mid', 'home_multiplex', 'home_sidebar',
   'article_top', 'article_mid', 'article_multiplex',
   'category_top', 'category_mid',
 ] as const;
@@ -882,6 +882,7 @@ async function saveAdsConfig(tenantId: string, existingRow: any | null, adsConfi
  *       - `home_top` — Home page top banner (below header)
  *       - `home_mid` — Home page mid feed (after 3rd article card)
  *       - `home_multiplex` — Home page multiplex (bottom of feed) — format: autorelaxed
+ *       - `home_sidebar` — Home page sidebar (right column, 300×250 / 300×600)
  *       - `article_top` — Article detail page below title
  *       - `article_mid` — Article detail page mid content (after para 3)
  *       - `article_multiplex` — Article detail below the article — format: autorelaxed
@@ -915,6 +916,10 @@ async function saveAdsConfig(tenantId: string, existingRow: any | null, adsConfi
  *                 home_multiplex:
  *                   slotId: "3456789012"
  *                   format: "autorelaxed"
+ *                   enabled: true
+ *                 home_sidebar:
+ *                   slotId: "9012345678"
+ *                   format: "auto"
  *                   enabled: true
  *                 article_top:
  *                   slotId: "4567890123"
@@ -987,6 +992,7 @@ router.get(
  *                   home_top:      { $ref: '#/components/schemas/AdSlotConfig' }
  *                   home_mid:      { $ref: '#/components/schemas/AdSlotConfig' }
  *                   home_multiplex:  { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   home_sidebar:    { $ref: '#/components/schemas/AdSlotConfig' }
  *                   article_top:   { $ref: '#/components/schemas/AdSlotConfig' }
  *                   article_mid:   { $ref: '#/components/schemas/AdSlotConfig' }
  *                   article_multiplex: { $ref: '#/components/schemas/AdSlotConfig' }
@@ -994,7 +1000,7 @@ router.get(
  *                   category_mid:  { $ref: '#/components/schemas/AdSlotConfig' }
  *           examples:
  *             fullConfig:
- *               summary: Setup all 8 slots with Google AdSense
+ *               summary: Setup all 9 slots with Google AdSense
  *               value:
  *                 enabled: true
  *                 adsenseClientId: "ca-pub-5191460803448280"
@@ -1002,6 +1008,7 @@ router.get(
  *                   home_top:          { slotId: "1234567890", format: "auto",        enabled: true }
  *                   home_mid:          { slotId: "2345678901", format: "auto",        enabled: true }
  *                   home_multiplex:    { slotId: "3456789012", format: "autorelaxed", enabled: true }
+ *                   home_sidebar:      { slotId: "9012345678", format: "auto",        enabled: true }
  *                   article_top:       { slotId: "4567890123", format: "auto",        enabled: true }
  *                   article_mid:       { slotId: "5678901234", format: "auto",        enabled: true }
  *                   article_multiplex: { slotId: "6789012345", format: "autorelaxed", enabled: true }
@@ -1082,7 +1089,7 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
- *           enum: [home_top, home_mid, home_multiplex, article_top, article_mid, article_multiplex, category_top, category_mid]
+ *           enum: [home_top, home_mid, home_multiplex, home_sidebar, article_top, article_mid, article_multiplex, category_top, category_mid]
  *         description: Which slot to update
  *     requestBody:
  *       required: true
