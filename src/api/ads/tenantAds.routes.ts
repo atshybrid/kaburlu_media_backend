@@ -134,7 +134,7 @@ async function saveTenantAdsStyle2(tenantId: string, existingRow: any | null, ne
  *           example: true
  *     AdsConfig:
  *       type: object
- *       description: Full tenant ads configuration with 8 standard page slots
+ *       description: Full tenant ads configuration with 6 standard ad-type slots
  *       properties:
  *         enabled:
  *           type: boolean
@@ -148,20 +148,23 @@ async function saveTenantAdsStyle2(tenantId: string, existingRow: any | null, ne
  *         slots:
  *           type: object
  *           description: |
- *             Map of standard slot keys to their config.
- *             **Pages × Slots:**
- *             - Home page: home_top, home_mid, home_multiplex
- *             - Article detail page: article_top, article_mid, article_multiplex
- *             - Category listing page: category_top, category_mid
+ *             6 standard ad-type slots grouped by ad format.
+ *             **Display ads** (format: auto)
+ *             - display_square      — 300×250 square/rectangle
+ *             - display_horizontal  — 728×90 leaderboard/responsive horizontal
+ *             - display_vertical    — 160×600 or 300×600 skyscraper/vertical
+ *             **In-article ad** (format: fluid)
+ *             - in_article          — injected inline inside article body
+ *             **Multiplex ads** (format: autorelaxed)
+ *             - multiplex_horizontal — horizontal native multiplex grid
+ *             - multiplex_vertical   — vertical native multiplex grid
  *           properties:
- *             home_top:          { $ref: '#/components/schemas/AdSlotConfig' }
- *             home_mid:          { $ref: '#/components/schemas/AdSlotConfig' }
- *             home_multiplex:    { $ref: '#/components/schemas/AdSlotConfig' }
- *             article_top:       { $ref: '#/components/schemas/AdSlotConfig' }
- *             article_mid:       { $ref: '#/components/schemas/AdSlotConfig' }
- *             article_multiplex: { $ref: '#/components/schemas/AdSlotConfig' }
- *             category_top:      { $ref: '#/components/schemas/AdSlotConfig' }
- *             category_mid:      { $ref: '#/components/schemas/AdSlotConfig' }
+ *             display_square:       { $ref: '#/components/schemas/AdSlotConfig' }
+ *             display_horizontal:   { $ref: '#/components/schemas/AdSlotConfig' }
+ *             display_vertical:     { $ref: '#/components/schemas/AdSlotConfig' }
+ *             in_article:           { $ref: '#/components/schemas/AdSlotConfig' }
+ *             multiplex_horizontal: { $ref: '#/components/schemas/AdSlotConfig' }
+ *             multiplex_vertical:   { $ref: '#/components/schemas/AdSlotConfig' }
  */
 
 /**
@@ -789,16 +792,25 @@ router.delete(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// Standard 9-Slot Ads Config  (stored in TenantSettings.data.adsConfig)
-// Slot keys: home_top | home_mid | home_multiplex | home_sidebar |
-//            article_top | article_mid | article_multiplex |
-//            category_top | category_mid
+// Standard 6-Slot Ads Config  (stored in TenantSettings.data.adsConfig)
+//
+// Display ad slots (format: auto)
+//   display_square      — 300×250 square / rectangle banner
+//   display_horizontal  — 728×90 leaderboard / responsive horizontal
+//   display_vertical    — 160×600 or 300×600 skyscraper / vertical
+//
+// In-article ad slot (format: fluid)
+//   in_article          — injected inline inside article body
+//
+// Multiplex ad slots (format: autorelaxed)
+//   multiplex_horizontal — horizontal native multiplex grid
+//   multiplex_vertical   — vertical native multiplex grid
 // ─────────────────────────────────────────────────────────────────
 
 const VALID_SLOT_KEYS = [
-  'home_top', 'home_mid', 'home_multiplex', 'home_sidebar',
-  'article_top', 'article_mid', 'article_multiplex',
-  'category_top', 'category_mid',
+  'display_square', 'display_horizontal', 'display_vertical',
+  'in_article',
+  'multiplex_horizontal', 'multiplex_vertical',
 ] as const;
 type SlotKey = typeof VALID_SLOT_KEYS[number];
 
@@ -814,13 +826,20 @@ interface AdsConfig {
   slots: Partial<Record<SlotKey, SlotConfig>>;
 }
 
-const DEFAULT_SLOT: SlotConfig = { slotId: null, format: 'auto', enabled: false };
+const DEFAULT_SLOT: SlotConfig  = { slotId: null, format: 'auto',        enabled: false };
 const MULTIPLEX_SLOT: SlotConfig = { slotId: null, format: 'autorelaxed', enabled: false };
+const IN_ARTICLE_SLOT: SlotConfig = { slotId: null, format: 'fluid',      enabled: false };
+
+function slotDefaults(key: SlotKey): SlotConfig {
+  if (key.startsWith('multiplex_')) return { ...MULTIPLEX_SLOT };
+  if (key === 'in_article')        return { ...IN_ARTICLE_SLOT };
+  return { ...DEFAULT_SLOT };
+}
 
 function defaultAdsConfig(): AdsConfig {
   const slots: Partial<Record<SlotKey, SlotConfig>> = {};
   for (const key of VALID_SLOT_KEYS) {
-    slots[key] = key.includes('multiplex') ? { ...MULTIPLEX_SLOT } : { ...DEFAULT_SLOT };
+    slots[key] = slotDefaults(key);
   }
   return { enabled: false, adsenseClientId: null, slots };
 }
@@ -835,11 +854,11 @@ function validateClientId(id: any): boolean {
   return String(id).startsWith('ca-pub-');
 }
 
-function normalizeSlot(incoming: any, isMultiplex: boolean): SlotConfig {
-  const defaultFormat = isMultiplex ? 'autorelaxed' : 'auto';
+function normalizeSlot(incoming: any, key: SlotKey): SlotConfig {
+  const def = slotDefaults(key);
   return {
     slotId: incoming?.slotId ?? null,
-    format: ['auto', 'autorelaxed', 'fluid'].includes(incoming?.format) ? incoming.format : defaultFormat,
+    format: ['auto', 'autorelaxed', 'fluid'].includes(incoming?.format) ? incoming.format : def.format,
     enabled: typeof incoming?.enabled === 'boolean' ? incoming.enabled : !!incoming?.slotId,
   };
 }
@@ -854,7 +873,7 @@ async function loadAdsConfig(tenantId: string): Promise<{ row: any | null; adsCo
     base.adsenseClientId = stored.adsenseClientId ?? null;
     for (const key of VALID_SLOT_KEYS) {
       if (stored.slots?.[key]) {
-        base.slots[key] = normalizeSlot(stored.slots[key], key.includes('multiplex'));
+        base.slots[key] = normalizeSlot(stored.slots[key], key);
       }
     }
   }
@@ -873,21 +892,22 @@ async function saveAdsConfig(tenantId: string, existingRow: any | null, adsConfi
  * @swagger
  * /tenants/{tenantId}/ads/config:
  *   get:
- *     summary: Get standard 8-slot ads config (TENANT_ADMIN or SUPER_ADMIN)
+ *     summary: Get standard 6-slot ads config (TENANT_ADMIN or SUPER_ADMIN)
  *     description: |
- *       Returns the full ads configuration for this tenant including the 8 standard
- *       ad slot keys used across Home, Article, and Category pages.
+ *       Returns the full ads configuration for this tenant including the 6 standard
+ *       ad-type slots.
  *
- *       **Slot Keys:**
- *       - `home_top` — Home page top banner (below header)
- *       - `home_mid` — Home page mid feed (after 3rd article card)
- *       - `home_multiplex` — Home page multiplex (bottom of feed) — format: autorelaxed
- *       - `home_sidebar` — Home page sidebar (right column, 300×250 / 300×600)
- *       - `article_top` — Article detail page below title
- *       - `article_mid` — Article detail page mid content (after para 3)
- *       - `article_multiplex` — Article detail below the article — format: autorelaxed
- *       - `category_top` — Category listing page top banner
- *       - `category_mid` — Category listing mid feed
+ *       **Display ad slots** (format: `auto`)
+ *       - `display_square`      — 300×250 square / medium rectangle banner
+ *       - `display_horizontal`  — 728×90 leaderboard / responsive horizontal
+ *       - `display_vertical`    — 160×600 wide skyscraper / 300×600 half-page vertical
+ *
+ *       **In-article ad slot** (format: `fluid`)
+ *       - `in_article`          — injected inline inside article body
+ *
+ *       **Multiplex ad slots** (format: `autorelaxed`)
+ *       - `multiplex_horizontal` — horizontal native multiplex / recommendation grid
+ *       - `multiplex_vertical`   — vertical native multiplex grid
  *     tags: [Tenant Ads]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -898,48 +918,36 @@ async function saveAdsConfig(tenantId: string, existingRow: any | null, adsConfi
  *         description: Tenant ID
  *     responses:
  *       200:
- *         description: Full ads config with all 8 slots
+ *         description: Full ads config with all 6 slots
  *         content:
  *           application/json:
  *             example:
  *               enabled: true
  *               adsenseClientId: "ca-pub-5191460803448280"
  *               slots:
- *                 home_top:
+ *                 display_square:
  *                   slotId: "1234567890"
  *                   format: "auto"
  *                   enabled: true
- *                 home_mid:
+ *                 display_horizontal:
  *                   slotId: "2345678901"
  *                   format: "auto"
  *                   enabled: true
- *                 home_multiplex:
+ *                 display_vertical:
  *                   slotId: "3456789012"
+ *                   format: "auto"
+ *                   enabled: true
+ *                 in_article:
+ *                   slotId: "4567890123"
+ *                   format: "fluid"
+ *                   enabled: true
+ *                 multiplex_horizontal:
+ *                   slotId: "5678901234"
  *                   format: "autorelaxed"
  *                   enabled: true
- *                 home_sidebar:
- *                   slotId: "9012345678"
- *                   format: "auto"
- *                   enabled: true
- *                 article_top:
- *                   slotId: "4567890123"
- *                   format: "auto"
- *                   enabled: true
- *                 article_mid:
- *                   slotId: "5678901234"
- *                   format: "auto"
- *                   enabled: true
- *                 article_multiplex:
+ *                 multiplex_vertical:
  *                   slotId: "6789012345"
  *                   format: "autorelaxed"
- *                   enabled: true
- *                 category_top:
- *                   slotId: "7890123456"
- *                   format: "auto"
- *                   enabled: true
- *                 category_mid:
- *                   slotId: "8901234567"
- *                   format: "auto"
  *                   enabled: false
  */
 router.get(
@@ -957,13 +965,18 @@ router.get(
  * @swagger
  * /tenants/{tenantId}/ads/config:
  *   put:
- *     summary: Replace full ads config — all 8 slots at once (TENANT_ADMIN or SUPER_ADMIN)
+ *     summary: Replace full ads config — all 6 slots at once (TENANT_ADMIN or SUPER_ADMIN)
  *     description: |
  *       Replaces the entire ads config for a tenant. Provide `adsenseClientId` (must start
  *       with `ca-pub-`) and any/all slot configs. Missing slots get defaults (enabled: false).
  *
  *       **Slot ID validation:** must be exactly 10 digits (e.g. `1234567890`).
  *       Pass `null` or omit to clear a slot ID.
+ *
+ *       **Slot formats:**
+ *       - `display_*` → `auto`
+ *       - `in_article` → `fluid`
+ *       - `multiplex_*` → `autorelaxed`
  *     tags: [Tenant Ads]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -989,31 +1002,25 @@ router.get(
  *                 type: object
  *                 description: Map of slot key to slot config
  *                 properties:
- *                   home_top:      { $ref: '#/components/schemas/AdSlotConfig' }
- *                   home_mid:      { $ref: '#/components/schemas/AdSlotConfig' }
- *                   home_multiplex:  { $ref: '#/components/schemas/AdSlotConfig' }
- *                   home_sidebar:    { $ref: '#/components/schemas/AdSlotConfig' }
- *                   article_top:   { $ref: '#/components/schemas/AdSlotConfig' }
- *                   article_mid:   { $ref: '#/components/schemas/AdSlotConfig' }
- *                   article_multiplex: { $ref: '#/components/schemas/AdSlotConfig' }
- *                   category_top:  { $ref: '#/components/schemas/AdSlotConfig' }
- *                   category_mid:  { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   display_square:       { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   display_horizontal:   { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   display_vertical:     { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   in_article:           { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   multiplex_horizontal: { $ref: '#/components/schemas/AdSlotConfig' }
+ *                   multiplex_vertical:   { $ref: '#/components/schemas/AdSlotConfig' }
  *           examples:
  *             fullConfig:
- *               summary: Setup all 9 slots with Google AdSense
+ *               summary: Setup all 6 slots with Google AdSense
  *               value:
  *                 enabled: true
  *                 adsenseClientId: "ca-pub-5191460803448280"
  *                 slots:
- *                   home_top:          { slotId: "1234567890", format: "auto",        enabled: true }
- *                   home_mid:          { slotId: "2345678901", format: "auto",        enabled: true }
- *                   home_multiplex:    { slotId: "3456789012", format: "autorelaxed", enabled: true }
- *                   home_sidebar:      { slotId: "9012345678", format: "auto",        enabled: true }
- *                   article_top:       { slotId: "4567890123", format: "auto",        enabled: true }
- *                   article_mid:       { slotId: "5678901234", format: "auto",        enabled: true }
- *                   article_multiplex: { slotId: "6789012345", format: "autorelaxed", enabled: true }
- *                   category_top:      { slotId: "7890123456", format: "auto",        enabled: true }
- *                   category_mid:      { slotId: "8901234567", format: "auto",        enabled: false }
+ *                   display_square:       { slotId: "1234567890", format: "auto",        enabled: true }
+ *                   display_horizontal:   { slotId: "2345678901", format: "auto",        enabled: true }
+ *                   display_vertical:     { slotId: "3456789012", format: "auto",        enabled: true }
+ *                   in_article:           { slotId: "4567890123", format: "fluid",       enabled: true }
+ *                   multiplex_horizontal: { slotId: "5678901234", format: "autorelaxed", enabled: true }
+ *                   multiplex_vertical:   { slotId: "6789012345", format: "autorelaxed", enabled: false }
  *             disableAds:
  *               summary: Disable all ads
  *               value:
@@ -1049,7 +1056,7 @@ router.put(
         if (slot.slotId && !validateSlotId(slot.slotId)) {
           return res.status(400).json({ error: `slots.${key}.slotId must be exactly 10 digits` });
         }
-        base.slots[key] = normalizeSlot(slot, key.includes('multiplex'));
+        base.slots[key] = normalizeSlot(slot, key);
       }
     }
 
@@ -1074,8 +1081,9 @@ router.put(
  *       Also allows updating `enabled` and `adsenseClientId` at the top level.
  *
  *       **Valid slotKey values:**
- *       `home_top`, `home_mid`, `home_multiplex`, `article_top`, `article_mid`,
- *       `article_multiplex`, `category_top`, `category_mid`
+ *       `display_square`, `display_horizontal`, `display_vertical`,
+ *       `in_article`,
+ *       `multiplex_horizontal`, `multiplex_vertical`
  *     tags: [Tenant Ads]
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -1089,7 +1097,7 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
- *           enum: [home_top, home_mid, home_multiplex, home_sidebar, article_top, article_mid, article_multiplex, category_top, category_mid]
+ *           enum: [display_square, display_horizontal, display_vertical, in_article, multiplex_horizontal, multiplex_vertical]
  *         description: Which slot to update
  *     requestBody:
  *       required: true
@@ -1125,9 +1133,9 @@ router.put(
  *               value:
  *                 enabled: false
  *             clearAndUpdate:
- *               summary: Update article_multiplex slot + set client ID at same time
+ *               summary: Update multiplex_horizontal slot + set client ID at same time
  *               value:
- *                 slotId: "6789012345"
+ *                 slotId: "5678901234"
  *                 format: "autorelaxed"
  *                 enabled: true
  *                 adsenseClientId: "ca-pub-5191460803448280"
@@ -1147,14 +1155,14 @@ router.put(
  *                 enabled: true
  *                 adsenseClientId: "ca-pub-5191460803448280"
  *                 slots:
- *                   home_top: { slotId: "1234567890", format: "auto", enabled: true }
+ *                   display_square: { slotId: "1234567890", format: "auto", enabled: true }
  *       400:
  *         description: Invalid slotKey or slotId format
  *         content:
  *           application/json:
  *             examples:
  *               invalidKey:
- *                 value: { error: "Invalid slotKey: home_sidebar. Valid keys: home_top, home_mid, ..." }
+ *                 value: { error: "Invalid slotKey: home_top. Valid keys: display_square, display_horizontal, ..." }
  *               invalidSlotId:
  *                 value: { error: "slotId must be exactly 10 digits" }
  */
@@ -1182,7 +1190,7 @@ router.patch(
 
     const { row, adsConfig, data } = await loadAdsConfig(tenantId);
     const key = slotKey as SlotKey;
-    const prev = adsConfig.slots[key] ?? (key.includes('multiplex') ? { ...MULTIPLEX_SLOT } : { ...DEFAULT_SLOT });
+    const prev = adsConfig.slots[key] ?? slotDefaults(key);
 
     adsConfig.slots[key] = {
       slotId: Object.prototype.hasOwnProperty.call(body, 'slotId') ? (body.slotId ?? null) : prev.slotId,
