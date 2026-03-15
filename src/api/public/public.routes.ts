@@ -930,6 +930,11 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
         googleClientId: process.env.GOOGLE_CLIENT_ID || null,
         googleEnabled: !!(process.env.GOOGLE_CLIENT_ID),
       },
+      ads: {
+        adsense: (publicEffectiveDomainSettings as any)?.integrations?.ads?.adsenseClientId ?? null,
+        adsenseClientId: (publicEffectiveDomainSettings as any)?.integrations?.ads?.adsenseClientId ?? null,
+        enabled: !!((publicEffectiveDomainSettings as any)?.integrations?.ads?.adsenseClientId),
+      },
     },
     features: {
       pwaPushNotifications: pushEnabled,

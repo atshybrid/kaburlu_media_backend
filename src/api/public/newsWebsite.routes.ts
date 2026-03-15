@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
+import { tenantResolver } from '../../middleware/tenantResolver';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 
@@ -7,6 +8,7 @@ import { buildNewsArticleJsonLd } from '../../lib/seo';
 const p: any = prisma;
 
 const router = Router();
+router.use(tenantResolver);
 
 /**
  * @swagger

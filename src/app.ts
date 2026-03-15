@@ -34,6 +34,7 @@ import shortnewsOptionsRouter from './api/shortnewsOptions/shortnewsOptions.rout
 import castesRoutes from './api/castes/castes.routes';
 import publicRoutes from './api/public/public.routes';
 import websitePublicRoutes from './api/public/website.routes';
+import newsWebsiteRoutes from './api/public/newsWebsite.routes';
 import rootSeoRoutes from './api/public/rootSeo.routes';
 import publicReporterJoinRoutes from './api/public/publicReporterJoin.routes';
 import tenantsRoutes from './api/tenants/tenants.routes';
@@ -449,14 +450,17 @@ apiV1.use('/public-join', publicReporterJoinRoutes);
 // Versioned public read-only routes (duplicate of /api/public for convenience in Swagger testing)
 apiV1.use('/public', publicRoutes);
 apiV1.use('/public', websitePublicRoutes);
+apiV1.use('/public', newsWebsiteRoutes);
 // Multi-tenant public read-only routes (domain based)
 // Preferred mount without version/prefix for frontend consumption
 app.use('/public', publicRoutes);
 app.use('/public', websitePublicRoutes);
+app.use('/public', newsWebsiteRoutes);
 app.use('/public-join', publicReporterJoinRoutes);
 // Backward compatibility mounts (still available)
 app.use('/api/public', publicRoutes);
 app.use('/api/public', websitePublicRoutes);
+app.use('/api/public', newsWebsiteRoutes);
 app.use('/api/public-join', publicReporterJoinRoutes);
 app.use('/api/v1', apiV1);
 
