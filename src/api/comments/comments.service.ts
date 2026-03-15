@@ -4,7 +4,7 @@ import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 
 const userSelect = {
   id: true,
-  profile: { select: { fullName: true, profilePictureUrl: true } },
+  profile: { select: { fullName: true, profilePhotoUrl: true } },
 } as const;
 
 type RepliesInclude = {

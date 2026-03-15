@@ -6,6 +6,14 @@ import { requireRealUser } from '../middlewares/requireUser.middleware';
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 
+// Optional auth: populates req.user if a valid JWT is present, but does NOT block the request if missing
+const optionalAuth = (req: any, res: any, next: any) => {
+  passport.authenticate('jwt', { session: false }, (_err: any, user: any) => {
+    if (user) req.user = user;
+    next();
+  })(req, res, next);
+};
+
 /**
  * @swagger
  * tags:
@@ -136,7 +144,8 @@ router.post('/status', auth, requireRealUser, batchReactionStatus);
  *       401:
  *         description: Unauthorized - JWT required
  */
-router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
+// GET is intentionally public — counts are visible to everyone; JWT is optional (adds user's own reaction if logged in)
+router.get('/article/:articleId', optionalAuth, getReactionForArticle);
 
 /**
  * @swagger

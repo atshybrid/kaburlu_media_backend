@@ -213,16 +213,16 @@ router.post('/reader/google-signin', async (req, res) => {
       if (displayName) {
         await p.userProfile.upsert({
           where: { userId: user.id },
-          update: { fullName: displayName, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
-          create: { userId: user.id, fullName: displayName, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+          update: { fullName: displayName, ...(photoUrl ? { profilePhotoUrl: photoUrl } : {}) },
+          create: { userId: user.id, fullName: displayName, ...(photoUrl ? { profilePhotoUrl: photoUrl } : {}) },
         }).catch(() => null);
       }
     } else if (displayName || photoUrl) {
       // Update profile for returning user if new info provided
       await p.userProfile.upsert({
         where: { userId: user.id },
-        update: { ...(displayName ? { fullName: displayName } : {}), ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
-        create: { userId: user.id, fullName: displayName || null, ...(photoUrl ? { profilePictureUrl: photoUrl } : {}) },
+        update: { ...(displayName ? { fullName: displayName } : {}), ...(photoUrl ? { profilePhotoUrl: photoUrl } : {}) },
+        create: { userId: user.id, fullName: displayName || null, ...(photoUrl ? { profilePhotoUrl: photoUrl } : {}) },
       }).catch(() => null);
     }
 
@@ -246,7 +246,7 @@ router.post('/reader/google-signin', async (req, res) => {
         userId: user.id,
         email: user.email,
         displayName: profile?.fullName || displayName || null,
-        photoUrl: (profile as any)?.profilePictureUrl || photoUrl || null,
+        photoUrl: (profile as any)?.profilePhotoUrl || photoUrl || null,
         role: role?.name,
       },
     });
