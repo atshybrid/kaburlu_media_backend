@@ -10,11 +10,10 @@ export const upsertReaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as any;
     if (!user?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
-  const { articleId, shortNewsId, contentId, reaction } = req.body || {};
+    const { articleId, shortNewsId, contentId, reaction } = req.body || {};
     if (!reaction || !['LIKE','DISLIKE','NONE'].includes(reaction)) {
       return res.status(400).json({ success: false, error: 'reaction must be LIKE|DISLIKE|NONE' });
     }
-    // Allow a generic contentId: try to auto-detect its type if provided
     let aId = articleId as string | undefined;
     let sId = shortNewsId as string | undefined;
     if (!aId && !sId && contentId) {
@@ -27,15 +26,17 @@ export const upsertReaction = async (req: Request, res: Response) => {
     let id = aId || sId;
     let contentType: ContentType;
     if (aId) {
-      const art = await prisma.article.findUnique({ where: { id: aId } });
-      if (art) {
+      // Check TenantWebArticle first (public website articles), then legacy Article as fallback
+      const webArt = await (prisma as any).tenantWebArticle?.findUnique({ where: { id: aId } })
+        ?? await prisma.article.findUnique({ where: { id: aId } });
+      if (webArt) {
         contentType = ContentType.ARTICLE;
       } else {
         // Fallback: maybe the client sent a ShortNews ID in articleId
         const sn = await prisma.shortNews.findUnique({ where: { id: aId } });
         if (sn) {
           contentType = ContentType.SHORTNEWS;
-          id = aId; // treat as shortnews
+          id = aId;
         } else {
           return res.status(404).json({ success: false, error: 'Content not found' });
         }
@@ -48,7 +49,7 @@ export const upsertReaction = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'No content id provided' });
     }
     try {
-  const result = await contentReactions.setReaction({ userId: user.id, contentType, contentId: id!, reaction });
+      const result = await contentReactions.setReaction({ userId: user.id, contentType, contentId: id!, reaction });
       return res.status(200).json({ success: true, data: result });
     } catch (e) {
       console.error('contentReaction set error', e);
@@ -64,9 +65,9 @@ export const getReactionForArticle = async (req: Request, res: Response) => {
     const user = req.user as any;
     const { articleId } = req.params;
     if (!articleId) return res.status(400).json({ success: false, error: 'articleId required' });
-    const exists = await prisma.article.findUnique({ where: { id: articleId } });
-    if (!exists) return res.status(404).json({ success: false, error: 'Article not found' });
-  const result = await contentReactions.getReaction(user?.id || null, ContentType.ARTICLE, articleId);
+    // ContentReaction stores IDs as free strings (no FK) — no existence check needed.
+    // Returns counts:0 / reaction:'NONE' for any ID without reactions, which is correct.
+    const result = await contentReactions.getReaction(user?.id || null, ContentType.ARTICLE, articleId);
     return res.status(200).json({ success: true, data: result });
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Failed to fetch reaction' });

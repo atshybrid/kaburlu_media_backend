@@ -358,7 +358,6 @@ model Article {
   tenant            Tenant?            @relation(fields: [tenantId], references: [id])
   articleReads      ArticleRead[]
   articleViews      ArticleView[]
-  comments          Comment[]
   dislikes          Dislike[]
   likes             Like[]
   newspaperArticles NewspaperArticle[] @relation("ArticleToNewspaper")
@@ -1828,12 +1827,12 @@ model Comment {
   id          String     @id @default(cuid())
   content     String
   userId      String
+  // articleId stores TenantWebArticle.id (public website articles) — plain string, no FK
   articleId   String?
   parentId    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   shortNewsId String?
-  article     Article?   @relation(fields: [articleId], references: [id])
   parent      Comment?   @relation("Replies", fields: [parentId], references: [id])
   replies     Comment[]  @relation("Replies")
   shortNews   ShortNews? @relation(fields: [shortNewsId], references: [id])
