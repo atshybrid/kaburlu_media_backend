@@ -336,7 +336,7 @@ router.get('/config', async (_req, res) => {
   if (!tenant || !domain) return res.status(500).json({ error: 'Domain context missing' });
 
   try {
-    const [tenantTheme, tenantEntity, domainLanguages, domainSettings, tenantNavigation] = await Promise.all([
+    const [tenantTheme, tenantEntity, domainLanguages, domainSettings, tenantNavigation, tenantSettings] = await Promise.all([
       p.tenantTheme?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
       p.tenantEntity.findUnique({ 
         where: { tenantId: tenant.id }, 
@@ -347,7 +347,8 @@ router.get('/config', async (_req, res) => {
         include: { language: true } 
       }).catch(() => []),
       p.domainSettings?.findUnique?.({ where: { domainId: domain.id } }).catch(() => null),
-      p.tenantNavigation?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
+      p.tenantNavigation?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null),
+      p.tenantSettings?.findUnique?.({ where: { tenantId: tenant.id } }).catch(() => null)
     ]);
 
     const baseUrl = `https://${domain.domain}`;
@@ -419,6 +420,19 @@ router.get('/config', async (_req, res) => {
       direction: dl.language.direction,
       defaultForTenant: dl.language.code === tenantDefaultCode
     }));
+
+    // Ads slots from TenantSettings.data.adsConfig
+    const storedAdsConfig = (tenantSettings as any)?.data?.adsConfig;
+    const adsConfigEnabled: boolean = storedAdsConfig?.enabled ?? false;
+    const adsConfigClientId: string | null = storedAdsConfig?.adsenseClientId ?? null;
+    const adsSlots: Record<string, { slotId: string; format: string; enabled: boolean }> = {};
+    if (storedAdsConfig?.slots && typeof storedAdsConfig.slots === 'object') {
+      for (const [key, slot] of Object.entries(storedAdsConfig.slots as Record<string, any>)) {
+        if (slot?.slotId) {
+          adsSlots[key] = { slotId: slot.slotId, format: slot.format ?? 'auto', enabled: slot.enabled ?? false };
+        }
+      }
+    }
 
     // Integrations (public keys only)
     // IMPORTANT: Never expose secrets here (e.g., VAPID private key, FCM server key, service-account JSON).
@@ -703,19 +717,18 @@ router.get('/config', async (_req, res) => {
           enabled: !!(integrations.searchConsole.googleSiteVerification || integrations.searchConsole.bingSiteVerification)
         },
         ads: {
-          adsense: integrations.ads.adsenseClientId,
+          adsense: adsConfigClientId ?? integrations.ads.adsenseClientId,
+          adsenseClientId: adsConfigClientId ?? integrations.ads.adsenseClientId,
           adManagerNetworkCode: integrations.ads.adManagerNetworkCode,
           googleAdsConversionId: integrations.ads.googleAdsConversionId,
           googleAdsConversionLabel: integrations.ads.googleAdsConversionLabel,
-          enabled: !!(
+          enabled: adsConfigEnabled || !!(
             integrations.ads.adsenseClientId ||
             integrations.ads.adManagerNetworkCode ||
             integrations.ads.googleAdsConversionId ||
             integrations.ads.googleAdsConversionLabel
           ),
-
-          // Legacy fields
-          adsenseClientId: integrations.ads.adsenseClientId
+          slots: adsSlots
         },
         push: {
           vapidPublicKey: integrations.push.vapidPublicKey,
