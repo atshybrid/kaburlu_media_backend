@@ -43,6 +43,7 @@ const swaggerDefinition = {
   ],
   tags: [
     { name: 'Auth' },
+    { name: 'Public', description: 'Public reader endpoints - Google Sign-in, push notifications subscribe/unsubscribe, ePaper public access' },
     { name: 'Users' },
     { name: 'Articles', description: 'Legacy article CRUD endpoints - Read, update, and delete articles' },
     { name: 'News Room', description: 'Unified article creation and reporter article management - Create 3-in-1 articles (Newspaper, Web, ShortNews) with AI support' },

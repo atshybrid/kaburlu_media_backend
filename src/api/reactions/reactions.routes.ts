@@ -45,6 +45,18 @@ const auth = passport.authenticate('jwt', { session: false });
  *     responses:
  *       200:
  *         description: Unified reaction state after update
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   $ref: '#/components/schemas/ReactionData'
+ *       401:
+ *         description: Unauthorized - JWT required
+ *       400:
+ *         description: Invalid input
  */
 router.put('/', auth, requireRealUser, upsertReaction);
 
@@ -82,6 +94,18 @@ router.put('/', auth, requireRealUser, upsertReaction);
  *     responses:
  *       200:
  *         description: Batch reaction status list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReactionData'
+ *       401:
+ *         description: Unauthorized - JWT required
  */
 router.post('/status', auth, requireRealUser, batchReactionStatus);
 
@@ -100,7 +124,17 @@ router.post('/status', auth, requireRealUser, batchReactionStatus);
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Reaction info
+ *         description: Reaction info for the article
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   $ref: '#/components/schemas/ReactionData'
+ *       401:
+ *         description: Unauthorized - JWT required
  */
 router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
 
@@ -117,7 +151,15 @@ router.get('/article/:articleId', auth, requireRealUser, getReactionForArticle);
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Reaction info
+ *         description: Reaction info for the short news item (public)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   $ref: '#/components/schemas/ReactionData'
  */
 router.get('/shortnews/:shortNewsId', getReactionForShortNews);
 

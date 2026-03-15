@@ -8,6 +8,90 @@ const auth = passport.authenticate('jwt', { session: false });
 
 /**
  * @swagger
+ * components:
+ *   schemas:
+ *     Comment:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           example: "clxxx123"
+ *         content:
+ *           type: string
+ *           example: "Great article!"
+ *         articleId:
+ *           type: string
+ *           nullable: true
+ *         shortNewsId:
+ *           type: string
+ *           nullable: true
+ *         parentId:
+ *           type: string
+ *           nullable: true
+ *           description: Parent comment ID for nested replies
+ *         userId:
+ *           type: string
+ *         user:
+ *           type: object
+ *           properties:
+ *             id: { type: string }
+ *             displayName: { type: string }
+ *             photoUrl: { type: string, nullable: true }
+ *         replies:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/Comment'
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *     CreateComment:
+ *       type: object
+ *       required: [content, userId]
+ *       properties:
+ *         content:
+ *           type: string
+ *           example: "Great article!"
+ *         articleId:
+ *           type: string
+ *           description: Provide exactly one of articleId or shortNewsId
+ *           example: "clxxx123"
+ *         shortNewsId:
+ *           type: string
+ *           description: Provide exactly one of articleId or shortNewsId
+ *         parentId:
+ *           type: string
+ *           description: Optional - ID of parent comment for nested reply
+ *     UpdateComment:
+ *       type: object
+ *       properties:
+ *         content:
+ *           type: string
+ *           example: "Updated comment text"
+ *     ReactionData:
+ *       type: object
+ *       properties:
+ *         reaction:
+ *           type: string
+ *           enum: [LIKE, DISLIKE, NONE]
+ *           nullable: true
+ *           description: The current user's reaction
+ *         likeCount:
+ *           type: integer
+ *           example: 42
+ *         dislikeCount:
+ *           type: integer
+ *           example: 3
+ *         articleId:
+ *           type: string
+ *           nullable: true
+ *         shortNewsId:
+ *           type: string
+ *           nullable: true
+ */
+
+
+/**
+ * @swagger
  * /comments:
  *   get:
  *     summary: Get comments for an Article or ShortNews (nested replies included)
