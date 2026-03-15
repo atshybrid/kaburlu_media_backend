@@ -4,6 +4,7 @@ import prisma from '../../lib/prisma';
 import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../../lib/sanitize';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { resolveOrCreateCategoryIdByName } from '../../lib/categoryAuto';
+import { triggerPublishedArticleWebPush } from '../../lib/webPushPublishTriggers';
 
 function wordCount(text: string): number {
     return String(text || '').trim().split(/\s+/).filter(Boolean).length;
@@ -1310,13 +1311,43 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                 
                 // Update web article status
                 if (webId) {
-                    await prisma.tenantWebArticle.updateMany({
-                        where: { id: webId },
+                    const webSyncResult = await prisma.tenantWebArticle.updateMany({
+                        where: {
+                            id: webId,
+                            ...(nextStatus === 'PUBLISHED' ? { status: { not: 'PUBLISHED' } } : {}),
+                        },
                         data: {
                             status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : (nextStatus === 'REJECTED' ? 'REJECTED' : 'DRAFT'),
                             publishedAt: nextStatus === 'PUBLISHED' ? new Date() : null,
                         } as any
                     });
+
+                    if (nextStatus === 'PUBLISHED' && webSyncResult.count > 0) {
+                        const publishedWebArticle = await prisma.tenantWebArticle.findUnique({
+                            where: { id: webId },
+                            select: {
+                                id: true,
+                                tenantId: true,
+                                domainId: true,
+                                title: true,
+                                slug: true,
+                                coverImageUrl: true,
+                                isBreaking: true,
+                            },
+                        });
+
+                        if (publishedWebArticle) {
+                            triggerPublishedArticleWebPush({
+                                tenantId: publishedWebArticle.tenantId,
+                                domainId: publishedWebArticle.domainId || undefined,
+                                articleId: publishedWebArticle.id,
+                                title: publishedWebArticle.title,
+                                slug: publishedWebArticle.slug,
+                                coverImageUrl: publishedWebArticle.coverImageUrl || undefined,
+                                isBreaking: Boolean((publishedWebArticle as any).isBreaking),
+                            }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+                        }
+                    }
                 }
                 
                 // Update short news status when rejected

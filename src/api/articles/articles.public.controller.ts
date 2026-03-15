@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../lib/prisma';
 import { notifyArticleStatusChange } from '../../lib/articleNotifications';
+import { triggerPublishedArticleWebPush } from '../../lib/webPushPublishTriggers';
 
 export const getWebArticleByIdPublic = async (req: Request, res: Response) => {
   try {
@@ -256,7 +257,7 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
     const updated = await prisma.tenantWebArticle.update({
       where: { id },
       data,
-      select: { id: true, status: true, publishedAt: true, updatedAt: true }
+      select: { id: true, status: true, publishedAt: true, updatedAt: true, slug: true }
     });
 
     // Send push notification for status change (fire and forget)
@@ -272,6 +273,18 @@ export const updateWebArticleStatus = async (req: Request, res: Response) => {
       isBreaking: (current as any).isBreaking || false,
       coverImageUrl: current.coverImageUrl || undefined
     }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+
+    if (next === 'PUBLISHED' && previousStatus !== 'PUBLISHED') {
+      triggerPublishedArticleWebPush({
+        tenantId: current.tenantId,
+        domainId: current.domainId || undefined,
+        articleId: id,
+        title: current.title,
+        slug: (updated as any)?.slug || undefined,
+        coverImageUrl: current.coverImageUrl || undefined,
+        isBreaking: Boolean((current as any).isBreaking),
+      }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+    }
 
     return res.json(updated);
   } catch (e) {

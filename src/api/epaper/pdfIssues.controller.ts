@@ -9,6 +9,7 @@ import { deletePublicObject, putPublicObject } from '../../lib/objectStorage';
 import { config } from '../../config/env';
 import axios from 'axios';
 import { trackEpaperPageCount } from '../../services/wallet/billing.service';
+import { triggerPublishedEpaperWebPush } from '../../lib/webPushPublishTriggers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const p: any = prisma;
@@ -576,6 +577,20 @@ export const uploadPdfIssue = async (req: Request, res: Response) => {
       pdfBuffer: file.buffer,
     });
 
+    if (result?.issue) {
+      const issue: any = result.issue;
+      triggerPublishedEpaperWebPush({
+        tenantId,
+        issueId: String(issue.id),
+        issueDate: issue.issueDate,
+        editionSlug: issue?.edition?.slug || undefined,
+        subEditionSlug: issue?.subEdition?.slug || undefined,
+        editionName: issue?.edition?.name || undefined,
+        subEditionName: issue?.subEdition?.name || undefined,
+        coverImageUrl: issue?.coverImageUrlWebp || issue?.coverImageUrl || undefined,
+      }).catch(err => console.error('[WebPushPublish] ePaper publish push failed:', err));
+    }
+
     return res.status(201).json({ ok: true, issue: result.issue, uploaded: result.uploaded });
   } catch (e: any) {
     return sendHttpError(res, e, 'Failed to upload PDF issue');
@@ -619,6 +634,20 @@ export const uploadPdfIssueByUrl = async (req: Request, res: Response) => {
       pdfBuffer,
       sourcePdfUrl: pdfUrl,
     });
+
+    if (result?.issue) {
+      const issue: any = result.issue;
+      triggerPublishedEpaperWebPush({
+        tenantId,
+        issueId: String(issue.id),
+        issueDate: issue.issueDate,
+        editionSlug: issue?.edition?.slug || undefined,
+        subEditionSlug: issue?.subEdition?.slug || undefined,
+        editionName: issue?.edition?.name || undefined,
+        subEditionName: issue?.subEdition?.name || undefined,
+        coverImageUrl: issue?.coverImageUrlWebp || issue?.coverImageUrl || undefined,
+      }).catch(err => console.error('[WebPushPublish] ePaper publish push failed:', err));
+    }
 
     return res.status(201).json({ ok: true, issue: result.issue, uploaded: result.uploaded, source: { pdfUrl } });
   } catch (e: any) {

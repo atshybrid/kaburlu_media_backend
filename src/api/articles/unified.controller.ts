@@ -3,6 +3,7 @@ import prisma from '../../lib/prisma';
 import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../../lib/sanitize';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { notifyArticleStatusChange } from '../../lib/articleNotifications';
+import { triggerPublishedArticleWebPush } from '../../lib/webPushPublishTriggers';
 
 /**
  * UNIFIED ARTICLE CONTROLLER
@@ -827,6 +828,19 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         previousStatus: 'NEW'
       }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
     }
+
+    if (effectiveStatus === 'PUBLISHED' && result.tenantWebArticle) {
+      triggerPublishedArticleWebPush({
+        tenantId,
+        domainId: result.tenantWebArticle.domainId || domainId || undefined,
+        articleId: result.tenantWebArticle.id,
+        title: result.tenantWebArticle.title,
+        slug: result.tenantWebArticle.slug,
+        categorySlug,
+        coverImageUrl: result.tenantWebArticle.coverImageUrl || coverImageUrl || undefined,
+        isBreaking: Boolean((result.tenantWebArticle as any).isBreaking || payload.isBreaking),
+      }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+    }
     
     return res.status(201).json({
       success: true,
@@ -1249,7 +1263,7 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
     } else if (articleType === 'web') {
       const existing = await (prisma as any).tenantWebArticle.findUnique({
         where: { id },
-        select: { tenantId: true, authorId: true, status: true, title: true, domainId: true }
+        select: { tenantId: true, authorId: true, status: true, title: true, domainId: true, coverImageUrl: true, isBreaking: true }
       });
 
       if (!existing) {
@@ -1302,6 +1316,18 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
           previousStatus,
           rejectionReason: payload.rejectionReason
         }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+
+        if (updateData.status === 'PUBLISHED' && previousStatus !== 'PUBLISHED') {
+          triggerPublishedArticleWebPush({
+            tenantId: existing.tenantId,
+            domainId: existing.domainId || undefined,
+            articleId: id,
+            title: updateData.title || existing.title,
+            slug: (updated as any)?.slug || undefined,
+            coverImageUrl: updateData.coverImageUrl || existing.coverImageUrl || undefined,
+            isBreaking: Boolean(updateData.isBreaking ?? existing.isBreaking),
+          }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+        }
       }
 
     } else if (articleType === 'shortnews') {
