@@ -371,14 +371,22 @@ router.get('/domain/settings', async (req, res) => {
       };
     }
     if (integ.push && typeof integ.push === 'object') {
+      const vapidPublicKey = integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null;
       safe.push = {
-        webPushVapidPublicKey: integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null,
+        webPushVapidPublicKey: vapidPublicKey,
+        vapidPublicKey,
         fcmSenderId: integ.push.fcmSenderId ?? integ.push.firebaseSenderId ?? null,
+        enabled: !!vapidPublicKey,
       };
     }
     
     out.integrations = Object.keys(safe).length > 0 ? safe : undefined;
   }
+
+  out.features = {
+    ...(out.features || {}),
+    pwaPushNotifications: !!out?.integrations?.push?.vapidPublicKey,
+  };
 
   res.json({ domain: domain.domain, tenantId: tenant.id, effective: out });
 });

@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 import { putPublicObject } from '../../lib/objectStorage';
 
 type IssueCounterMode = 'DAY_OF_YEAR' | 'SEQUENTIAL';
+type PageSize = 'TABLOID' | 'BROADSHEET';
+type DesignStatus = 'DRAFT' | 'PUBLISHED';
 type SerialType = 'HEADER' | 'SUBHEADER';
 
 const MAX_SERIAL_COUNT = 20;
@@ -25,6 +27,8 @@ type EpaperDesignSerialRow = {
 type DesignConfig = {
   headerData: string | null;
   subHeaderData: string | null;
+  pageSize: PageSize;
+  status: DesignStatus;
   headerLogoUrl: string | null;
   subHeaderImageUrl: string | null;
   headerLeftImageUrl: string | null;
@@ -47,6 +51,8 @@ type DesignConfig = {
 
 type IssueEntry = {
   issueDate: string;
+  status: DesignStatus;
+  publishAt: string | null;
   volumeNumber: number;
   issueNumber: number;
   pageCount: number;
@@ -92,6 +98,28 @@ function normalizeOptionalFloat(value: any): number | null {
   return parsed;
 }
 
+function normalizeIsoDateTime(value: any): string | null {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function normalizeIsoDateTimeOrThrow(value: any, fieldName: string): string | null {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const normalized = normalizeIsoDateTime(value);
+  if (!normalized) {
+    throw new Error(`Invalid ${fieldName}. Provide valid ISO datetime`);
+  }
+  return normalized;
+}
+
+function ensurePublishAtForPublishedStatus(status: DesignStatus, publishAt: string | null) {
+  if (status === 'PUBLISHED' && !publishAt) {
+    throw new Error('publishAt is required when status is PUBLISHED');
+  }
+}
+
 function parseDateOnlyOrNull(value: any): Date | null {
   const s = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
@@ -117,6 +145,48 @@ function normalizeIssueMode(value: any): IssueCounterMode {
   const raw = String(value || '').trim().toUpperCase();
   if (raw === 'SEQUENTIAL') return 'SEQUENTIAL';
   return 'DAY_OF_YEAR';
+}
+
+function mapPageSize(value: any): PageSize | null {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return null;
+  if (raw === 'TABLOID' || raw === 'TABLIOD') return 'TABLOID';
+  if (raw === 'BROADSHEET') return 'BROADSHEET';
+  return null;
+}
+
+function normalizePageSize(value: any, fallback: PageSize): PageSize {
+  return mapPageSize(value) || fallback;
+}
+
+function normalizePageSizeOrThrow(value: any, fallback: PageSize): PageSize {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const mapped = mapPageSize(value);
+  if (!mapped) {
+    throw new Error('Invalid pageSize. Allowed values: TABLOID, BROADSHEET');
+  }
+  return mapped;
+}
+
+function mapDesignStatus(value: any): DesignStatus | null {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return null;
+  if (raw === 'PUBLISHED' || raw === 'ACTIVE' || raw === 'ENABLED') return 'PUBLISHED';
+  if (raw === 'DRAFT' || raw === 'INACTIVE' || raw === 'DISABLED') return 'DRAFT';
+  return null;
+}
+
+function normalizeDesignStatus(value: any, fallback: DesignStatus): DesignStatus {
+  return mapDesignStatus(value) || fallback;
+}
+
+function normalizeDesignStatusOrThrow(value: any, fallback: DesignStatus): DesignStatus {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const mapped = mapDesignStatus(value);
+  if (!mapped) {
+    throw new Error('Invalid status. Allowed values: DRAFT, PUBLISHED');
+  }
+  return mapped;
 }
 
 function getMulterFile(req: Request, fieldName: string): any | null {
@@ -196,6 +266,8 @@ function defaultDesignConfig(userId: string | null): DesignConfig {
   return {
     headerData: null,
     subHeaderData: null,
+    pageSize: 'TABLOID',
+    status: 'DRAFT',
     headerLogoUrl: null,
     subHeaderImageUrl: null,
     headerLeftImageUrl: null,
@@ -240,6 +312,8 @@ function readDesignConfig(settings: any, userId: string | null): DesignConfig {
     ...current,
     headerData: current.headerData === undefined ? d.headerData : normalizeText(current.headerData),
     subHeaderData: current.subHeaderData === undefined ? d.subHeaderData : normalizeText(current.subHeaderData),
+    pageSize: normalizePageSize(current.pageSize, d.pageSize),
+    status: normalizeDesignStatus(current.status, d.status),
     headerLogoUrl: current.headerLogoUrl === undefined ? d.headerLogoUrl : normalizeText(current.headerLogoUrl),
     subHeaderImageUrl: current.subHeaderImageUrl === undefined ? d.subHeaderImageUrl : normalizeText(current.subHeaderImageUrl),
     headerLeftImageUrl: current.headerLeftImageUrl === undefined ? d.headerLeftImageUrl : normalizeText(current.headerLeftImageUrl),
@@ -275,6 +349,8 @@ function readIssueEntries(settings: any): IssueEntry[] {
     if (!date) continue;
     entries.push({
       issueDate: toDateOnly(date),
+      status: normalizeDesignStatus((row as any)?.status, 'DRAFT'),
+      publishAt: normalizeIsoDateTime((row as any)?.publishAt),
       volumeNumber: normalizeOptionalInt((row as any)?.volumeNumber) || 1,
       issueNumber: normalizeOptionalInt((row as any)?.issueNumber) || 1,
       pageCount: normalizeOptionalInt((row as any)?.pageCount) || 1,
@@ -435,6 +511,16 @@ function extractConfigInput(body: any, current: DesignConfig, isPatch: boolean, 
     ...base,
     headerData: body.headerData !== undefined ? normalizeText(body.headerData) : base.headerData,
     subHeaderData: body.subHeaderData !== undefined ? normalizeText(body.subHeaderData) : base.subHeaderData,
+    pageSize: body.pageSize !== undefined
+      ? normalizePageSizeOrThrow(body.pageSize, base.pageSize)
+      : (body.paperSize !== undefined
+        ? normalizePageSizeOrThrow(body.paperSize, base.pageSize)
+        : base.pageSize),
+    status: body.status !== undefined
+      ? normalizeDesignStatusOrThrow(body.status, base.status)
+      : (body.designStatus !== undefined
+        ? normalizeDesignStatusOrThrow(body.designStatus, base.status)
+        : base.status),
     headerLogoUrl: body.headerLogoUrl !== undefined ? normalizeText(body.headerLogoUrl) : base.headerLogoUrl,
     subHeaderImageUrl: body.subHeaderImageUrl !== undefined ? normalizeText(body.subHeaderImageUrl) : base.subHeaderImageUrl,
     headerLeftImageUrl: body.headerLeftImageUrl !== undefined
@@ -661,6 +747,12 @@ export const upsertEpaperDesignConfig = async (req: Request, res: Response) => {
     if (String(msg).includes('image')) {
       return res.status(400).json({ error: msg });
     }
+    if (String(msg).includes('Invalid pageSize')) {
+      return res.status(400).json({ error: msg });
+    }
+    if (String(msg).includes('Invalid status')) {
+      return res.status(400).json({ error: msg });
+    }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
       return res.status(400).json({ error: msg });
     }
@@ -698,6 +790,12 @@ export const patchEpaperDesignConfig = async (req: Request, res: Response) => {
   } catch (e: any) {
     const msg = e?.message || String(e);
     if (String(msg).includes('image')) {
+      return res.status(400).json({ error: msg });
+    }
+    if (String(msg).includes('Invalid pageSize')) {
+      return res.status(400).json({ error: msg });
+    }
+    if (String(msg).includes('Invalid status')) {
       return res.status(400).json({ error: msg });
     }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
@@ -798,9 +896,17 @@ export const createEpaperIssueDesignEntry = async (req: Request, res: Response) 
     const resolvedMainHeaderTemplateId = await resolveTemplateIdIfGiven(merged.mainHeaderTemplateId || cfg.mainHeaderTemplateId, 'HEADER');
     const resolvedInnerHeaderTemplateId = await resolveTemplateIdIfGiven(merged.innerHeaderTemplateId || cfg.innerHeaderTemplateId, 'HEADER');
     const resolvedFooterTemplateId = await resolveTemplateIdIfGiven(merged.footerTemplateId || cfg.footerTemplateId, 'FOOTER');
+    const issueStatus = normalizeDesignStatusOrThrow(
+      (req.body as any)?.status ?? (req.body as any)?.issueStatus,
+      'DRAFT'
+    );
+    const requestedPublishAt = normalizeIsoDateTimeOrThrow((req.body as any)?.publishAt, 'publishAt');
+    ensurePublishAtForPublishedStatus(issueStatus, requestedPublishAt);
 
     const newEntry: IssueEntry = {
       issueDate,
+      status: issueStatus,
+      publishAt: requestedPublishAt,
       volumeNumber,
       issueNumber,
       pageCount: merged.pageCount || cfg.defaultPageCount || 1,
@@ -832,6 +938,9 @@ export const createEpaperIssueDesignEntry = async (req: Request, res: Response) 
     });
   } catch (e: any) {
     const msg = e?.message || String(e);
+    if (String(msg).includes('Invalid status') || String(msg).includes('Invalid publishAt')) {
+      return res.status(400).json({ error: msg });
+    }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
       return res.status(400).json({ error: msg });
     }
@@ -880,10 +989,20 @@ export const updateEpaperIssueDesignEntry = async (req: Request, res: Response) 
     const resolvedMainHeaderTemplateId = await resolveTemplateIdIfGiven(mainHeaderRef, 'HEADER');
     const resolvedInnerHeaderTemplateId = await resolveTemplateIdIfGiven(innerHeaderRef, 'HEADER');
     const resolvedFooterTemplateId = await resolveTemplateIdIfGiven(footerRef, 'FOOTER');
+    const currentStatus = normalizeDesignStatus(entries[idx].status, 'DRAFT');
+    const requestedStatus = (req.body as any)?.status !== undefined || (req.body as any)?.issueStatus !== undefined
+      ? normalizeDesignStatusOrThrow((req.body as any)?.status ?? (req.body as any)?.issueStatus, currentStatus)
+      : currentStatus;
+    const requestedPublishAt = (req.body as any)?.publishAt !== undefined
+      ? normalizeIsoDateTimeOrThrow((req.body as any)?.publishAt, 'publishAt')
+      : entries[idx].publishAt;
+    ensurePublishAtForPublishedStatus(requestedStatus, requestedPublishAt);
 
     const updated: IssueEntry = {
       ...entries[idx],
       issueDate: targetKey,
+      status: requestedStatus,
+      publishAt: requestedPublishAt,
       volumeNumber: normalizeOptionalInt((req.body as any)?.volumeNumber) || entries[idx].volumeNumber,
       issueNumber: normalizeOptionalInt((req.body as any)?.issueNumber) || entries[idx].issueNumber,
       pageCount: patch.pageCount || entries[idx].pageCount,
@@ -919,6 +1038,9 @@ export const updateEpaperIssueDesignEntry = async (req: Request, res: Response) 
     });
   } catch (e: any) {
     const msg = e?.message || String(e);
+    if (String(msg).includes('Invalid status') || String(msg).includes('Invalid publishAt')) {
+      return res.status(400).json({ error: msg });
+    }
     if (String(msg).includes('Invalid template id') || String(msg).includes('must belong')) {
       return res.status(400).json({ error: msg });
     }

@@ -6,6 +6,7 @@ import { requireSuperAdmin, requireSuperOrTenantAdminScoped } from '../middlewar
 import * as bcrypt from 'bcrypt';
 import { backfillTenantNameTranslationForTenant, backfillTenantNameTranslationsAllTenants } from './tenantNameTranslations.service';
 import { aiGenerateText } from '../../lib/aiProvider';
+import { ensureDomainPushVapidKeys } from '../../lib/pushVapidKeys';
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 /**
@@ -664,6 +665,9 @@ router.post('/:tenantId/domains', auth, requireSuperOrTenantAdminScoped, async (
         verificationMethod: 'DNS_TXT'
       }
     });
+
+    // Always seed push VAPID keys for every new domain/subdomain.
+    Promise.resolve(ensureDomainPushVapidKeys(row.id, { tenantId })).catch(() => null);
 
     // Auto-seed EPAPER domain settings (branding/theme) and backfill SEO via AI.
     // Fire-and-forget so domain creation stays fast.

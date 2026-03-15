@@ -1250,6 +1250,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET], example: TABLOID }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED], example: DRAFT }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
  *               headerLeftImageUrl: { type: string }
@@ -1271,6 +1273,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *               value:
  *                 headerData: "Kaburlu Daily Epaper"
  *                 subHeaderData: "Hyderabad Edition"
+ *                 pageSize: "TABLOID"
+ *                 status: "DRAFT"
  *                 headerLogoUrl: "https://cdn.example.com/logo.png"
  *                 subHeaderImageUrl: "https://cdn.example.com/sub-header.png"
  *                 headerLeftImageUrl: "https://cdn.example.com/header-left.png"
@@ -1291,6 +1295,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET] }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
  *               footerText: { type: string }
  *               paperSellCost: { type: number }
  *               defaultPageCount: { type: integer }
@@ -1340,6 +1346,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET] }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
  *               headerLeftImageUrl: { type: string }
@@ -1362,6 +1370,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET] }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
  *               footerText: { type: string }
@@ -1416,6 +1426,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET], example: TABLOID }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED], example: DRAFT }
  *               headerLogoUrl: { type: string }
  *               subHeaderImageUrl: { type: string }
  *               headerLeftImageUrl: { type: string }
@@ -1429,6 +1441,8 @@ router.post('/settings/initialize', auth, initializeEpaperSettings);
  *             properties:
  *               headerData: { type: string }
  *               subHeaderData: { type: string }
+ *               pageSize: { type: string, enum: [TABLOID, BROADSHEET] }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
  *               footerText: { type: string }
  *               paperSellCost: { type: number }
  *               defaultPageCount: { type: integer }
@@ -1525,6 +1539,7 @@ router.delete('/design-config', auth, deleteEpaperDesignConfig);
  *     description: |
  *       Admin-only. Creates one issue entry for a specific date.
  *       If `volumeNumber`/`issueNumber` are not provided, they are auto-generated from design config.
+ *       When `status` is `PUBLISHED`, `publishAt` is required.
  *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
@@ -1558,6 +1573,12 @@ router.delete('/design-config', auth, deleteEpaperDesignConfig);
  *             required: [issueDate]
  *             properties:
  *               issueDate: { type: string, format: date, example: "2026-03-08" }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED], example: DRAFT }
+ *               publishAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2026-03-09T22:30:00+05:30"
+ *                 description: Required when `status` is `PUBLISHED`
  *               volumeNumber: { type: integer, example: 1 }
  *               issueNumber: { type: integer, example: 67 }
  *               pageCount: { type: integer, example: 12 }
@@ -1578,6 +1599,8 @@ router.delete('/design-config', auth, deleteEpaperDesignConfig);
  *             sample:
  *               value:
  *                 issueDate: "2026-03-08"
+ *                 status: "DRAFT"
+ *                 publishAt: "2026-03-09T22:30:00+05:30"
  *                 pageCount: 12
  *                 paperSellCost: 6
  *                 headerData: "Kaburlu Sunday Special"
@@ -1585,6 +1608,8 @@ router.delete('/design-config', auth, deleteEpaperDesignConfig);
  *     responses:
  *       201:
  *         description: Issue entry created
+ *       400:
+ *         description: Validation error; publishAt is required when status is PUBLISHED
  */
 router.get('/design-config/issues', auth, listEpaperIssueDesignEntries);
 router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
@@ -1596,6 +1621,7 @@ router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
  *     summary: Update ePaper issue design entry by date
  *     description: |
  *       Admin-only. Replaces/updates fields for the given issue date.
+ *       When final status is `PUBLISHED`, `publishAt` must be present (existing or in payload).
  *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
  *     tags: [Block ePaper - Admin]
  *     security: [{ bearerAuth: [] }]
@@ -1633,6 +1659,11 @@ router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
  *             type: object
  *             properties:
  *               issueDate: { type: string, format: date }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
+ *               publishAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Required when final status is `PUBLISHED`
  *               volumeNumber: { type: integer }
  *               issueNumber: { type: integer }
  *               pageCount: { type: integer }
@@ -1652,6 +1683,76 @@ router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
  *     responses:
  *       200:
  *         description: Issue entry updated
+ *       400:
+ *         description: Validation error; publishAt is required when status is PUBLISHED
+ *   patch:
+ *     summary: Patch ePaper issue design entry by date
+ *     description: |
+ *       Admin-only. Partial update for the given issue date.
+ *       When final status is `PUBLISHED`, `publishAt` must be present (existing or in payload).
+ *       Non-SUPER_ADMIN users must pass an explicit tenant selector.
+ *     tags: [Block ePaper - Admin]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant override (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant slug (SUPER_ADMIN; admins without mapping)
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional tenant domain (SUPER_ADMIN; admins without mapping)
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema: { type: string }
+ *         description: SUPER_ADMIN only (alternative to headers)
+ *       - in: path
+ *         name: issueDate
+ *         required: true
+ *         schema: { type: string, format: date }
+ *         description: Issue date in YYYY-MM-DD
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               issueDate: { type: string, format: date }
+ *               status: { type: string, enum: [DRAFT, PUBLISHED] }
+ *               publishAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Required when final status is `PUBLISHED`
+ *               volumeNumber: { type: integer }
+ *               issueNumber: { type: integer }
+ *               pageCount: { type: integer }
+ *               paperSellCost: { type: number }
+ *               headerData: { type: string }
+ *               subHeaderData: { type: string }
+ *               footerText: { type: string }
+ *               headerLogoUrl: { type: string }
+ *               subHeaderImageUrl: { type: string }
+ *               headerLeftImageUrl: { type: string }
+ *               headerRightImageUrl: { type: string }
+ *               headerTemplateStyleId: { type: string }
+ *               subHeaderTemplateStyleId: { type: string }
+ *               mainHeaderTemplateId: { type: string }
+ *               innerHeaderTemplateId: { type: string }
+ *               footerTemplateId: { type: string }
+ *     responses:
+ *       200:
+ *         description: Issue entry patched
+ *       400:
+ *         description: Validation error; publishAt is required when status is PUBLISHED
  *   delete:
  *     summary: Delete ePaper issue design entry by date
  *     description: |
@@ -1690,6 +1791,7 @@ router.post('/design-config/issues', auth, createEpaperIssueDesignEntry);
  *         description: Issue entry deleted
  */
 router.put('/design-config/issues/:issueDate', auth, updateEpaperIssueDesignEntry);
+router.patch('/design-config/issues/:issueDate', auth, updateEpaperIssueDesignEntry);
 router.delete('/design-config/issues/:issueDate', auth, deleteEpaperIssueDesignEntry);
 
 /**

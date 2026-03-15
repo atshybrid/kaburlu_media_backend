@@ -449,6 +449,7 @@ router.get('/config', async (_req, res) => {
       },
       push: {
         vapidPublicKey: integ?.push?.webPushVapidPublicKey ?? integ?.push?.vapidPublicKey ?? null,
+        webPushVapidPublicKey: integ?.push?.webPushVapidPublicKey ?? integ?.push?.vapidPublicKey ?? null,
         fcmSenderId: integ?.push?.fcmSenderId ?? integ?.push?.firebaseSenderId ?? null,
       },
     };
@@ -716,8 +717,9 @@ router.get('/config', async (_req, res) => {
         },
         push: {
           vapidPublicKey: integrations.push.vapidPublicKey,
+          webPushVapidPublicKey: integrations.push.webPushVapidPublicKey,
           fcmSenderId: integrations.push.fcmSenderId,
-          enabled: !!(integrations.push.vapidPublicKey || integrations.push.fcmSenderId)
+          enabled: !!integrations.push.vapidPublicKey
         },
         social: {
           facebookAppId: effectiveDomainSettings?.integrations?.social?.facebookAppId ?? null,

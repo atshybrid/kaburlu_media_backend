@@ -5,6 +5,7 @@ import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
+import { saveBrowserPushSubscription, deactivateBrowserPushSubscription } from '../../lib/webPushBrowser';
 import newsWebsiteRouter from './newsWebsite.routes';
 // NEW: Public crop session imports
 import {
@@ -19,6 +20,38 @@ import {
 const p: any = prisma;
 
 const router = Router();
+
+const pushRateLimitState = new Map<string, { count: number; resetAt: number }>();
+const PUSH_RATE_LIMIT_WINDOW_MS = 60_000;
+const PUSH_RATE_LIMIT_MAX = 30;
+
+function enforcePublicPushRateLimit(req: any, res: any): boolean {
+  const ip = String(req.ip || req.headers['x-forwarded-for'] || 'unknown');
+  const now = Date.now();
+  const current = pushRateLimitState.get(ip);
+
+  if (!current || current.resetAt <= now) {
+    pushRateLimitState.set(ip, { count: 1, resetAt: now + PUSH_RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (current.count >= PUSH_RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests. Please retry shortly.' }) && false;
+  }
+
+  current.count += 1;
+  pushRateLimitState.set(ip, current);
+  return true;
+}
+
+function parseBrowserSubscription(input: any): { endpoint: string; keys: { p256dh: string; auth: string } } | null {
+  const endpoint = typeof input?.endpoint === 'string' ? input.endpoint.trim() : '';
+  const p256dh = typeof input?.keys?.p256dh === 'string' ? input.keys.p256dh.trim() : '';
+  const auth = typeof input?.keys?.auth === 'string' ? input.keys.auth.trim() : '';
+
+  if (!endpoint || !p256dh || !auth) return null;
+  return { endpoint, keys: { p256dh, auth } };
+}
 
 // Apply resolver only to this public router
 router.use(tenantResolver);
@@ -71,6 +104,60 @@ function requireVerifiedEpaperDomain(req: any, res: any, next: any) {
 // Placeholder endpoints; real implementations added in next step
 router.get('/_health', (_req, res) => {
   res.json({ ok: true, domain: (res.locals as any).domain?.domain, tenant: (res.locals as any).tenant?.slug });
+});
+
+router.post('/push/subscribe', async (req, res) => {
+  if (!enforcePublicPushRateLimit(req, res)) return;
+
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) {
+    return res.status(400).json({ error: 'Tenant/domain resolution required (Host or X-Tenant-Domain).' });
+  }
+
+  const subscription = parseBrowserSubscription(req.body || {});
+  if (!subscription) {
+    return res.status(400).json({ error: 'Invalid subscription payload. endpoint, keys.p256dh and keys.auth are required.' });
+  }
+
+  try {
+    await saveBrowserPushSubscription({
+      tenantId: tenant.id,
+      domainId: domain.id,
+      subscription,
+    });
+
+    return res.status(200).json({ success: true, endpoint: subscription.endpoint, isActive: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to save push subscription' });
+  }
+});
+
+router.post('/push/unsubscribe', async (req, res) => {
+  if (!enforcePublicPushRateLimit(req, res)) return;
+
+  const tenant = (res.locals as any).tenant;
+  const domain = (res.locals as any).domain;
+  if (!tenant || !domain) {
+    return res.status(400).json({ error: 'Tenant/domain resolution required (Host or X-Tenant-Domain).' });
+  }
+
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim() : '';
+  if (!endpoint) {
+    return res.status(400).json({ error: 'endpoint is required' });
+  }
+
+  try {
+    await deactivateBrowserPushSubscription({
+      tenantId: tenant.id,
+      domainId: domain.id,
+      endpoint,
+    });
+
+    return res.status(200).json({ success: true, endpoint, isActive: false });
+  } catch {
+    return res.status(500).json({ error: 'Failed to unsubscribe push endpoint' });
+  }
 });
 
 /**
@@ -490,10 +577,13 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
         };
       }
       if (isPlainObject(integ.push)) {
+        const vapidPublicKey = integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null;
         safe.push = {
           // Public key is safe to expose; private key must NOT be stored here for public.
-          webPushVapidPublicKey: integ.push.webPushVapidPublicKey ?? integ.push.vapidPublicKey ?? null,
+          webPushVapidPublicKey: vapidPublicKey,
+          vapidPublicKey,
           fcmSenderId: integ.push.fcmSenderId ?? integ.push.firebaseSenderId ?? null,
+          enabled: Boolean(vapidPublicKey),
         };
       }
 
@@ -506,6 +596,15 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
 
   const publicDomainSettingsData = domainSettings ? sanitizeDomainSettingsForPublic((domainSettings as any).data) : null;
   const publicEffectiveDomainSettings = sanitizeDomainSettingsForPublic(effectiveDomainSettings);
+
+  const pushVapidPublicKey =
+    (publicEffectiveDomainSettings as any)?.integrations?.push?.vapidPublicKey ??
+    (publicEffectiveDomainSettings as any)?.integrations?.push?.webPushVapidPublicKey ??
+    null;
+  const pushFcmSenderId =
+    (publicEffectiveDomainSettings as any)?.integrations?.push?.fcmSenderId ??
+    null;
+  const pushEnabled = Boolean(pushVapidPublicKey);
 
   const baseUrl = `https://${domain.domain}`;
 
@@ -670,6 +769,17 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
       },
     },
     content: contentConfig,
+    integrations: {
+      push: {
+        vapidPublicKey: pushVapidPublicKey,
+        webPushVapidPublicKey: pushVapidPublicKey,
+        fcmSenderId: pushFcmSenderId,
+        enabled: pushEnabled,
+      },
+    },
+    features: {
+      pwaPushNotifications: pushEnabled,
+    },
     tenantAdmin,
     domainSettings: domainSettings
       ? {

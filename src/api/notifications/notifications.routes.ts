@@ -5,6 +5,8 @@ import { isExpoPushToken } from '../../lib/expoPush';
 import { isAPNSToken } from '../../lib/apnsPush';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
+import { requireSuperOrTenantAdmin } from '../middlewares/authz';
+import { sendBrowserPushToDomain } from '../../lib/webPushBrowser';
 
 const router = Router();
 
@@ -207,6 +209,88 @@ router.post('/broadcast', passport.authenticate('jwt', { session: false }), asyn
       error: 'failed to broadcast', 
       message: e?.message || 'Unknown error'
     });
+  }
+});
+
+router.post('/webpush/domain', passport.authenticate('jwt', { session: false }), requireSuperOrTenantAdmin, async (req, res) => {
+  try {
+    const user: any = (req as any).user;
+    const roleName = String(user?.role?.name || '').toUpperCase();
+
+    const domainId = String(req.body?.domainId || '').trim();
+    const title = String(req.body?.title || '').trim();
+    const body = String(req.body?.body || '').trim();
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : undefined;
+    const icon = typeof req.body?.icon === 'string' ? req.body.icon.trim() : undefined;
+    const data = req.body?.data && typeof req.body.data === 'object' ? req.body.data : undefined;
+    const limit = Number(req.body?.limit || 0) || undefined;
+    const asyncMode = req.body?.async === undefined ? true : Boolean(req.body.async);
+
+    if (!domainId || !title || !body) {
+      return res.status(400).json({ error: 'domainId, title and body are required' });
+    }
+
+    const domain = await (prisma as any).domain.findUnique({
+      where: { id: domainId },
+      select: { id: true, tenantId: true, domain: true },
+    });
+    if (!domain) return res.status(404).json({ error: 'Domain not found' });
+
+    if (roleName === 'TENANT_ADMIN') {
+      const reporter = await (prisma as any).reporter
+        .findFirst({ where: { userId: user.id }, select: { tenantId: true } })
+        .catch(() => null);
+      if (!reporter || String(reporter.tenantId) !== String(domain.tenantId)) {
+        return res.status(403).json({ error: 'Tenant scope mismatch' });
+      }
+    }
+
+    const payload = { title, body, url, icon, data };
+
+    if (asyncMode) {
+      Promise.resolve(
+        sendBrowserPushToDomain({
+          tenantId: domain.tenantId,
+          domainId: domain.id,
+          payload,
+          limit,
+        })
+      )
+        .then((result) => {
+          console.log('[webpush/domain] completed', { domainId: domain.id, result });
+        })
+        .catch((error) => {
+          console.error('[webpush/domain] failed', { domainId: domain.id, error: error?.message || error });
+        });
+
+      return res.status(202).json({
+        accepted: true,
+        mode: 'async',
+        domainId: domain.id,
+        domain: domain.domain,
+      });
+    }
+
+    const result = await sendBrowserPushToDomain({
+      tenantId: domain.tenantId,
+      domainId: domain.id,
+      payload,
+      limit,
+    });
+
+    return res.status(200).json({
+      accepted: true,
+      mode: 'sync',
+      domainId: domain.id,
+      domain: domain.domain,
+      result,
+    });
+  } catch (e: any) {
+    const message = String(e?.message || 'failed to send web push');
+    if (message === 'MISSING_DOMAIN_VAPID_KEYS') {
+      return res.status(400).json({ error: 'Domain VAPID keys are missing. Configure integrations.push first.' });
+    }
+    return res.status(500).json({ error: 'failed to send web push', message });
   }
 });
 

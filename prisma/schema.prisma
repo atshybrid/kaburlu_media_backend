@@ -136,6 +136,9 @@ model User {
   location               UserLocation?
   profile                UserProfile?
   loginSessions          UserLoginSession[]
+  journalistProfile      JournalistProfile?
+  journalistComplaints   JournalistComplaint[]
+  journalistUpdates      JournalistUnionUpdate[]
 }
 
 /// Tracks user login sessions for working hours calculation
@@ -478,6 +481,7 @@ model Tenant {
   theme                        TenantTheme?
   translations                 TenantTranslation[]
   webArticles                  TenantWebArticle[]            @relation("Tenant_WebArticles")
+  webPushSubscriptions         WebPushSubscription[]
   villages                     Village[]
   articleQuota                 TenantArticleQuota?
   
@@ -766,6 +770,7 @@ model Domain {
   languages              DomainLanguage[]
   settings               DomainSettings?         @relation("Domain_DomainSettings")
   homepageSectionConfigs HomepageSectionConfig[]
+  webPushSubscriptions    WebPushSubscription[]
   webArticles            TenantWebArticle[]      @relation("Domain_WebArticles")
 
   @@index([sampleDataStatus])
@@ -1965,6 +1970,29 @@ model Device {
   user           User?    @relation(fields: [userId], references: [id])
 }
 
+/// Browser Web Push subscriptions (W3C Push API) scoped by domain and tenant.
+model WebPushSubscription {
+  id            String   @id @default(cuid())
+  tenantId      String
+  domainId      String
+  endpoint      String
+  p256dh        String
+  auth          String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+  failCount     Int      @default(0)
+  lastError     String?
+  domain        Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, endpoint])
+  @@index([tenantId, domainId, isActive])
+  @@index([domainId, isActive])
+}
+
 /// Canonical location for a registered user (separate from device)
 model UserLocation {
   userId         String    @id
@@ -2385,4 +2413,90 @@ enum DeletionRequestStatus {
   PROCESSING
   COMPLETED
   CANCELLED
+}
+
+// ============================================================
+// Journalist Union Module
+// ============================================================
+
+enum JournalistCardStatus {
+  ACTIVE
+  EXPIRED
+}
+
+enum JournalistComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+/// Journalist union membership application / profile
+model JournalistProfile {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  pressId      String?   @unique /// Assigned by admin after approval
+  designation  String
+  district     String
+  organization String    /// Media outlet / employer
+  unionName    String?   /// Which journalist union (supports multi-union)
+  approved     Boolean   @default(false)
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card         JournalistCard?
+
+  @@index([approved])
+  @@index([district])
+  @@index([unionName])
+}
+
+/// Press card issued to approved journalist
+model JournalistCard {
+  id         String               @id @default(cuid())
+  profileId  String               @unique
+  cardNumber String               @unique
+  expiryDate DateTime
+  qrCode     String?
+  pdfUrl     String?
+  status     JournalistCardStatus @default(ACTIVE)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  profile    JournalistProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+/// Complaint filed by a journalist
+model JournalistComplaint {
+  id          String                    @id @default(cuid())
+  userId      String
+  title       String
+  description String
+  location    String?
+  status      JournalistComplaintStatus @default(OPEN)
+  adminNote   String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+/// Announcements / updates posted by journalist union admin
+model JournalistUnionUpdate {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  unionName   String?  /// Target union slug; null = visible to all
+  imageUrl    String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([unionName])
+  @@index([createdAt])
 }

@@ -391,19 +391,30 @@ router.post('/upload', passport.authenticate('jwt', { session: false }), upload.
       }
     }
 
-    // Insert DB record (best-effort; if it fails, still return upload success)
+    // Insert DB record (best-effort). If key already exists, update metadata instead of failing.
     try {
       const ownerId = (req.user as any)?.id || undefined;
       const folderValue = root;
       const prismaAny = prisma as any;
-      await prismaAny.media.create({
-        data: {
+      const kindValue = (file.mimetype?.startsWith('image/') ? 'image' : (file.mimetype?.startsWith('video/') ? 'video' : 'other'));
+      await prismaAny.media.upsert({
+        where: { key: finalKey },
+        create: {
           key: finalKey,
           url: publicUrl,
           name: original,
           contentType: uploadContentType,
           size: Number(uploadBuffer.length || 0),
-          kind: (file.mimetype?.startsWith('image/') ? 'image' : (file.mimetype?.startsWith('video/') ? 'video' : 'other')),
+          kind: kindValue,
+          folder: folderValue,
+          ownerId,
+        },
+        update: {
+          url: publicUrl,
+          name: original,
+          contentType: uploadContentType,
+          size: Number(uploadBuffer.length || 0),
+          kind: kindValue,
           folder: folderValue,
           ownerId,
         },

@@ -5,6 +5,7 @@ import { translateAndSaveCategoryInBackground } from '../categories/categories.s
 import { requireSuperAdmin } from '../middlewares/authz';
 import { defaultCategorySlugify, listDefaultCategorySlugs } from '../../lib/defaultCategories';
 import { CORE_NEWS_CATEGORIES } from '../../lib/categoryAuto';
+import { ensureDomainPushVapidKeys } from '../../lib/pushVapidKeys';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -173,6 +174,10 @@ router.post('/:id/verify', auth, requireSuperAdmin, async (req, res) => {
       } catch {
         // ignore
       }
+    }
+
+    if (status === 'ACTIVE') {
+      Promise.resolve(ensureDomainPushVapidKeys(updated.id, { tenantId: updated.tenantId })).catch(() => null);
     }
 
     // When a domain becomes ACTIVE, auto-link default categories (create missing only).
