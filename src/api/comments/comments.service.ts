@@ -2,6 +2,11 @@
 import prisma from '../../lib/prisma';
 import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 
+const userSelect = {
+  id: true,
+  profile: { select: { fullName: true, profilePictureUrl: true } },
+} as const;
+
 type RepliesInclude = {
   include: {
     user: { select: { id: true } },
@@ -14,7 +19,7 @@ const recursiveReplies = (depth = 5): RepliesInclude => {
   if (depth === 0) return false;
   return {
     include: {
-      user: { select: { id: true } },
+      user: { select: userSelect },
       replies: recursiveReplies(depth - 1)
     },
     orderBy: { createdAt: 'asc' }
@@ -41,7 +46,7 @@ export const createComment = async (commentDto: CreateCommentDto) => {
   if (shortNewsId) data.shortNewsId = shortNewsId;
   if (parentId) data.parentId = parentId;
 
-  return prisma.comment.create({ data });
+  return prisma.comment.create({ data, include: { user: { select: userSelect } } });
 };
 
 export interface GetCommentsParams {
@@ -58,7 +63,7 @@ export const getComments = async ({ articleId, shortNewsId, depth = 5 }: GetComm
   const comments = await prisma.comment.findMany({
     where,
     include: {
-      user: { select: { id: true } },
+      user: { select: userSelect },
       replies: recursiveReplies(depth)
     },
     orderBy: { createdAt: 'desc' }

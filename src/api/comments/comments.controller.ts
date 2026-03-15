@@ -7,6 +7,13 @@ import { createComment, getComments, updateComment, deleteComment } from './comm
 
 export const createCommentController = async (req: Request, res: Response) => {
   try {
+    // Inject userId from JWT — never trust body for this (security)
+    const principal = req.user as any;
+    if (!principal?.id) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    req.body.userId = principal.id;
+
     const createCommentDto = plainToClass(CreateCommentDto, req.body);
     const errors = await validate(createCommentDto);
     if (errors.length > 0) {
