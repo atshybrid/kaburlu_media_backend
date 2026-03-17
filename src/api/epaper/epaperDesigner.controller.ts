@@ -14,6 +14,11 @@ import { resolveAdminTenantContext } from './adminTenantContext';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const p: any = prisma;
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+type SmartDesignerAccess =
+  | { ok: true; tenantId: string; roleName: string; userId: string }
+  | { ok: false; status: number; error: string };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,6 +33,148 @@ function parseDateOrNull(v: unknown): Date | null {
   if (!v) return null;
   const d = new Date(String(v));
   return isNaN(d.getTime()) ? null : d;
+}
+
+function parseDateOnly(value: unknown): { y: number; m: number; d: number } | null {
+  const s = String(value || '').trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return { y, m: mo, d };
+}
+
+function currentIstDateOnly(): string {
+  const now = new Date();
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(ist.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function istLocalToUtc(dateStr: string, hh: number, mm: number, ss = 0, ms = 0): Date {
+  const parts = parseDateOnly(dateStr);
+  if (!parts) return new Date(NaN);
+  const utcMs = Date.UTC(parts.y, parts.m - 1, parts.d, hh, mm, ss, ms) - IST_OFFSET_MS;
+  return new Date(utcMs);
+}
+
+function parseBool(value: unknown, fallback = false): boolean {
+  if (value === undefined || value === null || value === '') return fallback;
+  const s = String(value).trim().toLowerCase();
+  if (s === '1' || s === 'true' || s === 'yes') return true;
+  if (s === '0' || s === 'false' || s === 'no') return false;
+  return fallback;
+}
+
+async function resolveSmartDesignerAccess(req: Request): Promise<SmartDesignerAccess> {
+  const user: any = (req as any).user;
+  const userId = String(user?.id || '').trim();
+  const roleName = String(user?.role?.name || '').trim().toUpperCase();
+
+  if (!userId || !roleName) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+
+  const allowedRoles = new Set([
+    'SUPER_ADMIN',
+    'SUPERADMIN',
+    'ADMIN',
+    'TENANT_ADMIN',
+    'REPORTER',
+    'DESK_EDITOR',
+    // Backward-compatible aliases seen in codebase
+    'ADMIN_EDITOR',
+    'TENANT_EDITOR',
+  ]);
+
+  if (!allowedRoles.has(roleName)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Forbidden: role not allowed. Allowed roles: SUPER_ADMIN, ADMIN, TENANT_ADMIN, REPORTER, DESK_EDITOR',
+    };
+  }
+
+  const requestedTenantId = String((req.query as any)?.tenantId || req.headers['x-tenant-id'] || '').trim();
+
+  if (roleName === 'SUPER_ADMIN' || roleName === 'SUPERADMIN') {
+    if (!requestedTenantId) {
+      return { ok: false, status: 400, error: 'tenantId is required for SUPER_ADMIN' };
+    }
+    return { ok: true, tenantId: requestedTenantId, roleName, userId };
+  }
+
+  // Prefer tenant mapping from reporter profile where available.
+  const reporterProfile = await p.reporter
+    .findFirst({ where: { userId }, select: { tenantId: true } })
+    .catch(() => null);
+  const mappedTenantId = String(reporterProfile?.tenantId || '').trim();
+
+  if (mappedTenantId) {
+    if (requestedTenantId && requestedTenantId !== mappedTenantId) {
+      return { ok: false, status: 403, error: 'Tenant scope mismatch for this token' };
+    }
+    return { ok: true, tenantId: mappedTenantId, roleName, userId };
+  }
+
+  // Admin-like users without reporter mapping can pass explicit tenantId.
+  if (requestedTenantId && ['ADMIN', 'TENANT_ADMIN', 'DESK_EDITOR', 'ADMIN_EDITOR', 'TENANT_EDITOR'].includes(roleName)) {
+    return { ok: true, tenantId: requestedTenantId, roleName, userId };
+  }
+
+  if (roleName === 'REPORTER') {
+    return { ok: false, status: 403, error: 'Reporter profile tenant linkage not found' };
+  }
+
+  return { ok: false, status: 400, error: 'tenantId is required for this role' };
+}
+
+function priorityRank(priority: number | null | undefined): number {
+  if (priority === 1) return 1;
+  if (priority === 2) return 2;
+  if (priority === 3) return 3;
+  return 99;
+}
+
+function resolveSmartSection(block: any): { key: string; title: string; reason: string } {
+  const categoryName = String(block?.category?.name || '').trim().toLowerCase();
+
+  if (block?.isBreaking || Number(block?.priority) === 1) {
+    return { key: 'FRONT_PAGE', title: 'Front Page', reason: 'Breaking and high-priority stories' };
+  }
+
+  if (categoryName.includes('politic')) {
+    return { key: 'POLITICS', title: 'Politics', reason: 'Category-driven grouping' };
+  }
+  if (categoryName.includes('sport')) {
+    return { key: 'SPORTS', title: 'Sports', reason: 'Category-driven grouping' };
+  }
+  if (categoryName.includes('business') || categoryName.includes('econom')) {
+    return { key: 'BUSINESS', title: 'Business', reason: 'Category-driven grouping' };
+  }
+
+  if (block?.location?.districtId || block?.location?.mandalId || block?.location?.villageId) {
+    return { key: 'DISTRICT_NEWS', title: 'District News', reason: 'Location-driven grouping' };
+  }
+
+  return { key: 'GENERAL_NEWS', title: 'General News', reason: 'Fallback section' };
+}
+
+function sanitizeSmartSectionArticle(block: any): any {
+  const location = block?.location && typeof block.location === 'object' ? { ...block.location } : {};
+  delete location.mandalId;
+  delete location.mandalName;
+  delete location.villageId;
+  delete location.villageName;
+
+  const next = { ...block, location };
+  delete next.lead;
+  return next;
 }
 
 async function enrichArticlesWithLocationNames(articles: any[]) {
@@ -476,5 +623,162 @@ export const getDesignerTemplates = async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error('[epaperDesigner] getDesignerTemplates:', e);
     return res.status(500).json({ error: 'Failed to fetch designer templates', details: String(e?.message ?? e) });
+  }
+};
+
+// ============================================================================
+// GET /epaper/designer/sections/smart
+// ============================================================================
+
+/**
+ * Smart section builder for Digital Paper Design.
+ *
+ * Returns grouped article blocks that can be directly used by the designer UI
+ * for section-wise rendering (Front Page, District, Category sections).
+ */
+export const getSmartDesignSections = async (req: Request, res: Response) => {
+  try {
+    const access = await resolveSmartDesignerAccess(req);
+    if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+    const q = req.query as Record<string, string | undefined>;
+    const status = String(q.status || 'PUBLISHED').trim();
+    const issueDate = q.issueDate && String(q.issueDate).trim() ? String(q.issueDate).trim() : currentIstDateOnly();
+    const limitRaw = parseIntOrNull(q.limit);
+    const limit = limitRaw && limitRaw > 0 ? Math.min(limitRaw, 500) : 200;
+    const includeArticles = parseBool(q.includeArticles, true);
+    const maxArticlesPerSectionRaw = parseIntOrNull(q.maxArticlesPerSection);
+    const maxArticlesPerSection = maxArticlesPerSectionRaw && maxArticlesPerSectionRaw > 0
+      ? Math.min(maxArticlesPerSectionRaw, 100)
+      : null;
+
+    if (!parseDateOnly(issueDate)) {
+      return res.status(400).json({ error: 'issueDate must be YYYY-MM-DD (IST date)' });
+    }
+
+    const dayStartUtc = istLocalToUtc(issueDate, 0, 0, 0, 0);
+    const dayEndUtc = istLocalToUtc(issueDate, 23, 59, 59, 999);
+
+    const where: any = {
+      tenantId: access.tenantId,
+      createdAt: { gte: dayStartUtc, lte: dayEndUtc },
+    };
+
+    if (status && status.toUpperCase() !== 'ALL') {
+      where.status = status;
+    }
+
+    const rawArticles = await p.newspaperArticle.findMany({
+      where,
+      orderBy: [{ isBreaking: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+      include: DESIGNER_INCLUDE,
+    });
+
+    const enriched = await enrichArticlesWithLocationNames(rawArticles);
+    const blocks = enriched.map(toDesignerBlock);
+
+    const sectionMap = new Map<string, any>();
+
+    for (const block of blocks) {
+      const sec = resolveSmartSection(block);
+      if (!sectionMap.has(sec.key)) {
+        sectionMap.set(sec.key, {
+          key: sec.key,
+          title: sec.title,
+          reason: sec.reason,
+          totalArticles: 0,
+          totalWordCount: 0,
+          totalCharCount: 0,
+          templateUsage: new Map<string, number>(),
+          articles: [] as any[],
+        });
+      }
+
+      const node = sectionMap.get(sec.key);
+      node.totalArticles += 1;
+      node.totalWordCount += Number(block.wordCount || 0);
+      node.totalCharCount += Number(block.charCount || 0);
+
+      const templateCode = String(block.assignedBlockTemplate?.code || 'UNASSIGNED');
+      node.templateUsage.set(templateCode, (node.templateUsage.get(templateCode) || 0) + 1);
+
+      if (includeArticles) {
+        node.articles.push(sanitizeSmartSectionArticle(block));
+      }
+    }
+
+    const sectionOrder = ['FRONT_PAGE', 'POLITICS', 'BUSINESS', 'SPORTS', 'DISTRICT_NEWS', 'GENERAL_NEWS'];
+
+    const sections = Array.from(sectionMap.values())
+      .map((node: any) => {
+        const templateEntries = Array.from((node.templateUsage as Map<string, number>).entries()) as Array<[string, number]>;
+        const templateUsage = templateEntries
+          .map(([code, count]) => ({ code, count }))
+          .sort((a, b) => b.count - a.count);
+
+        let articles = Array.isArray(node.articles) ? node.articles : [];
+        articles = articles.sort((a: any, b: any) => {
+          if (Boolean(a?.isBreaking) !== Boolean(b?.isBreaking)) {
+            return a?.isBreaking ? -1 : 1;
+          }
+          const pr = priorityRank(a?.priority) - priorityRank(b?.priority);
+          if (pr !== 0) return pr;
+          return new Date(String(b?.createdAt || 0)).getTime() - new Date(String(a?.createdAt || 0)).getTime();
+        });
+
+        if (maxArticlesPerSection) {
+          articles = articles.slice(0, maxArticlesPerSection);
+        }
+
+        return {
+          key: node.key,
+          title: node.title,
+          reason: node.reason,
+          totalArticles: node.totalArticles,
+          totalWordCount: node.totalWordCount,
+          totalCharCount: node.totalCharCount,
+          templateUsage,
+          articles,
+        };
+      })
+      .sort((a: any, b: any) => {
+        const ai = sectionOrder.indexOf(a.key);
+        const bi = sectionOrder.indexOf(b.key);
+        if (ai !== -1 || bi !== -1) {
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
+        }
+        return b.totalArticles - a.totalArticles;
+      });
+
+    const totals = sections.reduce(
+      (acc: any, s: any) => {
+        acc.totalSections += 1;
+        acc.totalArticles += Number(s.totalArticles || 0);
+        acc.totalWordCount += Number(s.totalWordCount || 0);
+        acc.totalCharCount += Number(s.totalCharCount || 0);
+        return acc;
+      },
+      { totalSections: 0, totalArticles: 0, totalWordCount: 0, totalCharCount: 0 }
+    );
+
+    return res.json({
+      tenantId: access.tenantId,
+      role: access.roleName,
+      issueDate,
+      filters: {
+        status: status.toUpperCase(),
+        limit,
+        includeArticles,
+        maxArticlesPerSection,
+      },
+      totals,
+      sections,
+    });
+  } catch (e: any) {
+    console.error('[epaperDesigner] getSmartDesignSections:', e);
+    return res.status(500).json({ error: 'Failed to build smart design sections', details: String(e?.message ?? e) });
   }
 };

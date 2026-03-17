@@ -86,6 +86,7 @@ import {
   getDesignerArticle,
   assignBlockTemplate,
   getDesignerTemplates,
+  getSmartDesignSections,
 } from './epaperDesigner.controller';
 
 const router = Router();
@@ -3664,6 +3665,59 @@ router.post('/clips/detect', auth, detectClips);
  *         description: Unauthorized
  */
 router.get('/designer/articles', auth, getDesignerArticles);
+
+/**
+ * @swagger
+ * /epaper/designer/sections/smart:
+ *   get:
+ *     summary: Smart Digital Paper Design Sections
+ *     description: |
+ *       Builds smart section-wise blocks for digital paper design.
+ *
+ *       Sections are auto-generated from article signals such as:
+ *       - breaking + priority
+ *       - category name
+ *       - district/location availability
+ *
+ *       Useful for quickly rendering a sectioned page planner in designer UI.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: X-Tenant-Id
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Slug
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Tenant-Domain
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (SUPER_ADMIN only)
+ *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, format: date, example: '2026-03-17' }
+ *         description: IST business date (YYYY-MM-DD)
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, default: PUBLISHED }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 200, maximum: 500 }
+ *       - in: query
+ *         name: includeArticles
+ *         schema: { type: boolean, default: true }
+ *       - in: query
+ *         name: maxArticlesPerSection
+ *         schema: { type: integer, minimum: 1, maximum: 100 }
+ *     responses:
+ *       200:
+ *         description: Smart sections grouped for designer
+ */
+router.get('/designer/sections/smart', auth, getSmartDesignSections);
 
 /**
  * @swagger

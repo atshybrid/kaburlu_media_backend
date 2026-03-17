@@ -858,7 +858,8 @@ function normalizeSlot(incoming: any, key: SlotKey): SlotConfig {
   const def = slotDefaults(key);
   return {
     slotId: incoming?.slotId ?? null,
-    format: ['auto', 'autorelaxed', 'fluid'].includes(incoming?.format) ? incoming.format : def.format,
+    // Format is fixed by slot type: display=auto, in_article=fluid, multiplex=autorelaxed.
+    format: def.format,
     enabled: typeof incoming?.enabled === 'boolean' ? incoming.enabled : !!incoming?.slotId,
   };
 }
@@ -1192,11 +1193,11 @@ router.patch(
     const key = slotKey as SlotKey;
     const prev = adsConfig.slots[key] ?? slotDefaults(key);
 
-    adsConfig.slots[key] = {
+    adsConfig.slots[key] = normalizeSlot({
       slotId: Object.prototype.hasOwnProperty.call(body, 'slotId') ? (body.slotId ?? null) : prev.slotId,
       format: body.format ?? prev.format,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : prev.enabled,
-    };
+    }, key);
 
     if (Object.prototype.hasOwnProperty.call(body, 'adsenseClientId')) {
       adsConfig.adsenseClientId = body.adsenseClientId ?? null;
