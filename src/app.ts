@@ -46,6 +46,7 @@ import pricingRoutes from './api/wallet/pricing.routes';
 import reportersRoutes from './api/reporters/reporters.routes';
 import reportersMeIdCardRoutes from './api/reporters/reporters.me.idcard.routes';
 import tenantReportersRoutes from './api/reporters/tenantReporters.routes';
+import reportersV2Routes from './api/reporters/reportersV2.routes';
 import reporterPaymentsRoutes from './api/reporterPayments/reporterPayments.routes';
 import tenantThemeRoutes from './api/tenantTheme/tenantTheme.routes';
 import homepageSectionsRoutes from './api/homepageSections/homepageSections.routes';
@@ -319,6 +320,8 @@ app.use('/mandals', mandalsRoutes);
 app.use('/', assemblyConstituenciesRoutes);
 // Tenant-scoped reporter management (mount root so internal paths /tenants/:tenantId/... work)
 app.use('/', tenantReportersRoutes);
+// Reporter Management V2 - additive-only, no V1 routes affected
+app.use('/api/v2', reportersV2Routes);
 // Billing routes include both /billing/* and /tenants/:tenantId/billing/*
 app.use('/', billingRoutes);
 // Wallet & Subscription System (admin + tenant self-service + pricing)

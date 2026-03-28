@@ -12,7 +12,7 @@ import { config } from '../config/env';
 
 const DEFAULT_JPEG_QUALITY = 85;
 const DEFAULT_OG_WIDTH = 1200;
-const DEFAULT_OG_HEIGHT = 630;
+const DEFAULT_OG_HEIGHT = 630; // kept for config compatibility (unused in portrait mode)
 
 function resolveJpegQuality(): number {
   const fromConfig = (config as any)?.epaper?.jpegQuality;
@@ -47,14 +47,17 @@ export async function convertPngToJpeg(pngBuffer: Buffer): Promise<Buffer> {
 
 /**
  * Convert a PNG page (usually portrait) into a share-friendly OG JPEG.
- * Produces a fixed size image (default 1200x630) with white padding (contain)
- * to avoid cropping newspaper pages.
+ * Scales the page so its width is at most `ogWidth` (default 1200px) while
+ * preserving the natural portrait aspect ratio. This avoids pillarboxing
+ * (blank left/right bars) that occurs when forcing a landscape 16:9 canvas
+ * on a newspaper page. The result is a clean full-page JPEG suitable for
+ * WhatsApp, Facebook, Twitter / X, and other social-media previews.
  */
 export async function convertPngToOgJpeg(pngBuffer: Buffer): Promise<Buffer> {
-  const { width, height, quality } = resolveOgSettings();
+  const { width, quality } = resolveOgSettings();
   return await sharp(pngBuffer)
     .flatten({ background: '#ffffff' })
-    .resize(width, height, { fit: 'contain', background: '#ffffff' })
+    .resize(width, undefined, { fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality, mozjpeg: true, progressive: true, chromaSubsampling: '4:2:0' })
     .toBuffer();
 }

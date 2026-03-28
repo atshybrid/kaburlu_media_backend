@@ -3,6 +3,16 @@ import prisma from '../../lib/prisma';
 
 const router = Router();
 
+// What location (workplace) each level maps to
+const LEVEL_LOCATION_META: Record<string, { locationType: string; locationLabel: string; locationLabelTe: string; locationField: string }> = {
+  STATE:        { locationType: 'state',                locationLabel: 'State',                   locationLabelTe: 'రాష్ట్రం',            locationField: 'stateId' },
+  DISTRICT:     { locationType: 'district',             locationLabel: 'District',                locationLabelTe: 'జిల్లా',             locationField: 'districtId' },
+  DIVISION:     { locationType: 'district_or_mandal',   locationLabel: 'District / Mandal',       locationLabelTe: 'జిల్లా / మండలం',     locationField: 'districtId' },
+  CONSTITUENCY: { locationType: 'district_or_mandal',   locationLabel: 'District / Mandal',       locationLabelTe: 'జిల్లా / మండలం',     locationField: 'districtId' },
+  ASSEMBLY:     { locationType: 'assembly_constituency',locationLabel: 'Assembly Constituency',   locationLabelTe: 'అసెంబ్లీ నియోజకవర్గం', locationField: 'assemblyConstituencyId' },
+  MANDAL:       { locationType: 'mandal',               locationLabel: 'Mandal',                  locationLabelTe: 'మండలం',              locationField: 'mandalId' },
+};
+
 /**
  * @swagger
  * tags:
@@ -68,8 +78,21 @@ router.get('/', async (req, res) => {
   const globalRows = (globalRowsRaw as any[]).filter(r => !isTenantAdmin(r));
   const tenantRows = (tenantRowsRaw as any[]).filter(r => !isTenantAdmin(r));
 
+  const enrichWithLocation = (row: any) => {
+    const meta = LEVEL_LOCATION_META[String(row.level)] || null;
+    return {
+      ...row,
+      locationType: meta?.locationType ?? null,
+      locationLabel: meta?.locationLabel ?? null,
+      locationLabelTe: meta?.locationLabelTe ?? null,
+      locationField: meta?.locationField ?? null,
+    };
+  };
+
   if (!tenantId) {
-    const list = (globalRows as any[]).sort((a: any, b: any) => String(a.level).localeCompare(String(b.level)));
+    const list = (globalRows as any[])
+      .sort((a: any, b: any) => String(a.level).localeCompare(String(b.level)))
+      .map(enrichWithLocation);
     return res.json(list);
   }
 
@@ -77,11 +100,13 @@ router.get('/', async (req, res) => {
   for (const g of globalRows as any[]) byCode[g.code] = g;
   for (const t of tenantRows as any[]) byCode[t.code] = t;
 
-  const merged = Object.values(byCode).sort((a: any, b: any) => {
-    const lv = String(a.level).localeCompare(String(b.level));
-    if (lv !== 0) return lv;
-    return String(a.name || '').localeCompare(String(b.name || ''));
-  });
+  const merged = Object.values(byCode)
+    .sort((a: any, b: any) => {
+      const lv = String(a.level).localeCompare(String(b.level));
+      if (lv !== 0) return lv;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    })
+    .map(enrichWithLocation);
 
   return res.json(merged);
 });

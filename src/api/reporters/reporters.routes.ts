@@ -1121,10 +1121,20 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
       idCardCharge: typeof body.idCardCharge === 'number' ? body.idCardCharge : null,
       // KYC intentionally excluded from direct creation; default PENDING
     };
-    if (level === 'STATE' && !data.stateId) return res.status(400).json({ error: 'stateId required for STATE level' });
-    if (level === 'DISTRICT' && !data.districtId) return res.status(400).json({ error: 'districtId required for DISTRICT level' });
-    if (level === 'MANDAL' && !data.mandalId) return res.status(400).json({ error: 'mandalId required for MANDAL level' });
-    if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) return res.status(400).json({ error: 'assemblyConstituencyId required for ASSEMBLY level' });
+
+    // Simple locationId support: resolve to correct field based on level
+    if (body.locationId && !data.stateId && !data.districtId && !data.mandalId && !data.assemblyConstituencyId) {
+      if (level === 'STATE')        data.stateId = body.locationId;
+      else if (level === 'DISTRICT') data.districtId = body.locationId;
+      else if (level === 'DIVISION' || level === 'CONSTITUENCY') data.districtId = body.locationId;
+      else if (level === 'ASSEMBLY') data.assemblyConstituencyId = body.locationId;
+      else if (level === 'MANDAL')   data.mandalId = body.locationId;
+    }
+
+    if (level === 'STATE' && !data.stateId) return res.status(400).json({ error: 'stateId (or locationId) required for STATE level' });
+    if (level === 'DISTRICT' && !data.districtId) return res.status(400).json({ error: 'districtId (or locationId) required for DISTRICT level' });
+    if (level === 'MANDAL' && !data.mandalId) return res.status(400).json({ error: 'mandalId (or locationId) required for MANDAL level' });
+    if (level === 'ASSEMBLY' && !data.assemblyConstituencyId) return res.status(400).json({ error: 'assemblyConstituencyId (or locationId) required for ASSEMBLY level' });
     const created = await (prisma as any).reporter.create({ data, include: includeReporterContact });
     res.status(201).json(mapReporterContact(created));
   } catch (e: any) {

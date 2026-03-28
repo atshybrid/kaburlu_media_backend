@@ -107,25 +107,41 @@ const auth = passport.authenticate('jwt', { session: false });
  *                       properties:
  *                         mobileNumber: { type: string }
  *                         mpin: { type: string }
+ *       200:
+ *         description: Reporter already in this tenant (role updated) OR moved from another tenant
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: 'Reporter moved from "Tenant A" to "Tenant B" successfully' }
+ *                 movedFrom:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     tenantId: { type: string }
+ *                     tenantName: { type: string }
+ *                 data: { type: object }
  *       400:
- *         description: Validation error
+ *         description: Validation error — tenantId / mobileNumber / fullName missing or invalid
  *       404:
- *         description: Tenant not found
- *       409:
- *         description: User already linked to another tenant as admin
+ *         description: Tenant not found with the given tenantId
+ *       500:
+ *         description: Internal server error (DB failure, no language configured, etc.)
  */
 router.post('/', auth, requireSuperAdmin, async (req, res) => {
   try {
     const { tenantId, mobileNumber, fullName, email, mpin, designationId, stateId, profilePhotoUrl } = req.body || {};
 
     // Validation
-    if (!tenantId) return res.status(400).json({ success: false, error: 'tenantId is required' });
-    if (!mobileNumber) return res.status(400).json({ success: false, error: 'mobileNumber is required' });
-    if (!fullName) return res.status(400).json({ success: false, error: 'fullName is required' });
+    if (!tenantId) return res.status(400).json({ success: false, error: 'tenantId is required. Provide the ID of the tenant you want to link this reporter to.' });
+    if (!mobileNumber) return res.status(400).json({ success: false, error: 'mobileNumber is required. Provide the reporter\'s 10-digit mobile number.' });
+    if (!fullName) return res.status(400).json({ success: false, error: 'fullName is required. Provide the reporter\'s full name.' });
 
     const cleanMobile = String(mobileNumber).replace(/\D/g, '');
     if (cleanMobile.length < 10) {
-      return res.status(400).json({ success: false, error: 'Invalid mobile number' });
+      return res.status(400).json({ success: false, error: `Invalid mobile number "${mobileNumber}". Must be at least 10 digits.` });
     }
 
     // Check tenant exists
@@ -134,7 +150,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
       select: { id: true, name: true, slug: true, stateId: true }
     });
     if (!tenant) {
-      return res.status(404).json({ success: false, error: 'Tenant not found' });
+      return res.status(404).json({ success: false, error: `Tenant not found. No tenant exists with ID "${tenantId}". Verify the tenantId and try again.` });
     }
 
     // Get or create TENANT_ADMIN role
@@ -161,7 +177,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
       orderBy: { createdAt: 'asc' }
     }) || await prisma.language.findFirst({ orderBy: { createdAt: 'asc' } });
     if (!language) {
-      return res.status(500).json({ success: false, error: 'No language found in system' });
+      return res.status(500).json({ success: false, error: 'No language configured in the system. Please seed at least one language (e.g. English) before creating reporters.' });
     }
 
     // Get state (prefer explicit input; else tenant.stateId; else tenant entity publicationStateId)
@@ -247,7 +263,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
 
         return res.status(200).json({
           success: true,
-          message: 'User already linked to this tenant, role updated to TENANT_ADMIN',
+          message: `Reporter with mobile "${cleanMobile}" is already linked to tenant "${tenant.name}". Role has been updated to TENANT_ADMIN.`,
           data: {
             userId: user.id,
             mobileNumber: cleanMobile,
@@ -263,25 +279,62 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
         });
       }
 
-      // Check if already linked to ANOTHER tenant as TENANT_ADMIN
+      // Check if already linked to ANOTHER tenant — allow move (reporter can switch tenants)
       const otherTenantReporter = await prisma.reporter.findFirst({
         where: { userId: user.id, tenantId: { not: tenantId } },
         include: { tenant: { select: { id: true, name: true } } }
       });
 
-      const currentRole = await prisma.role.findUnique({ where: { id: user.roleId } });
-      if (otherTenantReporter && currentRole?.name?.toUpperCase() === 'TENANT_ADMIN') {
-        return res.status(409).json({
-          success: false,
-          error: 'User already linked as TENANT_ADMIN to another tenant',
-          existingTenant: {
-            id: otherTenantReporter.tenant.id,
-            name: otherTenantReporter.tenant.name
+      if (otherTenantReporter) {
+        // Reporter is moving from another tenant to this tenant — perform the switch
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { roleId: role.id, email: email || user.email }
+        });
+
+        profile = await prisma.userProfile.upsert({
+          where: { userId: user.id },
+          update: { fullName: String(fullName).trim() },
+          create: { userId: user.id, fullName: String(fullName).trim() }
+        });
+
+        // Move reporter record to new tenant
+        reporter = await prisma.reporter.update({
+          where: { id: otherTenantReporter.id },
+          data: {
+            tenantId,
+            designationId: designation?.id ?? otherTenantReporter.designationId,
+            stateId: state?.id ?? otherTenantReporter.stateId,
+            active: true,
+            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+          }
+        });
+
+        console.log(`[TenantAdmins] Moved: userId=${user.id}, reporterId=${reporter.id}, from="${otherTenantReporter.tenant.name}" → to="${tenant.name}"`);
+
+        return res.status(200).json({
+          success: true,
+          message: `Reporter moved from "${otherTenantReporter.tenant.name}" to "${tenant.name}" successfully. Previous tenant link has been removed.`,
+          movedFrom: {
+            tenantId: otherTenantReporter.tenant.id,
+            tenantName: otherTenantReporter.tenant.name,
+          },
+          data: {
+            userId: user.id,
+            mobileNumber: cleanMobile,
+            fullName: profile.fullName,
+            email: user.email,
+            tenantId,
+            tenantName: tenant.name,
+            reporterId: reporter.id,
+            profilePhotoUrl: reporter.profilePhotoUrl,
+            designation: designation ? { id: designation.id, name: designation.name } : null,
+            loginCredentials: { mobileNumber: cleanMobile, mpin: '(existing — not changed)' }
           }
         });
       }
 
-      // Update role
+      // No other-tenant link — just update role
       user = await prisma.user.update({
         where: { id: user.id },
         data: { roleId: role.id, email: email || user.email }
@@ -377,7 +430,12 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
     });
   } catch (e: any) {
     console.error('Tenant admin create error:', e);
-    res.status(500).json({ success: false, error: 'Failed to create tenant admin', details: e.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create/link tenant admin. An unexpected server error occurred.',
+      details: e.message,
+      hint: 'Check that tenantId is valid, mobileNumber is 10 digits, and the database is reachable.'
+    });
   }
 });
 
