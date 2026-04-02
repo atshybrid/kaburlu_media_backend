@@ -191,6 +191,64 @@ function detectDevice(userAgent: string): { isIOS: boolean; isAndroid: boolean; 
 }
 
 /**
+ * Helper: User-friendly HTML page for invalid / not-found / expired short links
+ */
+function generateNotFoundHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Link not found – Kaburlu</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #FF5722 0%, #FF7043 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      max-width: 360px;
+      width: 100%;
+      background: white;
+      border-radius: 20px;
+      padding: 36px 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      text-align: center;
+    }
+    .icon { font-size: 56px; margin-bottom: 12px; }
+    .brand { font-size: 22px; font-weight: 700; color: #FF5722; margin-bottom: 20px; }
+    h1 { font-size: 20px; color: #222; margin-bottom: 10px; }
+    p { font-size: 14px; color: #666; line-height: 1.6; margin-bottom: 24px; }
+    a.btn {
+      display: inline-block;
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #FF5722, #F4511E);
+      color: white;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔗</div>
+    <div class="brand">Kaburlu</div>
+    <h1>Link not found</h1>
+    <p>This link may have expired or the article was removed. Browse the latest news on Kaburlu.</p>
+    <a href="https://kaburlumedia.com" class="btn">Go to Kaburlu</a>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * Helper: Generate smart banner HTML for mobile devices
  */
 function generateSmartBannerHtml(params: {
@@ -200,9 +258,13 @@ function generateSmartBannerHtml(params: {
   storeUrl: string;
   storeName: string;
   isIOS: boolean;
+  ogDescription?: string;
+  ogImage?: string;
 }): string {
-  const { newsTitle, appDeepLink, webUrl, storeUrl, storeName, isIOS } = params;
+  const { newsTitle, appDeepLink, webUrl, storeUrl, storeName, isIOS, ogDescription, ogImage } = params;
   const safeTitle = newsTitle.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const safeDesc = (ogDescription || 'Read the latest news on Kaburlu').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const safeImage = ogImage || `https://kaburlumedia.com/og-default.jpg`;
   
   return `
 <!DOCTYPE html>
@@ -210,8 +272,19 @@ function generateSmartBannerHtml(params: {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta property="og:type" content="article" />
   <meta property="og:title" content="${safeTitle}" />
+  <meta property="og:description" content="${safeDesc}" />
+  <meta property="og:image" content="${safeImage}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta property="og:url" content="${webUrl}" />
+  <meta property="og:site_name" content="Kaburlu" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${safeTitle}" />
+  <meta name="twitter:description" content="${safeDesc}" />
+  <meta name="twitter:image" content="${safeImage}" />
+  <link rel="canonical" href="${webUrl}" />
   <meta name="apple-itunes-app" content="app-id=${process.env.IOS_APP_ID || '123456789'}">
   <title>${safeTitle} - Kaburlu</title>
   <style>
@@ -381,12 +454,14 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
     const { isIOS, isMobile } = detectDevice(userAgent);
     
     if (!shortId || shortId.length < 6) {
-      return res.status(400).json({ error: 'Invalid short ID' });
+      return res.status(400).send(generateNotFoundHtml());
     }
 
     // Initialize variables
     let newsId = '';
     let newsTitle = 'Kaburlu News';
+    let newsDescription = '';
+    let newsImage = '';
     let categorySlug = 'news';
     let domain = 'kaburlumedia.com';
     let newsSlug = '';
@@ -402,6 +477,8 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
         id: true,
         slug: true,
         title: true,
+        summary: true,
+        featuredImage: true,
         categoryId: true,
         author: {
           select: {
@@ -426,6 +503,8 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
     if (shortNews) {
       newsId = shortNews.id;
       newsTitle = shortNews.title || 'Kaburlu News';
+      newsDescription = (shortNews as any).summary || '';
+      newsImage = (shortNews as any).featuredImage || '';
       newsSlug = shortNews.slug || shortNews.id;
       domain = (shortNews.author as any)?.reporterProfile?.tenant?.domains?.[0]?.domain || 'kaburlumedia.com';
       
@@ -446,6 +525,8 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
         select: {
           id: true,
           title: true,
+          headlines: true,
+          images: true,
           categories: {
             select: { slug: true },
             take: 1
@@ -471,11 +552,13 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
       });
 
       if (!article) {
-        return res.status(404).json({ error: 'News not found' });
+        return res.status(404).send(generateNotFoundHtml());
       }
 
       newsId = article.id;
       newsTitle = article.title || 'Kaburlu News';
+      newsDescription = (article as any).headlines || '';
+      newsImage = (article as any).images?.[0] || '';
       newsSlug = article.id;
       newsType = 'article';
       categorySlug = article.categories?.[0]?.slug || 'news';
@@ -496,9 +579,11 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
         webUrl,
         storeUrl,
         storeName,
-        isIOS
+        isIOS,
+        ogDescription: newsDescription,
+        ogImage: newsImage
       });
-      
+
       res.setHeader('Content-Type', 'text/html');
       return res.send(html);
     }
@@ -507,7 +592,7 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
     return res.redirect(302, webUrl);
   } catch (error) {
     console.error('Short URL redirect error:', error);
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(500).send(generateNotFoundHtml());
   }
 }
 
