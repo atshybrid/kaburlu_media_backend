@@ -18,6 +18,16 @@ import { translateAndSaveCategoryInBackground } from '../categories/categories.s
 type HeadingStyle = { text: string; color?: string; bgColor?: string; size?: number; tag?: 'h2' | 'h3' };
 type HeadingsPayload = { h2?: HeadingStyle; h3?: HeadingStyle };
 
+/** Generate a unique 8-character alphanumeric short ID (URL-safe) */
+function generateShortId(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
 function normalizeHeading(tag: 'h2' | 'h3', obj: any): HeadingStyle | undefined {
   if (!obj) return undefined;
   const text = typeof obj.text === 'string' ? obj.text.trim() : (typeof obj.content === 'string' ? obj.content.trim() : '');
@@ -450,6 +460,7 @@ export const createShortNews = async (req: Request, res: Response) => {
 
     const normalizedHeadings = normalizeHeadings(headings, h2, h3);
 
+    const shortId = generateShortId();
     const shortNews = await (prisma as any).shortNews.create({
       data: {
         title: titleToSave,
@@ -457,6 +468,7 @@ export const createShortNews = async (req: Request, res: Response) => {
         content,
         authorId,
         categoryId,
+        shortId,
         tags: combinedTags,
         seo: { ...finalSeo, jsonLd },
   headings: normalizedHeadings || undefined,
@@ -1150,7 +1162,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       const categorySlug = i.categoryId ? (catSlugById.get(i.categoryId) || 'news') : 'news';
       // Short URL always uses the dedicated short URL domain
       const shortUrlDomain = process.env.SHORT_URL_DOMAIN || 's.kaburlumedia.com';
-      const shortUrl = `https://${shortUrlDomain}/${i.id.slice(-8)}`;
+      const shortUrl = `https://${shortUrlDomain}/${(i as any).shortId || i.id.slice(-8)}`;
 
       return {
         ...i,
@@ -1438,7 +1450,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
 
     // Short URL always uses the dedicated short URL domain
     const shortUrlDomain = process.env.SHORT_URL_DOMAIN || 's.kaburlumedia.com';
-    const shortUrl = `https://${shortUrlDomain}/${item.id.slice(-8)}`;
+    const shortUrl = `https://${shortUrlDomain}/${(item as any).shortId || item.id.slice(-8)}`;
 
     const data = {
       ...item,

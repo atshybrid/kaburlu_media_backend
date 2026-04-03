@@ -79,6 +79,7 @@ model ShortNews {
   aiValidationIssues     Json?
   pushNotificationSent   Boolean           @default(false)
   pushNotificationSentAt DateTime?
+  shortId                String?           @unique
   comments               Comment[]
   author                 User              @relation(fields: [authorId], references: [id])
   options                ShortNewsOption[]

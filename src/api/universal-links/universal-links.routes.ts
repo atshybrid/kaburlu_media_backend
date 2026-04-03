@@ -467,10 +467,13 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
     let newsSlug = '';
     let newsType = 'shortnews';
 
-    // Try to find ShortNews first
-    const shortNews = await prisma.shortNews.findFirst({
+    // Try to find ShortNews first — use indexed shortId column, fallback to endsWith for old records
+    const shortNews = await (prisma.shortNews as any).findFirst({
       where: {
-        id: { endsWith: shortId },
+        OR: [
+          { shortId: shortId },
+          { id: { endsWith: shortId } }
+        ],
         status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] }
       },
       select: {
