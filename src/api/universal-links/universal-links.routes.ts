@@ -451,7 +451,7 @@ function generateSmartBannerHtml(params: {
 async function handleShortUrl(shortId: string, req: Request, res: Response) {
   try {
     const userAgent = req.headers['user-agent'] || '';
-    const { isIOS, isMobile } = detectDevice(userAgent);
+    const { isIOS, isAndroid, isMobile } = detectDevice(userAgent);
     
     if (!shortId || shortId.length < 6) {
       return res.status(400).send(generateNotFoundHtml());
@@ -570,8 +570,11 @@ async function handleShortUrl(shortId: string, req: Request, res: Response) {
 
     // Build URLs
     const webUrl = `https://${domain}/${categorySlug}/${newsSlug}`;
-    const appDeepLink = `kaburlu://${newsType}/${newsId}`;
     const storeUrl = isIOS ? APP_STORE_URL : PLAY_STORE_URL;
+    // Android Chrome blocks custom-scheme navigation from JS; use intent:// instead
+    const appDeepLink = isAndroid
+      ? `intent://${newsType}/${newsId}#Intent;scheme=kaburlu;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`
+      : `kaburlu://${newsType}/${newsId}`;
     const storeName = isIOS ? 'App Store' : 'Play Store';
 
     // For mobile devices, show smart banner
