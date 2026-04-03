@@ -25,7 +25,6 @@ import translateRoutes from './api/translate/translate.routes';
 import profileRoutes from './api/profiles/profiles.routes';
 import shortNewsRoutes from './api/shortnews/shortnews.routes';
 import shortNewsReadRoutes from './api/shortnews/shortNewsRead.routes';
-import { redirectShortUrl } from './api/shortnews/shortnews.controller';
 import mediaRoutes from './api/media/media.routes';
 import devicesRoutes from './api/devices/devices.routes';
 import notificationsRoutes from './api/notifications/notifications.routes';
@@ -244,20 +243,6 @@ try {
 } catch (e) {
   console.error('Failed to initialize JWT strategy:', e);
 }
-
-// Short URL host-based routing: requests to s.kaburlumedia.com/{shortId} handled here
-// e.g. https://s.kaburlumedia.com/np35g9f1 → smart redirect (app or Play Store)
-app.use((req, res, next) => {
-  const shortHost = process.env.SHORT_URL_DOMAIN || 's.kaburlumedia.com';
-  if (req.hostname === shortHost) {
-    const shortId = req.path.replace(/^\//, '');
-    if (shortId && shortId.length >= 6) {
-      (req as any).params = { ...(req as any).params, shortId };
-      return redirectShortUrl(req as any, res);
-    }
-  }
-  next();
-});
 
 // Swagger UI
 // Serve Swagger JSON at /api/docs/swagger.json (standard swagger-ui path)
@@ -490,9 +475,6 @@ app.get(
     res.json({ message: 'You are authorized to see this message' });
   }
 );
-
-// Short URL redirect: /s/:shortId -> smart app redirect (open app or go to store)
-app.get('/s/:shortId', redirectShortUrl);
 
 // Root route - Landing page
 app.get('/', (_req, res) => {
