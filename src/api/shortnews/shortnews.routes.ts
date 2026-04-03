@@ -767,8 +767,9 @@ router.get('/public/:id', shortNewsController.getApprovedShortNewsById);
  *   get:
  *     summary: Resolve short ID to full article ID (for deep linking)
  *     description: |
- *       Given a short ID (last 6-8 chars of the full ID), returns the full article ID.
- *       Used by mobile apps to resolve short URLs like s.kaburlumedia.com/{shortId}
+ *       Resolves a shortId to the full article ID. Used by mobile apps to open the right
+ *       article from a short URL like s.kaburlumedia.com/{shortId}.
+ *       Lookup uses an indexed shortId column — fast O(1) response.
  *     tags: [ShortNews]
  *     parameters:
  *       - in: path
@@ -776,7 +777,8 @@ router.get('/public/:id', shortNewsController.getApprovedShortNewsById);
  *         required: true
  *         schema:
  *           type: string
- *         description: Last 6-8 characters of the full article ID
+ *           example: 2f7skmsq
+ *         description: 8-character short ID from the shortUrl field
  *     responses:
  *       200:
  *         description: Short ID resolved successfully

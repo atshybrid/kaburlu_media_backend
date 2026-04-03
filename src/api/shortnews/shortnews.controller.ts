@@ -1532,10 +1532,13 @@ export const resolveShortId = async (req: Request, res: Response) => {
       });
     }
 
-    // Try ShortNews first
-    const shortNews = await prisma.shortNews.findFirst({
+    // Try ShortNews first — indexed shortId column (O(1)), fallback to endsWith for legacy records
+    const shortNews = await (prisma.shortNews as any).findFirst({
       where: {
-        id: { endsWith: shortId },
+        OR: [
+          { shortId },
+          { id: { endsWith: shortId } }
+        ],
         status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] }
       },
       select: { id: true }
