@@ -1146,18 +1146,11 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
       // Image alt text
       const imageAlt = seoData?.imageAlt || (i.title ? `${i.title} - ${categoryName || 'News'}` : null);
 
-      // Build share/web URLs for mobile app
-      // Format: {domain}/{categorySlug}/{articleSlug}
-      const tenantDomain = tenantInfo?.domain || 'kaburlumedia.com';
-      const itemSlug = i.slug || i.id;
+      // Category slug for response enrichment
       const categorySlug = i.categoryId ? (catSlugById.get(i.categoryId) || 'news') : 'news';
-      const webUrl = `https://${tenantDomain}/${categorySlug}/${itemSlug}`;
-      // Deep link for React Native app - format: kaburlu://shortnews/{id}
-      const appDeepLink = `kaburlu://shortnews/${i.id}`;
-      // Universal link (works for both web and app) - uses web URL with app association
-      const shareLink = webUrl;
-      // Short URL for sharing (compact format)
-      const shortUrl = `https://${tenantDomain}/s/${i.id.slice(-8)}`;
+      // Short URL always uses the dedicated short URL domain
+      const shortUrlDomain = process.env.SHORT_URL_DOMAIN || 's.kaburlumedia.com';
+      const shortUrl = `https://${shortUrlDomain}/${i.id.slice(-8)}`;
 
       return {
         ...i,
@@ -1169,12 +1162,7 @@ export const listApprovedShortNews = async (req: Request, res: Response) => {
         primaryVideoUrl,
         featuredImage: i.featuredImage || primaryImageUrl || null,
         imageAlt,
-        canonicalUrl,
-        // Share & Deep Link URLs
-        webUrl,
-        shareLink,
         shortUrl,
-        appDeepLink,
         jsonLd,
         // SEO object
         seo,
@@ -1448,17 +1436,9 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
     // Image alt text
     const imageAlt = seoData?.imageAlt || (item.title ? `${item.title} - ${categoryName || 'News'}` : null);
 
-    // Build share/web URLs for mobile app
-    // Format: {domain}/{categorySlug}/{articleSlug}
-    const tenantDomain = tenantInfo?.domain || 'kaburlumedia.com';
-    const itemSlug = item.slug || item.id;
-    const webUrl = `https://${tenantDomain}/${categorySlug}/${itemSlug}`;
-    // Deep link for React Native app - format: kaburlu://shortnews/{id}
-    const appDeepLink = `kaburlu://shortnews/${item.id}`;
-    // Universal link (works for both web and app) - uses web URL with app association
-    const shareLink = webUrl;
-    // Short URL for sharing (compact format)
-    const shortUrl = `https://${tenantDomain}/s/${item.id.slice(-8)}`;
+    // Short URL always uses the dedicated short URL domain
+    const shortUrlDomain = process.env.SHORT_URL_DOMAIN || 's.kaburlumedia.com';
+    const shortUrl = `https://${shortUrlDomain}/${item.id.slice(-8)}`;
 
     const data = {
       ...item,
@@ -1469,12 +1449,7 @@ export const getApprovedShortNewsById = async (req: Request, res: Response) => {
       primaryVideoUrl,
       featuredImage: item.featuredImage || primaryImageUrl || null,
       imageAlt,
-      canonicalUrl,
-      // Share & Deep Link URLs
-      webUrl,
-      shareLink,
       shortUrl,
-      appDeepLink,
       jsonLd,
       // SEO object
       seo,
@@ -1591,6 +1566,119 @@ export const resolveShortId = async (req: Request, res: Response) => {
   } catch (e) {
     console.error('Failed to resolve short ID:', e);
     return res.status(500).json({ success: false, error: 'Failed to resolve short ID' });
+  }
+};
+
+/**
+ * Smart redirect for short URLs.
+ * GET /s/:shortId  (mounted at app root)
+ * - Android: uses intent:// URI so Chrome natively opens the app or falls back to Play Store
+ * - iOS: tries kaburlu:// deep link; JS timeout falls back to App Store
+ * - Desktop/other: redirects straight to Play Store
+ */
+export const redirectShortUrl = async (req: Request, res: Response) => {
+  try {
+    const { shortId } = req.params;
+
+    if (!shortId || shortId.length < 6) {
+      return res.status(400).send('<h1>Invalid link</h1>');
+    }
+
+    // Resolve article ID
+    let articleId: string | null = null;
+
+    const shortNews = await prisma.shortNews.findFirst({
+      where: {
+        id: { endsWith: shortId },
+        status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] },
+      },
+      select: { id: true },
+    });
+    if (shortNews) {
+      articleId = shortNews.id;
+    } else {
+      const article = await prisma.article.findFirst({
+        where: {
+          id: { endsWith: shortId },
+          status: { in: ['DESK_APPROVED', 'AI_APPROVED', 'PUBLISHED'] },
+        },
+        select: { id: true },
+      });
+      if (article) articleId = article.id;
+    }
+
+    if (!articleId) {
+      return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not Found</title></head><body><h2>Article not found</h2></body></html>');
+    }
+
+    const androidPackage = process.env.ANDROID_PACKAGE_NAME || 'com.media.kaburlu';
+    const playStoreUrl = process.env.ANDROID_PLAY_STORE_URL || `https://play.google.com/store/apps/details?id=${androidPackage}`;
+    const appStoreUrl = process.env.IOS_APP_STORE_URL || 'https://apps.apple.com/app/kaburlu/id000000000';
+    const deepLink = `kaburlu://shortnews/${articleId}`;
+    // Android Chrome intent URI - natively opens the app or falls back to Play Store without JS needed
+    const intentUrl = `intent://shortnews/${articleId}#Intent;scheme=kaburlu;package=${androidPackage};S.browser_fallback_url=${encodeURIComponent(playStoreUrl)};end`;
+
+    // Escape values for inline HTML
+    const safeIntentUrl = intentUrl.replace(/"/g, '&quot;');
+    const safeDeepLink = deepLink.replace(/"/g, '&quot;');
+    const safePlayStore = playStoreUrl.replace(/"/g, '&quot;');
+    const safeAppStore = appStoreUrl.replace(/"/g, '&quot;');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opening Kaburlu...</title>
+  <style>
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center;
+           justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+    .card { background: #fff; border-radius: 12px; padding: 2rem; text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1); max-width: 320px; width: 90%; }
+    h2 { color: #333; margin-bottom: 0.5rem; }
+    p { color: #666; font-size: 0.9rem; }
+    a.btn { display: inline-block; margin-top: 1rem; padding: 0.75rem 1.5rem;
+            background: #4CAF50; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Opening Kaburlu</h2>
+    <p>Redirecting you to the article...</p>
+    <a class="btn" id="storeBtn" href="${safePlayStore}">Download Kaburlu</a>
+  </div>
+  <script>
+    (function () {
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+      if (isAndroid) {
+        // Chrome on Android handles intent:// natively - opens app or goes to Play Store fallback
+        window.location.href = "${safeIntentUrl}";
+      } else if (isIOS) {
+        var storeBtn = document.getElementById('storeBtn');
+        if (storeBtn) storeBtn.href = "${safeAppStore}";
+        // Try deep link; if app not installed, iOS won't open it and we fall back to App Store
+        var fallbackTimer = setTimeout(function () {
+          window.location.href = "${safeAppStore}";
+        }, 1500);
+        window.addEventListener('blur', function () { clearTimeout(fallbackTimer); });
+        window.location.href = "${safeDeepLink}";
+      } else {
+        // Desktop or unknown - redirect to Play Store
+        window.location.href = "${safePlayStore}";
+      }
+    })();
+  </script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (e) {
+    console.error('Failed to redirect short URL:', e);
+    return res.status(500).send('<h1>Server error</h1>');
   }
 };
 
