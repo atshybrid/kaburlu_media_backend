@@ -102,7 +102,7 @@ model User {
   id                     String                 @id @default(cuid())
   status                 String                 @default("PENDING")
   upgradedAt             DateTime?
-  firebaseUid            String?
+  firebaseUid            String?                @unique
   lastLoginAt            DateTime?
   loginCount             Int                    @default(0)
   articles               Article[]

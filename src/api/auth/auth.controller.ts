@@ -459,7 +459,7 @@ export const loginWithGoogleController = async (req: Request, res: Response) => 
     const firebaseUid = verificationResult.firebaseUid;
 
     // Find user by firebaseUid
-  let user = await prisma.user.findUnique({ where: { firebaseUid } as any });
+  let user = await prisma.user.findUnique({ where: { firebaseUid } });
     if (!user) {
       // Not found: return 404 to instruct client to call upgrade
       return res.status(404).json({ success: false, code: 'USER_NOT_FOUND', message: 'No user for this Google account. Call upgrade.' });
@@ -601,7 +601,7 @@ export const upgradeCitizenReporterGoogleController = async (req: Request, res: 
     const firebaseUid = verificationResult.firebaseUid;
 
     // If user exists, return conflict
-  let existing = await prisma.user.findUnique({ where: { firebaseUid } as any });
+  let existing = await prisma.user.findUnique({ where: { firebaseUid } });
     if (existing) {
       // Update language if different
       if (existing.languageId !== languageId) {
