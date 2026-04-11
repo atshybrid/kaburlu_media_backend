@@ -261,6 +261,7 @@ export const config = {
     idCardTemplateLang: process.env.WHATSAPP_IDCARD_TEMPLATE_LANG || 'en_US',
     supportMobile: process.env.WHATSAPP_SUPPORT_MOBILE || '',
     ttlText: process.env.WHATSAPP_OTP_TTL_TEXT || '10 minutes',
+    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
   },
 };
 

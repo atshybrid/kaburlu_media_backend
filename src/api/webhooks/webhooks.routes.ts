@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import prisma from '../../lib/prisma';
+import { config } from '../../config/env';
 
 const router = Router();
 
@@ -370,6 +371,100 @@ router.post('/razorpay', async (req, res) => {
   } catch (e) {
     console.error('razorpay webhook error', e);
     res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+/**
+ * @swagger
+ * /webhooks/whatsapp:
+ *   get:
+ *     summary: WhatsApp webhook verification (Meta challenge)
+ *     description: |
+ *       Meta calls this GET endpoint once when you register the webhook URL in the developer portal.
+ *       Set WHATSAPP_WEBHOOK_VERIFY_TOKEN to any random string and use the same value in the Meta dashboard.
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: query
+ *         name: hub.mode
+ *         schema: { type: string }
+ *       - in: query
+ *         name: hub.verify_token
+ *         schema: { type: string }
+ *       - in: query
+ *         name: hub.challenge
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Challenge echoed back }
+ *       403: { description: Token mismatch }
+ */
+router.get('/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = config.whatsapp.webhookVerifyToken;
+  if (!verifyToken) {
+    return res.status(500).send('WHATSAPP_WEBHOOK_VERIFY_TOKEN not configured');
+  }
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('[WhatsApp Webhook] Verification passed');
+    return res.status(200).send(challenge);
+  }
+
+  console.warn('[WhatsApp Webhook] Verification failed — token mismatch');
+  return res.status(403).send('Forbidden');
+});
+
+/**
+ * @swagger
+ * /webhooks/whatsapp:
+ *   post:
+ *     summary: WhatsApp Cloud API incoming events
+ *     description: |
+ *       Receives message status updates (sent, delivered, read, failed) and
+ *       incoming user messages from WhatsApp Cloud API.
+ *       Logs events to console; extend here to handle reactions, replies, etc.
+ *     tags: [Webhooks]
+ *     responses:
+ *       200: { description: Event acknowledged }
+ */
+router.post('/whatsapp', (req, res) => {
+  // Always acknowledge immediately so Meta does not retry
+  res.sendStatus(200);
+
+  try {
+    const body = req.body;
+    if (body?.object !== 'whatsapp_business_account') return;
+
+    const entries: any[] = Array.isArray(body.entry) ? body.entry : [];
+    for (const entry of entries) {
+      const changes: any[] = Array.isArray(entry.changes) ? entry.changes : [];
+      for (const change of changes) {
+        const value = change?.value;
+        if (!value) continue;
+
+        // Message status updates (sent / delivered / read / failed)
+        const statuses: any[] = Array.isArray(value.statuses) ? value.statuses : [];
+        for (const s of statuses) {
+          console.log(`[WhatsApp Webhook] Status — id:${s.id} to:${s.recipient_id} status:${s.status}`);
+          if (s.status === 'failed') {
+            console.warn('[WhatsApp Webhook] Delivery failed:', JSON.stringify(s.errors || s));
+          }
+        }
+
+        // Incoming messages from users
+        const messages: any[] = Array.isArray(value.messages) ? value.messages : [];
+        for (const msg of messages) {
+          const from = msg.from;
+          const type = msg.type;
+          console.log(`[WhatsApp Webhook] Incoming message — from:${from} type:${type}`);
+          // TODO: add reply logic here (e.g., OTP confirmation, reporter responses)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[WhatsApp Webhook] Processing error:', e);
   }
 });
 
