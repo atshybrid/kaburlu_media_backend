@@ -41,6 +41,29 @@ model OtpLog {
   createdAt    DateTime @default(now())
 }
 
+/// WhatsApp Cloud API incoming webhook events — messages & status updates
+model WhatsappWebhookEvent {
+  id          String   @id @default(cuid())
+  eventType   String   /// "message" | "status"
+  waMessageId String?  /// WhatsApp message ID (wamid.xxx)
+  from        String?  /// Sender phone number (E.164 digits only)
+  to          String?  /// Recipient phone number
+  status      String?  /// For status events: sent | delivered | read | failed
+  messageType String?  /// For message events: text | image | audio | document | etc.
+  bodyText    String?  /// Extracted text body for text messages
+  errorCode   Int?     /// For failed status events
+  errorMsg    String?  /// For failed status events
+  rawPayload  Json     /// Full raw event object from Meta
+  phoneNumberId String? /// Which phone number ID received this
+  receivedAt  DateTime @default(now())
+
+  @@index([eventType])
+  @@index([from])
+  @@index([waMessageId])
+  @@index([status])
+  @@index([receivedAt])
+}
+
 model ShortNews {
   categoryId             String
   aiRemark               String?

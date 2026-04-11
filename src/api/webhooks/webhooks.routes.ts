@@ -444,6 +444,8 @@ router.post('/whatsapp', (req, res) => {
         const value = change?.value;
         if (!value) continue;
 
+        const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
+
         // Message status updates (sent / delivered / read / failed)
         const statuses: any[] = Array.isArray(value.statuses) ? value.statuses : [];
         for (const s of statuses) {
@@ -451,6 +453,22 @@ router.post('/whatsapp', (req, res) => {
           if (s.status === 'failed') {
             console.warn('[WhatsApp Webhook] Delivery failed:', JSON.stringify(s.errors || s));
           }
+          const firstError = Array.isArray(s.errors) ? s.errors[0] : undefined;
+          (prisma as any).whatsappWebhookEvent.create({
+            data: {
+              eventType: 'status',
+              waMessageId: s.id || null,
+              from: null,
+              to: s.recipient_id || null,
+              status: s.status || null,
+              messageType: null,
+              bodyText: null,
+              errorCode: firstError?.code ?? null,
+              errorMsg: firstError?.title ?? null,
+              rawPayload: s,
+              phoneNumberId: phoneNumberId || null,
+            },
+          }).catch((e: any) => console.error('[WhatsApp Webhook] DB store status error:', e?.message));
         }
 
         // Incoming messages from users
@@ -459,7 +477,22 @@ router.post('/whatsapp', (req, res) => {
           const from = msg.from;
           const type = msg.type;
           console.log(`[WhatsApp Webhook] Incoming message — from:${from} type:${type}`);
-          // TODO: add reply logic here (e.g., OTP confirmation, reporter responses)
+          const bodyText = type === 'text' ? (msg.text?.body || null) : null;
+          (prisma as any).whatsappWebhookEvent.create({
+            data: {
+              eventType: 'message',
+              waMessageId: msg.id || null,
+              from: from || null,
+              to: value.metadata?.display_phone_number || null,
+              status: null,
+              messageType: type || null,
+              bodyText,
+              errorCode: null,
+              errorMsg: null,
+              rawPayload: msg,
+              phoneNumberId: phoneNumberId || null,
+            },
+          }).catch((e: any) => console.error('[WhatsApp Webhook] DB store message error:', e?.message));
         }
       }
     }
