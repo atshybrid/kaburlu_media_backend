@@ -19,20 +19,32 @@ const ANDROID_PACKAGE = process.env.ANDROID_PACKAGE_NAME || 'com.media.kaburlu';
  *         description: Apple App Site Association JSON
  */
 router.get('/.well-known/apple-app-site-association', (_req: Request, res: Response) => {
-  // Replace with your actual Apple Team ID and Bundle ID
+  const appID = `${process.env.APPLE_TEAM_ID || 'TEAM_ID'}.${process.env.IOS_BUNDLE_ID || 'com.media.kaburlu'}`;
+  // Support both new (iOS 13+) and legacy (iOS 12-) formats
   const appSiteAssociation = {
     applinks: {
-      apps: [],
       details: [
         {
-          appID: `${process.env.APPLE_TEAM_ID || 'TEAM_ID'}.${process.env.IOS_BUNDLE_ID || 'com.kaburlu.app'}`,
+          // New format (iOS 13+)
+          appIDs: [appID],
+          components: [
+            { '/': '/s/*' },
+            { '/': '/open/*' },
+            { '/': '/*' }
+          ]
+        },
+        {
+          // Legacy format (iOS 12 and below)
+          appID: appID,
           paths: ['/s/*', '/open/*', '/*']
         }
       ]
     }
   };
   
+  // Must be served with correct content-type and NO redirect for Universal Links to work
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
   res.json(appSiteAssociation);
 });
 
@@ -393,22 +405,20 @@ function generateSmartBannerHtml(params: {
   
   <script>
     (function() {
-      var startTime = Date.now();
       var hidden = false;
       
-      // Detect if page becomes hidden (app opened)
+      // Detect if page becomes hidden (app opened successfully)
       document.addEventListener('visibilitychange', function() {
         if (document.hidden) hidden = true;
       });
+      window.addEventListener('pagehide', function() { hidden = true; });
       
-      // Try to open app after short delay
-      setTimeout(function() {
-        window.location.href = "${appDeepLink}";
-      }, 500);
+      // Try to open app immediately
+      window.location.href = "${appDeepLink}";
       
-      // Update UI after timeout if still visible
+      // Update UI after 2.5s if app did NOT open
       setTimeout(function() {
-        if (!hidden && Date.now() - startTime > 2000) {
+        if (!hidden) {
           document.getElementById('status').textContent = 'App not found. Download below:';
           document.getElementById('openApp').classList.remove('pulse');
           document.getElementById('storeLink').classList.add('pulse');
