@@ -64,3 +64,4 @@ tmp/*.pdf
 .IDX/
 secrets/.env.digitalocean
 .env.digitalocean
+scripts/test_citizen_reporter_google_auth.js
