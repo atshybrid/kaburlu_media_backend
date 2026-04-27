@@ -10,7 +10,8 @@
     "forceConsistentCasingInFileNames": true,
   "experimentalDecorators": true,
   "emitDecoratorMetadata": true,
-  "moduleResolution": "node",
+  "moduleResolution": "node10",
+  "ignoreDeprecations": "6.0",
   "allowJs": true,
   "typeRoots": ["./src/types", "./node_modules/@types"]
   },

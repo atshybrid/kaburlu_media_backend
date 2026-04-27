@@ -163,6 +163,9 @@ model User {
   journalistProfile      JournalistProfile?
   journalistComplaints   JournalistComplaint[]
   journalistUpdates      JournalistUnionUpdate[]
+  journalistUnionAdmins  JournalistUnionAdmin[]
+  unionPostsAppointed    JournalistUnionPostHolder[] @relation("UnionPostAppointedBy")
+  insurancesAssigned     JournalistInsurance[]       @relation("InsuranceAssignedBy")
 }
 
 /// Tracks user login sessions for working hours calculation
@@ -2458,37 +2461,104 @@ model JournalistProfile {
   id           String    @id @default(cuid())
   userId       String    @unique
   pressId      String?   @unique /// Assigned by admin after approval
-  designation  String
+  designation  String                /// Union membership designation (e.g. "Reporter")
   district     String
-  organization String    /// Media outlet / employer
-  unionName    String?   /// Which journalist union (supports multi-union)
+  organization String                /// Media outlet / employer at time of application
+  unionName    String?               /// Which journalist union (supports multi-union)
   approved     Boolean   @default(false)
   approvedAt   DateTime?
   rejectedAt   DateTime?
+
+  // ── Geographic Area (where the journalist operates / covers) ──
+  state             String?  /// State name (e.g. "Andhra Pradesh")
+  mandal            String?  /// Mandal / Tehsil name
+
+  // ── KYC Documents (URLs in R2) ────────────────────────────────
+  photoUrl          String?  /// Member passport-size photo
+  aadhaarUrl        String?  /// Aadhaar card image (front)
+  aadhaarBackUrl    String?  /// Aadhaar card image (back, optional)
+  aadhaarNumber     String?  /// Last 4 digits only (masked) — for display
+  kycVerified       Boolean  @default(false)
+  kycVerifiedAt     DateTime?
+  kycNote           String?  /// Admin note on KYC verification
+
+  // ── Work / Career Details ──────────────────────────────────────
+  /// If member is also a reporter in a tenant, link it (auto-detected via reporter-link)
+  linkedTenantId        String?  /// Tenant id of their newspaper (from Reporter table)
+  linkedTenantName      String?  /// Newspaper name (denormalized for quick display)
+  /// Manual work details (used if NOT a tenant reporter, or to override)
+  currentNewspaper      String?  /// Current working newspaper / channel name
+  currentDesignation    String?  /// Current job designation (e.g. "Senior Reporter", "Camera Person")
+  joiningDate           DateTime? /// Date they joined current organization
+  totalExperienceYears  Int?      /// Total journalism experience in years
+  additionalInfo        String?  /// Any other relevant info (freetext)
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   card         JournalistCard?
+  postHoldings JournalistUnionPostHolder[]
+  insurances   JournalistInsurance[]
 
   @@index([approved])
   @@index([district])
   @@index([unionName])
+  @@index([kycVerified])
+  @@index([linkedTenantId])
+}
+
+enum JournalistInsuranceType {
+  ACCIDENTAL /// Accidental death / disability cover
+  HEALTH     /// Medical / hospitalisation cover
+}
+
+/// Insurance policy assigned to a journalist member by SuperAdmin or UnionAdmin
+model JournalistInsurance {
+  id              String                  @id @default(cuid())
+  profileId       String
+  type            JournalistInsuranceType
+  policyNumber    String                  /// Insurance policy / certificate number
+  insurer         String                  /// Insurance company name (e.g. "LIC", "Star Health")
+  coverAmount     Int?                    /// Cover amount in INR (e.g. 500000 = 5 lakh)
+  premium         Int?                    /// Annual premium in INR (optional, for records)
+  validFrom       DateTime
+  validTo         DateTime
+  isActive        Boolean                 @default(true)
+  notes           String?                 /// Any additional notes
+  assignedById    String                  /// userId of admin who assigned
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  profile         JournalistProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  assignedBy      User              @relation("InsuranceAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([profileId])
+  @@index([type])
+  @@index([isActive])
+  @@index([validTo])
 }
 
 /// Press card issued to approved journalist
 model JournalistCard {
-  id         String               @id @default(cuid())
-  profileId  String               @unique
-  cardNumber String               @unique
-  expiryDate DateTime
-  qrCode     String?
-  pdfUrl     String?
-  status     JournalistCardStatus @default(ACTIVE)
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
-  profile    JournalistProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  id               String               @id @default(cuid())
+  profileId        String               @unique
+  cardNumber       String               @unique
+  issuedAt         DateTime             @default(now()) /// Date the card was first issued
+  expiryDate       DateTime                             /// Exactly 1 year from issuedAt (or renewedAt)
+  renewalCount     Int                  @default(0)     /// How many times this card has been renewed
+  pendingRenewal   Boolean              @default(false) /// Member has requested renewal
+  pendingRenewalAt DateTime?                            /// When the renewal was requested
+  renewedAt        DateTime?                            /// When admin last renewed this card
+  qrCode           String?
+  pdfUrl           String?
+  status           JournalistCardStatus @default(ACTIVE)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  profile          JournalistProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([status])
+  @@index([expiryDate])
+  @@index([pendingRenewal])
 }
 
 /// Complaint filed by a journalist
@@ -2522,4 +2592,139 @@ model JournalistUnionUpdate {
 
   @@index([unionName])
   @@index([createdAt])
+}
+
+/// Union-level admin: manages applications, press cards, and complaints for their assigned union
+model JournalistUnionAdmin {
+  id        String   @id @default(cuid())
+  userId    String
+  unionName String   /// Union slug / name this admin manages
+  state     String?  /// Optional: restrict to a specific state
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, unionName])
+  @@index([unionName])
+}
+
+// ─── Union Post Hierarchy ─────────────────────────────────────────────────────
+
+enum JournalistPostLevel {
+  STATE        /// State-level posts (President, Gen Secretary, etc.)
+  DISTRICT     /// District-level posts
+  MANDAL       /// Mandal / grassroot level
+  CITY         /// City-level (alternate to mandal for urban areas)
+  SPECIAL_WING /// Women Wing, Youth Wing, Digital Wing, etc.
+}
+
+enum JournalistPostType {
+  ELECTED   /// Voted in by members (President, Secretary, etc.)
+  APPOINTED /// Appointed by admin/president (Legal Advisor, PRO, Advisory, etc.)
+}
+
+/// Master catalog of union post titles — state/district/mandal hierarchy
+/// Seeded once per union (or globally); defines seats, level, and type.
+model JournalistUnionPostDefinition {
+  id          String              @id @default(cuid())
+  unionName   String?             /// null = global template reusable by all unions
+  title       String
+  nativeTitle String?             /// Telugu / regional language name
+  level       JournalistPostLevel
+  type        JournalistPostType
+  maxSeats    Int                 @default(1) /// How many people can hold this post simultaneously
+  sortOrder   Int                 @default(0) /// Lower = more senior
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  holders     JournalistUnionPostHolder[]
+
+  @@index([unionName, level])
+  @@index([level, sortOrder])
+}
+
+/// Tracks who holds which post, in which union, at which geographic scope, for which term
+model JournalistUnionPostHolder {
+  id            String                        @id @default(cuid())
+  postId        String
+  profileId     String                        /// JournalistProfile of the member
+  unionName     String
+  stateId       String?                       /// Required for DISTRICT/MANDAL level posts
+  districtId    String?                       /// Required for DISTRICT/MANDAL level posts
+  mandalId      String?                       /// Required for MANDAL level posts
+  termStartDate DateTime
+  termEndDate   DateTime?                     /// null = no fixed term end
+  isActive      Boolean                       @default(true)
+  appointedById String?                       /// userId of who appointed (for APPOINTED type posts)
+  notes         String?
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
+  post          JournalistUnionPostDefinition @relation(fields: [postId], references: [id])
+  profile       JournalistProfile             @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  appointedBy   User?                         @relation("UnionPostAppointedBy", fields: [appointedById], references: [id])
+
+  @@index([unionName, isActive])
+  @@index([profileId])
+  @@index([postId])
+  @@index([districtId])
+  @@index([mandalId])
+}
+
+/// Branding & configuration settings for each journalist union
+/// Stores identity info + asset URLs for logos, stamps used on press cards.
+/// Per-state overrides (president signature, state contact) live in JournalistUnionStateSettings.
+model JournalistUnionSettings {
+  id                    String   @id @default(cuid())
+  unionName             String   @unique               /// Unique slug — must match unionName used everywhere else
+  displayName           String?                        /// Full human-readable union name
+  registrationNumber    String?                        /// Official Govt / legal registration number
+  address               String?                        /// National / head office address
+  states                String[]                       /// All states this union operates in (e.g. ["Andhra Pradesh", "Telangana"])
+  primaryState          String?                        /// Primary / founding state (kept for backward compat with existing data)
+  foundedYear           Int?                           /// Year of establishment
+  email                 String?                        /// National contact email
+  phone                 String?                        /// National contact phone
+  websiteUrl            String?
+
+  // ── Union-wide asset URLs (shared across all states) ──────────────────────
+  // Stored in R2 at: journalist-union/{unionName}/assets/{field}.png
+  logoUrl               String?  /// Union main logo (website, letterhead)
+  idCardLogoUrl         String?  /// Logo printed on press ID card (may differ from main logo)
+  stampImageUrl         String?  /// Round rubber stamp PNG (transparent background)
+  forStampImageUrl      String?  /// "For [UnionName]" text/image stamp PNG
+
+  // ── Signatory (shown on ALL press cards union-wide) ──────────────────────
+  founderSignatureUrl   String?  /// Ink signature of founder / national president (shown on every card)
+  signatoryName         String?  /// Printed name under signature (e.g. "T. Arunkumar")
+  signatoryTitle        String?  /// Title under name (e.g. "Founder & National President")
+
+  stateConfigs          JournalistUnionStateSettings[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([primaryState])
+}
+
+/// Per-state settings for a journalist union.
+/// Each state unit can have its own president signature, contact details, and optional logo override.
+/// Stored in R2 at: journalist-union/{unionName}/states/{safeState}/{field}.png
+model JournalistUnionStateSettings {
+  id                    String   @id @default(cuid())
+  unionName             String                         /// FK to JournalistUnionSettings.unionName
+  state                 String                         /// e.g. "Andhra Pradesh"
+  address               String?                        /// State unit office address
+  email                 String?                        /// State contact email
+  phone                 String?                        /// State contact phone
+
+  // ── State-specific assets (override union-level for this state) ─────────
+  presidentSignatureUrl String?  /// Ink signature of THIS state's President
+  stateLogoUrl          String?  /// Optional state-unit logo (if different from union logo)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  unionSettings         JournalistUnionSettings @relation(fields: [unionName], references: [unionName], onDelete: Cascade)
+
+  @@unique([unionName, state])
+  @@index([unionName])
 }

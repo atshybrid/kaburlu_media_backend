@@ -1289,6 +1289,9 @@ export const updateNewspaperArticle = async (req: Request, res: Response) => {
                 assignedBlockTemplateId: req.body?.assignedBlockTemplateId !== undefined
                     ? (String(req.body.assignedBlockTemplateId || '').trim() || null)
                     : undefined,
+                priority: req.body?.priority !== undefined
+                    ? Math.max(0, Math.min(4, parseInt(String(req.body.priority), 10) || 0))
+                    : undefined,
             }
         });
 

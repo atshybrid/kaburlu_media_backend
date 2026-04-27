@@ -1243,6 +1243,10 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
         updateData.assignedBlockTemplateId = v || null;
       }
       if (payload.categoryId !== undefined) updateData.categoryId = payload.categoryId;
+      if (payload.priority !== undefined) {
+        const p = parseInt(String(payload.priority), 10);
+        updateData.priority = Number.isFinite(p) ? Math.max(0, Math.min(4, p)) : 0;
+      }
       if (updateData.content !== undefined) {
         const text = String(updateData.content || '');
         updateData.charCount = text.replace(/\s+/g, ' ').trim().length;

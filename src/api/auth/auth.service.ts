@@ -836,6 +836,23 @@ export const login = async (loginDto: MpinLoginDto) => {
       };
     }
   } catch {}
+
+  // Journalist Union Admin context — appended for any role that has been assigned as union admin
+  try {
+    const unionAdmins = await (prisma as any).journalistUnionAdmin.findMany({
+      where: { userId: user.id },
+      select: { id: true, unionName: true, state: true },
+    });
+    if (unionAdmins.length > 0) {
+      (result as any).journalistUnion = {
+        isUnionAdmin: true,
+        unions: unionAdmins.map((u: any) => ({ id: u.id, unionName: u.unionName, state: u.state })),
+      };
+    }
+  } catch (e) {
+    console.warn('[Auth] Failed to attach journalist union admin context for user', user.id, e);
+  }
+
   console.log("result", result)
   return result
 };
