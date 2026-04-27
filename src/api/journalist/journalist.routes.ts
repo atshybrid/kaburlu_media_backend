@@ -8,6 +8,7 @@ import multer from 'multer';
 import sharp from 'sharp';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET, getPublicUrl } from '../../lib/r2';
+import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunnyStorage';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdmin, requireSuperAdmin } from '../middlewares/authz';
 import { generatePressCardBuffer, generateAndUploadPressCardPdf } from '../../lib/journalistPressCardPdf';
@@ -3053,7 +3054,7 @@ router.post(
   uploadSingle.single('file'),
   async (req: Request, res: Response) => {
     try {
-      if (!R2_BUCKET) return res.status(500).json({ error: 'R2 storage is not configured on this server' });
+      if (!isBunnyStorageConfigured()) return res.status(500).json({ error: 'Bunny Storage is not configured on this server' });
 
       const scope = res.locals['journalistUnionScope'] as { unionName: string } | undefined;
       const targetUnion: string = scope?.unionName || (req.body.unionName as string);
@@ -3069,14 +3070,9 @@ router.post(
 
       const pngBuffer = await sharp(file.buffer).png().toBuffer();
       const safeUnion = targetUnion.replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
-      const r2Key = `journalist-union/${safeUnion}/assets/${field}.png`;
+      const bunnyKey = `journalist-union/${safeUnion}/assets/${field}.png`;
 
-      await r2Client.send(new PutObjectCommand({
-        Bucket: R2_BUCKET, Key: r2Key, Body: pngBuffer,
-        ContentType: 'image/png', CacheControl: 'public, max-age=2592000',
-      }));
-
-      const publicUrl = getPublicUrl(r2Key);
+      const { publicUrl } = await bunnyStoragePutObject({ key: bunnyKey, body: pngBuffer, contentType: 'image/png' });
       const settings = await (prisma as any).journalistUnionSettings.upsert({
         where:  { unionName: targetUnion },
         create: { unionName: targetUnion, [ASSET_FIELD_MAP[field]]: publicUrl },
@@ -3146,7 +3142,7 @@ router.post(
   uploadSingle.single('file'),
   async (req: Request, res: Response) => {
     try {
-      if (!R2_BUCKET) return res.status(500).json({ error: 'R2 storage is not configured on this server' });
+      if (!isBunnyStorageConfigured()) return res.status(500).json({ error: 'Bunny Storage is not configured on this server' });
 
       const scope = res.locals['journalistUnionScope'] as { unionName: string } | undefined;
       const targetUnion: string = scope?.unionName || (req.body.unionName as string);
@@ -3176,14 +3172,9 @@ router.post(
       const pngBuffer = await sharp(file.buffer).png().toBuffer();
       const safeUnion = targetUnion.replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
       const safeState = state.replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
-      const r2Key = `journalist-union/${safeUnion}/states/${safeState}/${field}.png`;
+      const bunnyKey = `journalist-union/${safeUnion}/states/${safeState}/${field}.png`;
 
-      await r2Client.send(new PutObjectCommand({
-        Bucket: R2_BUCKET, Key: r2Key, Body: pngBuffer,
-        ContentType: 'image/png', CacheControl: 'public, max-age=2592000',
-      }));
-
-      const publicUrl = getPublicUrl(r2Key);
+      const { publicUrl } = await bunnyStoragePutObject({ key: bunnyKey, body: pngBuffer, contentType: 'image/png' });
       const dbColumn = STATE_ASSET_FIELD_MAP[field];
 
       // Ensure parent settings record exists
