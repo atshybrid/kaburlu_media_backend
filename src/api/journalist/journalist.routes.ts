@@ -35,6 +35,7 @@ const ASSET_FIELD_MAP: Record<string, string> = {
 const STATE_ASSET_FIELD_MAP: Record<string, string> = {
   presidentSignature: 'presidentSignatureUrl',
   stateLogo:          'stateLogoUrl',
+  stateStamp:         'stampImageUrl',
 };
 
 const router = Router();
@@ -3097,6 +3098,7 @@ router.post(
  *       **field** must be one of:
  *       - `presidentSignature` — Ink signature of THIS state's President
  *       - `stateLogo` — State-unit logo (optional, overrides union logo for this state)
+ *       - `stateStamp` — Round rubber stamp PNG for this state unit
  *
  *       R2 key: `journalist-union/{unionName}/states/{state}/{field}.png`
  *
@@ -3118,7 +3120,7 @@ router.post(
  *                 format: binary
  *               field:
  *                 type: string
- *                 enum: [presidentSignature, stateLogo]
+ *                 enum: [presidentSignature, stateLogo, stateStamp]
  *               state:
  *                 type: string
  *                 example: Andhra Pradesh
