@@ -966,7 +966,7 @@ router.patch('/admin/approve/:id', jwtAuth, requireJournalistUnionAdmin, async (
  *       404:
  *         description: Profile not found
  */
-router.post('/admin/generate-card', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.post('/admin/generate-card', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { profileId, expiryDate, qrCode } = req.body;
     if (!profileId) return res.status(400).json({ error: 'profileId is required' });
@@ -1057,7 +1057,7 @@ router.post('/admin/generate-card', jwtAuth, requireJournalistUnionAdmin, async 
  *       404:
  *         description: Card not found
  */
-router.patch('/admin/cards/:profileId', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.patch('/admin/cards/:profileId', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { profileId } = req.params;
     const { expiryDate, qrCode, pdfUrl } = req.body;
@@ -1119,7 +1119,7 @@ router.patch('/admin/cards/:profileId', jwtAuth, requireJournalistUnionAdmin, as
  *       500:
  *         description: PDF generation failed
  */
-router.post('/admin/cards/:profileId/generate-pdf', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.post('/admin/cards/:profileId/generate-pdf', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { profileId } = req.params;
 
@@ -1235,7 +1235,7 @@ router.post('/my-card/request-renewal', jwtAuth, async (req: Request, res: Respo
  *       200:
  *         description: List of cards due for renewal
  */
-router.get('/admin/cards/renewal-due', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.get('/admin/cards/renewal-due', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const expiringDays = Math.min(365, Math.max(1, parseInt(req.query['expiringDays'] as string) || 30));
     const pendingOnly  = req.query['pendingOnly'] === 'true';
@@ -1326,7 +1326,7 @@ router.get('/admin/cards/renewal-due', jwtAuth, requireJournalistUnionAdmin, asy
  *       404:
  *         description: Card not found
  */
-router.patch('/admin/cards/:profileId/renew', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.patch('/admin/cards/:profileId/renew', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { profileId } = req.params;
     const card = await (prisma as any).journalistCard.findUnique({
@@ -1403,7 +1403,7 @@ router.patch('/admin/cards/:profileId/renew', jwtAuth, requireJournalistUnionAdm
  *       200:
  *         description: Paginated complaints
  */
-router.get('/admin/complaints', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.get('/admin/complaints', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const status = req.query['status'] as string | undefined;
     const page = Math.max(1, parseInt(req.query['page'] as string) || 1);
@@ -1476,7 +1476,7 @@ router.get('/admin/complaints', jwtAuth, requireJournalistUnionAdmin, async (req
  *       400:
  *         description: Invalid status
  */
-router.patch('/admin/complaints/:id', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.patch('/admin/complaints/:id', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, adminNote } = req.body;
@@ -1540,7 +1540,7 @@ router.patch('/admin/complaints/:id', jwtAuth, requireJournalistUnionAdmin, asyn
  *       201:
  *         description: Update posted
  */
-router.post('/admin/updates', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.post('/admin/updates', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const user = currentUser(req);
     const { title, content, unionName, imageUrl } = req.body;
@@ -1587,7 +1587,7 @@ router.post('/admin/updates', jwtAuth, requireJournalistUnionAdmin, async (req: 
  *       404:
  *         description: Not found
  */
-router.delete('/admin/updates/:id', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.delete('/admin/updates/:id', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const existing = await (prisma as any).journalistUnionUpdate.findUnique({ where: { id } });
@@ -2011,7 +2011,7 @@ router.get('/committee', async (req: Request, res: Response) => {
  *       404:
  *         description: Post or profile not found
  */
-router.post('/admin/posts/appoint', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.post('/admin/posts/appoint', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const appointer = currentUser(req);
     const { postId, profileId, termStartDate, termEndDate, districtId, mandalId, notes } = req.body;
@@ -2120,7 +2120,7 @@ router.post('/admin/posts/appoint', jwtAuth, requireJournalistUnionAdmin, async 
  *       200:
  *         description: Updated
  */
-router.patch('/admin/posts/holders/:id', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.patch('/admin/posts/holders/:id', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { termEndDate, notes } = req.body;
@@ -2170,7 +2170,7 @@ router.patch('/admin/posts/holders/:id', jwtAuth, requireJournalistUnionAdmin, a
  *       200:
  *         description: Post vacated
  */
-router.delete('/admin/posts/holders/:id', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.delete('/admin/posts/holders/:id', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const holder = await (prisma as any).journalistUnionPostHolder.findUnique({ where: { id }, include: { post: true } });
@@ -2821,7 +2821,7 @@ router.get('/public/settings/:unionName/state/:state', async (req: Request, res:
  *       200:
  *         description: Union settings with stateConfigs array
  */
-router.get('/admin/settings', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.get('/admin/settings', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const scope = res.locals['journalistUnionScope'] as { unionName: string } | undefined;
     let targetUnion: string | undefined = scope?.unionName;
@@ -2889,7 +2889,7 @@ router.get('/admin/settings', jwtAuth, requireJournalistUnionAdmin, async (req: 
  *       200:
  *         description: Settings saved
  */
-router.put('/admin/settings', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.put('/admin/settings', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const scope = res.locals['journalistUnionScope'] as { unionName: string } | undefined;
     let targetUnion: string = scope?.unionName || (req.body.unionName as string);
@@ -2958,7 +2958,7 @@ router.put('/admin/settings', jwtAuth, requireJournalistUnionAdmin, async (req: 
  *       400:
  *         description: Missing state or unionName
  */
-router.put('/admin/settings/state', jwtAuth, requireJournalistUnionAdmin, async (req: Request, res: Response) => {
+router.put('/admin/settings/state', jwtAuth, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const scope = res.locals['journalistUnionScope'] as { unionName: string } | undefined;
     const targetUnion: string = scope?.unionName || (req.body.unionName as string);
@@ -3049,7 +3049,7 @@ router.put('/admin/settings/state', jwtAuth, requireJournalistUnionAdmin, async 
 router.post(
   '/admin/settings/upload',
   jwtAuth,
-  requireJournalistUnionAdmin,
+  requireSuperAdmin,
   uploadSingle.single('file'),
   async (req: Request, res: Response) => {
     try {
@@ -3142,7 +3142,7 @@ router.post(
 router.post(
   '/admin/settings/state/upload',
   jwtAuth,
-  requireJournalistUnionAdmin,
+  requireSuperAdmin,
   uploadSingle.single('file'),
   async (req: Request, res: Response) => {
     try {
