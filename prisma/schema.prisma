@@ -2719,6 +2719,7 @@ model JournalistUnionStateSettings {
   // ── State-specific assets (override union-level for this state) ─────────
   presidentSignatureUrl String?  /// Ink signature of THIS state's President
   stateLogoUrl          String?  /// Optional state-unit logo (if different from union logo)
+  stampImageUrl         String?  /// State-unit round stamp PNG (overrides union-level stamp on press cards)
 
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
