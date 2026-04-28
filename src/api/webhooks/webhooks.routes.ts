@@ -678,7 +678,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
 
     case 'AWAIT_MPIN': {
       if (!/^\d{4}$/.test(input)) { await reply(phone, '⚠️ MPIN must be exactly 4 digits. Try again:'); return; }
-      const merged = { ...data, mpin: input };
+      const merged: Record<string, any> = { ...data, mpin: input };
       await (prisma as any).whatsappBotSession.update({
         where: { phone },
         data: { step: 'CONFIRM', data: merged, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
