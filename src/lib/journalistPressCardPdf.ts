@@ -50,8 +50,11 @@ interface PressCardData {
   state:          string | null;
   mobileNumber:   string | null;
   // Union branding
-  unionName:      string | null;
+  unionName:        string | null;
   unionDisplayName: string | null;
+  nativeDisplayName: string | null; // e.g. "డెమోక్రటిక్ జర్నలిస్ట్ ఫెడరేషన్ (వర్కింగ్)"
+  abbreviation:     string | null;  // e.g. "DJF(W)"
+  sloganText:       string | null;  // e.g. "అక్షర దివిటీలం...ప్రజాస్వామ్య వార్తలు"
   registrationNumber: string | null;
   address:        string | null;
   phone:          string | null;
@@ -64,7 +67,7 @@ interface PressCardData {
   photoUrl:       string | null;
   unionLogoUrl:   string | null;
   stampImageUrl:  string | null;
-  forStampImageUrl: string | null;
+  forStampImageUrl: string | null; // used as background watermark on card
   presidentSignatureUrl: string | null; // state override → falls back to founderSignatureUrl
   // Inlined data URIs (populated by inlineAssets)
   __inline?: {
@@ -167,6 +170,9 @@ async function buildPressCardData(profileId: string): Promise<PressCardData | nu
     mobileNumber:       profile.user?.mobileNumber ?? null,
     unionName:          profile.unionName ?? null,
     unionDisplayName:   settings?.displayName ?? settings?.unionName ?? null,
+    nativeDisplayName:  settings?.nativeDisplayName ?? null,
+    abbreviation:       settings?.abbreviation ?? null,
+    sloganText:         settings?.sloganText ?? null,
     registrationNumber: settings?.registrationNumber ?? null,
     address:            stateSettings?.address ?? settings?.address ?? null,
     phone:              stateSettings?.phone   ?? settings?.phone   ?? null,
@@ -202,233 +208,166 @@ async function inlineAssets(data: PressCardData): Promise<PressCardData> {
   return { ...data, __inline: { logo, photo, stamp, forStamp, signature, qrFront, qrBack } };
 }
 
+// ─── Abbreviation deriver ─────────────────────────────────────────────────────
+
+function deriveAbbreviation(name: string | null | undefined): string {
+  if (!name) return 'UNION';
+  const stop = new Set(['the', 'of', 'and', 'for', 'in', 'a', 'an', 'or', 'at']);
+  return name.split(/\s+/)
+    .filter(w => w.length > 0)
+    .map(w => {
+      if (w.startsWith('(') && w.endsWith(')') && w.length > 2) return `(${w[1].toUpperCase()})`;
+      if (stop.has(w.toLowerCase())) return '';
+      return w[0].toUpperCase();
+    })
+    .filter(Boolean)
+    .join('');
+}
+
 // ─── HTML builder ─────────────────────────────────────────────────────────────
 
 function buildPressCardHtml(data: PressCardData): string {
-  const d    = data.__inline ?? {};
-  const logo = d.logo      ?? null;
-  const photo= d.photo     ?? null;
-  const stamp= d.stamp     ?? null;
-  const sign = d.signature ?? null;
-  const qrF  = d.qrFront   ?? null;
-  const qrB  = d.qrBack    ?? null;
+  const d         = data.__inline ?? {};
+  const logo      = d.logo      ?? null;
+  const photo     = d.photo     ?? null;
+  const stamp     = d.stamp     ?? null;
+  const watermark = d.forStamp  ?? null;
+  const sign      = d.signature ?? null;
+  const qrF       = d.qrFront   ?? null;
+  const qrB       = d.qrBack    ?? null;
 
-  const navy   = '#1a237e';
-  const navyM  = '#283593';   // mid navy for gradients
-  const navyLt = '#e8eaf6';   // very light navy bg
-  const gold   = '#c8962a';   // gold accent
-  const font   = 'Arial, Helvetica, sans-serif';
+  const navy       = '#1a237e';
+  const red        = '#c62828';
+  const fontLatin  = 'Arial, Helvetica, sans-serif';
+  const fontTelugu = "'Noto Sans Telugu', Arial, Helvetica, sans-serif";
 
-  const bleedMm = 0.6;
-  const fullW   = 54 + bleedMm * 2;
-  const leftOff = -bleedMm;
-
-  const paper      = esc(data.currentNewspaper || data.organization);
+  const unionAbbr  = esc(data.abbreviation || deriveAbbreviation(data.unionDisplayName || data.unionName));
+  const regNo      = esc(data.registrationNumber || '');
+  const nativeName = esc(data.nativeDisplayName || '');
+  const slogan     = esc(data.sloganText || '');
   const cardId     = esc(data.pressId || data.cardNumber);
-  const areaLine   = [data.mandal, data.district, data.state].filter(Boolean).map(esc).join(', ');
-  const unionTitle = esc(data.unionDisplayName || data.unionName || 'Journalist Union');
   const signName   = esc(data.signatoryName  || '');
   const signTitle  = esc(data.signatoryTitle || 'Authorized Signatory');
+  const unionTitle = esc(data.unionDisplayName || data.unionName || 'Journalist Union');
+  const paper      = esc(data.currentNewspaper || data.organization || '');
 
-  // Subtle diagonal micro-pattern for card body (professional texture)
-  const microBg = `
-    repeating-linear-gradient(
-      -45deg,
-      transparent 0, transparent 3mm,
-      rgba(26,35,126,0.025) 3mm, rgba(26,35,126,0.025) 3.3mm
-    )`;
+  // Watermark for back card body (front uses `watermark` directly)
+  const wmUrl  = watermark || logo;
+  const wmOpac = watermark ? '0.08' : '0.05';
 
-  // Indian flag tricolor stripe (saffron / white / green) — 1mm total
-  const tricolor = `linear-gradient(to right,
-    #ff9933 0%, #ff9933 33.3%,
-    #fff    33.3%, #fff 66.6%,
-    #138808 66.6%, #138808 100%)`;
+  // Photo placeholder SVG (inline, no external request)
+  const photoPlaceholder = `data:image/svg+xml;base64,${Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="200" viewBox="0 0 160 200">
+      <rect fill="#e8eaf6" width="160" height="200"/>
+      <circle cx="80" cy="72" r="36" fill="#b0bec5"/>
+      <path d="M10 200 Q80 130 150 200" fill="#b0bec5"/>
+    </svg>`
+  ).toString('base64')}`;
 
   // ─── FRONT ────────────────────────────────────────────────────────────────
   const frontHtml = `
   <div style="
-    width:54mm; height:85.6mm; position:relative;
-    overflow:hidden; display:flex; flex-direction:column;
-    font-family:${font}; -webkit-font-smoothing:antialiased;
-    background:#fff; border:0.35mm solid #9fa8da;
-    page-break-after:always;
+    width:54mm; height:85.6mm; position:relative; overflow:hidden;
+    background:#ffffff; page-break-after:always;
+    display:flex; flex-direction:column;
+    font-family:${fontLatin}; -webkit-font-smoothing:antialiased;
+    box-sizing:border-box;
   ">
 
-    <!-- ①  HEADER: logo left + union name right, white bg -->
-    <div style="
-      background:#fff;
-      display:flex; align-items:center; gap:1.5mm;
-      padding:1.8mm 2mm 1.4mm 2mm;
-      border-bottom:0.5mm solid ${navy};
-      flex-shrink:0;
-    ">
-      ${logo
-        ? `<img src="${logo}" style="height:8.5mm; width:8.5mm; object-fit:contain; flex-shrink:0; border-radius:0.5mm;"/>`
-        : `<div style="
-            width:8.5mm; height:8.5mm; border-radius:0.8mm;
-            background:${navy}; flex-shrink:0;
-            display:flex; align-items:center; justify-content:center;
-           "><span style="color:#fff; font-size:6.5pt; font-weight:900; font-family:${font};">J</span></div>`
-      }
-      <div style="flex:1; min-width:0;">
-        <div style="
-          font-size:6pt; font-weight:900; color:${navy};
-          text-transform:uppercase; letter-spacing:0.1mm; line-height:1.22;
-          font-family:${font}; word-break:break-word;
-        ">${unionTitle}</div>
-        ${data.registrationNumber
-          ? `<div style="font-size:3.8pt; color:#78909c; margin-top:0.2mm; font-family:${font}; letter-spacing:0.1mm;">Regd. No: ${esc(data.registrationNumber)}</div>`
-          : ''}
-      </div>
-    </div>
+    <!-- Watermark -->
+    ${wmUrl ? `<img src="${wmUrl}" style="
+      position:absolute; top:44%; left:50%; transform:translate(-50%,-50%);
+      z-index:0; pointer-events:none;
+      width:34mm; height:34mm; object-fit:contain; opacity:0.08;
+    "/>` : ''}
 
-    <!-- ②  TRICOLOR STRIPE 1mm -->
-    <div style="height:1mm; background:${tricolor}; flex-shrink:0; width:${fullW}mm; position:relative; left:${leftOff}mm;"></div>
-
-    <!-- ③  NAVY CARD TYPE STRIP -->
-    <div style="
-      background:${navy}; flex-shrink:0;
-      width:${fullW}mm; position:relative; left:${leftOff}mm;
-      padding:1mm 0; text-align:center;
-    ">
-      <span style="
-        color:#fff; font-size:6.8pt; font-weight:800;
-        letter-spacing:1.4mm; text-transform:uppercase; font-family:${font};
-      ">JOURNALIST IDENTITY CARD</span>
-    </div>
-
-    <!-- ④  BODY: photo left + details right, subtle texture -->
-    <div style="
-      flex:1; min-height:0; display:flex;
-      padding:2mm 2mm 0 2mm; gap:2mm;
-      background:${microBg}, #fff;
-    ">
-
-      <!-- Photo column -->
-      <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:center;">
-        <!-- Photo frame: outer navy, inner white 0.5mm padding = double border effect -->
-        <div style="
-          background:${navy}; padding:0.4mm;
-          display:inline-block; line-height:0;
-        ">
-          <div style="background:#fff; padding:0.3mm; display:inline-block; line-height:0;">
-            ${photo
-              ? `<img src="${photo}" style="
-                  width:19mm; height:24mm; object-fit:cover; display:block;
-                "/>`
-              : `<div style="
-                  width:19mm; height:24mm;
-                  background:${navyLt};
-                  display:flex; flex-direction:column;
-                  align-items:center; justify-content:center; gap:0.8mm;
-                ">
-                  <div style="
-                    width:7.5mm; height:7.5mm; background:#90a4ae;
-                    border-radius:50%;
-                  "></div>
-                  <div style="
-                    width:12mm; height:5mm; background:#b0bec5;
-                    border-radius:0.5mm 0.5mm 0 0;
-                  "></div>
-                  <div style="font-size:3.5pt; color:#90a4ae; font-weight:700; font-family:${font}; letter-spacing:0.3mm;">AFFIX<br/>PHOTO</div>
-                </div>`
+    <!-- ① Logo centred — navy lines both sides -->
+    <div style="display:flex; align-items:center; flex-shrink:0; padding:2mm 0 0; position:relative; z-index:1;">
+      <div style="flex:1; height:0.8mm; background:${navy};"></div>
+      <div style="flex-shrink:0; padding:0 3mm;">
+        <div style="width:20mm; height:20mm; border-radius:50%; background:${navy}; padding:0.7mm; box-sizing:border-box; display:flex; align-items:center; justify-content:center;">
+          <div style="width:100%; height:100%; border-radius:50%; background:#fff; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+            ${logo
+              ? `<img src="${logo}" style="width:100%; height:100%; object-fit:contain; display:block;"/>`
+              : `<div style="width:100%;height:100%;background:${navy};border-radius:50%;display:flex;align-items:center;justify-content:center;"><span style="color:#fff;font-size:6pt;font-weight:900;">${unionAbbr}</span></div>`
             }
           </div>
         </div>
-        <!-- PRESS badge -->
-        <div style="
-          background:${navy}; width:21mm; margin-top:0.8mm;
-          padding:0.6mm 0; text-align:center; flex-shrink:0;
-        ">
-          <span style="color:#fff; font-size:5.2pt; font-weight:800; letter-spacing:1.4mm; font-family:${font};">PRESS</span>
-        </div>
-        ${stamp ? `<img src="${stamp}" style="width:8mm; height:8mm; object-fit:contain; margin-top:0.5mm; opacity:0.85;"/>` : ''}
       </div>
+      <div style="flex:1; height:0.8mm; background:${navy};"></div>
+    </div>
 
-      <!-- Details column -->
-      <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
-
-        <!-- Member name — prominent -->
-        <div style="
-          font-size:7.5pt; font-weight:900; color:${navy};
-          text-transform:uppercase; line-height:1.2;
-          border-bottom:0.25mm solid ${navyLt};
-          padding-bottom:0.8mm; margin-bottom:0.6mm;
-          font-family:${font}; word-break:break-word;
-          letter-spacing:0.05mm;
-        ">${esc(data.memberName)}</div>
-
-        ${data.unionPost
-          ? `<div style="
-              display:inline-flex; align-items:center; gap:0.5mm;
-              background:${gold}18; border-left:0.7mm solid ${gold};
-              padding:0.3mm 1mm; margin-bottom:0.7mm; max-width:100%;
-            ">
-              <span style="
-                font-size:4.6pt; font-weight:700; color:${gold};
-                font-family:${font}; line-height:1.2; word-break:break-word;
-              ">${esc(data.unionPost)}</span>
-            </div>`
-          : ''}
-
-        <!-- Key-value fields -->
-        <table style="width:100%; font-size:5pt; font-family:${font}; border-collapse:collapse; line-height:1.38;">
-          <tr>
-            <td style="font-weight:700; color:#546e7a; width:36%; vertical-align:top; padding:0.08mm 0.5mm 0.08mm 0; white-space:nowrap;">Designation</td>
-            <td style="color:#1a1a2e; vertical-align:top; padding:0.08mm 0; word-break:break-word; font-size:5pt;">${esc(data.designation)}</td>
-          </tr>
-          <tr>
-            <td style="font-weight:700; color:#546e7a; vertical-align:top; padding:0.08mm 0.5mm 0.08mm 0; white-space:nowrap;">Newspaper</td>
-            <td style="color:#1a1a2e; vertical-align:top; padding:0.08mm 0; word-break:break-word;">${paper}</td>
-          </tr>
-          ${areaLine ? `<tr>
-            <td style="font-weight:700; color:#546e7a; vertical-align:top; padding:0.08mm 0.5mm 0.08mm 0; white-space:nowrap;">Area</td>
-            <td style="color:#1a1a2e; vertical-align:top; padding:0.08mm 0; word-break:break-word;">${areaLine}</td>
-          </tr>` : ''}
-          <tr>
-            <td style="font-weight:700; color:#546e7a; vertical-align:top; padding:0.08mm 0.5mm 0.08mm 0; white-space:nowrap;">Press ID</td>
-            <td style="color:${navy}; font-weight:900; vertical-align:top; padding:0.08mm 0; font-size:5.2pt;">${cardId}</td>
-          </tr>
-        </table>
+    <!-- ② Photo + Details -->
+    <div style="display:flex; align-items:flex-start; flex-shrink:0; padding:2mm 3mm 0; gap:2.5mm; position:relative; z-index:1;">
+      <!-- Photo -->
+      <div style="flex-shrink:0; position:relative; width:17mm;">
+        <div style="border:0.5mm solid #bdbdbd; width:17mm; height:22mm; background:#eceff1; overflow:hidden;">
+          ${photo
+            ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`
+            : `<img src="${photoPlaceholder}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`
+          }
+        </div>
+        ${stamp ? `<img src="${stamp}" style="position:absolute;bottom:-2mm;right:-2mm;width:9mm;height:9mm;object-fit:contain;opacity:0.9;"/>` : ''}
+      </div>
+      <!-- Details -->
+      <div style="flex:1; min-width:0; padding-top:0.5mm;">
+        <div style="margin-bottom:1.4mm;">
+          <div style="font-size:3.5pt;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Name</div>
+          <div style="font-size:5pt;font-weight:900;color:${navy};line-height:1.25;word-break:break-word;">${esc(data.memberName)}</div>
+        </div>
+        <div style="margin-bottom:1.4mm;">
+          <div style="font-size:3.5pt;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Designation</div>
+          <div style="font-size:4.2pt;font-weight:600;color:#37474f;line-height:1.25;word-break:break-word;">${esc(data.designation)}</div>
+        </div>
+        ${data.unionPost ? `<div style="margin-bottom:1.4mm;background:rgba(26,35,126,0.07);border-left:0.8mm solid ${navy};padding:0.8mm 1.5mm;border-radius:0 0.5mm 0.5mm 0;">
+          <div style="font-size:3.5pt;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Post</div>
+          <div style="font-size:4.2pt;font-weight:700;color:${navy};line-height:1.25;word-break:break-word;">${esc(data.unionPost)}</div>
+        </div>` : ''}
+        ${paper ? `<div style="margin-bottom:1.4mm;">
+          <div style="font-size:3.5pt;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Publication</div>
+          <div style="font-size:4.2pt;font-weight:600;color:#37474f;line-height:1.25;word-break:break-word;">${paper}</div>
+        </div>` : ''}
+        <div>
+          <div style="font-size:3.5pt;font-weight:800;color:#78909c;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Member ID</div>
+          <div style="font-size:4.8pt;font-weight:900;color:${navy};line-height:1.25;">${cardId}</div>
+        </div>
       </div>
     </div>
 
-    <!-- ⑤  VALIDITY + QR BAND -->
-    <div style="
-      display:flex; align-items:center; gap:1.8mm;
-      margin:1.5mm 2mm 6.5mm 2mm; padding:1.2mm 1.5mm;
-      background:${navyLt}; border-left:0.7mm solid ${navy};
-      flex-shrink:0;
-    ">
-      ${qrF
-        ? `<div style="flex-shrink:0; text-align:center;">
-            <img src="${qrF}" style="
-              width:14mm; height:14mm; display:block;
-              border:0.3mm solid #9fa8da;
-            "/>
-            <div style="font-size:3.4pt; color:#5c6bc0; margin-top:0.4mm; font-family:${font}; letter-spacing:0.2mm; text-align:center;">SCAN TO VERIFY</div>
-          </div>`
-        : ''}
-      <div style="flex:1; display:flex; flex-direction:column; gap:0.8mm;">
-        <div style="font-size:4.5pt; color:#546e7a; font-family:${font}; line-height:1.2;">
-          <span style="font-weight:700; color:${navyM};">Issued&nbsp;:</span> ${fmt(data.issuedAt)}
-        </div>
-        <div style="font-size:5.2pt; font-weight:900; color:${navy}; font-family:${font}; line-height:1.2;">
-          Valid Till: ${fmt(data.expiryDate)}
-        </div>
-        ${data.mobileNumber ? `<div style="font-size:4pt; color:#78909c; font-family:${font};">&#9990; ${esc(data.mobileNumber)}</div>` : ''}
+    <!-- ③④⑤ DJF(W) + Merged red+blue band -->
+    <div style="flex:1;position:relative;z-index:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;margin-top:1mm;">
+      <div style="text-align:center;padding:0.8mm 3mm 1mm;">
+        <div style="font-size:13pt;font-weight:700;color:${navy};letter-spacing:1.5mm;font-family:${fontLatin};line-height:1.1;">${unionAbbr}</div>
+        ${regNo ? `<div style="font-size:4pt;font-weight:700;color:${navy};letter-spacing:0.5mm;margin-top:0.3mm;font-family:${fontLatin};">REG NO: ${regNo}</div>` : ''}
       </div>
+      <div style="background:${red};padding:1.5mm 2mm;text-align:center;">
+        <span style="color:#fff;font-size:6.8pt;font-weight:800;font-family:${fontTelugu};line-height:1.3;display:block;">${nativeName || unionTitle}</span>
+      </div>
+      ${slogan ? `<div style="background:${navy};padding:1.5mm 2mm;text-align:center;">
+        <div style="font-size:6.2pt;font-weight:700;color:#fff;font-family:${fontTelugu};line-height:1.3;word-break:break-word;">${slogan}</div>
+      </div>` : ''}
     </div>
 
-    <!-- ⑥  FOOTER: navy bar -->
+    <!-- ⑥ Footer: fully white, professional union card style -->
     <div style="
-      position:absolute; bottom:0; left:${leftOff}mm;
-      width:${fullW}mm; height:6.5mm; background:${navy};
-      display:flex; align-items:center;
-      justify-content:space-between; padding:0 2.5mm; box-sizing:border-box;
+      flex-shrink:0; position:relative; z-index:1;
+      background:#fff; padding:1.8mm 3mm;
+      display:flex; align-items:flex-end; justify-content:space-between;
     ">
-      <span style="color:#e8eaf6; font-size:4.8pt; font-weight:700; letter-spacing:0.3mm; font-family:${font};">${esc(data.cardNumber)}</span>
-      <span style="color:#5c6bc0; font-size:3.8pt; font-family:${font}; letter-spacing:0.25mm; text-transform:uppercase;">Journalist Union</span>
+      <!-- Left: VALID TILL -->
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:0.5mm;">
+        <span style="font-size:3.5pt;font-weight:700;color:#90a4ae;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Valid Till</span>
+        <span style="font-size:6pt;font-weight:900;color:${navy};line-height:1;">${fmt(data.expiryDate)}</span>
+      </div>
+      <!-- Right: signature + line + label (all white bg, natural colors) -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:0.5mm;">
+        ${sign
+          ? `<img src="${sign}" style="height:6.5mm;max-width:16mm;object-fit:contain;display:block;"/>`
+          : `<div style="height:6.5mm;width:16mm;"></div>`
+        }
+        <div style="width:16mm;height:0.4mm;background:${navy};opacity:0.4;"></div>
+        <span style="font-size:3.5pt;font-weight:700;color:#546e7a;text-transform:uppercase;letter-spacing:0.2mm;line-height:1;">Authorized Signature</span>
+      </div>
     </div>
 
   </div>`;
@@ -436,136 +375,135 @@ function buildPressCardHtml(data: PressCardData): string {
   // ─── BACK ─────────────────────────────────────────────────────────────────
   const backHtml = `
   <div style="
-    width:54mm; height:85.6mm; position:relative;
-    overflow:hidden; display:flex; flex-direction:column;
-    font-family:${font}; -webkit-font-smoothing:antialiased;
-    background:#fff; border:0.35mm solid #9fa8da;
+    width:54mm; height:85.6mm; position:relative; overflow:hidden;
+    background:#ffffff; display:flex; flex-direction:column;
+    font-family:${fontLatin}; -webkit-font-smoothing:antialiased;
+    box-sizing:border-box;
   ">
 
-    <!-- ①  HEADER: same as front -->
+    <!-- Background fist watermark -->
+    ${wmUrl ? `<img src="${wmUrl}" style="
+      position:absolute; bottom:12mm; right:0; z-index:0; pointer-events:none;
+      width:32mm; height:32mm; object-fit:contain; opacity:0.08;
+    "/>` : ''}
+
+    <!-- ① Header: logo + lines + union title -->
     <div style="
-      background:#fff;
-      display:flex; align-items:center; gap:1.5mm;
-      padding:1.5mm 2mm 1.2mm 2mm;
-      border-bottom:0.5mm solid ${navy};
-      flex-shrink:0;
+      display:flex; align-items:center; gap:0; flex-shrink:0;
+      padding:1.5mm 2mm 0; position:relative; z-index:1;
     ">
-      ${logo
-        ? `<img src="${logo}" style="height:7.5mm; width:7.5mm; object-fit:contain; flex-shrink:0; border-radius:0.5mm;"/>`
-        : `<div style="width:7.5mm; height:7.5mm; border-radius:0.8mm; background:${navy}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-            <span style="color:#fff; font-size:5.5pt; font-weight:900; font-family:${font};">J</span></div>`
-      }
-      <div style="flex:1; min-width:0;">
-        <div style="font-size:5.5pt; font-weight:900; color:${navy}; text-transform:uppercase; letter-spacing:0.1mm; line-height:1.2; word-break:break-word; font-family:${font};">${unionTitle}</div>
-        ${data.phone ? `<div style="font-size:3.8pt; color:#546e7a; margin-top:0.2mm; font-family:${font};">&#9990; ${esc(data.phone)}&nbsp;&nbsp;${data.email ? `✉ ${esc(data.email)}` : ''}</div>` : ''}
+      <div style="flex:1; height:0.6mm; background:${navy};"></div>
+      <div style="flex-shrink:0; padding:0 1.5mm;">
+        ${logo
+          ? `<img src="${logo}" style="width:10mm; height:10mm; object-fit:contain; display:block; border-radius:50%;"/>`
+          : `<div style="width:10mm; height:10mm; border-radius:50%; background:${navy};
+              display:flex; align-items:center; justify-content:center;">
+              <span style="color:#fff; font-size:4.5pt; font-weight:900;">${unionAbbr}</span>
+             </div>`
+        }
       </div>
+      <div style="flex:1; height:0.6mm; background:${navy};"></div>
     </div>
 
-    <!-- ②  TRICOLOR -->
-    <div style="height:1mm; background:${tricolor}; flex-shrink:0; width:${fullW}mm; position:relative; left:${leftOff}mm;"></div>
-
-    <!-- ③  NAVY STRIP -->
+    <!-- ② Red band: Telugu name -->
     <div style="
-      background:${navy}; flex-shrink:0;
-      width:${fullW}mm; position:relative; left:${leftOff}mm;
-      padding:0.8mm 0; text-align:center;
+      background:${red}; padding:0.7mm 2mm; text-align:center;
+      flex-shrink:0; position:relative; z-index:1; margin-top:0.8mm;
     ">
-      <span style="color:#c5cae9; font-size:5.5pt; font-weight:700; letter-spacing:1mm; text-transform:uppercase; font-family:${font};">JOURNALIST IDENTITY CARD</span>
+      <span style="color:#fff; font-size:5pt; font-weight:700; font-family:${fontTelugu}; line-height:1.25; display:block;">${nativeName || unionTitle}</span>
     </div>
 
-    <!-- ④  CERTIFICATION (texture bg) -->
+    <!-- ③ Navy strip: card type -->
     <div style="
-      padding:1.8mm 2.5mm 0 2.5mm; flex-shrink:0;
-      background:${microBg}, #fff;
+      background:${navy}; padding:0.7mm 0; text-align:center;
+      flex-shrink:0; position:relative; z-index:1;
     ">
-      <p style="
-        font-size:5.2pt; line-height:1.58; color:#212121; margin:0;
-        text-align:justify; font-family:${font};
-      ">This is to certify that the bearer of this card is a bona fide, authorized member of <strong style="color:${navy};">${unionTitle}</strong> and is entitled to all privileges of press membership.</p>
+      <span style="color:#c5cae9; font-size:5pt; font-weight:700; letter-spacing:1mm; text-transform:uppercase; font-family:${fontLatin};">JOURNALIST IDENTITY CARD</span>
     </div>
 
-    <!-- ⑤  MEMBER HIGHLIGHT BOX -->
-    <div style="
-      margin:1.5mm 2.5mm 0 2.5mm; padding:0.8mm 1.5mm;
-      background:${navyLt}; border-left:0.8mm solid ${navy};
-      flex-shrink:0;
-    ">
-      <div style="font-size:5.5pt; font-weight:900; color:${navy}; text-transform:uppercase; font-family:${font}; letter-spacing:0.1mm;">${esc(data.memberName)}</div>
-      <div style="font-size:4.3pt; color:#5c6bc0; margin-top:0.2mm; font-family:${font}; font-weight:700;">ID: ${cardId}&nbsp;&nbsp;·&nbsp;&nbsp;Valid: ${fmt(data.expiryDate)}</div>
+    <!-- ④ Certification text -->
+    <div style="padding:1.5mm 2.5mm 0; flex-shrink:0; position:relative; z-index:1;">
+      <div style="font-size:4.8pt; font-weight:800; color:${navy}; text-transform:uppercase; letter-spacing:0.2mm; margin-bottom:0.5mm; font-family:${fontLatin};">TERMS AND CONDITIONS</div>
+      <p style="font-size:4.5pt; line-height:1.55; color:#212121; margin:0; text-align:justify; font-family:${fontLatin};">
+        This is to certify that the bearer of this card is a bona fide, authorized member of
+        <strong style="color:${navy};">${unionTitle}</strong> and not permitted to organizations components to
+        confirmed non-journalist formulation.
+      </p>
+      <p style="font-size:4.5pt; line-height:1.55; color:#212121; margin:0.8mm 0 0; text-align:justify; font-family:${fontLatin};">
+        In any receive agents information organizations and federation persons. If found, contact the union federation.
+      </p>
     </div>
 
-    <!-- ⑥  IF FOUND -->
-    ${data.phone || data.address ? `
+    <!-- ⑤ Emergency / contact box -->
+    ${data.phone ? `
     <div style="
-      margin:1mm 2.5mm 0 2.5mm; padding:0.7mm 1.5mm;
-      border:0.3mm solid #c5cae9; flex-shrink:0;
-      background:#fafafa;
+      margin:1.2mm 2.5mm 0; padding:0.7mm 1.5mm;
+      border:0.3mm solid #ef9a9a; background:#fff8f8;
+      flex-shrink:0; position:relative; z-index:1;
     ">
-      <div style="font-size:4.3pt; font-weight:800; color:${navy}; text-transform:uppercase; margin-bottom:0.3mm; font-family:${font}; letter-spacing:0.2mm;">If Found, Please Contact:</div>
-      ${data.phone   ? `<div style="font-size:4.5pt; color:#37474f; font-family:${font}; font-weight:600;">&#9990; ${esc(data.phone)}</div>` : ''}
-      ${data.address ? `<div style="font-size:4pt; color:#78909c; margin-top:0.2mm; font-family:${font}; line-height:1.3;">${esc(data.address)}</div>` : ''}
+      <div style="font-size:4.3pt; font-weight:800; color:${red}; text-transform:uppercase; margin-bottom:0.3mm; font-family:${fontLatin}; letter-spacing:0.15mm;">EMERGENCY CONTACT</div>
+      <div style="font-size:4.5pt; color:#37474f; font-family:${fontLatin}; font-weight:600;">&#9990; ${esc(data.phone)}</div>
+      ${data.address ? `<div style="font-size:3.8pt; color:#78909c; margin-top:0.2mm; line-height:1.3;">${esc(data.address)}</div>` : ''}
     </div>` : ''}
 
-    <!-- ⑦  SIGNATURE · SEAL · QR -->
+    <!-- ⑥ Member highlight -->
+    <div style="
+      margin:1mm 2.5mm 0; padding:0.7mm 1.5mm;
+      background:#e8eaf6; border-left:0.8mm solid ${navy};
+      flex-shrink:0; position:relative; z-index:1;
+    ">
+      <div style="font-size:5pt; font-weight:900; color:${navy}; text-transform:uppercase; font-family:${fontLatin};">${esc(data.memberName)}</div>
+      <div style="font-size:4pt; color:#5c6bc0; margin-top:0.2mm; font-family:${fontLatin}; font-weight:700;">ID: ${cardId}&nbsp;&nbsp;·&nbsp;&nbsp;Valid: ${fmt(data.expiryDate)}</div>
+    </div>
+
+    <!-- ⑦ Signature · Stamp · QR -->
     <div style="
       display:flex; align-items:flex-end; justify-content:space-between;
-      padding:1.5mm 2.5mm 0 2.5mm; margin-top:auto; flex-shrink:0;
-      border-top:0.3mm solid ${navyLt};
+      padding:1.2mm 2.5mm 0; margin-top:auto; flex-shrink:0;
+      border-top:0.3mm solid #e8eaf6; position:relative; z-index:1;
     ">
-      <!-- Signature (left) -->
-      <div style="text-align:center; min-width:18mm;">
+      <!-- State President Signature -->
+      <div style="text-align:center; min-width:16mm;">
         ${sign
-          ? `<img src="${sign}" style="height:9mm; max-width:18mm; object-fit:contain; display:block; margin:0 auto;"/>`
-          : `<div style="
-              height:9mm; width:18mm; display:flex; align-items:flex-end;
-              justify-content:center; padding-bottom:0.3mm;
-              border-bottom:0.4mm solid #90a4ae;
-            "><span style="font-size:3.4pt; color:#cfd8dc; font-family:${font}; font-style:italic;">Signature</span></div>`
+          ? `<img src="${sign}" style="height:8mm; max-width:16mm; object-fit:contain; display:block; margin:0 auto;"/>`
+          : `<div style="height:8mm; width:16mm; border-bottom:0.4mm solid #90a4ae; display:flex; align-items:flex-end; justify-content:center; padding-bottom:0.2mm;">
+              <span style="font-size:3.2pt; color:#cfd8dc; font-style:italic;">Signature</span>
+             </div>`
         }
-        ${signName ? `<div style="font-size:4.3pt; font-weight:700; color:${navy}; margin-top:0.5mm; font-family:${font}; line-height:1.2;">${signName}</div>` : ''}
-        <div style="font-size:3.6pt; color:#546e7a; margin-top:0.1mm; font-family:${font}; line-height:1.3;">${signTitle}</div>
+        ${signName ? `<div style="font-size:3.8pt; font-weight:700; color:${navy}; margin-top:0.4mm; font-family:${fontLatin}; line-height:1.2;">${signName}</div>` : ''}
+        <div style="font-size:3.4pt; color:#546e7a; margin-top:0.1mm; font-family:${fontLatin}; line-height:1.2;">${signTitle}</div>
       </div>
 
-      <!-- Seal (center) -->
+      <!-- Round Stamp (center) -->
       <div style="text-align:center; flex-shrink:0; padding-bottom:0.5mm;">
         ${stamp
-          ? `<img src="${stamp}" style="width:13mm; height:13mm; object-fit:contain; opacity:0.88; display:block; margin:0 auto;"/>`
+          ? `<img src="${stamp}" style="width:12mm; height:12mm; object-fit:contain; opacity:0.88; display:block; margin:0 auto;"/>`
           : `<div style="
-              width:13mm; height:13mm; border-radius:50%;
-              border:0.5mm solid ${navy}; position:relative;
+              width:12mm; height:12mm; border-radius:50%;
+              border:0.5mm solid ${red};
               display:flex; align-items:center; justify-content:center;
-              background: radial-gradient(circle at 50% 50%, ${navyLt} 0%, #fff 100%);
+              background:radial-gradient(circle, #ffebee 0%, #fff 100%);
             ">
-              <div style="
-                width:11mm; height:11mm; border-radius:50%;
-                border:0.3mm solid ${navyM};
-                display:flex; align-items:center; justify-content:center;
-              ">
-                <span style="font-size:3.2pt; color:${navy}; font-weight:800; text-align:center; line-height:1.3; font-family:${font}; text-transform:uppercase; letter-spacing:0.1mm;">OFFICIAL<br/>SEAL</span>
-              </div>
+              <span style="font-size:3pt; color:${red}; font-weight:800; text-align:center; line-height:1.3; font-family:${fontLatin}; text-transform:uppercase;">OFFICIAL<br/>SEAL</span>
             </div>`
         }
       </div>
 
-      <!-- QR (right) -->
-      <div style="text-align:center; flex-shrink:0; min-width:13mm;">
-        ${qrB
-          ? `<img src="${qrB}" style="width:13mm; height:13mm; display:block; border:0.3mm solid #c5cae9;"/>`
-          : ''}
-        <div style="font-size:3.3pt; color:#78909c; margin-top:0.3mm; font-family:${font}; letter-spacing:0.1mm; text-transform:uppercase;">Scan to Verify</div>
+      <!-- QR Code (right) -->
+      <div style="text-align:center; flex-shrink:0; min-width:12mm;">
+        ${qrB ? `<img src="${qrB}" style="width:12mm; height:12mm; display:block; border:0.3mm solid #c5cae9;"/>` : ''}
+        <div style="font-size:3pt; color:#78909c; margin-top:0.3mm; font-family:${fontLatin}; text-transform:uppercase;">Scan Verify</div>
       </div>
     </div>
 
-    <!-- ⑧  FOOTER -->
+    <!-- ⑧ Footer bar -->
     <div style="
-      width:${fullW}mm; position:relative; left:${leftOff}mm;
-      background:${navy}; padding:1.1mm 2.5mm 1.3mm 2.5mm;
-      box-sizing:border-box; flex-shrink:0; margin-top:auto;
+      background:${navy}; padding:1mm 2.5mm 1.2mm;
+      flex-shrink:0; margin-top:auto; position:relative; z-index:1;
     ">
-      <div style="font-size:4.2pt; font-weight:800; color:#fff; text-align:center; letter-spacing:0.4mm; margin-bottom:0.3mm; font-family:${font}; text-transform:uppercase;">Terms &amp; Conditions</div>
-      <div style="font-size:3.5pt; color:#c5cae9; line-height:1.45; font-family:${font}; text-align:justify;">
-        Property of the union. Valid only with seal &amp; authorized signature. Must be produced on demand.
-        Renew annually before expiry. Misuse is punishable under applicable law.
+      <div style="font-size:4pt; font-weight:800; color:#fff; text-align:center; letter-spacing:0.3mm; margin-bottom:0.3mm; font-family:${fontLatin}; text-transform:uppercase;">Terms &amp; Conditions</div>
+      <div style="font-size:3.3pt; color:#c5cae9; line-height:1.45; font-family:${fontLatin}; text-align:justify;">
+        Property of the union. Valid only with seal &amp; authorized signature. Must be produced on demand. Renew annually. Misuse is punishable under law.
       </div>
     </div>
 
@@ -575,11 +513,11 @@ function buildPressCardHtml(data: PressCardData): string {
 <html>
 <head>
   <meta charset="UTF-8"/>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;700;900&display=swap" rel="stylesheet"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;}
     @page{size:54mm 85.6mm;margin:0;}
     html,body{margin:0;padding:0;background:#fff;}
-    table{border-collapse:collapse;}
   </style>
 </head>
 <body>
@@ -588,6 +526,7 @@ ${backHtml}
 </body>
 </html>`;
 }
+
 async function renderToPdf(html: string): Promise<Buffer> {
   let puppeteer: any;
   try { puppeteer = require('puppeteer-core'); }
@@ -677,9 +616,12 @@ export async function generateSamplePressCardBuffer(): Promise<Buffer> {
     district:       'Palnadu',
     state:          'Andhra Pradesh',
     mobileNumber:   '+91 98765 43210',
-    unionName:      'DJFW',
+    unionName:      'Democratic Journalist Federation (Working)',
     unionDisplayName: 'Democratic Journalist Federation (Working)',
-    registrationNumber: 'AP/SOC/2003/00019',
+    nativeDisplayName: 'డెమోక్రటిక్ జర్నలిస్ట్ ఫెడరేషన్ (వర్కింగ్)',
+    abbreviation:   'DJF(W)',
+    sloganText:     'అక్షర దివిటీలం...ప్రజాస్వామ్య వార్తలు',
+    registrationNumber: '343/2025',
     address:        'H.No 4-5-678, Press Colony, Vijayawada – 520 001',
     phone:          '+91 866 2478900',
     email:          'contact@djfw.org',
@@ -687,10 +629,10 @@ export async function generateSamplePressCardBuffer(): Promise<Buffer> {
     signatoryName:  'T. Arunkumar',
     signatoryTitle: 'Founder & National President',
     photoUrl:       null,
-    unionLogoUrl:   null,
-    stampImageUrl:  null,
-    forStampImageUrl: null,
-    presidentSignatureUrl: null,
+    unionLogoUrl:   'https://kaburlu-news.b-cdn.net/journalist-union/democratic_journalist_federation__working_/assets/logo.png',
+    stampImageUrl:  'https://kaburlu-news.b-cdn.net/journalist-union/democratic_journalist_federation__working_/assets/stamp.png',
+    forStampImageUrl: 'https://kaburlu-news.b-cdn.net/journalist-union/democratic_journalist_federation__working_/assets/watermark.png',
+    presidentSignatureUrl: 'https://kaburlu-news.b-cdn.net/journalist-union/democratic_journalist_federation__working_/states/andhra_pradesh/presidentSignature.png',
   };
 
   const verifyUrl = 'https://api.kaburlumedia.com/api/v1/journalist/press-card/pdf?cardNumber=DJFW%2FAP%2F2025%2F00142';
@@ -699,9 +641,17 @@ export async function generateSamplePressCardBuffer(): Promise<Buffer> {
     QRCode.toDataURL(verifyUrl, { margin: 0, width: 320, errorCorrectionLevel: 'M' }),
   ]);
 
+  // Inline real assets for the sample preview
+  const [logo, stamp, signature, watermarkInline] = await Promise.all([
+    toDataUri(sampleData.unionLogoUrl),
+    toDataUri(sampleData.stampImageUrl),
+    toDataUri(sampleData.presidentSignatureUrl),
+    toDataUri(sampleData.forStampImageUrl),
+  ]);
+
   const enriched: PressCardData = {
     ...sampleData,
-    __inline: { logo: null, photo: null, stamp: null, forStamp: null, signature: null, qrFront, qrBack },
+    __inline: { logo, photo: null, stamp, forStamp: watermarkInline, signature, qrFront, qrBack },
   };
 
   const html = buildPressCardHtml(enriched);

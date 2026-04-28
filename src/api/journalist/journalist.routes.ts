@@ -209,7 +209,245 @@ router.post('/public/apply', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /journalist/public/register:
+ *   post:
+ *     summary: "[Public] Simple member registration for union app"
+ *     description: |
+ *       Simplified public registration — no prior account needed.
+ *       Accepts fullName, mobile, paper, designation, DOB and working location.
+ *       Creates account + UserProfile + JournalistProfile in one call.
+ *       If mobile already exists, links to existing account (unless already applied).
+ *     tags: [Journalist Union - Public]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobileNumber, fullName, unionName]
+ *             properties:
+ *               mobileNumber:
+ *                 type: string
+ *                 example: "9876543210"
+ *               mpin:
+ *                 type: string
+ *                 description: 4-digit MPIN — required only for new accounts
+ *                 example: "1234"
+ *               fullName:
+ *                 type: string
+ *                 example: "Venkata Ramana Reddy"
+ *               designation:
+ *                 type: string
+ *                 example: "Senior Reporter"
+ *               currentNewspaper:
+ *                 type: string
+ *                 example: "Eenadu"
+ *               dob:
+ *                 type: string
+ *                 format: date
+ *                 example: "1990-06-15"
+ *               unionName:
+ *                 type: string
+ *                 example: "Democratic Journalist Federation (Working)"
+ *               state:
+ *                 type: string
+ *                 example: "Andhra Pradesh"
+ *               district:
+ *                 type: string
+ *                 example: "Guntur"
+ *               mandal:
+ *                 type: string
+ *                 example: "Narasaraopet"
+ *               languageId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Registration successful
+ *       400:
+ *         description: Already registered or validation error
+ */
+router.post('/public/register', async (req: Request, res: Response) => {
+  try {
+    const {
+      mobileNumber, mpin, fullName, designation, currentNewspaper,
+      dob, unionName, state, district, mandal, languageId,
+    } = req.body;
+
+    if (!mobileNumber || !fullName || !unionName) {
+      return res.status(400).json({ error: 'mobileNumber, fullName and unionName are required' });
+    }
+
+    let user = await prisma.user.findUnique({ where: { mobileNumber } });
+    let isNewAccount = false;
+
+    if (user) {
+      const existing = await (prisma as any).journalistProfile.findUnique({ where: { userId: user.id } });
+      if (existing) {
+        return res.status(400).json({ error: 'This mobile number already has a journalist union application', profile: existing });
+      }
+    } else {
+      if (!mpin) return res.status(400).json({ error: 'mpin is required when registering a new account' });
+      if (!/^\d{4}$/.test(mpin)) return res.status(400).json({ error: 'mpin must be exactly 4 digits' });
+
+      const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+      if (!citizenRole) return res.status(500).json({ error: 'Default role not configured' });
+
+      const lang = languageId
+        ? await prisma.language.findUnique({ where: { id: languageId } })
+        : (await prisma.language.findFirst({ where: { code: 'te' } }) ?? await prisma.language.findFirst());
+      if (!lang) return res.status(500).json({ error: 'No language configured in the system' });
+
+      const hashedMpin = await bcrypt.hash(mpin, 10);
+      user = await prisma.user.create({
+        data: { mobileNumber, mpin: hashedMpin, roleId: citizenRole.id, languageId: lang.id, status: 'PENDING' },
+      });
+      isNewAccount = true;
+    }
+
+    // Upsert UserProfile with fullName and DOB
+    await prisma.userProfile.upsert({
+      where:  { userId: user.id },
+      create: {
+        userId:   user.id,
+        fullName: (fullName as string).trim(),
+        dob:      dob ? new Date(dob) : undefined,
+      },
+      update: {
+        fullName: (fullName as string).trim(),
+        ...(dob ? { dob: new Date(dob) } : {}),
+      },
+    });
+
+    // Check if already a reporter in any tenant (for auto-link)
+    const reporter = await prisma.reporter.findUnique({
+      where:  { userId: user.id },
+      select: { id: true, tenantId: true, tenant: { select: { name: true } } },
+    });
+
+    const profile = await (prisma as any).journalistProfile.create({
+      data: {
+        userId:           user.id,
+        designation:      designation ? (designation as string).trim() : 'Member',
+        district:         district    ? (district    as string).trim() : '',
+        organization:     currentNewspaper ? (currentNewspaper as string).trim() : '',
+        unionName:        (unionName as string).trim(),
+        state:            state   ? (state   as string).trim() : null,
+        mandal:           mandal  ? (mandal  as string).trim() : null,
+        currentNewspaper: currentNewspaper ? (currentNewspaper as string).trim() : null,
+        currentDesignation: designation ? (designation as string).trim() : null,
+        ...(reporter ? { linkedTenantId: reporter.tenantId, linkedTenantName: (reporter as any).tenant?.name } : {}),
+      },
+    });
+
+    return res.status(201).json({
+      message: isNewAccount
+        ? 'Account created and application submitted.'
+        : 'Application submitted and linked to your existing account.',
+      isNewAccount,
+      reporterLinked: !!reporter,
+      profile,
+    });
+  } catch (e: any) {
+    console.error('[journalist/public/register]', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /journalist/public/reporter-lookup:
+ *   get:
+ *     summary: "[Public] Look up a tenant reporter by mobile for form pre-fill"
+ *     description: |
+ *       Pass a mobile number and optional tenantId.
+ *       Returns reporter details (name, designation, newspaper, location, photo, DOB)
+ *       so the union membership form can be pre-filled.
+ *       Returns 404 if no reporter found for this mobile in the given tenant.
+ *     tags: [Journalist Union - Public]
+ *     parameters:
+ *       - in: query
+ *         name: mobile
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "9876543210"
+ *       - in: query
+ *         name: tenantId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter to a specific tenant. If omitted, returns first match across all tenants.
+ *     responses:
+ *       200:
+ *         description: Reporter found — pre-fill data returned
+ *       404:
+ *         description: No reporter found for this mobile
+ */
+router.get('/public/reporter-lookup', async (req: Request, res: Response) => {
+  try {
+    const mobile   = (req.query['mobile']   as string | undefined)?.trim();
+    const tenantId = (req.query['tenantId'] as string | undefined)?.trim();
+
+    if (!mobile) return res.status(400).json({ error: 'mobile query param is required' });
+
+    const user = await prisma.user.findUnique({
+      where:  { mobileNumber: mobile },
+      select: {
+        id: true,
+        mobileNumber: true,
+        profile: { select: { fullName: true, dob: true, profilePhotoUrl: true, lastName: true } },
+        reporterProfile: {
+          select: {
+            id:              true,
+            tenantId:        true,
+            profilePhotoUrl: true,
+            tenant:          { select: { name: true } },
+            designation:     { select: { name: true } },
+            state:           { select: { name: true } },
+            district:        { select: { name: true } },
+            mandal:          { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (!user || !user.reporterProfile) {
+      return res.status(404).json({ error: 'No reporter found for this mobile number' });
+    }
+
+    const rp = user.reporterProfile as any;
+
+    // If tenantId provided, confirm match
+    if (tenantId && rp.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Reporter not found in the specified tenant' });
+    }
+
+    const profileName = [user.profile?.fullName, user.profile?.lastName].filter(Boolean).join(' ').trim();
+
+    return res.json({
+      found:            true,
+      mobileNumber:     user.mobileNumber,
+      fullName:         profileName || null,
+      dob:              user.profile?.dob ?? null,
+      profilePhotoUrl:  rp.profilePhotoUrl ?? user.profile?.profilePhotoUrl ?? null,
+      designation:      rp.designation?.name ?? null,
+      currentNewspaper: rp.tenant?.name ?? null,
+      tenantId:         rp.tenantId,
+      tenantName:       rp.tenant?.name ?? null,
+      state:            rp.state?.name    ?? null,
+      district:         rp.district?.name ?? null,
+      mandal:           rp.mandal?.name   ?? null,
+    });
+  } catch (e: any) {
+    console.error('[journalist/public/reporter-lookup]', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── USER ROUTES ─────────────────────────────────────────────────────────────
+
 
 /**
  * @swagger

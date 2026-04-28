@@ -262,3 +262,49 @@ export async function sendWhatsappOtpTemplate(params: {
     return { ok: false, error: msg, details };
   }
 }
+
+/**
+ * Send a plain text message to a WhatsApp user.
+ * Only works within the 24-hour customer service window (after user sent a message).
+ */
+export async function sendWhatsappTextMessage(params: {
+  to: string;           // 10-digit mobile or full E.164
+  text: string;
+  phoneNumberId?: string;
+  accessToken?: string;
+  defaultCountryCode?: string;
+}): Promise<WhatsappTemplateSendResult> {
+  const phoneNumberId = params.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken   = params.accessToken   || process.env.WHATSAPP_ACCESS_TOKEN;
+  const cc            = params.defaultCountryCode || process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91';
+
+  if (!phoneNumberId) return { ok: false, error: 'WHATSAPP_PHONE_NUMBER_ID not configured' };
+  if (!accessToken)   return { ok: false, error: 'WHATSAPP_ACCESS_TOKEN not configured' };
+
+  const to = normalizeToE164DigitsOnly(params.to, cc);
+  if (!to) return { ok: false, error: 'Invalid phone number' };
+
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: params.text, preview_url: false },
+      },
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 15_000,
+      },
+    );
+    const messageId = resp?.data?.messages?.[0]?.id;
+    return { ok: true, messageId };
+  } catch (e: any) {
+    const details = e?.response?.data;
+    const msg = e?.message || 'WhatsApp send failed';
+    console.error('[WhatsApp] Text message error:', msg, details);
+    return { ok: false, error: msg, details };
+  }
+}
+

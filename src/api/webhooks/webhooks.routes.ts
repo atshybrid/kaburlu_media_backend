@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
+import { sendWhatsappTextMessage } from '../../lib/whatsapp';
 
 const router = Router();
 
@@ -493,6 +495,13 @@ router.post('/whatsapp', (req, res) => {
               phoneNumberId: phoneNumberId || null,
             },
           }).catch((e: any) => console.error('[WhatsApp Webhook] DB store message error:', e?.message));
+
+          // Bot: handle journalist union registration flow
+          if (from && type === 'text' && bodyText) {
+            processWhatsappBotMessage(from, bodyText.trim()).catch(
+              (e: any) => console.error('[WhatsApp Bot] Error:', e?.message),
+            );
+          }
         }
       }
     }
@@ -500,5 +509,275 @@ router.post('/whatsapp', (req, res) => {
     console.error('[WhatsApp Webhook] Processing error:', e);
   }
 });
+
+// ─── WhatsApp Journalist Union Registration Bot ────────────────────────────
+
+const BOT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const STEPS = [
+  'AWAIT_NAME',
+  'AWAIT_DESIGNATION',
+  'AWAIT_NEWSPAPER',
+  'AWAIT_STATE',
+  'AWAIT_DISTRICT',
+  'AWAIT_MANDAL',
+  'AWAIT_DOB',
+  'AWAIT_MPIN',
+  'CONFIRM',
+  'DONE',
+] as const;
+
+type BotStep = typeof STEPS[number];
+
+const TRIGGER_KEYWORDS = ['join', 'register', 'membership', 'సభ్యత్వం', 'సభ్యుడు'];
+
+async function reply(phone: string, text: string) {
+  await sendWhatsappTextMessage({ to: phone, text });
+}
+
+async function processWhatsappBotMessage(phone: string, text: string) {
+  const input = text.trim();
+  const inputLower = input.toLowerCase();
+
+  // Load or check existing session
+  let session = await (prisma as any).whatsappBotSession.findUnique({ where: { phone } });
+
+  // Expired session — treat as fresh
+  if (session && new Date(session.expiresAt) < new Date()) {
+    await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+    session = null;
+  }
+
+  // CANCEL at any point
+  if (session && ['cancel', 'రద్దు', 'stop'].includes(inputLower)) {
+    await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+    await reply(phone, '❌ Registration cancelled. Send JOIN anytime to start again.');
+    return;
+  }
+
+  // No active session — check for trigger keyword
+  if (!session) {
+    if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) return;
+
+    // Detect union name from message e.g. "JOIN DJFW"
+    let unionName: string | null = null;
+    const parts = input.split(/\s+/);
+    if (parts.length > 1) {
+      // Try to find union by abbreviation
+      const abbr = parts.slice(1).join(' ').toUpperCase();
+      const union = await (prisma as any).journalistUnionSettings.findFirst({
+        where: { OR: [{ abbreviation: abbr }, { unionName: { contains: abbr, mode: 'insensitive' } }] },
+        select: { unionName: true, displayName: true, abbreviation: true },
+      });
+      if (union) unionName = union.unionName;
+    }
+    // Fallback: pick first active union
+    if (!unionName) {
+      const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({
+        select: { unionName: true, displayName: true, abbreviation: true },
+      });
+      unionName = firstUnion?.unionName ?? null;
+    }
+
+    if (!unionName) {
+      await reply(phone, '⚠️ No journalist union configured. Please contact the admin.');
+      return;
+    }
+
+    session = await (prisma as any).whatsappBotSession.create({
+      data: {
+        phone,
+        step: 'AWAIT_NAME',
+        unionName,
+        data: {},
+        expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
+      },
+    });
+
+    await reply(phone,
+      `👋 *Journalist Union Membership Registration*\n\nWelcome! Let's register you step by step.\n\n` +
+      `📝 *Step 1/7* — Please enter your *full name*:`
+    );
+    return;
+  }
+
+  // Active session — process by current step
+  const step = session.step as BotStep;
+  const data: Record<string, any> = (session.data as Record<string, any>) || {};
+
+  async function advance(nextStep: BotStep, newData: Record<string, any>, prompt: string) {
+    await (prisma as any).whatsappBotSession.update({
+      where: { phone },
+      data: {
+        step: nextStep,
+        data: { ...data, ...newData },
+        expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
+      },
+    });
+    await reply(phone, prompt);
+  }
+
+  switch (step) {
+    case 'AWAIT_NAME':
+      if (input.length < 2) { await reply(phone, '⚠️ Please enter a valid name.'); return; }
+      await advance('AWAIT_DESIGNATION', { fullName: input },
+        `✅ Name: *${input}*\n\n📝 *Step 2/7* — Your designation? (e.g. Reporter, Photographer, Editor):`
+      );
+      break;
+
+    case 'AWAIT_DESIGNATION':
+      await advance('AWAIT_NEWSPAPER', { designation: input },
+        `✅ Designation: *${input}*\n\n📝 *Step 3/7* — Current newspaper/channel name: (Type SKIP to skip)`
+      );
+      break;
+
+    case 'AWAIT_NEWSPAPER':
+      await advance('AWAIT_STATE', { newspaper: inputLower === 'skip' ? '' : input },
+        `📝 *Step 4/7* — Which state do you work in? (e.g. Andhra Pradesh):`
+      );
+      break;
+
+    case 'AWAIT_STATE':
+      await advance('AWAIT_DISTRICT', { state: input },
+        `📝 *Step 5/7* — Which district?`
+      );
+      break;
+
+    case 'AWAIT_DISTRICT':
+      await advance('AWAIT_MANDAL', { district: input },
+        `📝 *Step 6/7* — Which mandal/tehsil? (Type SKIP to skip)`
+      );
+      break;
+
+    case 'AWAIT_MANDAL':
+      await advance('AWAIT_DOB', { mandal: inputLower === 'skip' ? '' : input },
+        `📝 *Step 7/7* — Date of birth? Format: DD-MM-YYYY (e.g. 15-06-1990) or type SKIP`
+      );
+      break;
+
+    case 'AWAIT_DOB': {
+      let dob: string | null = null;
+      if (inputLower !== 'skip') {
+        const parts = input.split(/[-\/.]/);
+        if (parts.length === 3) {
+          const [d, m, y] = parts.map(Number);
+          if (d && m && y) dob = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        }
+        if (!dob) { await reply(phone, '⚠️ Invalid date format. Use DD-MM-YYYY or type SKIP.'); return; }
+      }
+      const merged = { ...data, dob };
+      await (prisma as any).whatsappBotSession.update({
+        where: { phone },
+        data: { step: 'AWAIT_MPIN', data: merged, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+      });
+      await reply(phone,
+        `🔐 Create a *4-digit MPIN* for your account login:\n(This will be your password for the journalist union app)`
+      );
+      break;
+    }
+
+    case 'AWAIT_MPIN': {
+      if (!/^\d{4}$/.test(input)) { await reply(phone, '⚠️ MPIN must be exactly 4 digits. Try again:'); return; }
+      const merged = { ...data, mpin: input };
+      await (prisma as any).whatsappBotSession.update({
+        where: { phone },
+        data: { step: 'CONFIRM', data: merged, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+      });
+      const summary =
+        `📋 *Registration Summary* — Please verify:\n\n` +
+        `👤 Name: *${merged.fullName}*\n` +
+        `🏷️ Designation: *${merged.designation || 'N/A'}*\n` +
+        `📰 Newspaper: *${merged.newspaper || 'N/A'}*\n` +
+        `📍 State: *${merged.state || 'N/A'}*\n` +
+        `📍 District: *${merged.district || 'N/A'}*\n` +
+        `📍 Mandal: *${merged.mandal || 'N/A'}*\n` +
+        `🎂 DOB: *${merged.dob || 'N/A'}*\n\n` +
+        `Type *CONFIRM* to submit or *CANCEL* to start over.`;
+      await reply(phone, summary);
+      break;
+    }
+
+    case 'CONFIRM': {
+      if (!['confirm', 'yes', 'ok', 'submit', 'సరే'].includes(inputLower)) {
+        await reply(phone, 'Type *CONFIRM* to submit or *CANCEL* to start over.');
+        return;
+      }
+
+      // Extract mobile number from phone (strip country code for DB)
+      const mobileRaw = phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone;
+
+      try {
+        // Check if user already exists
+        let user = await prisma.user.findUnique({ where: { mobileNumber: mobileRaw } });
+        let isNew = false;
+
+        if (user) {
+          const existing = await (prisma as any).journalistProfile.findUnique({ where: { userId: user.id } });
+          if (existing) {
+            await reply(phone, `⚠️ This mobile number already has a journalist union application (ID: ${existing.pressId || existing.id.slice(-6)}).`);
+            await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+            return;
+          }
+        } else {
+          const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+          const lang = await prisma.language.findFirst({ where: { code: 'te' } }) ?? await prisma.language.findFirst();
+          if (!citizenRole || !lang) throw new Error('Role or language not configured');
+          const hashedMpin = await bcrypt.hash(data.mpin, 10);
+          user = await prisma.user.create({
+            data: { mobileNumber: mobileRaw, mpin: hashedMpin, roleId: citizenRole.id, languageId: lang.id, status: 'PENDING' },
+          });
+          isNew = true;
+        }
+
+        // Upsert UserProfile
+        await prisma.userProfile.upsert({
+          where:  { userId: user.id },
+          create: { userId: user.id, fullName: data.fullName, dob: data.dob ? new Date(data.dob) : undefined },
+          update: { fullName: data.fullName, ...(data.dob ? { dob: new Date(data.dob) } : {}) },
+        });
+
+        // Create JournalistProfile
+        const profile = await (prisma as any).journalistProfile.create({
+          data: {
+            userId:             user.id,
+            designation:        data.designation || 'Member',
+            district:           data.district || '',
+            organization:       data.newspaper || '',
+            unionName:          session.unionName,
+            state:              data.state || null,
+            mandal:             data.mandal || null,
+            currentNewspaper:   data.newspaper || null,
+            currentDesignation: data.designation || null,
+          },
+        });
+
+        await (prisma as any).whatsappBotSession.update({
+          where: { phone },
+          data: { step: 'DONE', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+        });
+
+        await reply(phone,
+          `✅ *Registration Successful!*\n\n` +
+          `Welcome to the journalist union, *${data.fullName}*!\n\n` +
+          `📱 Mobile: ${mobileRaw}\n` +
+          `🔑 MPIN: ${data.mpin} (keep it safe)\n\n` +
+          `Your application is under review. You'll be notified once approved.\n` +
+          (isNew ? `\nYour account has been created — login with your mobile & MPIN.` : '')
+        );
+      } catch (err: any) {
+        console.error('[WhatsApp Bot] Registration error:', err?.message);
+        await reply(phone, '❌ Registration failed due to a server error. Please try again later or contact the admin.');
+      }
+      break;
+    }
+
+    case 'DONE':
+      await reply(phone, '✅ Your registration is already submitted. Type CANCEL to start a new registration if needed.');
+      break;
+
+    default:
+      break;
+  }
+}
 
 export default router;

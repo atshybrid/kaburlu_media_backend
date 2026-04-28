@@ -64,6 +64,21 @@ model WhatsappWebhookEvent {
   @@index([receivedAt])
 }
 
+/// Conversational bot session for WhatsApp-based journalist union registration
+model WhatsappBotSession {
+  id        String   @id @default(cuid())
+  phone     String   @unique  /// Phone number in E.164 digits-only format (e.g. 919876543210)
+  step      String             /// Current step: AWAIT_NAME | AWAIT_DESIGNATION | AWAIT_NEWSPAPER | AWAIT_STATE | AWAIT_DISTRICT | AWAIT_MANDAL | AWAIT_DOB | AWAIT_MPIN | CONFIRM | DONE
+  unionName String?            /// Target union slug
+  data      Json     @default("{}") /// Accumulated answers: { fullName, designation, newspaper, state, district, mandal, dob, mpin }
+  expiresAt DateTime           /// Session expires after 30 min of inactivity
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phone])
+  @@index([expiresAt])
+}
+
 model ShortNews {
   categoryId             String
   aiRemark               String?
@@ -2692,6 +2707,11 @@ model JournalistUnionSettings {
   idCardLogoUrl         String?  /// Logo printed on press ID card (may differ from main logo)
   stampImageUrl         String?  /// Round rubber stamp PNG (transparent background)
   forStampImageUrl      String?  /// "For [UnionName]" text/image stamp PNG
+
+  // ── Branding text ──────────────────────────────────────────────────────────
+  nativeDisplayName     String?  /// Native/regional language name (e.g. Telugu: "డెమోక్రటిక్ జర్నలిస్ట్ ఫెడరేషన్ (వర్కింగ్)")
+  abbreviation          String?  /// Short form printed on card (e.g. "DJF(W)") — auto-derived from displayName if not set
+  sloganText            String?  /// Tagline/motto for card footer (e.g. "అక్షర దివిటీలం...ప్రజాస్వామ్య వార్తలు")
 
   // ── Signatory (shown on ALL press cards union-wide) ──────────────────────
   founderSignatureUrl   String?  /// Ink signature of founder / national president (shown on every card)
