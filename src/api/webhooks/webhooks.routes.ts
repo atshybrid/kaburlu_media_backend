@@ -3,8 +3,9 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
-import { sendWhatsappTextMessage, sendWhatsappButtons, sendWhatsappList, downloadWhatsappMedia } from '../../lib/whatsapp';
+import { sendWhatsappTextMessage, sendWhatsappButtons, sendWhatsappList, downloadWhatsappMedia, sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
 import { putPublicObject } from '../../lib/objectStorage';
+import { generateAndUploadPressCardPdf } from '../../lib/journalistPressCardPdf';
 
 const router = Router();
 
@@ -540,9 +541,11 @@ const STEPS = [
   'AWAIT_DOB',
   'AWAIT_MPIN',
   'CONFIRM',
-  'AWAIT_NOMINEE',
+  'AWAIT_INSURANCE_OPT',
   'AWAIT_AADHAAR',
+  'AWAIT_AADHAAR_BACK',
   'AWAIT_PAN',
+  'AWAIT_NOMINEE',
   'KYC_SUBMITTED',
   'DONE',
 ] as const;
@@ -729,8 +732,8 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           `📱 మొబైల్: *${mobile10}*\n` +
           `🏷️ హోదా: *${existingJournalist.currentDesignation || existingJournalist.designation || 'N/A'}*\n` +
           `📰 వార్తాపత్రిక: *${newspaper || 'N/A'}*\n` +
-          `📍 ప్రాంతం: *${existingJournalist.district || 'N/A'}*${existingJournalist.state ? `, ${existingJournalist.state}` : ''}\n\n` +
-          `ఇన్సూరెన్స్ దరఖాస్తు కోసం నిర్ధారించండి:`;
+          `📍 ప్రాంతం: *${existingJournalist.mandal ? existingJournalist.mandal + ', ' : ''}${existingJournalist.district || 'N/A'}*${existingJournalist.state ? `, ${existingJournalist.state}` : ''}\n\n` +
+          `నిర్ధారించి ID కార్డ్ పొందండి, ఆపై ఇన్సూరెన్స్ దరఖాస్తు చేయండి:`;
         await replyButtons(phone, summary,
           [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & కొనసాగు' }, { id: 'cancel', title: '❌ రద్దు' }]
         );
@@ -1022,18 +1025,53 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       const mobileRaw: string = data.mobileNumber || (phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone);
 
       try {
-        // Existing journalist — just proceed to insurance
+        // Existing journalist — find or create their card, generate PDF, send it, then insurance opt-in
         if (data.existingUser && data.journalistProfileId) {
+          try {
+            let card = await (prisma as any).journalistCard.findUnique({ where: { profileId: data.journalistProfileId } });
+            if (!card) {
+              const expiry = new Date();
+              expiry.setFullYear(expiry.getFullYear() + 1);
+              card = await (prisma as any).journalistCard.create({
+                data: {
+                  profileId: data.journalistProfileId,
+                  cardNumber: `JU-${Date.now()}`,
+                  expiryDate: expiry,
+                  status: 'ACTIVE',
+                },
+              });
+            }
+            let pdfUrl: string | null = card.pdfUrl || null;
+            if (!pdfUrl) {
+              await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+              const pdfResult = await generateAndUploadPressCardPdf(data.journalistProfileId);
+              if (pdfResult.ok && pdfResult.pdfUrl) {
+                pdfUrl = pdfResult.pdfUrl;
+              }
+            }
+            if (pdfUrl) {
+              await sendWhatsappIdCardTemplate({
+                toMobileNumber: phone,
+                pdfUrl,
+                cardType: 'Press ID',
+                organizationName: data.newspaper || 'Journalist Union',
+                documentType: 'Press ID Card',
+                pdfFilename: `Press_ID_${data.journalistProfileId.slice(-8).toUpperCase()}.pdf`,
+              });
+            } else {
+              await reply(phone, `⚠️ ID కార్డ్ ఇప్పుడు జనరేట్ చేయడం సాధ్యం కాలేదు. అడ్మిన్ మీ కార్డ్ పంపిస్తారు.\n`);
+            }
+          } catch (cardErr: any) {
+            console.error('[WhatsApp Bot] Card generation error:', cardErr?.message);
+            await reply(phone, `⚠️ ID కార్డ్ పంపడంలో సమస్య వచ్చింది. అడ్మిన్ మీతో సంప్రదిస్తారు.\n`);
+          }
           await (prisma as any).whatsappBotSession.update({
             where: { phone },
-            data: { step: 'AWAIT_NOMINEE', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+            data: { step: 'AWAIT_INSURANCE_OPT', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
           });
-          await reply(phone,
-            `✅ *నిర్ధారించబడింది!*\n\n` +
-            `👋 స్వాగతం, *${data.fullName || 'సభ్యుడు'}*!\n\n` +
-            `🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
-            `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n` +
-            `(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`
+          await replyButtons(phone,
+            `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\nమీ ఆధార్ కార్డ్, PAN కార్డ్ మరియు నామినీ వివరాలు నమోదు చేసి ఇన్సూరెన్స్ కోసం దరఖాస్తు చేయాలా?`,
+            [{ id: 'insurance_yes', title: '🛡️ అవును, దరఖాస్తు చేయి' }, { id: 'insurance_no', title: '❌ వద్దు, తర్వాత' }]
           );
           return;
         }
@@ -1046,12 +1084,11 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           if (existing) {
             await (prisma as any).whatsappBotSession.update({
               where: { phone },
-              data: { step: 'AWAIT_NOMINEE', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+              data: { step: 'AWAIT_INSURANCE_OPT', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
             });
-            await reply(phone,
-              `ℹ️ ఇప్పటికే నమోదు చేసారు.\n\n` +
-              `🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
-              `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:`
+            await replyButtons(phone,
+              `ℹ️ ఇప్పటికే నమోదు చేసారు.\n\n🛡️ ఇన్సూరెన్స్ కోసం దరఖాస్తు చేయాలా?`,
+              [{ id: 'insurance_yes', title: '🛡️ అవును, దరఖాస్తు చేయి' }, { id: 'insurance_no', title: '❌ వద్దు, తర్వాత' }]
             );
             return;
           }
@@ -1099,7 +1136,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).whatsappBotSession.update({
           where: { phone },
           data: {
-            step: 'AWAIT_NOMINEE',
+            step: 'AWAIT_INSURANCE_OPT',
             data: { ...data, userId: user.id, journalistProfileId: profile.id },
             expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
           },
@@ -1109,9 +1146,11 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           `✅ *నమోదు విజయవంతంగా పూర్తైంది!*\n\n` +
           `స్వాగతం, *${data.fullName || 'సభ్యుడు'}*!` +
           (isNew ? `\n📱 మొబైల్: ${mobileRaw}\n${data.mpin ? `🔑 MPIN: ${data.mpin} (దీన్ని సేవ్ చేయండి!)` : ''}` : '') +
-          `\n\n🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
-          `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n` +
-          `(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`
+          `\n\n📋 మీ దరఖాస్తు అడ్మిన్ అప్రూవ్ చేసిన తర్వాత *ప్రెస్ ID కార్డ్* WhatsApp లో పంపబడుతుంది.`
+        );
+        await replyButtons(phone,
+          `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\nఇప్పుడే ఆధార్, PAN, నామినీ వివరాలు నమోదు చేయాలా?`,
+          [{ id: 'insurance_yes', title: '🛡️ అవును, నమోదు చేయి' }, { id: 'insurance_no', title: '❌ తర్వాత చేస్తా' }]
         );
       } catch (err: any) {
         console.error('[WhatsApp Bot] Registration error:', err?.message);
@@ -1120,19 +1159,40 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       break;
     }
 
-    // ── INSURANCE STEP 1: Nominee Name ────────────────────────────────────────
+    // ── INSURANCE OPT-IN ──────────────────────────────────────────────────────
+    case 'AWAIT_INSURANCE_OPT': {
+      const wantsInsurance = ['insurance_yes', 'yes', 'అవును', 'ok'].includes(inputLower);
+      if (wantsInsurance) {
+        await advanceStep('AWAIT_AADHAAR', {});
+        await replyButtons(phone,
+          `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\n` +
+          `📄 *దశ 1/4* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):\n\n` +
+          `(ఆధార్ నంబర్ మరియు పేరు స్పష్టంగా కనిపించాలి)`,
+          [{ id: 'SKIP', title: 'తర్వాత పంపిస్తా' }]
+        );
+      } else {
+        await (prisma as any).whatsappBotSession.update({
+          where: { phone },
+          data: { step: 'DONE', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+        });
+        await reply(phone,
+          `✅ సరే! మీరు తర్వాత ఇన్సూరెన్స్ కోసం దరఖాస్తు చేయవచ్చు.\n\n` +
+          `"djfw" అని పంపి మళ్ళీ మొదలుపెట్టవచ్చు.`
+        );
+      }
+      break;
+    }
+
+    // ── INSURANCE STEP 4: Nominee Name (last step) ───────────────────────────
     case 'AWAIT_NOMINEE': {
       if (inputLower === 'skip' || inputLower === 'later') {
-        await advanceStep('AWAIT_AADHAAR', {});
-        await reply(phone,
-          `⏭️ నామినీ పేరు వదిలివేయబడింది.\n\n` +
-          `📄 *ఇన్సూరెన్స్ దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`
-        );
+        await advanceStep('KYC_SUBMITTED', {});
+        await kycSubmittedMessage(phone, data);
         return;
       }
       if (input.length < 2) {
         await replyButtons(phone,
-          '👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)',
+          '👥 *ఇన్సూరెన్స్ దశ 4/4* — మీ *నామినీ పేరు* నమోదు చేయండి:\n\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)',
           [{ id: 'SKIP', title: 'తర్వాత నమోదు చేస్తా' }]
         );
         return;
@@ -1143,24 +1203,24 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           data: { nomineeName: input },
         });
       }
-      await advanceStep('AWAIT_AADHAAR', { nomineeName: input });
-      await reply(phone,
-        `✅ నామినీ పేరు: *${input}*\n\n` +
-        `📄 *ఇన్సూరెన్స్ దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`
-      );
+      await advanceStep('KYC_SUBMITTED', { nomineeName: input });
+      await kycSubmittedMessage(phone, { ...data, nomineeName: input });
       break;
     }
 
-    // ── KYC STEP 2: Aadhaar Card ──────────────────────────────────────────────
+    // ── INSURANCE STEP 1 (photo): Aadhaar Front ──────────────────────────────
     case 'AWAIT_AADHAAR': {
       if (inputLower === 'skip' || inputLower === 'later') {
-        await advanceStep('AWAIT_PAN', {});
-        await reply(phone, `⏭️ ఆధార్ వదిలివేయబడింది.\n\n💳 *ఇన్సూరెన్స్ దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
+        await advanceStep('AWAIT_AADHAAR_BACK', {});
+        await replyButtons(phone,
+          `⏭️ ఆధార్ ముందు భాగం వదిలివేయబడింది.\n\n📄 *దశ 2/4* — మీ *ఆధార్ కార్డ్ వెనక భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`,
+          [{ id: 'SKIP', title: 'వెనక భాగం వదిలివేయి' }]
+        );
         return;
       }
       if (!mediaId) {
         await replyButtons(phone,
-          '📄 *ఇన్సూరెన్స్ దశ 2/3* — దయచేసి మీ *ఆధార్ కార్డ్ ముందు భాగం* ఇమేజ్‌గా పంపండి.\n\n(ఆధార్ నంబర్ మరియు పేరు స్పష్టంగా కనిపించాలి)',
+          '📄 *ఇన్సూరెన్స్ దశ 1/4* — దయచేసి మీ *ఆధార్ కార్డ్ ముందు భాగం* ఇమేజ్‌గా పంపండి.\n\n(ఆధార్ నంబర్ మరియు పేరు స్పష్టంగా కనిపించాలి)',
           [{ id: 'SKIP', title: 'ఆధార్ వదిలివేయి' }]
         );
         return;
@@ -1173,21 +1233,60 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           data: { aadhaarUrl },
         });
       }
-      await advanceStep('AWAIT_PAN', { aadhaarUrl });
-      await reply(phone, `✅ ఆధార్ అందుకున్నాం!\n\n💳 *ఇన్సూరెన్స్ దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
+      await advanceStep('AWAIT_AADHAAR_BACK', { aadhaarUrl });
+      await replyButtons(phone,
+        `✅ ఆధార్ ముందు భాగం అందుకున్నాం!\n\n📄 *ఇన్సూరెన్స్ దశ 2/4* — మీ *ఆధార్ కార్డ్ వెనక భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`,
+        [{ id: 'SKIP', title: 'వెనక భాగం వదిలివేయి' }]
+      );
       break;
     }
 
-    // ── KYC STEP 3: PAN Card ──────────────────────────────────────────────────
-    case 'AWAIT_PAN': {
+    // ── INSURANCE STEP 2: Aadhaar Back ───────────────────────────────────────
+    case 'AWAIT_AADHAAR_BACK': {
       if (inputLower === 'skip' || inputLower === 'later') {
-        await advanceStep('KYC_SUBMITTED', {});
-        await kycSubmittedMessage(phone, data);
+        await advanceStep('AWAIT_PAN', {});
+        await replyButtons(phone,
+          `⏭️ ఆధార్ వెనక భాగం వదిలివేయబడింది.\n\n💳 *ఇన్సూరెన్స్ దశ 3/4* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`,
+          [{ id: 'SKIP', title: 'PAN వదిలివేయి' }]
+        );
         return;
       }
       if (!mediaId) {
         await replyButtons(phone,
-          '💳 *ఇన్సూరెన్స్ దశ 3/3* — దయచేసి మీ *PAN కార్డ్* ఫోటో ఇమేజ్‌గా పంపండి.\n\n(పేరు మరియు PAN నంబర్ కనిపించే ముందు భాగం)',
+          '📄 *ఇన్సూరెన్స్ దశ 2/4* — దయచేసి మీ *ఆధార్ కార్డ్ వెనక భాగం* ఇమేజ్‌గా పంపండి.',
+          [{ id: 'SKIP', title: 'వెనక భాగం వదిలివేయి' }]
+        );
+        return;
+      }
+      const aadhaarBackUrl = await uploadBotMedia(mediaId, `${data.journalistProfileId || phone}/aadhaar_back`);
+      if (!aadhaarBackUrl) { await reply(phone, '❌ అప్‌లోడ్ విఫలమైంది. మళ్ళీ ప్రయత్నించండి.'); return; }
+      if (data.journalistProfileId) {
+        await (prisma as any).journalistProfile.update({
+          where: { id: data.journalistProfileId },
+          data: { aadhaarBackUrl },
+        });
+      }
+      await advanceStep('AWAIT_PAN', { aadhaarBackUrl });
+      await replyButtons(phone,
+        `✅ ఆధార్ వెనక భాగం అందుకున్నాం!\n\n💳 *ఇన్సూరెన్స్ దశ 3/4* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`,
+        [{ id: 'SKIP', title: 'PAN వదిలివేయి' }]
+      );
+      break;
+    }
+
+    // ── INSURANCE STEP 3: PAN Card ────────────────────────────────────────────
+    case 'AWAIT_PAN': {
+      if (inputLower === 'skip' || inputLower === 'later') {
+        await advanceStep('AWAIT_NOMINEE', {});
+        await replyButtons(phone,
+          `⏭️ PAN కార్డ్ వదిలివేయబడింది.\n\n👥 *ఇన్సూరెన్స్ దశ 4/4* — మీ *నామినీ పేరు* నమోదు చేయండి:\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`,
+          [{ id: 'SKIP', title: 'తర్వాత నమోదు చేస్తా' }]
+        );
+        return;
+      }
+      if (!mediaId) {
+        await replyButtons(phone,
+          '💳 *ఇన్సూరెన్స్ దశ 3/4* — దయచేసి మీ *PAN కార్డ్* ఫోటో ఇమేజ్‌గా పంపండి.\n\n(పేరు మరియు PAN నంబర్ కనిపించే ముందు భాగం)',
           [{ id: 'SKIP', title: 'PAN వదిలివేయి' }]
         );
         return;
@@ -1200,8 +1299,11 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           data: { panCardUrl },
         });
       }
-      await advanceStep('KYC_SUBMITTED', { panCardUrl });
-      await kycSubmittedMessage(phone, data);
+      await advanceStep('AWAIT_NOMINEE', { panCardUrl });
+      await replyButtons(phone,
+        `✅ PAN కార్డ్ అందుకున్నాం!\n\n👥 *ఇన్సూరెన్స్ దశ 4/4* — మీ *నామినీ పేరు* నమోదు చేయండి:\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`,
+        [{ id: 'SKIP', title: 'తర్వాత నమోదు చేస్తా' }]
+      );
       break;
     }
 
