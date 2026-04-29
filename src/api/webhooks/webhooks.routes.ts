@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
-import { sendWhatsappTextMessage } from '../../lib/whatsapp';
+import { sendWhatsappTextMessage, sendWhatsappButtons, sendWhatsappList } from '../../lib/whatsapp';
 
 const router = Router();
 
@@ -497,8 +497,15 @@ router.post('/whatsapp', (req, res) => {
           }).catch((e: any) => console.error('[WhatsApp Webhook] DB store message error:', e?.message));
 
           // Bot: handle journalist union registration flow
-          if (from && type === 'text' && bodyText) {
-            processWhatsappBotMessage(from, bodyText.trim()).catch(
+          // Accept both plain text and interactive button/list replies
+          let botText: string | null = bodyText;
+          if (type === 'interactive') {
+            const iType = msg.interactive?.type;
+            if (iType === 'button_reply') botText = msg.interactive.button_reply?.id || msg.interactive.button_reply?.title || null;
+            if (iType === 'list_reply')   botText = msg.interactive.list_reply?.id   || msg.interactive.list_reply?.title   || null;
+          }
+          if (from && botText) {
+            processWhatsappBotMessage(from, botText.trim()).catch(
               (e: any) => console.error('[WhatsApp Bot] Error:', e?.message),
             );
           }
@@ -515,6 +522,7 @@ router.post('/whatsapp', (req, res) => {
 const BOT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const STEPS = [
+  'AWAIT_MOBILE',
   'AWAIT_NAME',
   'AWAIT_DESIGNATION',
   'AWAIT_NEWSPAPER',
@@ -531,8 +539,22 @@ type BotStep = typeof STEPS[number];
 
 const TRIGGER_KEYWORDS = ['join', 'register', 'membership', 'సభ్యత్వం', 'సభ్యుడు'];
 
+const DESIGNATIONS = ['Reporter', 'Senior Reporter', 'Photographer', 'Videographer', 'Editor', 'Sub Editor', 'Correspondent', 'Anchor', 'Freelancer'];
+const STATES = ['Andhra Pradesh', 'Telangana', 'Karnataka', 'Tamil Nadu', 'Maharashtra', 'Delhi', 'Other'];
+
 async function reply(phone: string, text: string) {
   await sendWhatsappTextMessage({ to: phone, text });
+}
+
+async function replyButtons(phone: string, body: string, buttons: { id: string; title: string }[], header?: string) {
+  const result = await sendWhatsappButtons({ to: phone, body, buttons, header });
+  // Fallback to text if interactive fails (e.g. non-WhatsApp Business accounts in test)
+  if (!result.ok) await reply(phone, body + '\n\n' + buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n'));
+}
+
+async function replyList(phone: string, body: string, buttonLabel: string, rows: { id: string; title: string; description?: string }[], header?: string) {
+  const result = await sendWhatsappList({ to: phone, body, buttonLabel, sections: [{ title: 'Options', rows }], header });
+  if (!result.ok) await reply(phone, body + '\n\n' + rows.map((r, i) => `${i + 1}. ${r.title}`).join('\n'));
 }
 
 async function processWhatsappBotMessage(phone: string, text: string) {
@@ -558,12 +580,10 @@ async function processWhatsappBotMessage(phone: string, text: string) {
   // No active session — check for trigger keyword
   if (!session) {
     if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
-      // Friendly fallback: guide them to start registration
-      await reply(phone,
-        `👋 *Welcome to Kaburlu Journalist Union!*\n\n` +
-        `To register as a member, send:\n` +
-        `*JOIN* — to start membership registration\n\n` +
-        `Or type *JOIN <union abbreviation>* (e.g. JOIN DJF) to join a specific union.`
+      // Friendly fallback
+      await replyButtons(phone,
+        '👋 *Welcome to Kaburlu Journalist Union!*\n\nJoin as a member to get your Press ID card.',
+        [{ id: 'JOIN', title: '📋 Register Now' }]
       );
       return;
     }
@@ -572,7 +592,6 @@ async function processWhatsappBotMessage(phone: string, text: string) {
     let unionName: string | null = null;
     const parts = input.split(/\s+/);
     if (parts.length > 1) {
-      // Try to find union by abbreviation
       const abbr = parts.slice(1).join(' ').toUpperCase();
       const union = await (prisma as any).journalistUnionSettings.findFirst({
         where: { OR: [{ abbreviation: abbr }, { unionName: { contains: abbr, mode: 'insensitive' } }] },
@@ -580,14 +599,12 @@ async function processWhatsappBotMessage(phone: string, text: string) {
       });
       if (union) unionName = union.unionName;
     }
-    // Fallback: pick first active union
     if (!unionName) {
       const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({
         select: { unionName: true, displayName: true, abbreviation: true },
       });
       unionName = firstUnion?.unionName ?? null;
     }
-
     if (!unionName) {
       await reply(phone, '⚠️ No journalist union configured. Please contact the admin.');
       return;
@@ -596,7 +613,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
     session = await (prisma as any).whatsappBotSession.create({
       data: {
         phone,
-        step: 'AWAIT_NAME',
+        step: 'AWAIT_MOBILE',
         unionName,
         data: {},
         expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
@@ -604,8 +621,9 @@ async function processWhatsappBotMessage(phone: string, text: string) {
     });
 
     await reply(phone,
-      `👋 *Journalist Union Membership Registration*\n\nWelcome! Let's register you step by step.\n\n` +
-      `📝 *Step 1/7* — Please enter your *full name*:`
+      `👋 *Journalist Union Membership Registration*\n\n` +
+      `Please enter your *10-digit mobile number* to begin:\n` +
+      `(We'll check if you already have an account)`
     );
     return;
   }
@@ -614,7 +632,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
   const step = session.step as BotStep;
   const data: Record<string, any> = (session.data as Record<string, any>) || {};
 
-  async function advance(nextStep: BotStep, newData: Record<string, any>, prompt: string) {
+  async function advanceStep(nextStep: BotStep, newData: Record<string, any>) {
     await (prisma as any).whatsappBotSession.update({
       where: { phone },
       data: {
@@ -623,47 +641,180 @@ async function processWhatsappBotMessage(phone: string, text: string) {
         expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
       },
     });
-    await reply(phone, prompt);
   }
 
   switch (step) {
+
+    // ── STEP 0: Mobile number ────────────────────────────────────────────────
+    case 'AWAIT_MOBILE': {
+      const mobile = input.replace(/\D/g, '');
+      const mobile10 = mobile.length === 12 && mobile.startsWith('91') ? mobile.slice(2) : mobile;
+      if (!/^[6-9]\d{9}$/.test(mobile10)) {
+        await reply(phone, '⚠️ Please enter a valid 10-digit Indian mobile number.');
+        return;
+      }
+      // Check if user already exists with profile
+      const existingUser = await prisma.user.findUnique({
+        where: { mobileNumber: mobile10 },
+        include: { profile: true },
+      });
+      const existingJournalist = existingUser
+        ? await (prisma as any).journalistProfile.findUnique({ where: { userId: existingUser.id } })
+        : null;
+
+      if (existingJournalist) {
+        // Already a journalist member
+        await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+        await reply(phone,
+          `✅ *Already Registered!*\n\n` +
+          `Mobile *${mobile10}* already has a journalist membership.\n` +
+          `Press ID: *${existingJournalist.pressId || existingJournalist.id.slice(-8).toUpperCase()}*\n\n` +
+          `Send JOIN to start a fresh registration with a different number.`
+        );
+        return;
+      }
+
+      if (existingUser && existingUser.profile) {
+        // User exists, has profile → prefill and fast-track to MPIN
+        const p = existingUser.profile as any;
+        await advanceStep('AWAIT_MPIN', {
+          mobileNumber: mobile10,
+          userId: existingUser.id,
+          prefilled: true,
+          fullName:    p.fullName || '',
+          designation: '',
+          newspaper:   '',
+          state:       '',
+          district:    '',
+          mandal:      '',
+          dob:         p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
+        });
+        await replyButtons(phone,
+          `✅ Found your account!\n\n` +
+          `👤 Name: *${p.fullName || 'N/A'}*\n` +
+          `📱 Mobile: *${mobile10}*\n\n` +
+          `We'll register you with these details. Create a *4-digit MPIN* for login or type it below:`,
+          [{ id: 'SKIP_MPIN', title: 'Use existing MPIN' }]
+        );
+        return;
+      }
+
+      // New user — start full flow
+      await advanceStep('AWAIT_NAME', { mobileNumber: mobile10 });
+      await reply(phone, `✅ Mobile: *${mobile10}*\n\n📝 *Step 1/6* — Enter your *full name*:`);
+      break;
+    }
+
+    // ── STEP 1: Name ─────────────────────────────────────────────────────────
     case 'AWAIT_NAME':
-      if (input.length < 2) { await reply(phone, '⚠️ Please enter a valid name.'); return; }
-      await advance('AWAIT_DESIGNATION', { fullName: input },
-        `✅ Name: *${input}*\n\n📝 *Step 2/7* — Your designation? (e.g. Reporter, Photographer, Editor):`
+      if (input.length < 2) { await reply(phone, '⚠️ Please enter a valid full name.'); return; }
+      await advanceStep('AWAIT_DESIGNATION', { fullName: input });
+      await replyList(phone,
+        `✅ Name: *${input}*\n\n📝 *Step 2/6* — Select your designation:`,
+        'Choose Designation',
+        DESIGNATIONS.map(d => ({ id: d, title: d })),
+        'Designation'
       );
       break;
 
-    case 'AWAIT_DESIGNATION':
-      await advance('AWAIT_NEWSPAPER', { designation: input },
-        `✅ Designation: *${input}*\n\n📝 *Step 3/7* — Current newspaper/channel name: (Type SKIP to skip)`
+    // ── STEP 2: Designation ───────────────────────────────────────────────────
+    case 'AWAIT_DESIGNATION': {
+      // Accept list reply id, or typed number, or free text
+      let designation = input;
+      if (/^\d+$/.test(input)) {
+        const idx = parseInt(input) - 1;
+        designation = DESIGNATIONS[idx] || input;
+      }
+      await advanceStep('AWAIT_NEWSPAPER', { designation });
+      // Fetch tenants (newspapers) from DB
+      const tenants = await (prisma as any).tenant.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true },
+        take: 9,
+        orderBy: { name: 'asc' },
+      });
+      if (tenants.length > 0) {
+        await replyList(phone,
+          `✅ Designation: *${designation}*\n\n📝 *Step 3/6* — Select your newspaper/channel:`,
+          'Choose Newspaper',
+          [
+            ...tenants.map((t: any) => ({ id: `tenant:${t.id}`, title: t.name.slice(0, 24) })),
+            { id: 'OTHER_NEWSPAPER', title: 'Other (type name)' },
+          ],
+          'Newspaper'
+        );
+      } else {
+        await reply(phone, `✅ Designation: *${designation}*\n\n📝 *Step 3/6* — Enter your newspaper/channel name (or type SKIP):`);
+      }
+      break;
+    }
+
+    // ── STEP 3: Newspaper ─────────────────────────────────────────────────────
+    case 'AWAIT_NEWSPAPER': {
+      let newspaper = '';
+      let tenantId: string | null = null;
+      if (input.startsWith('tenant:')) {
+        tenantId = input.replace('tenant:', '');
+        const t = await (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+        newspaper = t?.name || '';
+      } else if (inputLower === 'skip' || inputLower === 'other_newspaper') {
+        newspaper = '';
+      } else {
+        newspaper = input;
+      }
+
+      if (input === 'OTHER_NEWSPAPER') {
+        await advanceStep('AWAIT_NEWSPAPER', { ...data, _awaitOtherNewspaper: true });
+        await reply(phone, '📝 Enter your newspaper/channel name (or SKIP):');
+        return;
+      }
+      if (data._awaitOtherNewspaper) {
+        newspaper = inputLower === 'skip' ? '' : input;
+      }
+
+      await advanceStep('AWAIT_STATE', { newspaper, tenantId: tenantId || null, _awaitOtherNewspaper: undefined });
+      await replyList(phone,
+        `✅ Newspaper: *${newspaper || 'N/A'}*\n\n📝 *Step 4/6* — Select your state:`,
+        'Choose State',
+        STATES.map(s => ({ id: s, title: s })),
+        'State'
       );
       break;
+    }
 
-    case 'AWAIT_NEWSPAPER':
-      await advance('AWAIT_STATE', { newspaper: inputLower === 'skip' ? '' : input },
-        `📝 *Step 4/7* — Which state do you work in? (e.g. Andhra Pradesh):`
-      );
+    // ── STEP 4: State ─────────────────────────────────────────────────────────
+    case 'AWAIT_STATE': {
+      let state = input;
+      if (/^\d+$/.test(input)) {
+        const idx = parseInt(input) - 1;
+        state = STATES[idx] || input;
+      }
+      await advanceStep('AWAIT_DISTRICT', { state });
+      await reply(phone, `✅ State: *${state}*\n\n📝 *Step 5/6* — Enter your *district*:`);
       break;
+    }
 
-    case 'AWAIT_STATE':
-      await advance('AWAIT_DISTRICT', { state: input },
-        `📝 *Step 5/7* — Which district?`
-      );
-      break;
-
+    // ── STEP 5: District ──────────────────────────────────────────────────────
     case 'AWAIT_DISTRICT':
-      await advance('AWAIT_MANDAL', { district: input },
-        `📝 *Step 6/7* — Which mandal/tehsil? (Type SKIP to skip)`
+      await advanceStep('AWAIT_MANDAL', { district: input });
+      await replyButtons(phone,
+        `✅ District: *${input}*\n\n📝 *Step 6/6* — Enter your mandal/tehsil:`,
+        [{ id: 'SKIP', title: 'Skip' }]
       );
       break;
 
-    case 'AWAIT_MANDAL':
-      await advance('AWAIT_DOB', { mandal: inputLower === 'skip' ? '' : input },
-        `📝 *Step 7/7* — Date of birth? Format: DD-MM-YYYY (e.g. 15-06-1990) or type SKIP`
+    // ── STEP 6: Mandal ────────────────────────────────────────────────────────
+    case 'AWAIT_MANDAL': {
+      const mandal = (inputLower === 'skip') ? '' : input;
+      await advanceStep('AWAIT_DOB', { mandal });
+      await replyButtons(phone,
+        `✅ Mandal: *${mandal || 'Skipped'}*\n\n🎂 Date of birth? Format: DD-MM-YYYY\n(e.g. 15-06-1990)`,
+        [{ id: 'SKIP', title: 'Skip DOB' }]
       );
       break;
+    }
 
+    // ── STEP 7: DOB ───────────────────────────────────────────────────────────
     case 'AWAIT_DOB': {
       let dob: string | null = null;
       if (inputLower !== 'skip') {
@@ -672,48 +823,49 @@ async function processWhatsappBotMessage(phone: string, text: string) {
           const [d, m, y] = parts.map(Number);
           if (d && m && y) dob = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         }
-        if (!dob) { await reply(phone, '⚠️ Invalid date format. Use DD-MM-YYYY or type SKIP.'); return; }
+        if (!dob) { await reply(phone, '⚠️ Invalid date. Use DD-MM-YYYY or tap Skip.'); return; }
       }
-      const merged = { ...data, dob };
-      await (prisma as any).whatsappBotSession.update({
-        where: { phone },
-        data: { step: 'AWAIT_MPIN', data: merged, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
-      });
-      await reply(phone,
-        `🔐 Create a *4-digit MPIN* for your account login:\n(This will be your password for the journalist union app)`
-      );
+      await advanceStep('AWAIT_MPIN', { dob });
+      await reply(phone, `🔐 Create a *4-digit MPIN* for your account login:`);
       break;
     }
 
     case 'AWAIT_MPIN': {
-      if (!/^\d{4}$/.test(input)) { await reply(phone, '⚠️ MPIN must be exactly 4 digits. Try again:'); return; }
-      const merged: Record<string, any> = { ...data, mpin: input };
-      await (prisma as any).whatsappBotSession.update({
-        where: { phone },
-        data: { step: 'CONFIRM', data: merged, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
-      });
+      // Handle "Use existing MPIN" button — skip creating new MPIN
+      const skipMpin = (inputLower === 'skip_mpin' || inputLower === 'use existing mpin');
+      if (!skipMpin && !/^\d{4}$/.test(input)) {
+        await reply(phone, '⚠️ MPIN must be exactly 4 digits. Try again:');
+        return;
+      }
+      const mpinValue = skipMpin ? null : input;
+      await advanceStep('CONFIRM', { mpin: mpinValue });
+      const merged: Record<string, any> = { ...data, mpin: mpinValue };
       const summary =
         `📋 *Registration Summary* — Please verify:\n\n` +
-        `👤 Name: *${merged.fullName}*\n` +
+        `📱 Mobile: *${merged.mobileNumber}*\n` +
+        `👤 Name: *${merged.fullName || 'N/A'}*\n` +
         `🏷️ Designation: *${merged.designation || 'N/A'}*\n` +
         `📰 Newspaper: *${merged.newspaper || 'N/A'}*\n` +
         `📍 State: *${merged.state || 'N/A'}*\n` +
         `📍 District: *${merged.district || 'N/A'}*\n` +
         `📍 Mandal: *${merged.mandal || 'N/A'}*\n` +
-        `🎂 DOB: *${merged.dob || 'N/A'}*\n\n` +
-        `Type *CONFIRM* to submit or *CANCEL* to start over.`;
-      await reply(phone, summary);
+        `🎂 DOB: *${merged.dob || 'N/A'}*`;
+      await replyButtons(phone, summary,
+        [{ id: 'CONFIRM', title: '✅ Confirm & Submit' }, { id: 'cancel', title: '❌ Cancel' }]
+      );
       break;
     }
 
     case 'CONFIRM': {
       if (!['confirm', 'yes', 'ok', 'submit', 'సరే'].includes(inputLower)) {
-        await reply(phone, 'Type *CONFIRM* to submit or *CANCEL* to start over.');
+        await replyButtons(phone, 'Ready to submit your registration?',
+          [{ id: 'CONFIRM', title: '✅ Confirm & Submit' }, { id: 'cancel', title: '❌ Cancel' }]
+        );
         return;
       }
 
-      // Extract mobile number from phone (strip country code for DB)
-      const mobileRaw = phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone;
+      // Use stored mobile number from session data (entered by user in AWAIT_MOBILE step)
+      const mobileRaw: string = data.mobileNumber || (phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone);
 
       try {
         // Check if user already exists
@@ -731,9 +883,18 @@ async function processWhatsappBotMessage(phone: string, text: string) {
           const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
           const lang = await prisma.language.findFirst({ where: { code: 'te' } }) ?? await prisma.language.findFirst();
           if (!citizenRole || !lang) throw new Error('Role or language not configured');
-          const hashedMpin = await bcrypt.hash(data.mpin, 10);
+          let mpinHash: string | null = null;
+          if (data.mpin && /^\d{4}$/.test(data.mpin)) {
+            mpinHash = await bcrypt.hash(data.mpin, 10);
+          }
           user = await prisma.user.create({
-            data: { mobileNumber: mobileRaw, mpin: hashedMpin, roleId: citizenRole.id, languageId: lang.id, status: 'PENDING' },
+            data: {
+              mobileNumber: mobileRaw,
+              ...(mpinHash ? { mpin: mpinHash } : {}),
+              roleId: citizenRole.id,
+              languageId: lang.id,
+              status: 'PENDING',
+            },
           });
           isNew = true;
         }
@@ -767,9 +928,9 @@ async function processWhatsappBotMessage(phone: string, text: string) {
 
         await reply(phone,
           `✅ *Registration Successful!*\n\n` +
-          `Welcome to the journalist union, *${data.fullName}*!\n\n` +
+          `Welcome to the journalist union, *${data.fullName || 'Member'}*!\n\n` +
           `📱 Mobile: ${mobileRaw}\n` +
-          `🔑 MPIN: ${data.mpin} (keep it safe)\n\n` +
+          (data.mpin ? `🔑 MPIN: ${data.mpin} (keep it safe)\n\n` : `\n`) +
           `Your application is under review. You'll be notified once approved.\n` +
           (isNew ? `\nYour account has been created — login with your mobile & MPIN.` : '')
         );

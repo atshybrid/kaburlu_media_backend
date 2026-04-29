@@ -308,3 +308,116 @@ export async function sendWhatsappTextMessage(params: {
   }
 }
 
+/**
+ * Send an interactive button message (up to 3 buttons).
+ */
+export async function sendWhatsappButtons(params: {
+  to: string;
+  body: string;
+  buttons: { id: string; title: string }[]; // max 3, title max 20 chars
+  header?: string;
+  footer?: string;
+  phoneNumberId?: string;
+  accessToken?: string;
+  defaultCountryCode?: string;
+}): Promise<WhatsappTemplateSendResult> {
+  const phoneNumberId = params.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken   = params.accessToken   || process.env.WHATSAPP_ACCESS_TOKEN;
+  const cc            = params.defaultCountryCode || process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91';
+
+  if (!phoneNumberId) return { ok: false, error: 'WHATSAPP_PHONE_NUMBER_ID not configured' };
+  if (!accessToken)   return { ok: false, error: 'WHATSAPP_ACCESS_TOKEN not configured' };
+
+  const to = normalizeToE164DigitsOnly(params.to, cc);
+  if (!to) return { ok: false, error: 'Invalid phone number' };
+
+  const interactive: any = {
+    type: 'button',
+    body: { text: params.body },
+    action: {
+      buttons: params.buttons.slice(0, 3).map(b => ({
+        type: 'reply',
+        reply: { id: b.id, title: b.title.slice(0, 20) },
+      })),
+    },
+  };
+  if (params.header) interactive.header = { type: 'text', text: params.header };
+  if (params.footer) interactive.footer = { text: params.footer };
+
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      { messaging_product: 'whatsapp', to, type: 'interactive', interactive },
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 15_000,
+      },
+    );
+    return { ok: true, messageId: resp?.data?.messages?.[0]?.id };
+  } catch (e: any) {
+    const details = e?.response?.data;
+    const msg = e?.message || 'WhatsApp buttons send failed';
+    console.error('[WhatsApp] Buttons message error:', msg, details);
+    return { ok: false, error: msg, details };
+  }
+}
+
+/**
+ * Send an interactive list message (up to 10 items per section).
+ */
+export async function sendWhatsappList(params: {
+  to: string;
+  body: string;
+  buttonLabel: string;     // text on the list-open button, max 20 chars
+  sections: { title: string; rows: { id: string; title: string; description?: string }[] }[];
+  header?: string;
+  footer?: string;
+  phoneNumberId?: string;
+  accessToken?: string;
+  defaultCountryCode?: string;
+}): Promise<WhatsappTemplateSendResult> {
+  const phoneNumberId = params.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken   = params.accessToken   || process.env.WHATSAPP_ACCESS_TOKEN;
+  const cc            = params.defaultCountryCode || process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91';
+
+  if (!phoneNumberId) return { ok: false, error: 'WHATSAPP_PHONE_NUMBER_ID not configured' };
+  if (!accessToken)   return { ok: false, error: 'WHATSAPP_ACCESS_TOKEN not configured' };
+
+  const to = normalizeToE164DigitsOnly(params.to, cc);
+  if (!to) return { ok: false, error: 'Invalid phone number' };
+
+  const interactive: any = {
+    type: 'list',
+    body: { text: params.body },
+    action: {
+      button: params.buttonLabel.slice(0, 20),
+      sections: params.sections.map(s => ({
+        title: s.title,
+        rows: s.rows.slice(0, 10).map(r => ({
+          id: r.id,
+          title: r.title.slice(0, 24),
+          ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+        })),
+      })),
+    },
+  };
+  if (params.header) interactive.header = { type: 'text', text: params.header };
+  if (params.footer) interactive.footer = { text: params.footer };
+
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      { messaging_product: 'whatsapp', to, type: 'interactive', interactive },
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 15_000,
+      },
+    );
+    return { ok: true, messageId: resp?.data?.messages?.[0]?.id };
+  } catch (e: any) {
+    const details = e?.response?.data;
+    const msg = e?.message || 'WhatsApp list send failed';
+    console.error('[WhatsApp] List message error:', msg, details);
+    return { ok: false, error: msg, details };
+  }
+}
