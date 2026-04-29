@@ -15,6 +15,7 @@ module.exports = {
     {
       name: 'kaburlu-api',
       script: 'dist/index.js',
+      cwd: '/home/deploy/kaburlu_media_backend',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
@@ -29,6 +30,7 @@ module.exports = {
     {
       name: 'kaburlu-ai-cron',
       script: 'dist/jobs/aiQueue.cron.js',
+      cwd: '/home/deploy/kaburlu_media_backend',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
