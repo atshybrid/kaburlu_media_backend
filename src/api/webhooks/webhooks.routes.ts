@@ -665,11 +665,13 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
   const unionCardName = (data.unionDisplayName as string) || session.unionName || 'యూనియన్';
 
   async function advanceStep(nextStep: BotStep, newData: Record<string, any>) {
+    // Strip undefined values — Prisma throws PrismaClientValidationError on undefined in Json fields
+    const merged = JSON.parse(JSON.stringify({ ...data, ...newData }));
     await (prisma as any).whatsappBotSession.update({
       where: { phone },
       data: {
         step: nextStep,
-        data: { ...data, ...newData },
+        data: merged,
         expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
       },
     });
