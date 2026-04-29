@@ -11,6 +11,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Rsync dist to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_SERVER_IP }}
+          username: deploy
+          key: ${{ secrets.DO_SSH_KEY }}
+          source: "dist/"
+          target: "/home/deploy/kaburlu_media_backend/dist_new"
+          strip_components: 1
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -21,21 +49,29 @@ jobs:
             set -e
             set -o pipefail
 
-            echo "▶ Move to home directory"
-            cd ~
+            cd ~/kaburlu_media_backend
 
-            if [ ! -d "kaburlu_media_backend" ]; then
-              echo "▶ Fresh clone repository"
-              git clone https://github.com/atshybrid/kaburlu_media_backend.git
-            fi
-
-            echo "▶ Enter project directory"
-            cd kaburlu_media_backend
-
-            echo "▶ Sync code to origin/main (discard any local changes)"
+            echo "▶ Sync code to origin/main"
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
+
+            echo "▶ Move pre-built dist into place"
+            rm -rf dist
+            mv dist_new dist
+
+            echo "▶ Write ENV file from GitHub Secrets"
+            cat > .env << 'ENVEOF'
+            ${{ secrets.ENV_KABURLU_BACKEND }}
+            ENVEOF
+            chmod 600 .env || true
+
+            echo "▶ Install prod dependencies"
+            rm -rf node_modules
+            npm ci --omit=dev
+
+            echo "▶ Generate Prisma client"
+            npx prisma generate
 
             echo "▶ Detect Chromium installation"
             if [ -f "/snap/bin/chromium" ]; then
@@ -45,136 +81,31 @@ jobs:
             elif [ -f "/usr/bin/chromium-browser" ]; then
               CHROME_BIN="/usr/bin/chromium-browser"
             else
-              echo "❌ Chromium not found. Please install manually:"
-              echo "   sudo apt-get update && sudo apt-get install -y chromium-browser"
-              echo "   OR: sudo snap install chromium"
-              exit 1
-            fi
-            echo "▶ Using Chromium: $CHROME_BIN"
-
-            echo "▶ Write ENV file from GitHub Secrets"
-            cat > .env << 'ENVEOF'
-            ${{ secrets.ENV_KABURLU_BACKEND }}
-            ENVEOF
-            chmod 600 .env || true
-
-            echo "▶ Clean install dependencies"
-            rm -rf node_modules
-            if [ -f package-lock.json ]; then
-              npm ci
-            else
-              npm install
+              echo "⚠️ Chromium not found — PDF generation may not work"
+              CHROME_BIN=""
             fi
 
-            echo "▶ Generate Prisma client"
-            npx prisma generate
-
-            # ▶ MIGRATIONS DISABLED - Database is shared between local and server
-            # Migrations are applied locally before push. GitHub Actions only deploys code.
-            # echo "▶ Force-resolve failed wallet migration (mark as applied to allow re-run)"
-            # set +e
-            # npx prisma migrate resolve --rolled-back 20260212120000_tenant_subscription_wallet 2>/dev/null || true
-            # npx prisma migrate resolve --applied 20260212120000_tenant_subscription_wallet 2>/dev/null || true
-            # set -e
-            # echo "▶ Run database migrations (production)"
-            # npx prisma migrate deploy
-
-            echo "▶ Build production dist (safe: keep previous dist until build succeeds)"
-            DIST_BACKUP=""
-            if [ -d dist ]; then
-              DIST_BACKUP="dist_prev_$(date +%Y%m%d_%H%M%S)"
-              mv dist "$DIST_BACKUP"
-            fi
-
-            set +e
-            npm run build
-            BUILD_RC=$?
-            set -e
-
-            if [ $BUILD_RC -ne 0 ]; then
-              echo "❌ Build failed (exit $BUILD_RC)"
-              if [ -n "$DIST_BACKUP" ] && [ -d "$DIST_BACKUP" ]; then
-                echo "▶ Restoring previous dist from $DIST_BACKUP"
-                rm -rf dist || true
-                mv "$DIST_BACKUP" dist
-              fi
-              exit $BUILD_RC
-            fi
-
-            if [ -n "$DIST_BACKUP" ] && [ -d "$DIST_BACKUP" ]; then
-              rm -rf "$DIST_BACKUP"
-            fi
-
-            echo "▶ Restart PM2 via ecosystem"
-            echo "▶ Using Chromium executable: $CHROME_BIN"
+            echo "▶ Restart PM2"
             export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
-
-            # Stop existing processes and free the port before reloading
-            # (fork-mode startOrReload races for the port if old process is still up)
             pm2 stop kaburlu-api 2>/dev/null || true
             fuser -k 3001/tcp 2>/dev/null || true
             sleep 2
-
             pm2 startOrReload ecosystem.config.cjs --update-env
             pm2 save
 
-            pm2 status || true
-
-            echo "▶ Verify PM2 processes are online"
-            if ! pm2 pid kaburlu-api | grep -qE '^[1-9]'; then
-              echo "❌ PM2 process kaburlu-api is not running"
-              pm2 describe kaburlu-api || true
-              echo "▶ Last kaburlu-api logs"
-              pm2 logs kaburlu-api --lines 200 --nostream || true
-              exit 1
-            fi
-            if ! pm2 pid kaburlu-ai-cron | grep -qE '^[1-9]'; then
-              echo "❌ PM2 process kaburlu-ai-cron is not running"
-              pm2 describe kaburlu-ai-cron || true
-              echo "▶ Last kaburlu-ai-cron logs"
-              pm2 logs kaburlu-ai-cron --lines 200 --nostream || true
-              exit 1
-            fi
-
-            echo "▶ Health check (local)"
-            # Avoid sourcing .env (contains multiline keys). Parse PORT safely.
-            PORT_FROM_ENV="$(grep -E '^PORT=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d '\r' | xargs)"
-            if [ -n "$PORT_FROM_ENV" ]; then
-              PORT="$PORT_FROM_ENV"
-            else
-              PORT=3001
-            fi
-            HEALTH_URL_V4="http://127.0.0.1:${PORT}/health/ai"
-            HEALTH_URL_HOST="http://localhost:${PORT}/health/ai"
-            echo "▶ Health check (local): $HEALTH_URL_V4"
-            if command -v curl >/dev/null 2>&1; then
-              OK=0
-              ATTEMPTS=20
-              SLEEP_SECONDS=2
-              i=1
-              while [ $i -le $ATTEMPTS ]; do
-                if curl -fsS --max-time 3 "$HEALTH_URL_V4" >/dev/null 2>&1 || curl -fsS --max-time 3 "$HEALTH_URL_HOST" >/dev/null 2>&1; then
-                  OK=1
-                  echo "✅ Health check passed (attempt $i/$ATTEMPTS)"
-                  break
-                fi
-                echo "… waiting for server ($i/$ATTEMPTS)"
-                sleep $SLEEP_SECONDS
-                i=$((i + 1))
-              done
-
-              if [ $OK -ne 1 ]; then
-                echo "❌ Health check failed: $HEALTH_URL_V4"
-                echo "▶ Listening ports (ss -ltnp)"
-                ss -ltnp 2>/dev/null | head -n 200 || true
-                echo "▶ PM2 describe kaburlu-api"
-                pm2 describe kaburlu-api || true
-                echo "▶ Last kaburlu-api logs"
-                pm2 logs kaburlu-api --lines 200 --nostream || true
-                exit 1
+            echo "▶ Health check"
+            PORT=3001
+            OK=0
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/health/ai" >/dev/null 2>&1; then
+                OK=1; echo "✅ Health check passed (attempt $i)"; break
               fi
-            else
-              echo "⚠️ curl not found; skipping HTTP health check"
+              echo "… waiting ($i/20)"; sleep 2
+            done
+            if [ $OK -ne 1 ]; then
+              echo "❌ Health check failed"
+              pm2 logs kaburlu-api --lines 50 --nostream || true
+              exit 1
             fi
 
             echo "✅ Deployment completed successfully"
