@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
-import { sendWhatsappTextMessage, sendWhatsappButtons, sendWhatsappList } from '../../lib/whatsapp';
+import { sendWhatsappTextMessage, sendWhatsappButtons, sendWhatsappList, downloadWhatsappMedia } from '../../lib/whatsapp';
+import { putPublicObject } from '../../lib/objectStorage';
 
 const router = Router();
 
@@ -497,15 +498,24 @@ router.post('/whatsapp', (req, res) => {
           }).catch((e: any) => console.error('[WhatsApp Webhook] DB store message error:', e?.message));
 
           // Bot: handle journalist union registration flow
-          // Accept both plain text and interactive button/list replies
+          // Accept both plain text and interactive button/list replies, and image media
           let botText: string | null = bodyText;
+          let botMediaId: string | null = null;
           if (type === 'interactive') {
             const iType = msg.interactive?.type;
             if (iType === 'button_reply') botText = msg.interactive.button_reply?.id || msg.interactive.button_reply?.title || null;
             if (iType === 'list_reply')   botText = msg.interactive.list_reply?.id   || msg.interactive.list_reply?.title   || null;
           }
-          if (from && botText) {
-            processWhatsappBotMessage(from, botText.trim()).catch(
+          if (type === 'image') {
+            botText = '__IMAGE__';
+            botMediaId = msg.image?.id || null;
+          }
+          if (type === 'document') {
+            botText = '__IMAGE__'; // treat document (PDF scan) same as image for KYC
+            botMediaId = msg.document?.id || null;
+          }
+          if (from && (botText || botMediaId)) {
+            processWhatsappBotMessage(from, botText?.trim() || '__IMAGE__', botMediaId).catch(
               (e: any) => console.error('[WhatsApp Bot] Error:', e?.message),
             );
           }
@@ -526,21 +536,25 @@ const STEPS = [
   'AWAIT_NAME',
   'AWAIT_DESIGNATION',
   'AWAIT_NEWSPAPER',
-  'AWAIT_STATE',
-  'AWAIT_DISTRICT',
-  'AWAIT_MANDAL',
+  'AWAIT_WORKING_AREA',
   'AWAIT_DOB',
   'AWAIT_MPIN',
   'CONFIRM',
+  'AWAIT_PHOTO',
+  'AWAIT_AADHAAR',
+  'AWAIT_PAN',
+  'KYC_SUBMITTED',
   'DONE',
 ] as const;
 
 type BotStep = typeof STEPS[number];
 
-const TRIGGER_KEYWORDS = ['join', 'register', 'membership', 'సభ్యత్వం', 'సభ్యుడు'];
+const TRIGGER_KEYWORDS = [
+  'join', 'register', 'membership', 'member', 'union', 'djfw',
+  'join union', 'సభ్యత్వం', 'సభ్యుడు', 'జాయిన్',
+];
 
-const DESIGNATIONS = ['Reporter', 'Senior Reporter', 'Photographer', 'Videographer', 'Editor', 'Sub Editor', 'Correspondent', 'Anchor', 'Freelancer'];
-const STATES = ['Andhra Pradesh', 'Telangana', 'Karnataka', 'Tamil Nadu', 'Maharashtra', 'Delhi', 'Other'];
+const DESIGNATIONS = ['Reporter', 'Senior Reporter', 'Photographer', 'Videographer', 'Editor', 'Sub Editor', 'Correspondent', 'Anchor', 'Freelancer', 'Other'];
 
 async function reply(phone: string, text: string) {
   await sendWhatsappTextMessage({ to: phone, text });
@@ -548,7 +562,6 @@ async function reply(phone: string, text: string) {
 
 async function replyButtons(phone: string, body: string, buttons: { id: string; title: string }[], header?: string) {
   const result = await sendWhatsappButtons({ to: phone, body, buttons, header });
-  // Fallback to text if interactive fails (e.g. non-WhatsApp Business accounts in test)
   if (!result.ok) await reply(phone, body + '\n\n' + buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n'));
 }
 
@@ -557,11 +570,25 @@ async function replyList(phone: string, body: string, buttonLabel: string, rows:
   if (!result.ok) await reply(phone, body + '\n\n' + rows.map((r, i) => `${i + 1}. ${r.title}`).join('\n'));
 }
 
-async function processWhatsappBotMessage(phone: string, text: string) {
+/** Upload media from WhatsApp to R2 and return the public URL */
+async function uploadBotMedia(mediaId: string, prefix: string): Promise<string | null> {
+  const downloaded = await downloadWhatsappMedia(mediaId);
+  if (!downloaded) return null;
+  const ext = downloaded.mimeType.includes('pdf') ? 'pdf' : downloaded.mimeType.split('/')[1] || 'jpg';
+  const key = `journalist-kyc/${prefix}-${Date.now()}.${ext}`;
+  try {
+    const result = await putPublicObject({ key, body: downloaded.buffer, contentType: downloaded.mimeType });
+    return result.publicUrl;
+  } catch (e: any) {
+    console.error('[WhatsApp Bot] R2 upload failed:', e?.message);
+    return null;
+  }
+}
+
+async function processWhatsappBotMessage(phone: string, text: string, mediaId: string | null = null) {
   const input = text.trim();
   const inputLower = input.toLowerCase();
 
-  // Load or check existing session
   let session = await (prisma as any).whatsappBotSession.findUnique({ where: { phone } });
 
   // Expired session — treat as fresh
@@ -571,7 +598,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
   }
 
   // CANCEL at any point
-  if (session && ['cancel', 'రద్దు', 'stop'].includes(inputLower)) {
+  if (session && ['cancel', 'రద్దు', 'stop', 'restart'].includes(inputLower)) {
     await (prisma as any).whatsappBotSession.delete({ where: { phone } });
     await reply(phone, '❌ Registration cancelled. Send JOIN anytime to start again.');
     return;
@@ -580,9 +607,8 @@ async function processWhatsappBotMessage(phone: string, text: string) {
   // No active session — check for trigger keyword
   if (!session) {
     if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
-      // Friendly fallback
       await replyButtons(phone,
-        '👋 *Welcome to Kaburlu Journalist Union!*\n\nJoin as a member to get your Press ID card.',
+        '👋 *Welcome to Kaburlu Journalist Union!*\n\nJoin as a member to get your Press ID card.\n\nSend *JOIN* or *DJFW* to register.',
         [{ id: 'JOIN', title: '📋 Register Now' }]
       );
       return;
@@ -591,18 +617,17 @@ async function processWhatsappBotMessage(phone: string, text: string) {
     // Detect union name from message e.g. "JOIN DJFW"
     let unionName: string | null = null;
     const parts = input.split(/\s+/);
-    if (parts.length > 1) {
-      const abbr = parts.slice(1).join(' ').toUpperCase();
+    // Try first word, whole input, or partial
+    for (const candidate of [parts.slice(1).join(' ').toUpperCase(), parts[0].toUpperCase()]) {
+      if (!candidate) continue;
       const union = await (prisma as any).journalistUnionSettings.findFirst({
-        where: { OR: [{ abbreviation: abbr }, { unionName: { contains: abbr, mode: 'insensitive' } }] },
-        select: { unionName: true, displayName: true, abbreviation: true },
+        where: { OR: [{ abbreviation: candidate }, { unionName: { contains: candidate, mode: 'insensitive' } }] },
+        select: { unionName: true },
       });
-      if (union) unionName = union.unionName;
+      if (union) { unionName = union.unionName; break; }
     }
     if (!unionName) {
-      const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({
-        select: { unionName: true, displayName: true, abbreviation: true },
-      });
+      const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({ select: { unionName: true } });
       unionName = firstUnion?.unionName ?? null;
     }
     if (!unionName) {
@@ -628,7 +653,6 @@ async function processWhatsappBotMessage(phone: string, text: string) {
     return;
   }
 
-  // Active session — process by current step
   const step = session.step as BotStep;
   const data: Record<string, any> = (session.data as Record<string, any>) || {};
 
@@ -653,7 +677,6 @@ async function processWhatsappBotMessage(phone: string, text: string) {
         await reply(phone, '⚠️ Please enter a valid 10-digit Indian mobile number.');
         return;
       }
-      // Check if user already exists with profile
       const existingUser = await prisma.user.findUnique({
         where: { mobileNumber: mobile10 },
         include: { profile: true },
@@ -663,45 +686,56 @@ async function processWhatsappBotMessage(phone: string, text: string) {
         : null;
 
       if (existingJournalist) {
-        // Already a journalist member
-        await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+        if (existingJournalist.kycVerified) {
+          await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+          await reply(phone,
+            `✅ *Already Registered & Verified!*\n\n` +
+            `Mobile *${mobile10}* has an active journalist membership.\n` +
+            `Press ID: *${existingJournalist.pressId || existingJournalist.id.slice(-8).toUpperCase()}*\n\n` +
+            `Contact your union admin for your ID card.`
+          );
+          return;
+        }
+        // Registered but KYC pending — resume KYC
+        const p = existingUser?.profile as any;
+        await advanceStep('AWAIT_PHOTO', {
+          mobileNumber: mobile10,
+          userId: existingUser!.id,
+          journalistProfileId: existingJournalist.id,
+          fullName: p?.fullName || existingJournalist.organization || '',
+          prefilled: true,
+        });
         await reply(phone,
-          `✅ *Already Registered!*\n\n` +
-          `Mobile *${mobile10}* already has a journalist membership.\n` +
-          `Press ID: *${existingJournalist.pressId || existingJournalist.id.slice(-8).toUpperCase()}*\n\n` +
-          `Send JOIN to start a fresh registration with a different number.`
+          `✅ Found your registration!\n\n` +
+          `👤 Name: *${p?.fullName || 'N/A'}*\n` +
+          `📱 Mobile: *${mobile10}*\n` +
+          `⏳ KYC pending\n\n` +
+          `📸 Let's complete your KYC verification.\n` +
+          `Please send your *passport-size photo* (as an image):`
         );
         return;
       }
 
       if (existingUser && existingUser.profile) {
-        // User exists, has profile → prefill and fast-track to MPIN
         const p = existingUser.profile as any;
-        await advanceStep('AWAIT_MPIN', {
+        await advanceStep('AWAIT_DESIGNATION', {
           mobileNumber: mobile10,
           userId: existingUser.id,
           prefilled: true,
-          fullName:    p.fullName || '',
-          designation: '',
-          newspaper:   '',
-          state:       '',
-          district:    '',
-          mandal:      '',
-          dob:         p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
+          fullName: p.fullName || '',
+          dob: p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
         });
-        await replyButtons(phone,
-          `✅ Found your account!\n\n` +
-          `👤 Name: *${p.fullName || 'N/A'}*\n` +
-          `📱 Mobile: *${mobile10}*\n\n` +
-          `We'll register you with these details. Create a *4-digit MPIN* for login or type it below:`,
-          [{ id: 'SKIP_MPIN', title: 'Use existing MPIN' }]
+        await replyList(phone,
+          `✅ Found your account!\n\n👤 Name: *${p.fullName || 'N/A'}*\n📱 Mobile: *${mobile10}*\n\n📝 Select your designation:`,
+          'Choose Designation',
+          DESIGNATIONS.map(d => ({ id: d, title: d })),
         );
         return;
       }
 
-      // New user — start full flow
+      // New user
       await advanceStep('AWAIT_NAME', { mobileNumber: mobile10 });
-      await reply(phone, `✅ Mobile: *${mobile10}*\n\n📝 *Step 1/6* — Enter your *full name*:`);
+      await reply(phone, `✅ Mobile: *${mobile10}*\n\n📝 *Step 1/5* — Enter your *full name*:`);
       break;
     }
 
@@ -710,23 +744,29 @@ async function processWhatsappBotMessage(phone: string, text: string) {
       if (input.length < 2) { await reply(phone, '⚠️ Please enter a valid full name.'); return; }
       await advanceStep('AWAIT_DESIGNATION', { fullName: input });
       await replyList(phone,
-        `✅ Name: *${input}*\n\n📝 *Step 2/6* — Select your designation:`,
+        `✅ Name: *${input}*\n\n📝 *Step 2/5* — Select your designation:`,
         'Choose Designation',
         DESIGNATIONS.map(d => ({ id: d, title: d })),
-        'Designation'
       );
       break;
 
     // ── STEP 2: Designation ───────────────────────────────────────────────────
     case 'AWAIT_DESIGNATION': {
-      // Accept list reply id, or typed number, or free text
       let designation = input;
       if (/^\d+$/.test(input)) {
         const idx = parseInt(input) - 1;
         designation = DESIGNATIONS[idx] || input;
       }
-      await advanceStep('AWAIT_NEWSPAPER', { designation });
-      // Fetch tenants (newspapers) from DB
+      if (designation === 'Other') {
+        await advanceStep('AWAIT_DESIGNATION', { _awaitOtherDesignation: true });
+        await reply(phone, '📝 Enter your designation (e.g. Camera Person, News Presenter):');
+        return;
+      }
+      if (data._awaitOtherDesignation) {
+        designation = input;
+      }
+      await advanceStep('AWAIT_NEWSPAPER', { designation, _awaitOtherDesignation: undefined });
+      // Fetch active tenants (newspapers)
       const tenants = await (prisma as any).tenant.findMany({
         where: { isActive: true },
         select: { id: true, name: true },
@@ -735,86 +775,139 @@ async function processWhatsappBotMessage(phone: string, text: string) {
       });
       if (tenants.length > 0) {
         await replyList(phone,
-          `✅ Designation: *${designation}*\n\n📝 *Step 3/6* — Select your newspaper/channel:`,
+          `✅ Designation: *${designation}*\n\n📝 *Step 3/5* — Select your newspaper/channel:`,
           'Choose Newspaper',
           [
             ...tenants.map((t: any) => ({ id: `tenant:${t.id}`, title: t.name.slice(0, 24) })),
-            { id: 'OTHER_NEWSPAPER', title: 'Other (type name)' },
+            { id: 'OTHER_NEWSPAPER', title: 'Other / Type name' },
           ],
-          'Newspaper'
         );
       } else {
-        await reply(phone, `✅ Designation: *${designation}*\n\n📝 *Step 3/6* — Enter your newspaper/channel name (or type SKIP):`);
+        await reply(phone, `✅ Designation: *${designation}*\n\n📝 *Step 3/5* — Enter your newspaper/channel name:`);
       }
       break;
     }
 
     // ── STEP 3: Newspaper ─────────────────────────────────────────────────────
     case 'AWAIT_NEWSPAPER': {
+      if (input === 'OTHER_NEWSPAPER' || data._awaitOtherNewspaper) {
+        if (!data._awaitOtherNewspaper) {
+          await advanceStep('AWAIT_NEWSPAPER', { _awaitOtherNewspaper: true });
+          await reply(phone, '📰 Type your newspaper/channel name (or SKIP):');
+          return;
+        }
+        // Received free text
+      }
       let newspaper = '';
       let tenantId: string | null = null;
       if (input.startsWith('tenant:')) {
         tenantId = input.replace('tenant:', '');
         const t = await (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
         newspaper = t?.name || '';
-      } else if (inputLower === 'skip' || inputLower === 'other_newspaper') {
+      } else if (inputLower === 'skip') {
         newspaper = '';
       } else {
         newspaper = input;
       }
+      await advanceStep('AWAIT_WORKING_AREA', { newspaper, tenantId: tenantId || null, _awaitOtherNewspaper: undefined });
+      await reply(phone,
+        `✅ Newspaper: *${newspaper || 'N/A'}*\n\n` +
+        `📍 *Step 4/5* — Enter your *working area* (district/city name):\n` +
+        `(e.g. Nellore, Guntur, Hyderabad)`
+      );
+      break;
+    }
 
-      if (input === 'OTHER_NEWSPAPER') {
-        await advanceStep('AWAIT_NEWSPAPER', { ...data, _awaitOtherNewspaper: true });
-        await reply(phone, '📝 Enter your newspaper/channel name (or SKIP):');
+    // ── STEP 4: Working Area (District search) ────────────────────────────────
+    case 'AWAIT_WORKING_AREA': {
+      // Handle district selection from list
+      if (input.startsWith('district:')) {
+        const districtId = input.replace('district:', '');
+        const d = await prisma.district.findUnique({
+          where: { id: districtId },
+          include: { state: { select: { name: true } } },
+        });
+        if (d) {
+          await advanceStep('AWAIT_DOB', {
+            district: d.name, districtId: d.id,
+            state: d.state.name, mandal: '',
+          });
+          await replyButtons(phone,
+            `✅ Area: *${d.name}*, ${d.state.name}\n\n` +
+            `📝 *Step 5/5* — Date of birth? Format: DD-MM-YYYY\n(e.g. 15-06-1990)`,
+            [{ id: 'SKIP', title: 'Skip DOB' }]
+          );
+          return;
+        }
+      }
+
+      // Handle numeric selection (fallback for text-only phones)
+      if (/^\d+$/.test(input) && Array.isArray(data._areaChoices)) {
+        const idx = parseInt(input) - 1;
+        const choice = data._areaChoices[idx];
+        if (choice) {
+          await advanceStep('AWAIT_DOB', {
+            district: choice.name, districtId: choice.id,
+            state: choice.stateName, mandal: '',
+            _areaChoices: undefined,
+          });
+          await replyButtons(phone,
+            `✅ Area: *${choice.name}*, ${choice.stateName}\n\n` +
+            `📝 *Step 5/5* — Date of birth? Format: DD-MM-YYYY`,
+            [{ id: 'SKIP', title: 'Skip DOB' }]
+          );
+          return;
+        }
+      }
+
+      // Search districts in DB
+      const matches = await prisma.district.findMany({
+        where: {
+          name: { contains: input, mode: 'insensitive' },
+          isDeleted: false,
+        },
+        include: { state: { select: { name: true } } },
+        take: 9,
+        orderBy: { name: 'asc' },
+      });
+
+      if (matches.length === 0) {
+        // Accept as free text
+        await advanceStep('AWAIT_DOB', { district: input, districtId: null, state: '', mandal: '' });
+        await replyButtons(phone,
+          `✅ Area: *${input}*\n\n` +
+          `📝 *Step 5/5* — Date of birth? Format: DD-MM-YYYY`,
+          [{ id: 'SKIP', title: 'Skip DOB' }]
+        );
         return;
       }
-      if (data._awaitOtherNewspaper) {
-        newspaper = inputLower === 'skip' ? '' : input;
+
+      if (matches.length === 1) {
+        const d = matches[0];
+        await advanceStep('AWAIT_DOB', {
+          district: d.name, districtId: d.id,
+          state: (d.state as any).name, mandal: '',
+        });
+        await replyButtons(phone,
+          `✅ Area: *${d.name}*, ${(d.state as any).name}\n\n` +
+          `📝 *Step 5/5* — Date of birth? Format: DD-MM-YYYY`,
+          [{ id: 'SKIP', title: 'Skip DOB' }]
+        );
+        return;
       }
 
-      await advanceStep('AWAIT_STATE', { newspaper, tenantId: tenantId || null, _awaitOtherNewspaper: undefined });
+      // Multiple matches — show list
+      const choices = matches.map(d => ({ id: d.id, name: d.name, stateName: (d.state as any).name }));
+      await advanceStep('AWAIT_WORKING_AREA', { _areaChoices: choices });
       await replyList(phone,
-        `✅ Newspaper: *${newspaper || 'N/A'}*\n\n📝 *Step 4/6* — Select your state:`,
-        'Choose State',
-        STATES.map(s => ({ id: s, title: s })),
-        'State'
+        `Found ${matches.length} areas matching "*${input}*". Select yours:`,
+        'Select Area',
+        choices.map(c => ({ id: `district:${c.id}`, title: c.name, description: c.stateName })),
       );
       break;
     }
 
-    // ── STEP 4: State ─────────────────────────────────────────────────────────
-    case 'AWAIT_STATE': {
-      let state = input;
-      if (/^\d+$/.test(input)) {
-        const idx = parseInt(input) - 1;
-        state = STATES[idx] || input;
-      }
-      await advanceStep('AWAIT_DISTRICT', { state });
-      await reply(phone, `✅ State: *${state}*\n\n📝 *Step 5/6* — Enter your *district*:`);
-      break;
-    }
-
-    // ── STEP 5: District ──────────────────────────────────────────────────────
-    case 'AWAIT_DISTRICT':
-      await advanceStep('AWAIT_MANDAL', { district: input });
-      await replyButtons(phone,
-        `✅ District: *${input}*\n\n📝 *Step 6/6* — Enter your mandal/tehsil:`,
-        [{ id: 'SKIP', title: 'Skip' }]
-      );
-      break;
-
-    // ── STEP 6: Mandal ────────────────────────────────────────────────────────
-    case 'AWAIT_MANDAL': {
-      const mandal = (inputLower === 'skip') ? '' : input;
-      await advanceStep('AWAIT_DOB', { mandal });
-      await replyButtons(phone,
-        `✅ Mandal: *${mandal || 'Skipped'}*\n\n🎂 Date of birth? Format: DD-MM-YYYY\n(e.g. 15-06-1990)`,
-        [{ id: 'SKIP', title: 'Skip DOB' }]
-      );
-      break;
-    }
-
-    // ── STEP 7: DOB ───────────────────────────────────────────────────────────
+    // ── STEP 5: DOB ───────────────────────────────────────────────────────────
     case 'AWAIT_DOB': {
       let dob: string | null = null;
       if (inputLower !== 'skip') {
@@ -830,8 +923,8 @@ async function processWhatsappBotMessage(phone: string, text: string) {
       break;
     }
 
+    // ── STEP 6: MPIN ──────────────────────────────────────────────────────────
     case 'AWAIT_MPIN': {
-      // Handle "Use existing MPIN" button — skip creating new MPIN
       const skipMpin = (inputLower === 'skip_mpin' || inputLower === 'use existing mpin');
       if (!skipMpin && !/^\d{4}$/.test(input)) {
         await reply(phone, '⚠️ MPIN must be exactly 4 digits. Try again:');
@@ -846,9 +939,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
         `👤 Name: *${merged.fullName || 'N/A'}*\n` +
         `🏷️ Designation: *${merged.designation || 'N/A'}*\n` +
         `📰 Newspaper: *${merged.newspaper || 'N/A'}*\n` +
-        `📍 State: *${merged.state || 'N/A'}*\n` +
-        `📍 District: *${merged.district || 'N/A'}*\n` +
-        `📍 Mandal: *${merged.mandal || 'N/A'}*\n` +
+        `📍 Area: *${merged.district || 'N/A'}*${merged.state ? `, ${merged.state}` : ''}\n` +
         `🎂 DOB: *${merged.dob || 'N/A'}*`;
       await replyButtons(phone, summary,
         [{ id: 'CONFIRM', title: '✅ Confirm & Submit' }, { id: 'cancel', title: '❌ Cancel' }]
@@ -856,6 +947,7 @@ async function processWhatsappBotMessage(phone: string, text: string) {
       break;
     }
 
+    // ── STEP 7: Confirm basic registration ────────────────────────────────────
     case 'CONFIRM': {
       if (!['confirm', 'yes', 'ok', 'submit', 'సరే'].includes(inputLower)) {
         await replyButtons(phone, 'Ready to submit your registration?',
@@ -864,19 +956,24 @@ async function processWhatsappBotMessage(phone: string, text: string) {
         return;
       }
 
-      // Use stored mobile number from session data (entered by user in AWAIT_MOBILE step)
       const mobileRaw: string = data.mobileNumber || (phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone);
 
       try {
-        // Check if user already exists
         let user = await prisma.user.findUnique({ where: { mobileNumber: mobileRaw } });
         let isNew = false;
 
         if (user) {
           const existing = await (prisma as any).journalistProfile.findUnique({ where: { userId: user.id } });
           if (existing) {
-            await reply(phone, `⚠️ This mobile number already has a journalist union application (ID: ${existing.pressId || existing.id.slice(-6)}).`);
-            await (prisma as any).whatsappBotSession.delete({ where: { phone } });
+            await (prisma as any).whatsappBotSession.update({
+              where: { phone },
+              data: { step: 'AWAIT_PHOTO', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+            });
+            await reply(phone,
+              `ℹ️ Found existing registration.\n\n` +
+              `📸 Let's complete your *KYC verification*.\n\n` +
+              `*Step 1/3 KYC* — Send your *passport-size photo* (as an image):`
+            );
             return;
           }
         } else {
@@ -899,14 +996,12 @@ async function processWhatsappBotMessage(phone: string, text: string) {
           isNew = true;
         }
 
-        // Upsert UserProfile
         await prisma.userProfile.upsert({
           where:  { userId: user.id },
           create: { userId: user.id, fullName: data.fullName, dob: data.dob ? new Date(data.dob) : undefined },
           update: { fullName: data.fullName, ...(data.dob ? { dob: new Date(data.dob) } : {}) },
         });
 
-        // Create JournalistProfile
         const profile = await (prisma as any).journalistProfile.create({
           data: {
             userId:             user.id,
@@ -918,36 +1013,137 @@ async function processWhatsappBotMessage(phone: string, text: string) {
             mandal:             data.mandal || null,
             currentNewspaper:   data.newspaper || null,
             currentDesignation: data.designation || null,
+            linkedTenantId:     data.tenantId || null,
           },
         });
 
         await (prisma as any).whatsappBotSession.update({
           where: { phone },
-          data: { step: 'DONE', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+          data: {
+            step: 'AWAIT_PHOTO',
+            data: { ...data, userId: user.id, journalistProfileId: profile.id },
+            expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
+          },
         });
 
         await reply(phone,
-          `✅ *Registration Successful!*\n\n` +
-          `Welcome to the journalist union, *${data.fullName || 'Member'}*!\n\n` +
-          `📱 Mobile: ${mobileRaw}\n` +
-          (data.mpin ? `🔑 MPIN: ${data.mpin} (keep it safe)\n\n` : `\n`) +
-          `Your application is under review. You'll be notified once approved.\n` +
-          (isNew ? `\nYour account has been created — login with your mobile & MPIN.` : '')
+          `✅ *Registration Submitted!*\n\n` +
+          `Welcome, *${data.fullName || 'Member'}*!` +
+          (isNew ? `\n📱 Mobile: ${mobileRaw}\n${data.mpin ? `🔑 MPIN: ${data.mpin} (save it!)` : ''}` : '') +
+          `\n\n📋 Now complete your *KYC verification* to get your Press ID card.\n\n` +
+          `📸 *KYC Step 1/3* — Send your *passport-size photo* (send as image):`
         );
       } catch (err: any) {
         console.error('[WhatsApp Bot] Registration error:', err?.message);
-        await reply(phone, '❌ Registration failed due to a server error. Please try again later or contact the admin.');
+        await reply(phone, '❌ Registration failed. Please try again or contact admin.');
       }
       break;
     }
 
+    // ── KYC STEP 1: Passport Photo ────────────────────────────────────────────
+    case 'AWAIT_PHOTO': {
+      if (inputLower === 'skip' || inputLower === 'later') {
+        await advanceStep('AWAIT_AADHAAR', {});
+        await reply(phone, `⏭️ Photo skipped.\n\n📄 *KYC Step 2/3* — Send your *Aadhaar card* front photo (as image):`);
+        return;
+      }
+      if (!mediaId) {
+        await replyButtons(phone,
+          '📸 *KYC Step 1/3* — Please send your *passport-size photo* as an image.\n\n(Take a clear selfie or photo on plain background)',
+          [{ id: 'SKIP', title: 'Skip for now' }]
+        );
+        return;
+      }
+      const photoUrl = await uploadBotMedia(mediaId, `${data.journalistProfileId || phone}/photo`);
+      if (!photoUrl) { await reply(phone, '❌ Upload failed. Please try again.'); return; }
+      if (data.journalistProfileId) {
+        await (prisma as any).journalistProfile.update({
+          where: { id: data.journalistProfileId },
+          data: { photoUrl },
+        });
+      }
+      await advanceStep('AWAIT_AADHAAR', { photoUrl });
+      await reply(phone, `✅ Photo received!\n\n📄 *KYC Step 2/3* — Send your *Aadhaar card front* photo (as image):`);
+      break;
+    }
+
+    // ── KYC STEP 2: Aadhaar Card ──────────────────────────────────────────────
+    case 'AWAIT_AADHAAR': {
+      if (inputLower === 'skip' || inputLower === 'later') {
+        await advanceStep('AWAIT_PAN', {});
+        await reply(phone, `⏭️ Aadhaar skipped.\n\n💳 *KYC Step 3/3* — Send your *PAN card* photo (as image):`);
+        return;
+      }
+      if (!mediaId) {
+        await replyButtons(phone,
+          '📄 *KYC Step 2/3* — Please send your *Aadhaar card front* as an image.\n\n(Ensure Aadhaar number and name are visible)',
+          [{ id: 'SKIP', title: 'Skip Aadhaar' }]
+        );
+        return;
+      }
+      const aadhaarUrl = await uploadBotMedia(mediaId, `${data.journalistProfileId || phone}/aadhaar`);
+      if (!aadhaarUrl) { await reply(phone, '❌ Upload failed. Please try again.'); return; }
+      if (data.journalistProfileId) {
+        await (prisma as any).journalistProfile.update({
+          where: { id: data.journalistProfileId },
+          data: { aadhaarUrl },
+        });
+      }
+      await advanceStep('AWAIT_PAN', { aadhaarUrl });
+      await reply(phone, `✅ Aadhaar received!\n\n💳 *KYC Step 3/3* — Send your *PAN card* photo (as image):`);
+      break;
+    }
+
+    // ── KYC STEP 3: PAN Card ──────────────────────────────────────────────────
+    case 'AWAIT_PAN': {
+      if (inputLower === 'skip' || inputLower === 'later') {
+        await advanceStep('KYC_SUBMITTED', {});
+        await kycSubmittedMessage(phone, data);
+        return;
+      }
+      if (!mediaId) {
+        await replyButtons(phone,
+          '💳 *KYC Step 3/3* — Please send your *PAN card* photo as an image.\n\n(Front side with name and PAN number)',
+          [{ id: 'SKIP', title: 'Skip PAN' }]
+        );
+        return;
+      }
+      const panCardUrl = await uploadBotMedia(mediaId, `${data.journalistProfileId || phone}/pan`);
+      if (!panCardUrl) { await reply(phone, '❌ Upload failed. Please try again.'); return; }
+      if (data.journalistProfileId) {
+        await (prisma as any).journalistProfile.update({
+          where: { id: data.journalistProfileId },
+          data: { panCardUrl },
+        });
+      }
+      await advanceStep('KYC_SUBMITTED', { panCardUrl });
+      await kycSubmittedMessage(phone, data);
+      break;
+    }
+
+    case 'KYC_SUBMITTED':
     case 'DONE':
-      await reply(phone, '✅ Your registration is already submitted. Type CANCEL to start a new registration if needed.');
+      await reply(phone,
+        `✅ Your application is under review.\n\n` +
+        `⏳ Once admin verifies your KYC, your *Press ID card* will be sent here on WhatsApp.\n\n` +
+        `Type *cancel* to start a new registration.`
+      );
       break;
 
     default:
       break;
   }
+}
+
+async function kycSubmittedMessage(phone: string, data: Record<string, any>) {
+  await reply(phone,
+    `🎉 *KYC Documents Submitted!*\n\n` +
+    `Thank you, *${data.fullName || 'Member'}*!\n\n` +
+    `📋 Your application is under review.\n` +
+    `✅ Once our admin verifies your documents, your *Press ID Card* will be sent to you here on WhatsApp.\n\n` +
+    `⏳ This usually takes *1–3 working days*.\n\n` +
+    `For queries, contact your union admin.`
+  );
 }
 
 export default router;

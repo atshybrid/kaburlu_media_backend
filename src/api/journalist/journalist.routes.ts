@@ -12,6 +12,7 @@ import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunny
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdmin, requireSuperAdmin } from '../middlewares/authz';
 import { generatePressCardBuffer, generateAndUploadPressCardPdf } from '../../lib/journalistPressCardPdf';
+import { sendWhatsappIdCardTemplate, sendWhatsappTextMessage } from '../../lib/whatsapp';
 
 // Multer for union asset uploads (memory storage, image-only)
 const uploadSingle = multer({
@@ -1250,9 +1251,28 @@ router.post('/admin/generate-card', jwtAuth, requireSuperAdmin, async (req: Requ
     // Trigger PDF generation + R2 upload in the background
     // (non-blocking — response is returned immediately with the card record)
     if (R2_BUCKET) {
-      generateAndUploadPressCardPdf(profileId).then((pdfResult) => {
-        if (!pdfResult.ok) console.error('[journalist/admin/generate-card] PDF upload failed:', pdfResult.error);
-        else console.log('[journalist/admin/generate-card] PDF uploaded:', pdfResult.pdfUrl);
+      generateAndUploadPressCardPdf(profileId).then(async (pdfResult) => {
+        if (!pdfResult.ok) { console.error('[journalist/admin/generate-card] PDF upload failed:', pdfResult.error); return; }
+        console.log('[journalist/admin/generate-card] PDF uploaded:', pdfResult.pdfUrl);
+        // Send via WhatsApp if journalist's KYC is verified
+        try {
+          const fullProfile = await (prisma as any).journalistProfile.findUnique({
+            where: { id: profileId },
+            include: { user: { select: { mobileNumber: true } } },
+          });
+          if (fullProfile?.kycVerified && fullProfile.user?.mobileNumber) {
+            await sendWhatsappIdCardTemplate({
+              toMobileNumber: fullProfile.user.mobileNumber,
+              pdfUrl: pdfResult.pdfUrl!,
+              cardType: 'Journalist Press ID',
+              organizationName: fullProfile.linkedTenantName || fullProfile.organization || 'Journalist Union',
+              documentType: 'Press ID Card',
+              pdfFilename: `Press_ID_${fullProfile.pressId || card.cardNumber}.pdf`,
+            });
+          }
+        } catch (wErr: any) {
+          console.error('[journalist/admin/generate-card] WhatsApp send error:', wErr?.message);
+        }
       }).catch((e) => console.error('[journalist/admin/generate-card] PDF bg error:', e));
     }
 
@@ -2710,6 +2730,50 @@ router.patch('/admin/kyc/verify/:profileId', jwtAuth, requireJournalistUnionAdmi
         kycNote:       note ? (note as string).trim() : null,
       },
     });
+
+    // On KYC approval: send WhatsApp notification with ID card (if available)
+    if (action === 'verify') {
+      setImmediate(async () => {
+        try {
+          const fullProfile = await (prisma as any).journalistProfile.findUnique({
+            where: { id: req.params['profileId'] },
+            include: {
+              user: { select: { mobileNumber: true } },
+              card: { select: { pdfUrl: true, cardNumber: true } },
+            },
+          });
+          const mobile: string | undefined = fullProfile?.user?.mobileNumber;
+          if (!mobile) return;
+
+          const card = fullProfile?.card;
+          if (card?.pdfUrl) {
+            // Send ID card PDF via WhatsApp
+            await sendWhatsappIdCardTemplate({
+              toMobileNumber: mobile,
+              pdfUrl: card.pdfUrl,
+              cardType: 'Journalist Press ID',
+              organizationName: fullProfile.linkedTenantName || fullProfile.organization || 'Journalist Union',
+              documentType: 'Press ID Card',
+              pdfFilename: `Press_ID_${fullProfile.pressId || card.cardNumber}.pdf`,
+            });
+          } else {
+            // Card not yet generated — send KYC approval text
+            await sendWhatsappTextMessage({
+              to: mobile,
+              text:
+                `✅ *KYC Verified!*\n\n` +
+                `Dear *${fullProfile?.organization || 'Member'}*,\n\n` +
+                `Your KYC documents have been verified. ` +
+                `Your *Press ID Card* is being prepared and will be sent here shortly.\n\n` +
+                `Press ID: *${fullProfile.pressId || 'Pending'}*`,
+            });
+          }
+        } catch (notifyErr: any) {
+          console.error('[journalist/admin/kyc/verify] WhatsApp notify error:', notifyErr?.message);
+        }
+      });
+    }
+
     return res.json({ message: `KYC ${action === 'verify' ? 'verified' : 'rejected'}`, profile: updated });
   } catch (e: any) {
     console.error('[journalist/admin/kyc/verify]', e);

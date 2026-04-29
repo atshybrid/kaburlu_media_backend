@@ -76,6 +76,40 @@ export async function uploadWhatsappMedia(params: {
 }
 
 /**
+ * Download media sent by a user (image, document, etc.) from WhatsApp Cloud API.
+ * Fetches the media URL using the media ID, then downloads the binary content.
+ */
+export async function downloadWhatsappMedia(
+  mediaId: string,
+  accessToken?: string,
+): Promise<{ buffer: Buffer; mimeType: string; size?: number } | null> {
+  const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) { console.error('[WhatsApp] downloadWhatsappMedia: no access token'); return null; }
+  try {
+    // Step 1: Resolve the download URL
+    const metaResp = await axios.get(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 10_000,
+    });
+    const downloadUrl: string = metaResp.data?.url;
+    const mimeType: string = metaResp.data?.mime_type || 'image/jpeg';
+    const fileSize: number | undefined = metaResp.data?.file_size;
+    if (!downloadUrl) { console.error('[WhatsApp] downloadWhatsappMedia: no URL in response', metaResp.data); return null; }
+
+    // Step 2: Download the binary
+    const mediaResp = await axios.get(downloadUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: 'arraybuffer',
+      timeout: 60_000,
+    });
+    return { buffer: Buffer.from(mediaResp.data as ArrayBuffer), mimeType, size: fileSize };
+  } catch (e: any) {
+    console.error('[WhatsApp] Media download error:', e?.message, e?.response?.data);
+    return null;
+  }
+}
+
+/**
  * Send reporter ID card PDF via WhatsApp using the "send_idcard_reporter" template.
  * Template structure:
  * - HEADER: DOCUMENT (PDF attachment)

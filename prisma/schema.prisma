@@ -68,7 +68,7 @@ model WhatsappWebhookEvent {
 model WhatsappBotSession {
   id        String   @id @default(cuid())
   phone     String   @unique  /// Phone number in E.164 digits-only format (e.g. 919876543210)
-  step      String             /// Current step: AWAIT_NAME | AWAIT_DESIGNATION | AWAIT_NEWSPAPER | AWAIT_STATE | AWAIT_DISTRICT | AWAIT_MANDAL | AWAIT_DOB | AWAIT_MPIN | CONFIRM | DONE
+  step      String             /// Current step: AWAIT_MOBILE | AWAIT_NAME | AWAIT_DESIGNATION | AWAIT_NEWSPAPER | AWAIT_WORKING_AREA | AWAIT_DOB | AWAIT_MPIN | CONFIRM | AWAIT_PHOTO | AWAIT_AADHAAR | AWAIT_PAN | KYC_SUBMITTED | DONE
   unionName String?            /// Target union slug
   data      Json     @default("{}") /// Accumulated answers: { fullName, designation, newspaper, state, district, mandal, dob, mpin }
   expiresAt DateTime           /// Session expires after 30 min of inactivity
@@ -2493,6 +2493,7 @@ model JournalistProfile {
   aadhaarUrl        String?  /// Aadhaar card image (front)
   aadhaarBackUrl    String?  /// Aadhaar card image (back, optional)
   aadhaarNumber     String?  /// Last 4 digits only (masked) — for display
+  panCardUrl        String?  /// PAN card image (uploaded via WhatsApp KYC)
   kycVerified       Boolean  @default(false)
   kycVerifiedAt     DateTime?
   kycNote           String?  /// Admin note on KYC verification
