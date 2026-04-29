@@ -675,6 +675,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
     });
   }
 
+  try {
   switch (step) {
 
     // ── STEP 0: Mobile number ────────────────────────────────────────────────
@@ -1130,7 +1131,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
               }
             }
             if (pdfUrl) {
-              await sendWhatsappIdCardTemplate({
+              const sendResult = await sendWhatsappIdCardTemplate({
                 toMobileNumber: phone,
                 pdfUrl,
                 cardType: `${unionCardName} ID`,
@@ -1138,6 +1139,10 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
                 documentType: `${unionCardName} ID Card`,
                 pdfFilename: `Press_ID_${data.journalistProfileId.slice(-8).toUpperCase()}.pdf`,
               });
+              if (!sendResult.ok) {
+                console.error('[WhatsApp Bot] ID card send failed (existingUser):', sendResult.error, sendResult.details);
+                await reply(phone, `⚠️ ID కార్డ్ పంపడంలో సమస్య వచ్చింది. PDF లింక్: ${pdfUrl}\nఅడ్మిన్‌ని సంప్రదించండి.`);
+              }
             } else {
               await reply(phone, `⚠️ ID కార్డ్ ఇప్పుడు జనరేట్ చేయడం సాధ్యం కాలేదు. అడ్మిన్ మీ కార్డ్ పంపిస్తారు.\n`);
             }
@@ -1179,12 +1184,16 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
                 if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
               }
               if (pdfUrl) {
-                await sendWhatsappIdCardTemplate({
+                const sendResult = await sendWhatsappIdCardTemplate({
                   toMobileNumber: phone, pdfUrl,
                   cardType: `${unionCardName} ID`, organizationName: data.newspaper || 'Journalist Union',
                   documentType: `${unionCardName} ID Card`,
                   pdfFilename: `Press_ID_${existing.id.slice(-8).toUpperCase()}.pdf`,
                 });
+                if (!sendResult.ok) {
+                  console.error('[WhatsApp Bot] ID card send failed (existingJournalist):', sendResult.error, sendResult.details);
+                  await reply(phone, `⚠️ ID కార్డ్ పంపడంలో సమస్య వచ్చింది. PDF లింక్: ${pdfUrl}\nఅడ్మిన్‌ని సంప్రదించండి.`).catch(() => {});
+                }
               }
             } catch (_e) { /* card send failure is non-fatal */ }
             await (prisma as any).whatsappBotSession.update({
@@ -1227,12 +1236,16 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
               const pdfResult = await generateAndUploadPressCardPdf(profile.id);
               if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
               if (pdfUrl) {
-                await sendWhatsappIdCardTemplate({
+                const sendResult = await sendWhatsappIdCardTemplate({
                   toMobileNumber: phone, pdfUrl,
                   cardType: `${unionCardName} ID`, organizationName: data.newspaper || 'Journalist Union',
                   documentType: `${unionCardName} ID Card`,
                   pdfFilename: `Press_ID_${profile.id.slice(-8).toUpperCase()}.pdf`,
                 });
+                if (!sendResult.ok) {
+                  console.error('[WhatsApp Bot] ID card send failed (reporter):', sendResult.error, sendResult.details);
+                  await reply(phone, `⚠️ ID కార్డ్ పంపడంలో సమస్య వచ్చింది. PDF లింక్: ${pdfUrl}\nఅడ్మిన్‌ని సంప్రదించండి.`);
+                }
               } else {
                 await reply(phone, `⚠️ ID కార్డ్ ఇప్పుడు జనరేట్ చేయడం సాధ్యం కాలేదు. అడ్మిన్ మీ కార్డ్ పంపిస్తారు.`);
               }
@@ -1361,7 +1374,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).journalistProfile.update({
           where: { id: data.journalistProfileId },
           data: { nomineeName: input },
-        });
+        }).catch((e: any) => console.error('[WhatsApp Bot] nominee update failed:', e?.message));
       }
       await advanceStep('KYC_SUBMITTED', { nomineeName: input });
       await kycSubmittedMessage(phone, { ...data, nomineeName: input });
@@ -1391,7 +1404,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).journalistProfile.update({
           where: { id: data.journalistProfileId },
           data: { aadhaarUrl },
-        });
+        }).catch((e: any) => console.error('[WhatsApp Bot] aadhaar update failed:', e?.message));
       }
       await advanceStep('AWAIT_AADHAAR_BACK', { aadhaarUrl });
       await replyButtons(phone,
@@ -1424,7 +1437,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).journalistProfile.update({
           where: { id: data.journalistProfileId },
           data: { aadhaarBackUrl },
-        });
+        }).catch((e: any) => console.error('[WhatsApp Bot] aadhaarBack update failed:', e?.message));
       }
       await advanceStep('AWAIT_PAN', { aadhaarBackUrl });
       await replyButtons(phone,
@@ -1457,7 +1470,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).journalistProfile.update({
           where: { id: data.journalistProfileId },
           data: { panCardUrl },
-        });
+        }).catch((e: any) => console.error('[WhatsApp Bot] pan update failed:', e?.message));
       }
       await advanceStep('AWAIT_NOMINEE', { panCardUrl });
       await replyButtons(phone,
@@ -1478,6 +1491,10 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
     default:
       break;
+  }
+  } catch (err: any) {
+    console.error('[WhatsApp Bot] Unhandled error in step', step, ':', err?.message, (err?.stack || '').split('\n')[1]);
+    await sendWhatsappTextMessage({ to: phone, text: '❌ సాంకేతిక సమస్య వచ్చింది. మళ్ళీ ప్రయత్నించండి లేదా *DJFW* పంపండి.' }).catch(() => {});
   }
 }
 
