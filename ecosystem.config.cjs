@@ -19,7 +19,8 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_restarts: 20,
-      restart_delay: 2000,
+      restart_delay: 4000,
+      kill_timeout: 8000,
       time: true,
       env: {
         NODE_ENV: 'production',
