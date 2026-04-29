@@ -557,7 +557,16 @@ async function processWhatsappBotMessage(phone: string, text: string) {
 
   // No active session — check for trigger keyword
   if (!session) {
-    if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) return;
+    if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
+      // Friendly fallback: guide them to start registration
+      await reply(phone,
+        `👋 *Welcome to Kaburlu Journalist Union!*\n\n` +
+        `To register as a member, send:\n` +
+        `*JOIN* — to start membership registration\n\n` +
+        `Or type *JOIN <union abbreviation>* (e.g. JOIN DJF) to join a specific union.`
+      );
+      return;
+    }
 
     // Detect union name from message e.g. "JOIN DJFW"
     let unionName: string | null = null;
