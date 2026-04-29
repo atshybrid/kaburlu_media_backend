@@ -630,7 +630,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
     if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
       const welcomeUnion = unionDisplayName || 'జర్నలిస్ట్ యూనియన్';
       await replyButtons(phone,
-        `👋 *${welcomeUnion}‌కు స్వాగతం!*\n\nమీ *ప్రెస్ ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
+        `👋 *${welcomeUnion}‌కు స్వాగతం!*\n\nమీ *${welcomeUnion} ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
         [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
       );
       return;
@@ -646,7 +646,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         phone,
         step: 'AWAIT_MOBILE',
         unionName,
-        data: {},
+        data: { unionDisplayName: unionDisplayName || unionName },
         expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
       },
     });
@@ -662,6 +662,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
   const step = session.step as BotStep;
   const data: Record<string, any> = (session.data as Record<string, any>) || {};
+  const unionCardName = (data.unionDisplayName as string) || session.unionName || 'యూనియన్';
 
   async function advanceStep(nextStep: BotStep, newData: Record<string, any>) {
     await (prisma as any).whatsappBotSession.update({
@@ -751,19 +752,20 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
             tenant: { select: { name: true } },
             district: { include: { state: { select: { name: true } } } },
             mandal: { include: { district: { include: { state: { select: { name: true } } } } } },
+            state: { select: { name: true } },
           },
         }).catch(() => null);
 
         if (existingReporter) {
           // Reporter found — pre-fill all details from tenant reporter table, skip to CONFIRM
-          const designation = existingReporter.designation?.nativeName || existingReporter.designation?.name || '';
+          const designation = existingReporter.designation?.name || existingReporter.designation?.nativeName || '';
           const newspaper = existingReporter.tenant?.name || '';
           // district can come from direct relation or via mandal's district
           const districtObj = existingReporter.district || (existingReporter.mandal as any)?.district || null;
           const district = districtObj?.name || '';
-          const state = districtObj?.state?.name || '';
+          const state = districtObj?.state?.name || (existingReporter as any).state?.name || '';
           const mandal = existingReporter.mandal?.name || '';
-          await advanceStep('CONFIRM', {
+          const baseReporterData = {
             mobileNumber: mobile10,
             userId: existingUser.id,
             reporterId: existingReporter.id,
@@ -771,13 +773,22 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
             fullName: p.fullName || '',
             designation,
             newspaper,
-            district,
-            state,
-            mandal,
             dob: p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
             prefilled: true,
             existingUser: true,
-          });
+          };
+          if (!district) {
+            // Reporter has no location in DB — ask for working area
+            await advanceStep('AWAIT_WORKING_AREA', { ...baseReporterData, district: '', state, mandal });
+            await reply(phone,
+              `📋 *మీ వివరాలు కనుగొన్నాం!*\n\n` +
+              `👤 పేరు: *${p.fullName || 'N/A'}*  |  🏷️ హోదా: *${designation || 'N/A'}*\n` +
+              `📰 వార్తాపత్రిక: *${newspaper || 'N/A'}*\n\n` +
+              `📍 మీ *పని ప్రాంతం* (జిల్లా పేరు) నమోదు చేయండి:\n(ఉదా: నెల్లూరు, గుంటూరు, హైదరాబాద్)`
+            );
+            return;
+          }
+          await advanceStep('CONFIRM', { ...baseReporterData, district, state, mandal });
           const summary =
             `📋 *మీ వివరాలు కనుగొన్నాం!*\n\n` +
             `👤 పేరు: *${p.fullName || 'N/A'}*\n` +
@@ -797,6 +808,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           mobileNumber: mobile10,
           userId: existingUser.id,
           prefilled: true,
+          existingUser: true,
           fullName: p.fullName || '',
           dob: p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
         });
@@ -853,7 +865,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           `✅ హోదా: *${designation}*\n\n📝 *దశ 3/5* — మీ వార్తాపత్రిక/చానెల్ ఎంచుకోండి:`,
           'వార్తాపత్రిక ఎంచుకోండి',
           [
-            ...tenants.map((t: any) => ({ id: `tenant:${t.id}`, title: t.name.slice(0, 24) })),
+            ...tenants.map((t: any) => ({ id: `t_${t.id}`, title: t.name.slice(0, 24) })),
             { id: 'OTHER_NEWSPAPER', title: 'ఇతర / పేరు టైప్ చేయండి' },
           ],
         );
@@ -875,8 +887,8 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       }
       let newspaper = '';
       let tenantId: string | null = null;
-      if (input.startsWith('tenant:')) {
-        tenantId = input.replace('tenant:', '');
+      if (input.startsWith('t_')) {
+        tenantId = input.replace('t_', '');
         const t = await (prisma as any).tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
         newspaper = t?.name || '';
       } else if (inputLower === 'skip') {
@@ -993,6 +1005,23 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         }
         if (!dob) { await reply(phone, '⚠️ తప్పు తేదీ. DD-MM-YYYY ఫార్మాట్‌లో నమోదు చేయండి లేదా వదిలివేయి నొక్కండి.'); return; }
       }
+      if (data.existingUser) {
+        // Existing user — skip MPIN, go directly to CONFIRM
+        await advanceStep('CONFIRM', { dob });
+        const merged: Record<string, any> = { ...data, dob };
+        const summary =
+          `📋 *నమోదు సారాంశం* — దయచేసి ధృవీకరించండి:\n\n` +
+          `📱 మొబైల్: *${merged.mobileNumber}*\n` +
+          `👤 పేరు: *${merged.fullName || 'N/A'}*\n` +
+          `🏷️ హోదా: *${merged.designation || 'N/A'}*\n` +
+          `📰 వార్తాపత్రిక: *${merged.newspaper || 'N/A'}*\n` +
+          `📍 ప్రాంతం: *${merged.district || 'N/A'}*${merged.state ? `, ${merged.state}` : ''}\n` +
+          `🎂 జన్మ తేదీ: *${merged.dob || 'N/A'}*`;
+        await replyButtons(phone, summary,
+          [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & సమర్పించు' }, { id: 'cancel', title: '❌ రద్దు' }]
+        );
+        break;
+      }
       await advanceStep('AWAIT_MPIN', { dob });
       const last4hint = (data.mobileNumber as string | undefined)?.slice(-4) || '';
       await replyButtons(phone,
@@ -1094,7 +1123,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
             }
             let pdfUrl: string | null = card.pdfUrl || null;
             if (!pdfUrl) {
-              await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+              await reply(phone, `⏳ మీ *${unionCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
               const pdfResult = await generateAndUploadPressCardPdf(data.journalistProfileId);
               if (pdfResult.ok && pdfResult.pdfUrl) {
                 pdfUrl = pdfResult.pdfUrl;
@@ -1104,9 +1133,9 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
               await sendWhatsappIdCardTemplate({
                 toMobileNumber: phone,
                 pdfUrl,
-                cardType: 'Press ID',
+                cardType: `${unionCardName} ID`,
                 organizationName: data.newspaper || 'Journalist Union',
-                documentType: 'Press ID Card',
+                documentType: `${unionCardName} ID Card`,
                 pdfFilename: `Press_ID_${data.journalistProfileId.slice(-8).toUpperCase()}.pdf`,
               });
             } else {
@@ -1145,15 +1174,15 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
               }
               pdfUrl = card.pdfUrl || null;
               if (!pdfUrl) {
-                await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+                await reply(phone, `⏳ మీ *${unionCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
                 const pdfResult = await generateAndUploadPressCardPdf(existing.id);
                 if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
               }
               if (pdfUrl) {
                 await sendWhatsappIdCardTemplate({
                   toMobileNumber: phone, pdfUrl,
-                  cardType: 'Press ID', organizationName: data.newspaper || 'Journalist Union',
-                  documentType: 'Press ID Card',
+                  cardType: `${unionCardName} ID`, organizationName: data.newspaper || 'Journalist Union',
+                  documentType: `${unionCardName} ID Card`,
                   pdfFilename: `Press_ID_${existing.id.slice(-8).toUpperCase()}.pdf`,
                 });
               }
@@ -1194,14 +1223,14 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
               await (prisma as any).journalistCard.create({
                 data: { profileId: profile.id, cardNumber: `JU-${Date.now()}`, expiryDate: expiry, status: 'ACTIVE' },
               });
-              await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+              await reply(phone, `⏳ మీ *${unionCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
               const pdfResult = await generateAndUploadPressCardPdf(profile.id);
               if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
               if (pdfUrl) {
                 await sendWhatsappIdCardTemplate({
                   toMobileNumber: phone, pdfUrl,
-                  cardType: 'Press ID', organizationName: data.newspaper || 'Journalist Union',
-                  documentType: 'Press ID Card',
+                  cardType: `${unionCardName} ID`, organizationName: data.newspaper || 'Journalist Union',
+                  documentType: `${unionCardName} ID Card`,
                   pdfFilename: `Press_ID_${profile.id.slice(-8).toUpperCase()}.pdf`,
                 });
               } else {
@@ -1222,7 +1251,9 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
             return;
           }
         } else {
-          const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+          const citizenRole = await prisma.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } })
+            ?? await prisma.role.findUnique({ where: { name: 'REPORTER' } })
+            ?? await prisma.role.findFirst();
           const lang = await prisma.language.findFirst({ where: { code: 'te' } }) ?? await prisma.language.findFirst();
           if (!citizenRole || !lang) throw new Error('Role or language not configured');
           let mpinHash: string | null = null;
@@ -1275,7 +1306,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           `✅ *నమోదు విజయవంతంగా పూర్తైంది!*\n\n` +
           `స్వాగతం, *${data.fullName || 'సభ్యుడు'}*!` +
           (isNew ? `\n📱 మొబైల్: ${mobileRaw}\n${data.mpin ? `🔑 MPIN: ${data.mpin} (దీన్ని సేవ్ చేయండి!)` : ''}` : '') +
-          `\n\n📋 మీ దరఖాస్తు అడ్మిన్ అప్రూవ్ చేసిన తర్వాత *ప్రెస్ ID కార్డ్* WhatsApp లో పంపబడుతుంది.`
+          `\n\n📋 మీ దరఖాస్తు అడ్మిన్ అప్రూవ్ చేసిన తర్వాత *${unionCardName} ID కార్డ్* WhatsApp లో పంపబడుతుంది.`
         );
         await replyButtons(phone,
           `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\nఇప్పుడే ఆధార్, PAN, నామినీ వివరాలు నమోదు చేయాలా?`,
@@ -1440,7 +1471,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
     case 'DONE':
       await reply(phone,
         `✅ మీ దరఖాస్తు సమీక్షలో ఉంది.\n\n` +
-        `⏳ అడ్మిన్ మీ KYC వెరిఫై చేసిన తర్వాత, మీ *ప్రెస్ ID కార్డ్* ఇక్కడ WhatsApp లో పంపబడుతుంది.\n\n` +
+        `⏳ అడ్మిన్ మీ KYC వెరిఫై చేసిన తర్వాత, మీ *${unionCardName} ID కార్డ్* ఇక్కడ WhatsApp లో పంపబడుతుంది.\n\n` +
         `కొత్త నమోదు చేయాలంటే *రద్దు* అని పంపండి.`
       );
       break;
@@ -1455,7 +1486,7 @@ async function kycSubmittedMessage(phone: string, data: Record<string, any>) {
     `🎉 *ఇన్సూరెన్స్ దరఖాస్తు సమర్పించబడింది!*\n\n` +
     `ధన్యవాదాలు, *${data.fullName || 'సభ్యుడు'}*!\n\n` +
     `📋 మీ దరఖాస్తు సమీక్షలో ఉంది.\n` +
-    `✅ మా అడ్మిన్ మీ డాక్యుమెంట్లు వెరిఫై చేసిన తర్వాత, మీ *ప్రెస్ ID కార్డ్* WhatsApp లో పంపబడుతుంది.\n\n` +
+    `✅ మా అడ్మిన్ మీ డాక్యుమెంట్లు వెరిఫై చేసిన తర్వాత, మీ *యూనియన్ ID కార్డ్* WhatsApp లో పంపబడుతుంది.\n\n` +
     `⏳ సాధారణంగా *1–3 పని దినాలు* పడుతుంది.\n\n` +
     `సందేహాలకు మీ యూనియన్ అడ్మిన్‌ని సంప్రదించండి.`
   );
