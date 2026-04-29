@@ -764,6 +764,8 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           await advanceStep('CONFIRM', {
             mobileNumber: mobile10,
             userId: existingUser.id,
+            reporterId: existingReporter.id,
+            reporterPhotoUrl: existingReporter.profilePhotoUrl || null,
             fullName: p.fullName || '',
             designation,
             newspaper,
@@ -1129,12 +1131,90 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         if (user) {
           const existing = await (prisma as any).journalistProfile.findUnique({ where: { userId: user.id } });
           if (existing) {
+            // Already has a JournalistProfile — send their card if possible, then insurance
+            let pdfUrl: string | null = null;
+            try {
+              let card = await (prisma as any).journalistCard.findUnique({ where: { profileId: existing.id } });
+              if (!card) {
+                const expiry = new Date(); expiry.setFullYear(expiry.getFullYear() + 1);
+                card = await (prisma as any).journalistCard.create({
+                  data: { profileId: existing.id, cardNumber: `JU-${Date.now()}`, expiryDate: expiry, status: 'ACTIVE' },
+                });
+              }
+              pdfUrl = card.pdfUrl || null;
+              if (!pdfUrl) {
+                await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+                const pdfResult = await generateAndUploadPressCardPdf(existing.id);
+                if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
+              }
+              if (pdfUrl) {
+                await sendWhatsappIdCardTemplate({
+                  toMobileNumber: phone, pdfUrl,
+                  cardType: 'Press ID', organizationName: data.newspaper || 'Journalist Union',
+                  documentType: 'Press ID Card',
+                  pdfFilename: `Press_ID_${existing.id.slice(-8).toUpperCase()}.pdf`,
+                });
+              }
+            } catch (_e) { /* card send failure is non-fatal */ }
             await (prisma as any).whatsappBotSession.update({
               where: { phone },
               data: { step: 'AWAIT_INSURANCE_OPT', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
             });
             await replyButtons(phone,
-              `ℹ️ ఇప్పటికే నమోదు చేసారు.\n\n🛡️ ఇన్సూరెన్స్ కోసం దరఖాస్తు చేయాలా?`,
+              `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\nఇప్పుడే ఆధార్, PAN, నామినీ వివరాలు నమోదు చేయాలా?`,
+              [{ id: 'insurance_yes', title: '🛡️ అవును, దరఖాస్తు చేయి' }, { id: 'insurance_no', title: '❌ వద్దు, తర్వాత' }]
+            );
+            return;
+          }
+
+          // User exists but no JournalistProfile yet — check if tenant reporter (has photo)
+          if (data.reporterId) {
+            // Tenant reporter joining union — create JournalistProfile with their existing photo
+            const profile = await (prisma as any).journalistProfile.create({
+              data: {
+                userId: user.id,
+                designation: data.designation || 'Member',
+                district: data.district || '',
+                organization: data.newspaper || '',
+                unionName: session.unionName,
+                state: data.state || null,
+                mandal: data.mandal || null,
+                currentNewspaper: data.newspaper || null,
+                currentDesignation: data.designation || null,
+                linkedTenantId: data.tenantId || null,
+                photoUrl: data.reporterPhotoUrl || null,
+              },
+            });
+            // Generate and send ID card immediately using reporter's existing photo
+            let pdfUrl: string | null = null;
+            try {
+              const expiry = new Date(); expiry.setFullYear(expiry.getFullYear() + 1);
+              await (prisma as any).journalistCard.create({
+                data: { profileId: profile.id, cardNumber: `JU-${Date.now()}`, expiryDate: expiry, status: 'ACTIVE' },
+              });
+              await reply(phone, `⏳ మీ *ప్రెస్ ID కార్డ్* తయారు చేస్తున్నాం...`);
+              const pdfResult = await generateAndUploadPressCardPdf(profile.id);
+              if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
+              if (pdfUrl) {
+                await sendWhatsappIdCardTemplate({
+                  toMobileNumber: phone, pdfUrl,
+                  cardType: 'Press ID', organizationName: data.newspaper || 'Journalist Union',
+                  documentType: 'Press ID Card',
+                  pdfFilename: `Press_ID_${profile.id.slice(-8).toUpperCase()}.pdf`,
+                });
+              } else {
+                await reply(phone, `⚠️ ID కార్డ్ ఇప్పుడు జనరేట్ చేయడం సాధ్యం కాలేదు. అడ్మిన్ మీ కార్డ్ పంపిస్తారు.`);
+              }
+            } catch (cardErr: any) {
+              console.error('[WhatsApp Bot] Reporter card gen error:', cardErr?.message);
+              await reply(phone, `⚠️ ID కార్డ్ పంపడంలో సమస్య వచ్చింది. అడ్మిన్ మీతో సంప్రదిస్తారు.`);
+            }
+            await (prisma as any).whatsappBotSession.update({
+              where: { phone },
+              data: { step: 'AWAIT_INSURANCE_OPT', data: { ...data, userId: user.id, journalistProfileId: profile.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+            });
+            await replyButtons(phone,
+              `🛡️ *ఇన్సూరెన్స్ దరఖాస్తు*\n\nఇప్పుడే ఆధార్, PAN, నామినీ వివరాలు నమోదు చేయాలా?`,
               [{ id: 'insurance_yes', title: '🛡️ అవును, దరఖాస్తు చేయి' }, { id: 'insurance_no', title: '❌ వద్దు, తర్వాత' }]
             );
             return;
