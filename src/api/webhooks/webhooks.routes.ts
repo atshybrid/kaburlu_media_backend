@@ -749,7 +749,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           include: {
             designation: { select: { name: true, nativeName: true } },
             tenant: { select: { name: true } },
-            district: { select: { name: true }, include: { state: { select: { name: true } } } },
+            district: { include: { state: { select: { name: true } } } },
             mandal: { select: { name: true } },
           },
         }).catch(() => null);
