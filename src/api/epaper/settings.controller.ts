@@ -34,7 +34,7 @@ export const getEpaperSettings = async (req: Request, res: Response) => {
   try {
     const ctx = await getTenantContext(req);
     
-    if (!ctx.tenantId && !ctx.isSuperAdmin) {
+    if (!ctx.tenantId) {
       return res.status(400).json({ error: 'Tenant context required' });
     }
     
