@@ -750,7 +750,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
             designation: { select: { name: true, nativeName: true } },
             tenant: { select: { name: true } },
             district: { include: { state: { select: { name: true } } } },
-            mandal: { select: { name: true } },
+            mandal: { include: { district: { include: { state: { select: { name: true } } } } } },
           },
         }).catch(() => null);
 
@@ -758,8 +758,10 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           // Reporter found — pre-fill all details from tenant reporter table, skip to CONFIRM
           const designation = existingReporter.designation?.nativeName || existingReporter.designation?.name || '';
           const newspaper = existingReporter.tenant?.name || '';
-          const district = existingReporter.district?.name || '';
-          const state = (existingReporter.district as any)?.state?.name || '';
+          // district can come from direct relation or via mandal's district
+          const districtObj = existingReporter.district || (existingReporter.mandal as any)?.district || null;
+          const district = districtObj?.name || '';
+          const state = districtObj?.state?.name || '';
           const mandal = existingReporter.mandal?.name || '';
           await advanceStep('CONFIRM', {
             mobileNumber: mobile10,

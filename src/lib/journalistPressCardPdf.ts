@@ -18,7 +18,7 @@
 import axios from 'axios';
 import QRCode from 'qrcode';
 import prisma from './prisma';
-import { r2Client, R2_BUCKET, getPublicUrl } from './r2';
+import { putPublicObject } from './objectStorage';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
@@ -680,18 +680,13 @@ export async function generateAndUploadPressCardPdf(profileId: string): Promise<
   try {
     let data = await buildPressCardData(profileId);
     if (!data) return { ok: false, error: 'Press card not found for this profile.' };
-    if (!R2_BUCKET) return { ok: false, error: 'R2_BUCKET not configured' };
 
     data = await inlineAssets(data);
     const html = buildPressCardHtml(data);
     const pdfBuffer = await renderToPdf(html);
 
-    const r2Key = `journalist-union/press-cards/${profileId}/${data.cardNumber}_${Date.now()}.pdf`;
-    await r2Client.send(new PutObjectCommand({
-      Bucket: R2_BUCKET, Key: r2Key, Body: pdfBuffer,
-      ContentType: 'application/pdf', CacheControl: 'private, max-age=3600',
-    }));
-    const pdfUrl = getPublicUrl(r2Key);
+    const key = `journalist-union/press-cards/${profileId}/${data.cardNumber}_${Date.now()}.pdf`;
+    const { publicUrl: pdfUrl } = await putPublicObject({ key, body: pdfBuffer, contentType: 'application/pdf' });
 
     await (prisma as any).journalistCard.update({ where: { profileId }, data: { pdfUrl } });
     return { ok: true, pdfUrl, cardNumber: data.cardNumber };
