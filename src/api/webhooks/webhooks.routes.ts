@@ -606,30 +606,33 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
   // No active session — check for trigger keyword
   if (!session) {
+    // Detect union name from message e.g. "JOIN DJFW" (needed for both welcome + registration)
+    let unionName: string | null = null;
+    let unionDisplayName: string | null = null;
+    const parts = input.split(/\s+/);
+    for (const candidate of [parts.slice(1).join(' ').toUpperCase(), parts[0].toUpperCase()]) {
+      if (!candidate) continue;
+      const union = await (prisma as any).journalistUnionSettings.findFirst({
+        where: { OR: [{ abbreviation: candidate }, { unionName: { contains: candidate, mode: 'insensitive' } }] },
+        select: { unionName: true, displayName: true },
+      });
+      if (union) { unionName = union.unionName; unionDisplayName = union.displayName || union.unionName; break; }
+    }
+    if (!unionName) {
+      const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({ select: { unionName: true, displayName: true } });
+      unionName = firstUnion?.unionName ?? null;
+      unionDisplayName = firstUnion?.displayName || firstUnion?.unionName ?? null;
+    }
+
     if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
+      const welcomeUnion = unionDisplayName || 'జర్నలిస్ట్ యూనియన్';
       await replyButtons(phone,
-        '👋 *కాబుర్లు జర్నలిస్ట్ యూనియన్‌కు స్వాగతం!*\n\nమీ *ప్రెస్ ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.',
+        `👋 *${welcomeUnion}‌కు స్వాగతం!*\n\nమీ *ప్రెస్ ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
         [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
       );
       return;
     }
 
-    // Detect union name from message e.g. "JOIN DJFW"
-    let unionName: string | null = null;
-    const parts = input.split(/\s+/);
-    // Try first word, whole input, or partial
-    for (const candidate of [parts.slice(1).join(' ').toUpperCase(), parts[0].toUpperCase()]) {
-      if (!candidate) continue;
-      const union = await (prisma as any).journalistUnionSettings.findFirst({
-        where: { OR: [{ abbreviation: candidate }, { unionName: { contains: candidate, mode: 'insensitive' } }] },
-        select: { unionName: true },
-      });
-      if (union) { unionName = union.unionName; break; }
-    }
-    if (!unionName) {
-      const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({ select: { unionName: true } });
-      unionName = firstUnion?.unionName ?? null;
-    }
     if (!unionName) {
       await reply(phone, '⚠️ జర్నలిస్ట్ యూనియన్ కాన్ఫిగర్ చేయలేదు. అడ్మిన్‌ని సంప్రదించండి.');
       return;
@@ -645,8 +648,9 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       },
     });
 
+    const regUnion = unionDisplayName || unionName;
     await reply(phone,
-      `👋 *జర్నలిస్ట్ యూనియన్ సభ్యత్వ నమోదు*\n\n` +
+      `👋 *${regUnion} సభ్యత్వ నమోదు*\n\n` +
       `మీ *10 అంకెల మొబైల్ నంబర్* నమోదు చేయండి:\n` +
       `(మీకు ఇప్పటికే అకౌంట్ ఉందా అని తనిఖీ చేస్తాం)`
     );
