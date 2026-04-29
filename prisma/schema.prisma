@@ -2494,6 +2494,7 @@ model JournalistProfile {
   aadhaarBackUrl    String?  /// Aadhaar card image (back, optional)
   aadhaarNumber     String?  /// Last 4 digits only (masked) — for display
   panCardUrl        String?  /// PAN card image (uploaded via WhatsApp KYC)
+  nomineeName       String?  /// Insurance nominee name (collected during WhatsApp registration)
   kycVerified       Boolean  @default(false)
   kycVerifiedAt     DateTime?
   kycNote           String?  /// Admin note on KYC verification

@@ -540,7 +540,7 @@ const STEPS = [
   'AWAIT_DOB',
   'AWAIT_MPIN',
   'CONFIRM',
-  'AWAIT_PHOTO',
+  'AWAIT_NOMINEE',
   'AWAIT_AADHAAR',
   'AWAIT_PAN',
   'KYC_SUBMITTED',
@@ -686,7 +686,10 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         include: { profile: true },
       });
       const existingJournalist = existingUser
-        ? await (prisma as any).journalistProfile.findUnique({ where: { userId: existingUser.id } })
+        ? await (prisma as any).journalistProfile.findUnique({
+            where: { userId: existingUser.id },
+            include: { card: { select: { status: true, expiryDate: true } } },
+          })
         : null;
 
       if (existingJournalist) {
@@ -700,22 +703,36 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           );
           return;
         }
-        // Registered but KYC pending — resume KYC
+        // Existing journalist — show all their details as summary, go straight to CONFIRM
         const p = existingUser?.profile as any;
-        await advanceStep('AWAIT_PHOTO', {
+        let newspaper = existingJournalist.currentNewspaper || existingJournalist.organization || '';
+        if (existingJournalist.linkedTenantId && !newspaper) {
+          const t = await (prisma as any).tenant.findUnique({ where: { id: existingJournalist.linkedTenantId }, select: { name: true } });
+          newspaper = t?.name || '';
+        }
+        await advanceStep('CONFIRM', {
           mobileNumber: mobile10,
           userId: existingUser!.id,
           journalistProfileId: existingJournalist.id,
           fullName: p?.fullName || existingJournalist.organization || '',
+          designation: existingJournalist.currentDesignation || existingJournalist.designation || '',
+          newspaper,
+          district: existingJournalist.district || '',
+          state: existingJournalist.state || '',
+          dob: p?.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
           prefilled: true,
+          existingUser: true,
         });
-        await reply(phone,
-          `✅ మీ నమోదు కనుగొన్నాం!\n\n` +
+        const summary =
+          `📋 *మీ వివరాలు కనుగొన్నాం!*\n\n` +
           `👤 పేరు: *${p?.fullName || 'N/A'}*\n` +
           `📱 మొబైల్: *${mobile10}*\n` +
-          `⏳ KYC పెండింగ్ ఉంది\n\n` +
-          `📸 మీ KYC వెరిఫికేషన్ పూర్తి చేద్దాం.\n` +
-          `దయచేసి మీ *పాస్‌పోర్ట్ సైజు ఫోటో* పంపండి (ఇమేజ్‌గా):`
+          `🏷️ హోదా: *${existingJournalist.currentDesignation || existingJournalist.designation || 'N/A'}*\n` +
+          `📰 వార్తాపత్రిక: *${newspaper || 'N/A'}*\n` +
+          `📍 ప్రాంతం: *${existingJournalist.district || 'N/A'}*${existingJournalist.state ? `, ${existingJournalist.state}` : ''}\n\n` +
+          `ఇన్సూరెన్స్ దరఖాస్తు కోసం నిర్ధారించండి:`;
+        await replyButtons(phone, summary,
+          [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & కొనసాగు' }, { id: 'cancel', title: '❌ రద్దు' }]
         );
         return;
       }
@@ -923,18 +940,60 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         if (!dob) { await reply(phone, '⚠️ తప్పు తేదీ. DD-MM-YYYY ఫార్మాట్‌లో నమోదు చేయండి లేదా వదిలివేయి నొక్కండి.'); return; }
       }
       await advanceStep('AWAIT_MPIN', { dob });
-      await reply(phone, `🔐 మీ అకౌంట్ లాగిన్ కోసం *4 అంకెల MPIN* సెట్ చేయండి:`);
+      const last4hint = (data.mobileNumber as string | undefined)?.slice(-4) || '';
+      await replyButtons(phone,
+        `🔐 మీ అకౌంట్ లాగిన్ కోసం *4 అంకెల MPIN* సెట్ చేయండి:\n_(default: మీ నంబర్ చివరి 4 అంకెలు — *${last4hint}*)_`,
+        [{ id: 'default', title: `🔢 Default (${last4hint}) వాడు` }]
+      );
       break;
     }
 
     // ── STEP 6: MPIN ──────────────────────────────────────────────────────────
     case 'AWAIT_MPIN': {
-      const skipMpin = (inputLower === 'skip_mpin' || inputLower === 'use existing mpin');
-      if (!skipMpin && !/^\d{4}$/.test(input)) {
-        await reply(phone, '⚠️ MPIN సరిగ్గా 4 అంకెలు ఉండాలి. మళ్ళీ ప్రయత్నించండి:');
+      // Existing users already have an account — skip MPIN
+      if (data.existingUser) {
+        await advanceStep('CONFIRM', { mpin: null });
+        const merged = { ...data };
+        const summary =
+          `📋 *నమోదు సారాంశం* — దయచేసి ధృవీకరించండి:\n\n` +
+          `📱 మొబైల్: *${merged.mobileNumber}*\n` +
+          `👤 పేరు: *${merged.fullName || 'N/A'}*\n` +
+          `🏷️ హోదా: *${merged.designation || 'N/A'}*\n` +
+          `📰 వార్తాపత్రిక: *${merged.newspaper || 'N/A'}*\n` +
+          `📍 ప్రాంతం: *${merged.district || 'N/A'}*${merged.state ? `, ${merged.state}` : ''}\n` +
+          `🎂 జన్మ తేదీ: *${merged.dob || 'N/A'}*`;
+        await replyButtons(phone, summary,
+          [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & సమర్పించు' }, { id: 'cancel', title: '❌ రద్దు' }]
+        );
         return;
       }
-      const mpinValue = skipMpin ? null : input;
+      const last4 = data.mobileNumber ? (data.mobileNumber as string).slice(-4) : '';
+      if (inputLower === 'skip' || inputLower === 'default') {
+        const mpinValue = last4 || null;
+        await advanceStep('CONFIRM', { mpin: mpinValue });
+        const merged: Record<string, any> = { ...data, mpin: mpinValue };
+        const summary =
+          `📋 *నమోదు సారాంశం* — దయచేసి ధృవీకరించండి:\n\n` +
+          `📱 మొబైల్: *${merged.mobileNumber}*\n` +
+          `👤 పేరు: *${merged.fullName || 'N/A'}*\n` +
+          `🏷️ హోదా: *${merged.designation || 'N/A'}*\n` +
+          `📰 వార్తాపత్రిక: *${merged.newspaper || 'N/A'}*\n` +
+          `📍 ప్రాంతం: *${merged.district || 'N/A'}*${merged.state ? `, ${merged.state}` : ''}\n` +
+          `🎂 జన్మ తేదీ: *${merged.dob || 'N/A'}*\n` +
+          `🔑 MPIN: *${mpinValue || 'N/A'}* (మొబైల్ చివరి 4 అంకెలు)`;
+        await replyButtons(phone, summary,
+          [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & సమర్పించు' }, { id: 'cancel', title: '❌ రద్దు' }]
+        );
+        return;
+      }
+      if (!/^\d{4}$/.test(input)) {
+        await replyButtons(phone,
+          `🔐 మీ అకౌంట్ లాగిన్ కోసం *4 అంకెల MPIN* సెట్ చేయండి:\n_(default: మీ నంబర్ చివరి 4 అంకెలు — *${last4}*)_`,
+          [{ id: 'default', title: `🔢 Default (${last4}) వాడు` }]
+        );
+        return;
+      }
+      const mpinValue = input;
       await advanceStep('CONFIRM', { mpin: mpinValue });
       const merged: Record<string, any> = { ...data, mpin: mpinValue };
       const summary =
@@ -963,6 +1022,22 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       const mobileRaw: string = data.mobileNumber || (phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone);
 
       try {
+        // Existing journalist — just proceed to insurance
+        if (data.existingUser && data.journalistProfileId) {
+          await (prisma as any).whatsappBotSession.update({
+            where: { phone },
+            data: { step: 'AWAIT_NOMINEE', expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+          });
+          await reply(phone,
+            `✅ *నిర్ధారించబడింది!*\n\n` +
+            `👋 స్వాగతం, *${data.fullName || 'సభ్యుడు'}*!\n\n` +
+            `🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
+            `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n` +
+            `(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`
+          );
+          return;
+        }
+
         let user = await prisma.user.findUnique({ where: { mobileNumber: mobileRaw } });
         let isNew = false;
 
@@ -971,12 +1046,12 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           if (existing) {
             await (prisma as any).whatsappBotSession.update({
               where: { phone },
-              data: { step: 'AWAIT_PHOTO', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
+              data: { step: 'AWAIT_NOMINEE', data: { ...data, journalistProfileId: existing.id }, expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS) },
             });
             await reply(phone,
               `ℹ️ ఇప్పటికే నమోదు చేసారు.\n\n` +
-              `📸 మీ *KYC వెరిఫికేషన్* పూర్తి చేద్దాం.\n\n` +
-              `*KYC దశ 1/3* — మీ *పాస్‌పోర్ట్ సైజు ఫోటో* పంపండి (ఇమేజ్‌గా):`
+              `🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
+              `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:`
             );
             return;
           }
@@ -1024,7 +1099,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         await (prisma as any).whatsappBotSession.update({
           where: { phone },
           data: {
-            step: 'AWAIT_PHOTO',
+            step: 'AWAIT_NOMINEE',
             data: { ...data, userId: user.id, journalistProfileId: profile.id },
             expiresAt: new Date(Date.now() + BOT_SESSION_TTL_MS),
           },
@@ -1034,8 +1109,9 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
           `✅ *నమోదు విజయవంతంగా పూర్తైంది!*\n\n` +
           `స్వాగతం, *${data.fullName || 'సభ్యుడు'}*!` +
           (isNew ? `\n📱 మొబైల్: ${mobileRaw}\n${data.mpin ? `🔑 MPIN: ${data.mpin} (దీన్ని సేవ్ చేయండి!)` : ''}` : '') +
-          `\n\n📋 మీ *ప్రెస్ ID కార్డ్* పొందడానికి *KYC వెరిఫికేషన్* పూర్తి చేయండి.\n\n` +
-          `📸 *KYC దశ 1/3* — మీ *పాస్‌పోర్ట్ సైజు ఫోటో* పంపండి (ఇమేజ్‌గా):`
+          `\n\n🛡️ ఇప్పుడు *ఇన్సూరెన్స్ దరఖాస్తు* పూర్తి చేద్దాం.\n\n` +
+          `👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n` +
+          `(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`
         );
       } catch (err: any) {
         console.error('[WhatsApp Bot] Registration error:', err?.message);
@@ -1044,30 +1120,34 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       break;
     }
 
-    // ── KYC STEP 1: Passport Photo ────────────────────────────────────────────
-    case 'AWAIT_PHOTO': {
+    // ── INSURANCE STEP 1: Nominee Name ────────────────────────────────────────
+    case 'AWAIT_NOMINEE': {
       if (inputLower === 'skip' || inputLower === 'later') {
         await advanceStep('AWAIT_AADHAAR', {});
-        await reply(phone, `⏭️ ఫోటో వదిలివేయబడింది.\n\n📄 *KYC దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`);
-        return;
-      }
-      if (!mediaId) {
-        await replyButtons(phone,
-          '📸 *KYC దశ 1/3* — దయచేసి మీ *పాస్‌పోర్ట్ సైజు ఫోటో* ఇమేజ్‌గా పంపండి.\n\n(స్పష్టమైన సెల్ఫీ లేదా సాదా నేపథ్యంలో తీసిన ఫోటో పంపండి)',
-          [{ id: 'SKIP', title: 'తర్వాత పంపిస్తా' }]
+        await reply(phone,
+          `⏭️ నామినీ పేరు వదిలివేయబడింది.\n\n` +
+          `📄 *ఇన్సూరెన్స్ దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`
         );
         return;
       }
-      const photoUrl = await uploadBotMedia(mediaId, `${data.journalistProfileId || phone}/photo`);
-      if (!photoUrl) { await reply(phone, '❌ అప్‌లోడ్ విఫలమైంది. మళ్ళీ ప్రయత్నించండి.'); return; }
+      if (input.length < 2) {
+        await replyButtons(phone,
+          '👥 *ఇన్సూరెన్స్ దశ 1/3* — మీ *నామినీ పేరు* నమోదు చేయండి:\n\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)',
+          [{ id: 'SKIP', title: 'తర్వాత నమోదు చేస్తా' }]
+        );
+        return;
+      }
       if (data.journalistProfileId) {
         await (prisma as any).journalistProfile.update({
           where: { id: data.journalistProfileId },
-          data: { photoUrl },
+          data: { nomineeName: input },
         });
       }
-      await advanceStep('AWAIT_AADHAAR', { photoUrl });
-      await reply(phone, `✅ ఫోటో అందుకున్నాం!\n\n📄 *KYC దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`);
+      await advanceStep('AWAIT_AADHAAR', { nomineeName: input });
+      await reply(phone,
+        `✅ నామినీ పేరు: *${input}*\n\n` +
+        `📄 *ఇన్సూరెన్స్ దశ 2/3* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`
+      );
       break;
     }
 
@@ -1075,12 +1155,12 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
     case 'AWAIT_AADHAAR': {
       if (inputLower === 'skip' || inputLower === 'later') {
         await advanceStep('AWAIT_PAN', {});
-        await reply(phone, `⏭️ ఆధార్ వదిలివేయబడింది.\n\n💳 *KYC దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
+        await reply(phone, `⏭️ ఆధార్ వదిలివేయబడింది.\n\n💳 *ఇన్సూరెన్స్ దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
         return;
       }
       if (!mediaId) {
         await replyButtons(phone,
-          '📄 *KYC దశ 2/3* — దయచేసి మీ *ఆధార్ కార్డ్ ముందు భాగం* ఇమేజ్‌గా పంపండి.\n\n(ఆధార్ నంబర్ మరియు పేరు స్పష్టంగా కనిపించాలి)',
+          '📄 *ఇన్సూరెన్స్ దశ 2/3* — దయచేసి మీ *ఆధార్ కార్డ్ ముందు భాగం* ఇమేజ్‌గా పంపండి.\n\n(ఆధార్ నంబర్ మరియు పేరు స్పష్టంగా కనిపించాలి)',
           [{ id: 'SKIP', title: 'ఆధార్ వదిలివేయి' }]
         );
         return;
@@ -1094,7 +1174,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         });
       }
       await advanceStep('AWAIT_PAN', { aadhaarUrl });
-      await reply(phone, `✅ ఆధార్ అందుకున్నాం!\n\n💳 *KYC దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
+      await reply(phone, `✅ ఆధార్ అందుకున్నాం!\n\n💳 *ఇన్సూరెన్స్ దశ 3/3* — మీ *PAN కార్డ్* ఫోటో పంపండి (ఇమేజ్‌గా):`);
       break;
     }
 
@@ -1107,7 +1187,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       }
       if (!mediaId) {
         await replyButtons(phone,
-          '💳 *KYC దశ 3/3* — దయచేసి మీ *PAN కార్డ్* ఫోటో ఇమేజ్‌గా పంపండి.\n\n(పేరు మరియు PAN నంబర్ కనిపించే ముందు భాగం)',
+          '💳 *ఇన్సూరెన్స్ దశ 3/3* — దయచేసి మీ *PAN కార్డ్* ఫోటో ఇమేజ్‌గా పంపండి.\n\n(పేరు మరియు PAN నంబర్ కనిపించే ముందు భాగం)',
           [{ id: 'SKIP', title: 'PAN వదిలివేయి' }]
         );
         return;
@@ -1141,7 +1221,7 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
 async function kycSubmittedMessage(phone: string, data: Record<string, any>) {
   await reply(phone,
-    `🎉 *KYC డాక్యుమెంట్లు సమర్పించబడ్డాయి!*\n\n` +
+    `🎉 *ఇన్సూరెన్స్ దరఖాస్తు సమర్పించబడింది!*\n\n` +
     `ధన్యవాదాలు, *${data.fullName || 'సభ్యుడు'}*!\n\n` +
     `📋 మీ దరఖాస్తు సమీక్షలో ఉంది.\n` +
     `✅ మా అడ్మిన్ మీ డాక్యుమెంట్లు వెరిఫై చేసిన తర్వాత, మీ *ప్రెస్ ID కార్డ్* WhatsApp లో పంపబడుతుంది.\n\n` +
