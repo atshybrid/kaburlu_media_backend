@@ -105,9 +105,16 @@ jobs:
               rm -rf "$DIST_BACKUP"
             fi
 
-            echo "▶ Restart PM2 via ecosystem (low downtime)"
+            echo "▶ Restart PM2 via ecosystem"
             echo "▶ Using Chromium executable: $CHROME_BIN"
             export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
+
+            # Stop existing processes and free the port before reloading
+            # (fork-mode startOrReload races for the port if old process is still up)
+            pm2 stop kaburlu-api 2>/dev/null || true
+            fuser -k 3001/tcp 2>/dev/null || true
+            sleep 2
+
             pm2 startOrReload ecosystem.config.cjs --update-env
             pm2 save
 
