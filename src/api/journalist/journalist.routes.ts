@@ -6,8 +6,7 @@ import passport from 'passport';
 import * as bcrypt from 'bcrypt';
 import multer from 'multer';
 import sharp from 'sharp';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { r2Client, R2_BUCKET, getPublicUrl } from '../../lib/r2';
+import { putPublicObject } from '../../lib/objectStorage';
 import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunnyStorage';
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdmin, requireSuperAdmin } from '../middlewares/authz';
@@ -1248,10 +1247,9 @@ router.post('/admin/generate-card', jwtAuth, requireSuperAdmin, async (req: Requ
       },
     });
 
-    // Trigger PDF generation + R2 upload in the background
+    // Trigger PDF generation + upload in the background
     // (non-blocking — response is returned immediately with the card record)
-    if (R2_BUCKET) {
-      generateAndUploadPressCardPdf(profileId).then(async (pdfResult) => {
+    generateAndUploadPressCardPdf(profileId).then(async (pdfResult) => {
         if (!pdfResult.ok) { console.error('[journalist/admin/generate-card] PDF upload failed:', pdfResult.error); return; }
         console.log('[journalist/admin/generate-card] PDF uploaded:', pdfResult.pdfUrl);
         // Send via WhatsApp if journalist's KYC is verified
@@ -1274,7 +1272,6 @@ router.post('/admin/generate-card', jwtAuth, requireSuperAdmin, async (req: Requ
           console.error('[journalist/admin/generate-card] WhatsApp send error:', wErr?.message);
         }
       }).catch((e) => console.error('[journalist/admin/generate-card] PDF bg error:', e));
-    }
 
     return res.status(201).json({ message: 'Press card generated', card });
   } catch (e: any) {
@@ -1385,8 +1382,6 @@ router.post('/admin/cards/:profileId/generate-pdf', jwtAuth, requireSuperAdmin, 
 
     const card = await (prisma as any).journalistCard.findUnique({ where: { profileId } });
     if (!card) return res.status(404).json({ error: 'Card not found' });
-
-    if (!R2_BUCKET) return res.status(500).json({ error: 'R2 storage not configured' });
 
     const result = await generateAndUploadPressCardPdf(profileId);
     if (!result.ok) return res.status(500).json({ error: result.error || 'PDF generation failed' });
@@ -1618,12 +1613,10 @@ router.patch('/admin/cards/:profileId/renew', jwtAuth, requireSuperAdmin, async 
     });
 
     // Regenerate PDF in background
-    if (R2_BUCKET) {
-      generateAndUploadPressCardPdf(profileId).then((r) => {
-        if (!r.ok) console.error('[renewal/pdf]', r.error);
-        else console.log('[renewal/pdf] uploaded:', r.pdfUrl);
-      }).catch((e) => console.error('[renewal/pdf bg]', e));
-    }
+    generateAndUploadPressCardPdf(profileId).then((r) => {
+      if (!r.ok) console.error('[renewal/pdf]', r.error);
+      else console.log('[renewal/pdf] uploaded:', r.pdfUrl);
+    }).catch((e) => console.error('[renewal/pdf bg]', e));
 
     return res.json({
       message: `Card renewed. New expiry: ${newExpiry.toLocaleDateString('en-IN')}`,
@@ -2531,8 +2524,6 @@ router.post(
   uploadSingle.single('file'),
   async (req: Request, res: Response) => {
     try {
-      if (!R2_BUCKET) return res.status(500).json({ error: 'R2 storage not configured' });
-
       const user = currentUser(req);
       const profile = await (prisma as any).journalistProfile.findUnique({ where: { userId: user.id } });
       if (!profile) return res.status(404).json({ error: 'Journalist profile not found. Apply first.' });
@@ -2558,13 +2549,8 @@ router.post(
       const ext = isAadhaar ? 'png' : 'webp';
       const contentType = isAadhaar ? 'image/png' : 'image/webp';
 
-      const r2Key = `journalist-union/kyc/${profile.id}/${field}.${ext}`;
-      await r2Client.send(new PutObjectCommand({
-        Bucket: R2_BUCKET, Key: r2Key, Body: outBuffer,
-        ContentType: contentType, CacheControl: 'private, max-age=86400',
-      }));
-
-      const publicUrl = getPublicUrl(r2Key);
+      const key = `journalist-union/kyc/${profile.id}/${field}.${ext}`;
+      const { publicUrl } = await putPublicObject({ key, body: outBuffer, contentType });
       const updated = await (prisma as any).journalistProfile.update({
         where: { id: profile.id },
         data:  { [KYC_FIELD_MAP[field]]: publicUrl },
