@@ -742,6 +742,53 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
       if (existingUser && existingUser.profile) {
         const p = existingUser.profile as any;
+
+        // Check if this user is already a Reporter in the tenant system
+        const existingReporter = await (prisma as any).reporter.findUnique({
+          where: { userId: existingUser.id },
+          include: {
+            designation: { select: { name: true, nativeName: true } },
+            tenant: { select: { name: true } },
+            district: { select: { name: true }, include: { state: { select: { name: true } } } },
+            mandal: { select: { name: true } },
+          },
+        }).catch(() => null);
+
+        if (existingReporter) {
+          // Reporter found — pre-fill all details from tenant reporter table, skip to CONFIRM
+          const designation = existingReporter.designation?.nativeName || existingReporter.designation?.name || '';
+          const newspaper = existingReporter.tenant?.name || '';
+          const district = existingReporter.district?.name || '';
+          const state = (existingReporter.district as any)?.state?.name || '';
+          const mandal = existingReporter.mandal?.name || '';
+          await advanceStep('CONFIRM', {
+            mobileNumber: mobile10,
+            userId: existingUser.id,
+            fullName: p.fullName || '',
+            designation,
+            newspaper,
+            district,
+            state,
+            mandal,
+            dob: p.dob ? (p.dob as Date).toISOString().split('T')[0] : null,
+            prefilled: true,
+            existingUser: true,
+          });
+          const summary =
+            `📋 *మీ వివరాలు కనుగొన్నాం!*\n\n` +
+            `👤 పేరు: *${p.fullName || 'N/A'}*\n` +
+            `📱 మొబైల్: *${mobile10}*\n` +
+            `🏷️ హోదా: *${designation || 'N/A'}*\n` +
+            `📰 వార్తాపత్రిక: *${newspaper || 'N/A'}*\n` +
+            `📍 ప్రాంతం: *${mandal ? mandal + ', ' : ''}${district || 'N/A'}*${state ? `, ${state}` : ''}\n\n` +
+            `నిర్ధారించి ID కార్డ్ పొందండి, ఆపై ఇన్సూరెన్స్ దరఖాస్తు చేయండి:`;
+          await replyButtons(phone, summary,
+            [{ id: 'CONFIRM', title: '✅ నిర్ధారించు & కొనసాగు' }, { id: 'cancel', title: '❌ రద్దు' }]
+          );
+          return;
+        }
+
+        // User exists with profile but no reporter/journalist record — ask for designation
         await advanceStep('AWAIT_DESIGNATION', {
           mobileNumber: mobile10,
           userId: existingUser.id,
