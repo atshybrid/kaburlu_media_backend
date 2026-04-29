@@ -3485,4 +3485,57 @@ router.post(
   },
 );
 
+// ─── MEMBER SELF-VIEW: unified profile + card + insurance ────────────────────
+
+/**
+ * @swagger
+ * /journalist/me/full:
+ *   get:
+ *     summary: Get my complete journalist profile (membership ID, card, insurance, post holdings)
+ *     tags: [Journalist Union - Member]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Full journalist profile with card, insurance and post holdings
+ *       404:
+ *         description: No journalist profile found
+ */
+router.get('/me/full', jwtAuth, async (req: Request, res: Response) => {
+  try {
+    const user = currentUser(req);
+    const profile = await (prisma as any).journalistProfile.findUnique({
+      where: { userId: user.id },
+      include: {
+        card: true,
+        insurances: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        postHoldings: {
+          where: { isActive: true },
+          include: {
+            post: { select: { title: true, nativeTitle: true, level: true, type: true } },
+          },
+        },
+      },
+    });
+    if (!profile) return res.status(404).json({ error: 'No journalist profile found. Apply first.' });
+
+    if (profile.card) {
+      await syncCardExpiry(profile.id);
+      // re-fetch card after potential expiry update
+      profile.card = await (prisma as any).journalistCard.findUnique({ where: { profileId: profile.id } });
+    }
+
+    // membershipId = pressId (official member number) or cardNumber from issued card
+    const membershipId = profile.pressId ?? profile.card?.cardNumber ?? null;
+
+    return res.json({ ...profile, membershipId });
+  } catch (e: any) {
+    console.error('[journalist/me/full]', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

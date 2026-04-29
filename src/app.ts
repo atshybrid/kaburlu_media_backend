@@ -87,6 +87,7 @@ import universalLinksRoutes from './api/universal-links/universal-links.routes';
 import tenantAdminsRoutes from './api/tenantAdmins/tenantAdmins.routes';
 import newspaperArticlesRoutes from './api/newspaperArticles/newspaperArticles.routes';
 import journalistRoutes from './api/journalist/journalist.routes';
+import journalistPresidentRoutes from './api/journalist/president.routes';
 
 const app = express();
 
@@ -361,6 +362,7 @@ app.use('/analytics', analyticsRoutes);
 app.use('/tenant-admins', tenantAdminsRoutes);
 // Journalist Union Module
 app.use('/journalist', journalistRoutes);
+app.use('/journalist/president', journalistPresidentRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -434,7 +436,8 @@ apiV1.use('/reporters', reportersRoutes);
 // Tenant Admins - simplified CRUD (also under /api/v1)
 apiV1.use('/tenant-admins', tenantAdminsRoutes);
 apiV1.use('/reporters/me', reportersMeIdCardRoutes);  // Journalist Union Module
-  apiV1.use('/journalist', journalistRoutes);// Public helper: used by public join to list designation options
+apiV1.use('/journalist', journalistRoutes);
+apiV1.use('/journalist/president', journalistPresidentRoutes);// Public helper: used by public join to list designation options
 apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);
 apiV1.use('/reporter-payments', reporterPaymentsRoutes);
 apiV1.use('/tenant-theme', tenantThemeRoutes);

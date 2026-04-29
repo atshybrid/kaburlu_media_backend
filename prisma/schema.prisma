@@ -2542,6 +2542,7 @@ model JournalistInsurance {
   validTo         DateTime
   isActive        Boolean                 @default(true)
   notes           String?                 /// Any additional notes
+  insuranceCardUrl String?                /// URL of uploaded insurance card/policy document image
   assignedById    String                  /// userId of admin who assigned
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
