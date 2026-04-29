@@ -565,9 +565,61 @@ export const uploadPdfIssue = async (req: Request, res: Response) => {
     const issueDate = parseIsoDateOnly(issueDateStr);
     const tenantId = ctx.tenantId;
 
-    // Default: PDF-only mode. Legacy image generation only via explicit generateImages=true
-    const uploadFn = generateImages ? upsertPdfIssueFromBuffer : upsertPdfIssueFromBufferPdfOnly;
-    const result = await uploadFn({
+    if (generateImages) {
+      // LEGACY MODE with image generation: save PDF-only first → respond 202 immediately
+      // → generate PNG/WebP/JPEG pages in background to avoid nginx 504 timeout.
+      const initialResult = await upsertPdfIssueFromBufferPdfOnly({
+        tenantId,
+        userId: ctx.userId,
+        issueDateStr,
+        issueDate,
+        editionId,
+        subEditionId,
+        pdfBuffer: file.buffer,
+      });
+
+      res.status(202).json({
+        ok: true,
+        processing: true,
+        issue: initialResult.issue,
+        uploaded: initialResult.uploaded,
+        message: 'PDF saved. Page images are being generated in the background (generateImages=true). Check the issue record shortly.',
+      });
+
+      // Fire-and-forget: generate images and update the DB record
+      const pdfBuffer = file.buffer; // capture reference before request scope ends
+      upsertPdfIssueFromBuffer({
+        tenantId,
+        userId: ctx.userId,
+        issueDateStr,
+        issueDate,
+        editionId,
+        subEditionId,
+        pdfBuffer,
+      }).then((result) => {
+        const issue: any = result?.issue;
+        if (issue) {
+          triggerPublishedEpaperWebPush({
+            tenantId,
+            issueId: String(issue.id),
+            issueDate: issue.issueDate,
+            editionSlug: issue?.edition?.slug || undefined,
+            subEditionSlug: issue?.subEdition?.slug || undefined,
+            editionName: issue?.edition?.name || undefined,
+            subEditionName: issue?.subEdition?.name || undefined,
+            coverImageUrl: issue?.coverImageUrlWebp || issue?.coverImageUrl || undefined,
+          }).catch((err) => console.error('[WebPushPublish] ePaper publish push failed:', err));
+        }
+        console.log(`[ePaper] Background image generation complete for ${tenantId} ${issueDateStr}`);
+      }).catch((err) => {
+        console.error(`[ePaper] Background image generation failed for ${tenantId} ${issueDateStr}:`, err?.message);
+      });
+
+      return;
+    }
+
+    // PDF-only mode (default)
+    const result = await upsertPdfIssueFromBufferPdfOnly({
       tenantId,
       userId: ctx.userId,
       issueDateStr,
