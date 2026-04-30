@@ -319,6 +319,7 @@ function toDesignerBlock(article: any) {
       null,
 
     // ── Timestamps ───────────────────────────────────────────────────────────
+    publishedAt: article.createdAt,   // alias used by designer frontend
     createdAt: article.createdAt,
     updatedAt: article.updatedAt,
   };
@@ -417,6 +418,28 @@ export const getDesignerArticles = async (req: Request, res: Response) => {
       if (fromDate) createdAt.gte = fromDate;
       if (toDate) createdAt.lte = toDate;
       where.createdAt = createdAt;
+    }
+
+    // issueDate: filter articles created within the IST calendar day
+    // e.g. issueDate=2026-04-30 → createdAt in [2026-04-29T18:30:00Z, 2026-04-30T18:29:59.999Z]
+    if (q.issueDate && !q.fromDate && !q.toDate) {
+      const istStart = istLocalToUtc(q.issueDate, 0, 0, 0, 0);
+      const istEnd   = istLocalToUtc(q.issueDate, 23, 59, 59, 999);
+      if (!isNaN(istStart.getTime()) && !isNaN(istEnd.getTime())) {
+        where.createdAt = { gte: istStart, lte: istEnd };
+      }
+    }
+
+    // editionId (EpaperPublicationEdition): resolve its stateId and filter articles by stateId
+    if (q.editionId) {
+      const edition = await p.epaperPublicationEdition.findFirst({
+        where: { id: q.editionId, tenantId: ctx.tenantId },
+        select: { id: true, stateId: true },
+      }).catch(() => null);
+      if (edition?.stateId) {
+        where.stateId = edition.stateId;
+      }
+      // If edition has no stateId, we still accept the param but don't further filter by state
     }
 
     // Full-text search on title or content
@@ -780,5 +803,190 @@ export const getSmartDesignSections = async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error('[epaperDesigner] getSmartDesignSections:', e);
     return res.status(500).json({ error: 'Failed to build smart design sections', details: String(e?.message ?? e) });
+  }
+};
+
+// ============================================================================
+// POST /epaper/layout/save
+// ============================================================================
+
+/**
+ * Save (upsert) the daily ePaper designer layout for a given
+ * tenant + publicationEdition + issueDate.
+ *
+ * Body: { tenantId?, editionId?, issueDate, pages: [{ pageNumber, placements: [...] }] }
+ */
+export const saveDesignerLayout = async (req: Request, res: Response) => {
+  try {
+    const ctx = await resolveAdminTenantContext(req);
+    if (!ctx.tenantId) {
+      return res.status(400).json({ error: 'Tenant context required – pass tenantId query param or authenticate with a tenant-scoped account' });
+    }
+
+    const body = req.body as {
+      tenantId?: string;
+      editionId?: string;
+      issueDate: string;
+      pages: Array<{
+        pageNumber: number;
+        placements: Array<{ articleId: string; blockCode: string; position: number }>;
+      }>;
+    };
+
+    const { issueDate, editionId, pages } = body;
+
+    if (!issueDate || !Array.isArray(pages)) {
+      return res.status(400).json({ error: 'issueDate and pages[] are required' });
+    }
+
+    const issueDateParsed = parseDateOnly(issueDate);
+    if (!issueDateParsed) {
+      return res.status(400).json({ error: 'issueDate must be in YYYY-MM-DD format' });
+    }
+
+    // Validate editionId belongs to this tenant if provided
+    if (editionId) {
+      const edition = await p.epaperPublicationEdition.findFirst({
+        where: { id: editionId, tenantId: ctx.tenantId },
+      }).catch(() => null);
+      if (!edition) {
+        return res.status(400).json({ error: 'editionId not found or does not belong to this tenant' });
+      }
+    }
+
+    const savedById = (req.user as any)?.id ?? null;
+
+    const issueDateTime = new Date(Date.UTC(issueDateParsed.y, issueDateParsed.m - 1, issueDateParsed.d));
+
+    const existing = await p.epaperDesignerDraft.findFirst({
+      where: {
+        tenantId: ctx.tenantId,
+        publicationEditionId: editionId ?? null,
+        issueDate: issueDateTime,
+      },
+      select: { id: true },
+    });
+
+    let draft;
+    if (existing) {
+      draft = await p.epaperDesignerDraft.update({
+        where: { id: existing.id },
+        data: { pages: pages as any, savedById, updatedAt: new Date() },
+      });
+    } else {
+      draft = await p.epaperDesignerDraft.create({
+        data: {
+          tenantId: ctx.tenantId,
+          publicationEditionId: editionId ?? null,
+          issueDate: issueDateTime,
+          pages: pages as any,
+          savedById,
+        },
+      });
+    }
+
+    return res.json({ ok: true, layoutId: draft.id, savedAt: draft.updatedAt });
+  } catch (e: any) {
+    console.error('[epaperDesigner] saveDesignerLayout:', e);
+    return res.status(500).json({ error: 'Failed to save layout', details: String(e?.message ?? e) });
+  }
+};
+
+// ============================================================================
+// GET /epaper/layout
+// ============================================================================
+
+/**
+ * Load the saved daily ePaper designer layout for a given
+ * tenant + publicationEdition + issueDate. Returns the pages JSON plus
+ * enriched block data for each articleId in each placement.
+ */
+export const getDesignerLayout = async (req: Request, res: Response) => {
+  try {
+    const ctx = await resolveAdminTenantContext(req);
+    if (!ctx.tenantId) {
+      return res.status(400).json({ error: 'Tenant context required – pass tenantId query param or authenticate with a tenant-scoped account' });
+    }
+
+    const q = req.query as Record<string, string | undefined>;
+    const issueDate = q.issueDate ? String(q.issueDate).trim() : null;
+    const editionId = q.editionId ? String(q.editionId).trim() : null;
+
+    if (!issueDate) {
+      return res.status(400).json({ error: 'issueDate query param is required (YYYY-MM-DD)' });
+    }
+
+    const issueDateParsed = parseDateOnly(issueDate);
+    if (!issueDateParsed) {
+      return res.status(400).json({ error: 'issueDate must be in YYYY-MM-DD format' });
+    }
+
+    const issueDateTime = new Date(Date.UTC(issueDateParsed.y, issueDateParsed.m - 1, issueDateParsed.d));
+
+    const draft = await p.epaperDesignerDraft.findFirst({
+      where: {
+        tenantId: ctx.tenantId,
+        publicationEditionId: editionId ?? null,
+        issueDate: issueDateTime,
+      },
+    });
+
+    if (!draft) {
+      return res.json({
+        found: false,
+        tenantId: ctx.tenantId,
+        editionId: editionId ?? null,
+        issueDate,
+        pages: [],
+      });
+    }
+
+    // Enrich: resolve article blocks for each placement
+    const pages = Array.isArray(draft.pages) ? (draft.pages as any[]) : [];
+
+    // Collect all distinct articleIds to batch-fetch
+    const articleIds = new Set<string>();
+    for (const page of pages) {
+      if (Array.isArray(page.placements)) {
+        for (const pl of page.placements) {
+          if (pl.articleId) articleIds.add(pl.articleId);
+        }
+      }
+    }
+
+    let blockMap = new Map<string, any>();
+    if (articleIds.size > 0) {
+      const rawArticles = await p.newspaperArticle.findMany({
+        where: { id: { in: Array.from(articleIds) } },
+        include: DESIGNER_INCLUDE,
+      });
+      const enriched = await enrichArticlesWithLocationNames(rawArticles);
+      for (const a of enriched) {
+        blockMap.set(a.id, toDesignerBlock(a));
+      }
+    }
+
+    const enrichedPages = pages.map((page: any) => ({
+      pageNumber: page.pageNumber,
+      placements: Array.isArray(page.placements)
+        ? page.placements.map((pl: any) => ({
+            ...pl,
+            block: blockMap.get(pl.articleId) ?? null,
+          }))
+        : [],
+    }));
+
+    return res.json({
+      found: true,
+      layoutId: draft.id,
+      tenantId: ctx.tenantId,
+      editionId: draft.publicationEditionId ?? null,
+      issueDate,
+      savedAt: draft.updatedAt,
+      pages: enrichedPages,
+    });
+  } catch (e: any) {
+    console.error('[epaperDesigner] getDesignerLayout:', e);
+    return res.status(500).json({ error: 'Failed to load layout', details: String(e?.message ?? e) });
   }
 };

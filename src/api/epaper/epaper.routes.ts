@@ -87,6 +87,8 @@ import {
   assignBlockTemplate,
   getDesignerTemplates,
   getSmartDesignSections,
+  saveDesignerLayout,
+  getDesignerLayout,
 } from './epaperDesigner.controller';
 
 const router = Router();
@@ -3902,5 +3904,136 @@ router.patch('/designer/articles/:articleId/block-template', auth, assignBlockTe
  *         description: Unauthorized
  */
 router.get('/designer/templates', auth, getDesignerTemplates);
+
+/**
+ * @swagger
+ * /epaper/layout/save:
+ *   post:
+ *     summary: Save (upsert) the daily ePaper designer layout
+ *     description: |
+ *       Saves the full page-placement layout for a given tenant + publication edition + issueDate.
+ *       If a layout already exists for that combination, it will be overwritten.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [issueDate, pages]
+ *             properties:
+ *               tenantId:
+ *                 type: string
+ *                 description: Tenant ID (SUPER_ADMIN only)
+ *               editionId:
+ *                 type: string
+ *                 description: EpaperPublicationEdition ID (optional, for multi-edition tenants)
+ *               issueDate:
+ *                 type: string
+ *                 format: date
+ *                 example: "2026-04-30"
+ *               pages:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     pageNumber: { type: integer, example: 1 }
+ *                     placements:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           articleId: { type: string }
+ *                           blockCode: { type: string, example: "BLOCK-12A" }
+ *                           position: { type: integer, example: 0 }
+ *           example:
+ *             issueDate: "2026-04-30"
+ *             editionId: "clx_edition_abc"
+ *             pages:
+ *               - pageNumber: 1
+ *                 placements:
+ *                   - articleId: "clx_article_001"
+ *                     blockCode: "BLOCK-12A"
+ *                     position: 0
+ *     responses:
+ *       200:
+ *         description: Layout saved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 layoutId: { type: string }
+ *                 savedAt: { type: string, format: date-time }
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/layout/save', auth, saveDesignerLayout);
+
+/**
+ * @swagger
+ * /epaper/layout:
+ *   get:
+ *     summary: Load saved daily ePaper designer layout
+ *     description: |
+ *       Returns the saved layout for a given tenant + publication edition + issueDate,
+ *       with each placement enriched with full article block data.
+ *     tags: [Epaper Designer]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: issueDate
+ *         required: true
+ *         schema: { type: string, format: date }
+ *         example: "2026-04-30"
+ *       - in: query
+ *         name: editionId
+ *         schema: { type: string }
+ *         description: EpaperPublicationEdition ID (optional)
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Tenant ID (SUPER_ADMIN only)
+ *     responses:
+ *       200:
+ *         description: Layout data (found=false if no layout saved yet)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 found: { type: boolean }
+ *                 layoutId: { type: string }
+ *                 tenantId: { type: string }
+ *                 editionId: { type: string, nullable: true }
+ *                 issueDate: { type: string }
+ *                 savedAt: { type: string, format: date-time }
+ *                 pages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       pageNumber: { type: integer }
+ *                       placements:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             articleId: { type: string }
+ *                             blockCode: { type: string }
+ *                             position: { type: integer }
+ *                             block: { $ref: '#/components/schemas/DesignerBlock' }
+ *       400:
+ *         description: issueDate required
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/layout', auth, getDesignerLayout);
 
 export default router;

@@ -148,6 +148,7 @@ model User {
   proofRequestsAssigned  ArticleProofRequest[]  @relation("ProofRequest_AssignedTo")
   proofRequestsCreated   ArticleProofRequest[]  @relation("ProofRequest_RequestedBy")
   proofRequestsReviewed  ArticleProofRequest[]  @relation("ProofRequest_ReviewedBy")
+  epaperDesignerDrafts   EpaperDesignerDraft[]  @relation("User_EpaperDesignerDrafts")
   articleReads           ArticleRead[]
   articleViews           ArticleView[]
   comments               Comment[]
@@ -502,6 +503,7 @@ model Tenant {
   epaperPublicationEditions    EpaperPublicationEdition[]    @relation("Tenant_EpaperPublicationEditions")
   epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("Tenant_EpaperPublicationSubEditions")
   epaperSettings               EpaperSettings?               @relation("Tenant_EpaperSettings")
+  epaperDesignerDrafts         EpaperDesignerDraft[]         @relation("Tenant_EpaperDesignerDrafts")
   homepageSectionConfigs       HomepageSectionConfig[]
   newsletterSubscriptions      NewsletterSubscription[]
   newspaperArticles            NewspaperArticle[]
@@ -555,6 +557,7 @@ model EpaperPublicationEdition {
   state          State?                        @relation("State_EpaperPublicationEditions", fields: [stateId], references: [id])
   tenant         Tenant                        @relation("Tenant_EpaperPublicationEditions", fields: [tenantId], references: [id], onDelete: Cascade)
   subEditions    EpaperPublicationSubEdition[]
+  designerDrafts EpaperDesignerDraft[]         @relation("Edition_EpaperDesignerDrafts")
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -2194,6 +2197,30 @@ model EpaperPageLayout {
   @@index([pageNumber])
   @@index([articleId])
   @@index([blockTemplateId])
+}
+
+/// Daily ePaper designer layout draft — stores page placements for a given
+/// tenant + publication edition + issue date as JSON.
+/// One row per (tenantId, publicationEditionId, issueDate) combination.
+model EpaperDesignerDraft {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  publicationEditionId  String?
+  issueDate             DateTime  @db.Date
+  /// JSON array: [{ pageNumber, placements: [{ articleId, blockCode, position }] }]
+  pages                 Json      @default("[]")
+  savedById             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant                Tenant    @relation("Tenant_EpaperDesignerDrafts", fields: [tenantId], references: [id], onDelete: Cascade)
+  publicationEdition    EpaperPublicationEdition? @relation("Edition_EpaperDesignerDrafts", fields: [publicationEditionId], references: [id], onDelete: SetNull)
+  savedBy               User?     @relation("User_EpaperDesignerDrafts", fields: [savedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, publicationEditionId, issueDate])
+  @@index([tenantId])
+  @@index([issueDate])
+  @@index([publicationEditionId])
 }
 
 /// Proof request created by admin/editor for an article
