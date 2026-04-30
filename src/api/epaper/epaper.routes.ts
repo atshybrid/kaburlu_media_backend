@@ -3623,6 +3623,18 @@ router.post('/clips/detect', auth, detectClips);
  *         schema: { type: string }
  *         description: Filter by mandal
  *       - in: query
+ *         name: issueDate
+ *         schema: { type: string, format: date, example: "2026-04-30" }
+ *         description: |
+ *           Filter articles created within this IST calendar day.
+ *           Format: YYYY-MM-DD. Mutually exclusive with fromDate/toDate.
+ *       - in: query
+ *         name: editionId
+ *         schema: { type: string }
+ *         description: |
+ *           EpaperPublicationEdition ID. Articles are filtered by the edition's stateId.
+ *           Use GET /epaper/editions to list available editions.
+ *       - in: query
  *         name: fromDate
  *         schema: { type: string, format: date-time }
  *         description: "Filter articles created on or after this date (ISO 8601)"
@@ -3656,11 +3668,62 @@ router.post('/clips/detect', auth, detectClips);
  *               properties:
  *                 page: { type: integer, example: 1 }
  *                 pageSize: { type: integer, example: 50 }
- *                 total: { type: integer, example: 120 }
- *                 totalPages: { type: integer, example: 3 }
+ *                 total: { type: integer, example: 3 }
+ *                 totalPages: { type: integer, example: 1 }
  *                 blocks:
  *                   type: array
  *                   items: { $ref: '#/components/schemas/DesignerBlock' }
+ *             examples:
+ *               issueDate_filter:
+ *                 summary: Filter by issueDate + editionId
+ *                 value:
+ *                   page: 1
+ *                   pageSize: 50
+ *                   total: 3
+ *                   totalPages: 1
+ *                   blocks:
+ *                     - id: "cmxarticle001abc"
+ *                       title: "తెలంగాణ బడ్జెట్ సెషన్ ప్రారంభం"
+ *                       subTitle: "రాష్ట్ర అభివృద్ధికి కీలక నిర్ణయాలు"
+ *                       wordCount: 320
+ *                       charCount: 1840
+ *                       isBreaking: true
+ *                       status: "PUBLISHED"
+ *                       publishedAt: "2026-04-30T04:25:00.000Z"
+ *                       createdAt: "2026-04-30T04:25:00.000Z"
+ *                       featuredImageUrl: "https://cdn.example.com/articles/img1.webp"
+ *                       districtName: "హైదరాబాద్"
+ *                       category:
+ *                         id: "cmxcat001"
+ *                         name: "రాజకీయాలు"
+ *                         slug: "politics"
+ *                       assignedBlockTemplate:
+ *                         id: "cmxtemplate001"
+ *                         code: "BLOCK-6A"
+ *                         name: "Single Column Lead"
+ *                         columns: 6
+ *                       suggestedBlockTemplate: null
+ *                     - id: "cmxarticle002xyz"
+ *                       title: "జిల్లా కలెక్టర్ సమీక్ష సమావేశం"
+ *                       subTitle: null
+ *                       wordCount: 180
+ *                       charCount: 1020
+ *                       isBreaking: false
+ *                       status: "PUBLISHED"
+ *                       publishedAt: "2026-04-30T05:10:00.000Z"
+ *                       createdAt: "2026-04-30T05:10:00.000Z"
+ *                       featuredImageUrl: null
+ *                       districtName: "కరీంనగర్"
+ *                       category:
+ *                         id: "cmxcat002"
+ *                         name: "జిల్లా వార్తలు"
+ *                         slug: "district-news"
+ *                       assignedBlockTemplate: null
+ *                       suggestedBlockTemplate:
+ *                         id: "cmxtemplate002"
+ *                         code: "BLOCK-4B"
+ *                         name: "Two Column Standard"
+ *                         columns: 4
  *       400:
  *         description: Tenant context missing
  *       401:
@@ -3912,7 +3975,14 @@ router.get('/designer/templates', auth, getDesignerTemplates);
  *     summary: Save (upsert) the daily ePaper designer layout
  *     description: |
  *       Saves the full page-placement layout for a given tenant + publication edition + issueDate.
- *       If a layout already exists for that combination, it will be overwritten.
+ *       If a layout already exists for that combination, it will be **overwritten** (upsert).
+ *
+ *       Each page has a `pageNumber` and an ordered list of `placements`. Each placement records
+ *       which `articleId` is placed, which `blockCode` (template code) to render it in, and its
+ *       `position` (sort index) on the page.
+ *
+ *       **Auth:** JWT required.  Tenant resolved from JWT reporter profile or `X-Tenant-Id` header.
+ *       SUPER_ADMIN can pass `tenantId` in body.
  *     tags: [Epaper Designer]
  *     security:
  *       - bearerAuth: []
@@ -3929,34 +3999,72 @@ router.get('/designer/templates', auth, getDesignerTemplates);
  *                 description: Tenant ID (SUPER_ADMIN only)
  *               editionId:
  *                 type: string
- *                 description: EpaperPublicationEdition ID (optional, for multi-edition tenants)
+ *                 description: |
+ *                   EpaperPublicationEdition ID. Use for multi-edition tenants (state edition, city edition etc.).
+ *                   Omit for single-edition tenants.
  *               issueDate:
  *                 type: string
  *                 format: date
  *                 example: "2026-04-30"
+ *                 description: Issue date in YYYY-MM-DD format
  *               pages:
  *                 type: array
+ *                 description: All pages of this issue. Send the complete layout — it replaces any previous save.
  *                 items:
  *                   type: object
+ *                   required: [pageNumber, placements]
  *                   properties:
- *                     pageNumber: { type: integer, example: 1 }
+ *                     pageNumber:
+ *                       type: integer
+ *                       example: 1
  *                     placements:
  *                       type: array
  *                       items:
  *                         type: object
+ *                         required: [articleId, blockCode, position]
  *                         properties:
- *                           articleId: { type: string }
- *                           blockCode: { type: string, example: "BLOCK-12A" }
- *                           position: { type: integer, example: 0 }
- *           example:
- *             issueDate: "2026-04-30"
- *             editionId: "clx_edition_abc"
- *             pages:
- *               - pageNumber: 1
- *                 placements:
- *                   - articleId: "clx_article_001"
- *                     blockCode: "BLOCK-12A"
- *                     position: 0
+ *                           articleId:
+ *                             type: string
+ *                             description: NewspaperArticle ID
+ *                             example: "cmxarticle001abc"
+ *                           blockCode:
+ *                             type: string
+ *                             description: EpaperBlockTemplate.code to render this article in
+ *                             example: "BLOCK-6A"
+ *                           position:
+ *                             type: integer
+ *                             description: 0-based sort position on the page
+ *                             example: 0
+ *           examples:
+ *             single_page:
+ *               summary: 2-page layout with 3 articles
+ *               value:
+ *                 issueDate: "2026-04-30"
+ *                 editionId: "cmxedition_hyderabad"
+ *                 pages:
+ *                   - pageNumber: 1
+ *                     placements:
+ *                       - articleId: "cmxarticle001abc"
+ *                         blockCode: "BLOCK-6A"
+ *                         position: 0
+ *                       - articleId: "cmxarticle002xyz"
+ *                         blockCode: "BLOCK-4B"
+ *                         position: 1
+ *                   - pageNumber: 2
+ *                     placements:
+ *                       - articleId: "cmxarticle003pqr"
+ *                         blockCode: "BLOCK-3C"
+ *                         position: 0
+ *             no_edition:
+ *               summary: Single-edition tenant (no editionId)
+ *               value:
+ *                 issueDate: "2026-04-30"
+ *                 pages:
+ *                   - pageNumber: 1
+ *                     placements:
+ *                       - articleId: "cmxarticle001abc"
+ *                         blockCode: "BLOCK-6A"
+ *                         position: 0
  *     responses:
  *       200:
  *         description: Layout saved successfully
@@ -3966,10 +4074,18 @@ router.get('/designer/templates', auth, getDesignerTemplates);
  *               type: object
  *               properties:
  *                 ok: { type: boolean, example: true }
- *                 layoutId: { type: string }
- *                 savedAt: { type: string, format: date-time }
+ *                 layoutId: { type: string, example: "cmxdraft_abc123" }
+ *                 savedAt: { type: string, format: date-time, example: "2026-04-30T08:15:00.000Z" }
+ *             example:
+ *               ok: true
+ *               layoutId: "cmxdraft_abc123"
+ *               savedAt: "2026-04-30T08:15:00.000Z"
  *       400:
- *         description: Validation error
+ *         description: Validation error (missing issueDate, bad editionId, etc.)
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "issueDate and pages[] are required"
  *       401:
  *         description: Unauthorized
  */
@@ -3981,8 +4097,15 @@ router.post('/layout/save', auth, saveDesignerLayout);
  *   get:
  *     summary: Load saved daily ePaper designer layout
  *     description: |
- *       Returns the saved layout for a given tenant + publication edition + issueDate,
- *       with each placement enriched with full article block data.
+ *       Returns the saved layout for a given tenant + publication edition + issueDate.
+ *       Each placement is **enriched** with the full `DesignerBlock` article data so the
+ *       frontend can immediately render the layout without a second articles fetch.
+ *
+ *       If no layout has been saved yet for that date+edition, returns `{ found: false, pages: [] }`
+ *       — the frontend should treat this as an empty canvas.
+ *
+ *       **Auth:** JWT required.  Tenant resolved from JWT reporter profile or `X-Tenant-Id` header.
+ *       SUPER_ADMIN can pass `tenantId` query param.
  *     tags: [Epaper Designer]
  *     security:
  *       - bearerAuth: []
@@ -3990,30 +4113,30 @@ router.post('/layout/save', auth, saveDesignerLayout);
  *       - in: query
  *         name: issueDate
  *         required: true
- *         schema: { type: string, format: date }
- *         example: "2026-04-30"
+ *         schema: { type: string, format: date, example: "2026-04-30" }
+ *         description: Issue date to load (YYYY-MM-DD)
  *       - in: query
  *         name: editionId
  *         schema: { type: string }
- *         description: EpaperPublicationEdition ID (optional)
+ *         description: EpaperPublicationEdition ID. Omit for single-edition tenants.
  *       - in: query
  *         name: tenantId
  *         schema: { type: string }
  *         description: Tenant ID (SUPER_ADMIN only)
  *     responses:
  *       200:
- *         description: Layout data (found=false if no layout saved yet)
+ *         description: Layout data — check `found` field before rendering
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 found: { type: boolean }
- *                 layoutId: { type: string }
+ *                 layoutId: { type: string, nullable: true }
  *                 tenantId: { type: string }
  *                 editionId: { type: string, nullable: true }
  *                 issueDate: { type: string }
- *                 savedAt: { type: string, format: date-time }
+ *                 savedAt: { type: string, format: date-time, nullable: true }
  *                 pages:
  *                   type: array
  *                   items:
@@ -4028,9 +4151,82 @@ router.post('/layout/save', auth, saveDesignerLayout);
  *                             articleId: { type: string }
  *                             blockCode: { type: string }
  *                             position: { type: integer }
- *                             block: { $ref: '#/components/schemas/DesignerBlock' }
+ *                             block:
+ *                               description: Full DesignerBlock (null if article was deleted)
+ *                               nullable: true
+ *                               allOf:
+ *                                 - $ref: '#/components/schemas/DesignerBlock'
+ *             examples:
+ *               layout_found:
+ *                 summary: Layout exists — 2 pages with enriched blocks
+ *                 value:
+ *                   found: true
+ *                   layoutId: "cmxdraft_abc123"
+ *                   tenantId: "cmxtenant001"
+ *                   editionId: "cmxedition_hyderabad"
+ *                   issueDate: "2026-04-30"
+ *                   savedAt: "2026-04-30T08:15:00.000Z"
+ *                   pages:
+ *                     - pageNumber: 1
+ *                       placements:
+ *                         - articleId: "cmxarticle001abc"
+ *                           blockCode: "BLOCK-6A"
+ *                           position: 0
+ *                           block:
+ *                             id: "cmxarticle001abc"
+ *                             title: "తెలంగాణ బడ్జెట్ సెషన్ ప్రారంభం"
+ *                             wordCount: 320
+ *                             charCount: 1840
+ *                             isBreaking: true
+ *                             status: "PUBLISHED"
+ *                             publishedAt: "2026-04-30T04:25:00.000Z"
+ *                             districtName: "హైదరాబాద్"
+ *                             featuredImageUrl: "https://cdn.example.com/articles/img1.webp"
+ *                             assignedBlockTemplate:
+ *                               code: "BLOCK-6A"
+ *                               name: "Single Column Lead"
+ *                               columns: 6
+ *                         - articleId: "cmxarticle002xyz"
+ *                           blockCode: "BLOCK-4B"
+ *                           position: 1
+ *                           block:
+ *                             id: "cmxarticle002xyz"
+ *                             title: "జిల్లా కలెక్టర్ సమీక్ష సమావేశం"
+ *                             wordCount: 180
+ *                             charCount: 1020
+ *                             isBreaking: false
+ *                             status: "PUBLISHED"
+ *                             publishedAt: "2026-04-30T05:10:00.000Z"
+ *                             districtName: "కరీంనగర్"
+ *                             featuredImageUrl: null
+ *                             assignedBlockTemplate: null
+ *                     - pageNumber: 2
+ *                       placements:
+ *                         - articleId: "cmxarticle003pqr"
+ *                           blockCode: "BLOCK-3C"
+ *                           position: 0
+ *                           block:
+ *                             id: "cmxarticle003pqr"
+ *                             title: "వ్యవసాయ పంట నష్టాలకు నష్ట పరిహారం"
+ *                             wordCount: 210
+ *                             isBreaking: false
+ *                             status: "PUBLISHED"
+ *                             publishedAt: "2026-04-30T06:00:00.000Z"
+ *                             districtName: "నల్గొండ"
+ *               layout_not_found:
+ *                 summary: No layout saved yet for this date
+ *                 value:
+ *                   found: false
+ *                   tenantId: "cmxtenant001"
+ *                   editionId: "cmxedition_hyderabad"
+ *                   issueDate: "2026-04-30"
+ *                   pages: []
  *       400:
- *         description: issueDate required
+ *         description: issueDate query param missing or invalid
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "issueDate query param is required (YYYY-MM-DD)"
  *       401:
  *         description: Unauthorized
  */
