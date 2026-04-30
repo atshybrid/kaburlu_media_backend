@@ -91,6 +91,12 @@ import {
   getDesignerLayout,
 } from './epaperDesigner.controller';
 
+// Epaper ML Training imports
+import {
+  createMlTrainingSample,
+  listMlTrainingSamples,
+} from './epaperMlTraining.controller';
+
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 const epaperPdfMaxMb = Number((config as any)?.epaper?.pdfMaxMb || 30);
@@ -4231,5 +4237,242 @@ router.post('/layout/save', auth, saveDesignerLayout);
  *         description: Unauthorized
  */
 router.get('/layout', auth, getDesignerLayout);
+
+// ============================================================================
+// EPAPER ML TRAINING APIS
+// ============================================================================
+
+/**
+ * @swagger
+ * tags:
+ *   name: Epaper ML Training
+ *   description: >
+ *     Register newspaper PDF samples for layout AI/ML training.
+ *     Files must be pre-uploaded to the `epaper/training/` storage folder.
+ *     The backend stores metadata and queues the PDF for parsing.
+ */
+
+/**
+ * @swagger
+ * /epaper/ml-training/samples:
+ *   post:
+ *     summary: Register a newspaper PDF as an ML training sample
+ *     description: |
+ *       Records a pre-uploaded newspaper PDF as a training sample for the layout AI model.
+ *       The file must already be uploaded to `epaper/training/` in storage — this endpoint
+ *       only registers the metadata and sets `status: pending_processing`.
+ *
+ *       Returns **409** if the same `pdfUrl` is already registered.
+ *
+ *       **Auth:** JWT required. Any authenticated user can submit samples.
+ *       SUPER_ADMIN can optionally pass `tenantId` to associate the sample with a tenant.
+ *     tags: [Epaper ML Training]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pdfUrl, issueDate, layoutStyle, columns, language, fileName]
+ *             properties:
+ *               pdfUrl:
+ *                 type: string
+ *                 description: Public URL of the already-uploaded PDF
+ *                 example: "https://storage.kaburlumedia.com/epaper/training/tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *               issueDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Issue date of the newspaper in YYYY-MM-DD format
+ *                 example: "2026-04-30"
+ *               layoutStyle:
+ *                 type: string
+ *                 enum: [broadsheet, tabloid, berliner, magazine, other]
+ *                 description: Newspaper layout format
+ *                 example: "tabloid"
+ *               columns:
+ *                 type: integer
+ *                 minimum: 3
+ *                 maximum: 8
+ *                 description: Number of columns in the newspaper layout
+ *                 example: 5
+ *               language:
+ *                 type: string
+ *                 description: Language of the newspaper content
+ *                 example: "Telugu"
+ *               fileName:
+ *                 type: string
+ *                 description: Original file name
+ *                 example: "tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *               tenantId:
+ *                 type: string
+ *                 description: Tenant UUID (optional; SUPER_ADMIN only)
+ *                 example: "cmxtenant001abc"
+ *           examples:
+ *             telugu_tabloid:
+ *               summary: Telugu tabloid newspaper — 5 columns
+ *               value:
+ *                 pdfUrl: "https://storage.kaburlumedia.com/epaper/training/tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *                 issueDate: "2026-04-30"
+ *                 layoutStyle: "tabloid"
+ *                 columns: 5
+ *                 language: "Telugu"
+ *                 fileName: "tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *                 tenantId: "cmxtenant001abc"
+ *             hindi_broadsheet:
+ *               summary: Hindi broadsheet — 6 columns (no tenantId)
+ *               value:
+ *                 pdfUrl: "https://storage.kaburlumedia.com/epaper/training/hs-2026-04-30-HND-6_01.pdf"
+ *                 issueDate: "2026-04-30"
+ *                 layoutStyle: "broadsheet"
+ *                 columns: 6
+ *                 language: "Hindi"
+ *                 fileName: "hs-2026-04-30-HND-6_01.pdf"
+ *     responses:
+ *       201:
+ *         description: Sample registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *                 pdfUrl: { type: string }
+ *                 fileName: { type: string }
+ *                 issueDate: { type: string, format: date }
+ *                 layoutStyle: { type: string }
+ *                 columns: { type: integer }
+ *                 language: { type: string }
+ *                 tenantId: { type: string, nullable: true }
+ *                 status: { type: string, example: "pending_processing" }
+ *                 createdAt: { type: string, format: date-time }
+ *             example:
+ *               id: "cmxsample001abc"
+ *               pdfUrl: "https://storage.kaburlumedia.com/epaper/training/tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *               fileName: "tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *               issueDate: "2026-04-30T00:00:00.000Z"
+ *               layoutStyle: "tabloid"
+ *               columns: 5
+ *               language: "Telugu"
+ *               tenantId: "cmxtenant001abc"
+ *               status: "pending_processing"
+ *               createdAt: "2026-04-30T10:00:00.000Z"
+ *       400:
+ *         description: Missing or invalid required fields
+ *         content:
+ *           application/json:
+ *             examples:
+ *               missing_fields:
+ *                 value: { error: "Missing required fields: pdfUrl, issueDate" }
+ *               bad_columns:
+ *                 value: { error: "columns must be an integer between 3 and 8" }
+ *               bad_layout:
+ *                 value: { error: "layoutStyle must be one of: broadsheet, tabloid, berliner, magazine, other" }
+ *       401:
+ *         description: Invalid or expired JWT
+ *       409:
+ *         description: PDF already registered
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "A training sample with this pdfUrl is already registered"
+ */
+router.post('/ml-training/samples', auth, createMlTrainingSample);
+
+/**
+ * @swagger
+ * /epaper/ml-training/samples:
+ *   get:
+ *     summary: List registered ML training samples
+ *     description: |
+ *       Returns a paginated list of registered training samples.
+ *       SUPER_ADMIN sees all samples (optionally filtered by `tenantId`).
+ *       Other roles see only their own tenant's samples.
+ *     tags: [Epaper ML Training]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tenantId
+ *         schema: { type: string }
+ *         description: Filter by tenant (SUPER_ADMIN only)
+ *       - in: query
+ *         name: layoutStyle
+ *         schema:
+ *           type: string
+ *           enum: [broadsheet, tabloid, berliner, magazine, other]
+ *         description: Filter by layout style
+ *       - in: query
+ *         name: language
+ *         schema: { type: string }
+ *         description: Filter by language (e.g. Telugu, Hindi)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending_processing, processed, failed]
+ *         description: Filter by processing status
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 100 }
+ *     responses:
+ *       200:
+ *         description: Paginated list of training samples
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       pdfUrl: { type: string }
+ *                       fileName: { type: string }
+ *                       issueDate: { type: string, format: date }
+ *                       layoutStyle: { type: string }
+ *                       columns: { type: integer }
+ *                       language: { type: string }
+ *                       tenantId: { type: string, nullable: true }
+ *                       status: { type: string }
+ *                       createdAt: { type: string, format: date-time }
+ *                 total: { type: integer, example: 6 }
+ *                 page: { type: integer, example: 1 }
+ *                 limit: { type: integer, example: 20 }
+ *             example:
+ *               items:
+ *                 - id: "cmxsample001abc"
+ *                   pdfUrl: "https://storage.kaburlumedia.com/epaper/training/tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *                   fileName: "tp-2026-04-30-TLM-5_02-xxx.pdf"
+ *                   issueDate: "2026-04-30T00:00:00.000Z"
+ *                   layoutStyle: "tabloid"
+ *                   columns: 5
+ *                   language: "Telugu"
+ *                   tenantId: "cmxtenant001abc"
+ *                   status: "pending_processing"
+ *                   createdAt: "2026-04-30T10:00:00.000Z"
+ *                 - id: "cmxsample002xyz"
+ *                   pdfUrl: "https://storage.kaburlumedia.com/epaper/training/hs-2026-04-29-HND-6_01.pdf"
+ *                   fileName: "hs-2026-04-29-HND-6_01.pdf"
+ *                   issueDate: "2026-04-29T00:00:00.000Z"
+ *                   layoutStyle: "broadsheet"
+ *                   columns: 6
+ *                   language: "Hindi"
+ *                   tenantId: null
+ *                   status: "processed"
+ *                   createdAt: "2026-04-29T09:30:00.000Z"
+ *               total: 6
+ *               page: 1
+ *               limit: 20
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/ml-training/samples', auth, listMlTrainingSamples);
 
 export default router;

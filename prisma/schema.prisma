@@ -148,8 +148,9 @@ model User {
   proofRequestsAssigned  ArticleProofRequest[]  @relation("ProofRequest_AssignedTo")
   proofRequestsCreated   ArticleProofRequest[]  @relation("ProofRequest_RequestedBy")
   proofRequestsReviewed  ArticleProofRequest[]  @relation("ProofRequest_ReviewedBy")
-  epaperDesignerDrafts   EpaperDesignerDraft[]  @relation("User_EpaperDesignerDrafts")
-  articleReads           ArticleRead[]
+  epaperDesignerDrafts     EpaperDesignerDraft[]    @relation("User_EpaperDesignerDrafts")
+  epaperMlTrainingSamples  EpaperMlTrainingSample[] @relation("User_EpaperMlTrainingSamples")
+  articleReads             ArticleRead[]
   articleViews           ArticleView[]
   comments               Comment[]
   contentReactions       ContentReaction[]
@@ -504,6 +505,7 @@ model Tenant {
   epaperPublicationSubEditions EpaperPublicationSubEdition[] @relation("Tenant_EpaperPublicationSubEditions")
   epaperSettings               EpaperSettings?               @relation("Tenant_EpaperSettings")
   epaperDesignerDrafts         EpaperDesignerDraft[]         @relation("Tenant_EpaperDesignerDrafts")
+  epaperMlTrainingSamples      EpaperMlTrainingSample[]      @relation("Tenant_EpaperMlTrainingSamples")
   homepageSectionConfigs       HomepageSectionConfig[]
   newsletterSubscriptions      NewsletterSubscription[]
   newspaperArticles            NewspaperArticle[]
@@ -2221,6 +2223,32 @@ model EpaperDesignerDraft {
   @@index([tenantId])
   @@index([issueDate])
   @@index([publicationEditionId])
+}
+
+/// ML training sample — records a newspaper PDF uploaded for layout AI training.
+/// Backend registers the metadata; a separate worker handles PDF parsing.
+model EpaperMlTrainingSample {
+  id          String   @id @default(cuid())
+  tenantId    String?
+  pdfUrl      String   @unique
+  fileName    String
+  issueDate   DateTime @db.Date
+  layoutStyle String   /// broadsheet | tabloid | berliner | magazine | other
+  columns     Int
+  language    String
+  /// pending_processing | processed | failed
+  status      String   @default("pending_processing")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant?  @relation("Tenant_EpaperMlTrainingSamples", fields: [tenantId], references: [id], onDelete: SetNull)
+  createdBy   User?    @relation("User_EpaperMlTrainingSamples", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([issueDate])
+  @@index([layoutStyle])
+  @@index([status])
 }
 
 /// Proof request created by admin/editor for an article
