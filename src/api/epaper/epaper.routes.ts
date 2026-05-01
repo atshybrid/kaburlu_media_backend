@@ -97,6 +97,12 @@ import {
   listMlTrainingSamples,
 } from './epaperMlTraining.controller';
 
+// Epaper Newspaper Config imports
+import {
+  getNewspaperConfig,
+  upsertNewspaperConfig,
+} from './epaperNewspaperConfig.controller';
+
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
 const epaperPdfMaxMb = Number((config as any)?.epaper?.pdfMaxMb || 30);
@@ -4474,5 +4480,49 @@ router.post('/ml-training/samples', auth, createMlTrainingSample);
  *         description: Unauthorized
  */
 router.get('/ml-training/samples', auth, listMlTrainingSamples);
+
+// ============================================================================
+// NEWSPAPER CONFIG ROUTES
+// ============================================================================
+
+/**
+ * @swagger
+ * /epaper/newspaper-config:
+ *   get:
+ *     summary: Get newspaper publication config
+ *     description: Returns stored config plus computed daily values (current volume, issue number, news window).
+ *     tags: [ePaper - Newspaper Config]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Config + today's computed values
+ *       404:
+ *         description: No config found for this tenant
+ */
+router.get('/newspaper-config', auth, getNewspaperConfig);
+
+/**
+ * @swagger
+ * /epaper/newspaper-config:
+ *   put:
+ *     summary: Create or update newspaper publication config
+ *     description: Upserts the newspaper config. volumeStartDate and issueStartDate are required on first create.
+ *     tags: [ePaper - Newspaper Config]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/EpaperNewspaperConfigInput'
+ *     responses:
+ *       200:
+ *         description: Upserted config + today's computed values
+ *       400:
+ *         description: Validation error
+ */
+router.put('/newspaper-config', auth, upsertNewspaperConfig);
 
 export default router;

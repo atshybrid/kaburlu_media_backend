@@ -506,6 +506,7 @@ model Tenant {
   epaperSettings               EpaperSettings?               @relation("Tenant_EpaperSettings")
   epaperDesignerDrafts         EpaperDesignerDraft[]         @relation("Tenant_EpaperDesignerDrafts")
   epaperMlTrainingSamples      EpaperMlTrainingSample[]      @relation("Tenant_EpaperMlTrainingSamples")
+  epaperNewspaperConfig        EpaperNewspaperConfig?        @relation("Tenant_EpaperNewspaperConfig")
   homepageSectionConfigs       HomepageSectionConfig[]
   newsletterSubscriptions      NewsletterSubscription[]
   newspaperArticles            NewspaperArticle[]
@@ -2249,6 +2250,57 @@ model EpaperMlTrainingSample {
   @@index([issueDate])
   @@index([layoutStyle])
   @@index([status])
+}
+
+/// Daily Newspaper Publication Settings — paper type, page count, logos,
+/// header/sub-header style numbers, PRGI number, volume/issue auto-numbering,
+/// news close time, and per-page cost.
+model EpaperNewspaperConfig {
+  id                    String   @id @default(cuid())
+  tenantId              String   @unique
+
+  /// Paper format: BROADSHEET | TABLOID | BERLINER | MAGAZINE
+  paperType             String   @default("BROADSHEET")
+  /// Default number of pages per issue
+  pageCount             Int      @default(8)
+  /// Per-page cost in INR (for billing / quote display)
+  perPageCost           Float?
+
+  /// Main front-page logo URL
+  mainLogoUrl           String?
+  /// Sub-header logo URL (e.g. slogan banner / edition banner)
+  subHeaderLogoUrl      String?
+
+  /// Header style number (maps to frontend template index)
+  headerStyleNumber     Int      @default(1)
+  /// Sub-header style number
+  subHeaderStyleNumber  Int      @default(1)
+
+  /// PRGI (Press Registrar of India) registration number
+  prgiNumber            String?
+
+  /// Last page footer / printing press text
+  lastPageFooterText    String?
+
+  /// Volume auto-numbering: volume 1 starts on this date
+  volumeStartNumber     Int      @default(1)
+  volumeStartDate       DateTime @db.Date
+
+  /// Issue auto-numbering: issue 1 starts on this date
+  issueStartNumber      Int      @default(1)
+  issueStartDate        DateTime @db.Date
+
+  /// News collection window close time in IST (HH:MM, 24h).
+  /// Articles published from 00:00 IST up to this time are included
+  /// in the next day's paper.
+  newsCloseTime         String   @default("23:00")
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant   @relation("Tenant_EpaperNewspaperConfig", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 /// Proof request created by admin/editor for an article
