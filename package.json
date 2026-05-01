@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "npm run start:dev",
-    "build": "tsc",
+    "build": "npx prisma generate && tsc",
     "start": "node dist/index.js",
     "prestart:dev": "node -e \"const m=Number(process.versions.node.split('.')[0]); if(m!==20){console.warn('Warning: running on '+process.version+'. Recommended Node is 20.x.');}\"",
     "start:dev": "nodemon --watch src --ext ts,js,json --exec \"ts-node --transpile-only src/index.ts\"",
