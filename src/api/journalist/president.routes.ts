@@ -76,7 +76,14 @@ function buildMemberWhere(
   const where: Record<string, unknown> = {};
   if (scope?.unionName) where.unionName = scope.unionName;
   if (scope?.state) where.state = scope.state;
-  return { ...where, ...extra };
+
+  // Do not allow query/state filters to escape state-scoped president access.
+  const sanitizedExtra = { ...extra };
+  if (scope?.state && 'state' in sanitizedExtra) {
+    delete (sanitizedExtra as any).state;
+  }
+
+  return { ...where, ...sanitizedExtra };
 }
 
 function cleanText(v: unknown): string | null {
@@ -766,7 +773,15 @@ router.get('/members', jwtAuth, requireUnionAdmin, async (req, res) => {
         { organization: { contains: q.search, mode: 'insensitive' } },
         { designation: { contains: q.search, mode: 'insensitive' } },
         { district: { contains: q.search, mode: 'insensitive' } },
-        { user: { name: { contains: q.search, mode: 'insensitive' } } },
+        {
+          user: {
+            is: {
+              profile: {
+                is: { fullName: { contains: q.search, mode: 'insensitive' } },
+              },
+            },
+          },
+        },
         { pressId: { contains: q.search, mode: 'insensitive' } },
       ];
     }
