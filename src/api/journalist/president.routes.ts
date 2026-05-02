@@ -809,6 +809,101 @@ router.get('/members', jwtAuth, requireUnionAdmin, async (req, res) => {
   }
 });
 
+// ─── 2b. President Member Mobile Precheck (MUST be before /members/:id) ────────
+/**
+ * @swagger
+ * /journalist/president/members/precheck:
+ *   get:
+ *     summary: President Member Precheck by mobile number
+ *     description: |
+ *       Checks mobile number before creating union member.
+ *       Response includes:
+ *       - `tenantReporter`: whether this mobile is already a tenant reporter
+ *       - `alreadyUnionMember`: whether this mobile already has journalist union membership
+ *       - Full details for both (if available)
+ *     tags: [Journalist President]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: mobileNumber
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "9876543210"
+ *     responses:
+ *       200:
+ *         description: Precheck result
+ *       400:
+ *         description: mobileNumber missing
+ */
+router.get('/members/precheck', jwtAuth, requireUnionAdmin, async (req, res) => {
+  try {
+    const mobileNumber = cleanText(req.query.mobileNumber);
+    if (!mobileNumber) return res.status(400).json({ error: 'mobileNumber is required' });
+
+    const user = await p.user.findUnique({
+      where: { mobileNumber },
+      include: {
+        profile: { select: { fullName: true, profilePhotoUrl: true } },
+        reporterProfile: {
+          include: {
+            tenant: { select: { id: true, name: true } },
+            state: { select: { id: true, name: true } },
+            district: { select: { id: true, name: true } },
+            mandal: { select: { id: true, name: true } },
+            designation: { select: { id: true, name: true, nativeName: true } },
+          },
+        },
+        journalistProfile: {
+          include: {
+            card: { select: { id: true, cardNumber: true, status: true, expiryDate: true, pdfUrl: true } },
+          },
+        },
+      },
+    });
+
+    const tenantReporter = !!user?.reporterProfile;
+    const alreadyUnionMember = !!user?.journalistProfile;
+
+    return res.json({
+      mobileNumber,
+      tenantReporter,
+      alreadyUnionMember,
+      tenantReporterDetails: tenantReporter
+        ? {
+            reporterId: user!.reporterProfile!.id,
+            tenant: user!.reporterProfile!.tenant,
+            designation: user!.reporterProfile!.designation,
+            state: user!.reporterProfile!.state,
+            district: user!.reporterProfile!.district,
+            mandal: user!.reporterProfile!.mandal,
+            fullName: user!.profile?.fullName || null,
+            profilePhotoUrl: user!.reporterProfile!.profilePhotoUrl || user!.profile?.profilePhotoUrl || null,
+          }
+        : null,
+      unionMemberDetails: alreadyUnionMember
+        ? {
+            id: user!.journalistProfile!.id,
+            unionName: user!.journalistProfile!.unionName,
+            approved: user!.journalistProfile!.approved,
+            kycVerified: user!.journalistProfile!.kycVerified,
+            pressId: user!.journalistProfile!.pressId,
+            designation: user!.journalistProfile!.designation,
+            organization: user!.journalistProfile!.organization,
+            state: user!.journalistProfile!.state,
+            district: user!.journalistProfile!.district,
+            mandal: user!.journalistProfile!.mandal,
+            card: user!.journalistProfile!.card,
+          }
+        : null,
+    });
+  } catch (e: any) {
+    console.error('[president/members/precheck]', e);
+    return res.status(500).json({ error: 'Precheck failed', details: e.message });
+  }
+});
+
 // ─── 3. Single Member Full Details ───────────────────────────────────────────
 /**
  * @swagger
@@ -1884,101 +1979,6 @@ router.post('/elections/conduct-district', jwtAuth, requireUnionAdmin, async (re
   } catch (e: any) {
     console.error('[president/elections/conduct-district]', e);
     return res.status(500).json({ error: 'Failed to conduct district election', details: e.message });
-  }
-});
-
-// ─── 14. President Member Mobile Precheck ───────────────────────────────────
-/**
- * @swagger
- * /journalist/president/members/precheck:
- *   get:
- *     summary: President Member Precheck by mobile number
- *     description: |
- *       Checks mobile number before creating union member.
- *       Response includes:
- *       - `tenantReporter`: whether this mobile is already a tenant reporter
- *       - `alreadyUnionMember`: whether this mobile already has journalist union membership
- *       - Full details for both (if available)
- *     tags: [Journalist President]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: mobileNumber
- *         required: true
- *         schema:
- *           type: string
- *         example: "9876543210"
- *     responses:
- *       200:
- *         description: Precheck result
- *       400:
- *         description: mobileNumber missing
- */
-router.get('/members/precheck', jwtAuth, requireUnionAdmin, async (req, res) => {
-  try {
-    const mobileNumber = cleanText(req.query.mobileNumber);
-    if (!mobileNumber) return res.status(400).json({ error: 'mobileNumber is required' });
-
-    const user = await p.user.findUnique({
-      where: { mobileNumber },
-      include: {
-        profile: { select: { fullName: true, profilePhotoUrl: true } },
-        reporterProfile: {
-          include: {
-            tenant: { select: { id: true, name: true } },
-            state: { select: { id: true, name: true } },
-            district: { select: { id: true, name: true } },
-            mandal: { select: { id: true, name: true } },
-            designation: { select: { id: true, name: true, nativeName: true } },
-          },
-        },
-        journalistProfile: {
-          include: {
-            card: { select: { id: true, cardNumber: true, status: true, expiryDate: true, pdfUrl: true } },
-          },
-        },
-      },
-    });
-
-    const tenantReporter = !!user?.reporterProfile;
-    const alreadyUnionMember = !!user?.journalistProfile;
-
-    return res.json({
-      mobileNumber,
-      tenantReporter,
-      alreadyUnionMember,
-      tenantReporterDetails: tenantReporter
-        ? {
-            reporterId: user!.reporterProfile!.id,
-            tenant: user!.reporterProfile!.tenant,
-            designation: user!.reporterProfile!.designation,
-            state: user!.reporterProfile!.state,
-            district: user!.reporterProfile!.district,
-            mandal: user!.reporterProfile!.mandal,
-            fullName: user!.profile?.fullName || null,
-            profilePhotoUrl: user!.reporterProfile!.profilePhotoUrl || user!.profile?.profilePhotoUrl || null,
-          }
-        : null,
-      unionMemberDetails: alreadyUnionMember
-        ? {
-            id: user!.journalistProfile!.id,
-            unionName: user!.journalistProfile!.unionName,
-            approved: user!.journalistProfile!.approved,
-            kycVerified: user!.journalistProfile!.kycVerified,
-            pressId: user!.journalistProfile!.pressId,
-            designation: user!.journalistProfile!.designation,
-            organization: user!.journalistProfile!.organization,
-            state: user!.journalistProfile!.state,
-            district: user!.journalistProfile!.district,
-            mandal: user!.journalistProfile!.mandal,
-            card: user!.journalistProfile!.card,
-          }
-        : null,
-    });
-  } catch (e: any) {
-    console.error('[president/members/precheck]', e);
-    return res.status(500).json({ error: 'Precheck failed', details: e.message });
   }
 });
 
