@@ -60,15 +60,29 @@ jobs:
             cd "$APP"
 
             echo "▶ Verify upload"
+            test -d dist_new
             ls dist_new/ | head -5
 
             echo "▶ Swap dist"
             rm -rf dist
             mv dist_new dist
 
-            echo "▶ Restart PM2 (with full path fallback)"
-            PM2=$(command -v pm2 || echo "$HOME/.npm-global/bin/pm2" || echo "/usr/local/bin/pm2" || echo "/usr/bin/pm2")
+            echo "▶ Resolve PM2 binary"
+            PM2=""
+            for CANDIDATE in "$(command -v pm2 2>/dev/null || true)" "$HOME/.npm-global/bin/pm2" "/usr/local/bin/pm2" "/usr/bin/pm2"; do
+              if [ -n "$CANDIDATE" ] && [ -x "$CANDIDATE" ]; then
+                PM2="$CANDIDATE"
+                break
+              fi
+            done
+            if [ -z "$PM2" ]; then
+              echo "❌ pm2 not found in PATH or known locations"
+              echo "PATH=$PATH"
+              exit 1
+            fi
             echo "pm2 path: $PM2"
+
+            echo "▶ Restart PM2"
             $PM2 reload ecosystem.config.cjs --update-env 2>/dev/null \
               || $PM2 restart kaburlu-api --update-env \
               || $PM2 startOrReload ecosystem.config.cjs --update-env
