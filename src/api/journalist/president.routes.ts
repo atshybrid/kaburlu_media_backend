@@ -1682,7 +1682,7 @@ router.get('/post-holders', jwtAuth, requireUnionAdmin, async (req, res) => {
  *   get:
  *     summary: District election readiness by post designations
  *     description: Returns seat-filled vs seat-vacant status for DISTRICT-level ELECTED posts.
- *     tags: [President Union APIs]
+ *     tags: [Journalist President]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1760,7 +1760,7 @@ router.get('/elections/district-readiness', jwtAuth, requireUnionAdmin, async (r
  *     description: |
  *       Replaces existing active holders for given district/post and sets new winners.
  *       Validates seat count and approved members.
- *     tags: [President Union APIs]
+ *     tags: [Journalist President]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -1899,7 +1899,7 @@ router.post('/elections/conduct-district', jwtAuth, requireUnionAdmin, async (re
  *       - `tenantReporter`: whether this mobile is already a tenant reporter
  *       - `alreadyUnionMember`: whether this mobile already has journalist union membership
  *       - Full details for both (if available)
- *     tags: [President Union APIs]
+ *     tags: [Journalist President]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -2004,7 +2004,7 @@ router.get('/members/precheck', jwtAuth, requireUnionAdmin, async (req, res) => 
  *       - press card generated (if not existing)
  *       - PDF generated
  *       - ID card sent to WhatsApp
- *     tags: [President Union APIs]
+ *     tags: [Journalist President]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
