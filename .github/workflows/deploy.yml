@@ -26,14 +26,15 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Upload build bundle to server
+      - name: Upload dist to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DO_SERVER_IP }}
           username: deploy
           key: ${{ secrets.DO_SSH_KEY }}
-          source: "dist/,package.json,package-lock.json,prisma/,ecosystem.config.cjs"
-          target: "/home/deploy/kaburlu_media_backend/release_new"
+          source: "dist/"
+          target: "/home/deploy/kaburlu_media_backend/dist_new"
+          strip_components: 1
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -46,16 +47,10 @@ jobs:
 
             cd ~/kaburlu_media_backend
 
-            echo "▶ Apply uploaded release bundle"
-            rm -rf dist prisma
-            rm -f package.json package-lock.json ecosystem.config.cjs
-            cp -R release_new/. .
-            rm -rf release_new
-
-            echo "▶ Validate uploaded files"
-            test -d dist
-            test -f package.json
-            test -f package-lock.json
+            echo "▶ Activate uploaded dist"
+            test -d dist_new
+            rm -rf dist
+            mv dist_new dist
 
             echo "▶ Write ENV file from GitHub Secrets"
             cat > .env << 'ENVEOF'
