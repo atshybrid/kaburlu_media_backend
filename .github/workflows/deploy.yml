@@ -26,15 +26,27 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Upload dist to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DO_SERVER_IP }}
-          username: deploy
-          key: ${{ secrets.DO_SSH_KEY }}
-          source: "dist/"
-          target: "/home/deploy/kaburlu_media_backend/dist_new"
-          strip_components: 1
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DO_SERVER_IP }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Upload dist via rsync
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+            dist/ deploy@${{ secrets.DO_SERVER_IP }}:/home/deploy/kaburlu_media_backend/dist_new/
+
+      - name: Upload env file
+        env:
+          ENV_CONTENT: ${{ secrets.ENV_KABURLU_BACKEND }}
+        run: |
+          printf '%s' "$ENV_CONTENT" | \
+            ssh -i ~/.ssh/deploy_key -o BatchMode=yes \
+              deploy@${{ secrets.DO_SERVER_IP }} \
+              'cat > ~/kaburlu_media_backend/.env && chmod 600 ~/kaburlu_media_backend/.env'
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -44,55 +56,28 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
             set -e
+            APP="$HOME/kaburlu_media_backend"
+            cd "$APP"
 
-            cd ~/kaburlu_media_backend
+            echo "▶ Verify upload"
+            ls dist_new/ | head -5
 
-            echo "▶ Activate uploaded dist"
-            test -d dist_new
+            echo "▶ Swap dist"
             rm -rf dist
             mv dist_new dist
 
-            echo "▶ Write ENV file from GitHub Secrets"
-            cat > .env << 'ENVEOF'
-            ${{ secrets.ENV_KABURLU_BACKEND }}
-            ENVEOF
-            chmod 600 .env || true
-
-            echo "▶ Install prod dependencies"
-            rm -rf node_modules
-            npm ci --omit=dev
-
-            echo "▶ Generate Prisma client"
-            npx prisma generate
-
-            echo "▶ Detect Chromium installation"
-            if [ -f "/snap/bin/chromium" ]; then
-              CHROME_BIN="/snap/bin/chromium"
-            elif [ -f "/usr/bin/chromium" ]; then
-              CHROME_BIN="/usr/bin/chromium"
-            elif [ -f "/usr/bin/chromium-browser" ]; then
-              CHROME_BIN="/usr/bin/chromium-browser"
-            else
-              echo "⚠️ Chromium not found — PDF generation may not work"
-              CHROME_BIN=""
-            fi
-
             echo "▶ Restart PM2"
-            export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
-            pm2 stop kaburlu-api 2>/dev/null || true
-            fuser -k 3001/tcp 2>/dev/null || true
-            sleep 2
-            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 reload ecosystem.config.cjs --update-env 2>/dev/null \
+              || pm2 restart kaburlu-api --update-env
             pm2 save
 
             echo "▶ Health check"
-            PORT=3001
             OK=0
-            for i in $(seq 1 20); do
-              if curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/health/ai" >/dev/null 2>&1; then
-                OK=1; echo "✅ Health check passed (attempt $i)"; break
+            for i in $(seq 1 15); do
+              if curl -fsS --max-time 3 "http://127.0.0.1:3001/health/ai" >/dev/null 2>&1; then
+                OK=1; echo "✅ Health OK (attempt $i)"; break
               fi
-              echo "… waiting ($i/20)"; sleep 2
+              echo "… waiting ($i/15)"; sleep 3
             done
             if [ $OK -ne 1 ]; then
               echo "❌ Health check failed"
@@ -100,4 +85,4 @@ jobs:
               exit 1
             fi
 
-            echo "✅ Deployment completed successfully"
+            echo "✅ Deployment completed"
