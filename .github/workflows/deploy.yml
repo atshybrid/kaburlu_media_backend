@@ -50,7 +50,8 @@ jobs:
             echo "▶ Sync code to origin/main"
             git fetch origin main
             git reset --hard origin/main
-            git clean -fd
+            # Keep uploaded build artifact folder from SCP step.
+            git clean -fd -e dist_new/
 
             echo "▶ Move pre-built dist into place"
             rm -rf dist
