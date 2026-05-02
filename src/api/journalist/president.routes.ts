@@ -394,7 +394,7 @@ async function ensureCardAndSendWhatsapp(profileId: string, mobileNumber: string
  *       **Scope**: Admin sees only their union. SUPER_ADMIN sees all unions.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Dashboard stats
@@ -659,7 +659,7 @@ router.get('/union-dashboard', jwtAuth, requireUnionAdmin, presidentDashboardHan
  *       Supports filtering by state, district, mandal, approval/KYC status, and free-text search.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: state
@@ -824,7 +824,7 @@ router.get('/members', jwtAuth, requireUnionAdmin, async (req, res) => {
  *       - `membershipId` field (pressId if set, else cardNumber)
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -941,7 +941,7 @@ router.get('/members/:id', jwtAuth, requireUnionAdmin, async (req, res) => {
  *     description: Admin can update editable fields. All body fields are optional — only provided fields are updated.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1030,7 +1030,7 @@ router.put('/members/:id', jwtAuth, requireUnionAdmin, async (req, res) => {
  *       Pass `approveApplication: true` to approve both KYC and the membership in one call.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1111,7 +1111,7 @@ router.patch('/members/:id/kyc', jwtAuth, requireUnionAdmin, async (req, res) =>
  *     summary: Get all insurance records for a member
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1189,7 +1189,7 @@ router.get('/members/:id/insurance', jwtAuth, requireUnionAdmin, async (req, res
  *     description: Creates a new insurance record for the member. Use the `/card` sub-endpoint afterwards to upload the policy document image.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1297,7 +1297,7 @@ router.post('/members/:id/insurance', jwtAuth, requireUnionAdmin, async (req, re
  *     description: Partial update — only provided fields are changed.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1392,7 +1392,7 @@ router.patch('/members/:id/insurance/:insId', jwtAuth, requireUnionAdmin, async 
  *       Stores the file in Bunny CDN / R2 and updates `insuranceCardUrl` on the insurance record.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -1492,7 +1492,7 @@ router.post(
  *     description: Convenience endpoint to pull all members in a single state, useful for printing state-level member directories.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: state
@@ -1586,7 +1586,7 @@ router.get('/state/:state/members', jwtAuth, requireUnionAdmin, async (req, res)
  *       Filter by `level` to get e.g. only district presidents, or by `state`/`district` for geographic scope.
  *     tags: [Journalist President]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: level
@@ -1684,7 +1684,7 @@ router.get('/post-holders', jwtAuth, requireUnionAdmin, async (req, res) => {
  *     description: Returns seat-filled vs seat-vacant status for DISTRICT-level ELECTED posts.
  *     tags: [President Union APIs]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: districtId
@@ -1762,7 +1762,7 @@ router.get('/elections/district-readiness', jwtAuth, requireUnionAdmin, async (r
  *       Validates seat count and approved members.
  *     tags: [President Union APIs]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -1901,7 +1901,7 @@ router.post('/elections/conduct-district', jwtAuth, requireUnionAdmin, async (re
  *       - Full details for both (if available)
  *     tags: [President Union APIs]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: mobileNumber
@@ -2006,7 +2006,7 @@ router.get('/members/precheck', jwtAuth, requireUnionAdmin, async (req, res) => 
  *       - ID card sent to WhatsApp
  *     tags: [President Union APIs]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:

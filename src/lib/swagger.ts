@@ -122,7 +122,9 @@ const swaggerDefinition = {
     { name: 'Journalist Union - Public', description: 'Public endpoints (no auth required) — simple member registration, reporter mobile lookup (form pre-fill), membership application, journalist directory, committee list, union announcements, union settings, and post catalog' },
     { name: 'Journalist Union - Member', description: 'Authenticated member endpoints — view & update profile, press card, complaints, reporter-link status, and current union posts' },
     { name: 'Journalist Union - Admin', description: 'Union admin endpoints (UnionAdmin / SuperAdmin) — review applications, approve/reject, issue press cards, manage complaints, post announcements, and manage committee posts' },
-    { name: 'Journalist Union - Super Admin', description: 'SuperAdmin-only endpoints — assign union admins, manage union admin list, and seed default post hierarchy definitions for a union' }
+    { name: 'Journalist Union - Super Admin', description: 'SuperAdmin-only endpoints — assign union admins, manage union admin list, and seed default post hierarchy definitions for a union' },
+    // ── Journalist President Module ──────────────────────────────────────────
+    { name: 'Journalist President', description: 'Union President / Admin endpoints — dashboard, member management, KYC, insurance, elections, press card creation' }
   ],
   components: {
     securitySchemes: {
