@@ -66,10 +66,13 @@ jobs:
             rm -rf dist
             mv dist_new dist
 
-            echo "▶ Restart PM2"
-            pm2 reload ecosystem.config.cjs --update-env 2>/dev/null \
-              || pm2 restart kaburlu-api --update-env
-            pm2 save
+            echo "▶ Restart PM2 (with full path fallback)"
+            PM2=$(command -v pm2 || echo "$HOME/.npm-global/bin/pm2" || echo "/usr/local/bin/pm2" || echo "/usr/bin/pm2")
+            echo "pm2 path: $PM2"
+            $PM2 reload ecosystem.config.cjs --update-env 2>/dev/null \
+              || $PM2 restart kaburlu-api --update-env \
+              || $PM2 startOrReload ecosystem.config.cjs --update-env
+            $PM2 save || true
 
             echo "▶ Health check"
             OK=0
@@ -81,7 +84,7 @@ jobs:
             done
             if [ $OK -ne 1 ]; then
               echo "❌ Health check failed"
-              pm2 logs kaburlu-api --lines 50 --nostream || true
+              $PM2 logs kaburlu-api --lines 50 --nostream || true
               exit 1
             fi
 
