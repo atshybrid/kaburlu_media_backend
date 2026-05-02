@@ -795,7 +795,7 @@ router.get('/members', jwtAuth, requireUnionAdmin, async (req, res) => {
           photoUrl: true,
           createdAt: true,
           updatedAt: true,
-          user: { select: { id: true, name: true, mobileNumber: true, email: true } },
+          user: { select: { id: true, mobileNumber: true, email: true, profile: { select: { fullName: true } } } },
           card: { select: { id: true, cardNumber: true, status: true, expiryDate: true, issuedAt: true } },
         },
       }),
@@ -909,7 +909,7 @@ router.get('/members/:id', jwtAuth, requireUnionAdmin, async (req, res) => {
     const profile = await p.journalistProfile.findFirst({
       where,
       include: {
-        user: { select: { id: true, name: true, mobileNumber: true, email: true, createdAt: true } },
+        user: { select: { id: true, mobileNumber: true, email: true, createdAt: true, profile: { select: { fullName: true } } } },
         card: true,
         insurances: { orderBy: { createdAt: 'desc' } },
         postHoldings: {
@@ -1561,7 +1561,7 @@ router.get('/state/:state/members', jwtAuth, requireUnionAdmin, async (req, res)
           approved: true,
           kycVerified: true,
           photoUrl: true,
-          user: { select: { id: true, name: true, mobileNumber: true } },
+          user: { select: { id: true, mobileNumber: true, profile: { select: { fullName: true } } } },
           card: { select: { cardNumber: true, status: true, expiryDate: true } },
         },
       }),
@@ -1662,7 +1662,7 @@ router.get('/post-holders', jwtAuth, requireUnionAdmin, async (req, res) => {
             state: true,
             mandal: true,
             photoUrl: true,
-            user: { select: { id: true, name: true, mobileNumber: true } },
+            user: { select: { id: true, mobileNumber: true, profile: { select: { fullName: true } } } },
           },
         },
       },
