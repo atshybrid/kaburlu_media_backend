@@ -143,8 +143,11 @@ async function buildPressCardData(profileId: string): Promise<PressCardData | nu
     if (settings) {
       const state = profile.state || settings.primaryState || settings.states?.[0] || null;
       if (state) {
-        stateSettings = await (prisma as any).journalistUnionStateSettings.findUnique({
-          where: { unionName_state: { unionName: profile.unionName, state } },
+        stateSettings = await (prisma as any).journalistUnionStateSettings.findFirst({
+          where: {
+            unionName: profile.unionName,
+            state: { equals: state, mode: 'insensitive' },
+          },
         }).catch(() => null);
       }
     }
@@ -182,7 +185,8 @@ async function buildPressCardData(profileId: string): Promise<PressCardData | nu
     signatoryTitle:         settings?.signatoryTitle ?? null,
     photoUrl:               profile.photoUrl ?? null,
     unionLogoUrl:           settings?.idCardLogoUrl ?? settings?.logoUrl ?? null,
-    stampImageUrl:          settings?.stampImageUrl ?? null,
+    // Use state-specific stamp/signature when member state has configured overrides.
+    stampImageUrl:          stateSettings?.stampImageUrl ?? settings?.stampImageUrl ?? null,
     forStampImageUrl:       settings?.forStampImageUrl ?? null,
     // State president overrides; falls back to union-wide founder signature
     presidentSignatureUrl:  stateSettings?.presidentSignatureUrl ?? settings?.founderSignatureUrl ?? null,

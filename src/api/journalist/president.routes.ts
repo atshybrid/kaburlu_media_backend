@@ -6,9 +6,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import multer from 'multer';
+import * as bcrypt from 'bcrypt';
+import sharp from 'sharp';
 import prisma from '../../lib/prisma';
 import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunnyStorage';
 import { putPublicObject } from '../../lib/objectStorage';
+import { generateAndUploadPressCardPdf } from '../../lib/journalistPressCardPdf';
+import { sendWhatsappIdCardTemplate } from '../../lib/whatsapp';
 
 const p: any = prisma;
 const router = Router();
@@ -20,6 +24,16 @@ const uploadInsuranceCard = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+// Multer for president member photo upload (image-only)
+const uploadMemberPhoto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     cb(null, allowed.includes(file.mimetype));
   },
 });
@@ -63,6 +77,163 @@ function buildMemberWhere(
   if (scope?.unionName) where.unionName = scope.unionName;
   if (scope?.state) where.state = scope.state;
   return { ...where, ...extra };
+}
+
+function cleanText(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  return s ? s : null;
+}
+
+function maskAadhaarLast4(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const digits = v.replace(/\D/g, '');
+  if (digits.length < 4) return null;
+  return digits.slice(-4);
+}
+
+type LocationInput = {
+  stateId?: string | null;
+  stateName?: string | null;
+  state?: string | null;
+  districtId?: string | null;
+  districtName?: string | null;
+  district?: string | null;
+  mandalId?: string | null;
+  mandalName?: string | null;
+  mandal?: string | null;
+};
+
+async function resolveLocation(input: LocationInput) {
+  let stateName: string | null = null;
+  let districtName: string | null = null;
+  let mandalName: string | null = null;
+
+  const mandalId = cleanText(input.mandalId);
+  const districtId = cleanText(input.districtId);
+  const stateId = cleanText(input.stateId);
+  const requestedMandalName = cleanText(input.mandalName) || cleanText(input.mandal);
+  const requestedDistrictName = cleanText(input.districtName) || cleanText(input.district);
+  const requestedStateName = cleanText(input.stateName) || cleanText(input.state);
+
+  if (mandalId) {
+    const m = await p.mandal.findFirst({
+      where: { id: mandalId, isDeleted: false },
+      include: { district: { include: { state: true } } },
+    });
+    if (!m) throw new Error('Invalid mandalId');
+    mandalName = m.name;
+    districtName = m.district?.name ?? null;
+    stateName = m.district?.state?.name ?? null;
+  }
+
+  if (!mandalName && requestedMandalName) {
+    const m = await p.mandal.findFirst({
+      where: {
+        isDeleted: false,
+        name: { equals: requestedMandalName, mode: 'insensitive' },
+        ...(districtId ? { districtId } : {}),
+      },
+      include: { district: { include: { state: true } } },
+    });
+    if (!m) throw new Error('Invalid mandalName');
+    mandalName = m.name;
+    districtName = m.district?.name ?? null;
+    stateName = m.district?.state?.name ?? null;
+  }
+
+  if (!districtName && districtId) {
+    const d = await p.district.findFirst({
+      where: { id: districtId, isDeleted: false },
+      include: { state: true },
+    });
+    if (!d) throw new Error('Invalid districtId');
+    districtName = d.name;
+    stateName = d.state?.name ?? stateName;
+  }
+
+  if (!districtName && requestedDistrictName) {
+    const d = await p.district.findFirst({
+      where: {
+        isDeleted: false,
+        name: { equals: requestedDistrictName, mode: 'insensitive' },
+        ...(stateId ? { stateId } : {}),
+      },
+      include: { state: true },
+    });
+    if (!d) throw new Error('Invalid districtName');
+    districtName = d.name;
+    stateName = d.state?.name ?? stateName;
+  }
+
+  if (!stateName && stateId) {
+    const s = await p.state.findFirst({ where: { id: stateId, isDeleted: false } });
+    if (!s) throw new Error('Invalid stateId');
+    stateName = s.name;
+  }
+
+  if (!stateName && requestedStateName) {
+    const s = await p.state.findFirst({
+      where: { isDeleted: false, name: { equals: requestedStateName, mode: 'insensitive' } },
+    });
+    if (!s) throw new Error('Invalid stateName');
+    stateName = s.name;
+  }
+
+  return {
+    state: stateName,
+    district: districtName,
+    mandal: mandalName,
+  };
+}
+
+async function uploadJournalistPhoto(profileId: string, file?: Express.Multer.File | null): Promise<string | null> {
+  if (!file) return null;
+
+  const outBuffer = await sharp(file.buffer).webp({ quality: 85 }).toBuffer();
+  const key = `journalist-union/kyc/${profileId}/photo.webp`;
+
+  if (isBunnyStorageConfigured()) {
+    const r = await bunnyStoragePutObject({ key, body: outBuffer, contentType: 'image/webp' });
+    return r.publicUrl;
+  }
+
+  const r = await putPublicObject({ key, body: outBuffer, contentType: 'image/webp' });
+  return r.publicUrl;
+}
+
+async function ensureCardAndSendWhatsapp(profileId: string, mobileNumber: string | null, orgName: string | null, pressId: string | null) {
+  const existingCard = await p.journalistCard.findUnique({ where: { profileId } });
+  if (!existingCard) {
+    const expiry = new Date();
+    expiry.setFullYear(expiry.getFullYear() + 1);
+    await p.journalistCard.create({
+      data: {
+        profileId,
+        cardNumber: `JU-${Date.now()}`,
+        expiryDate: expiry,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  const pdfResult = await generateAndUploadPressCardPdf(profileId);
+  let whatsappSent = false;
+
+  if (pdfResult.ok && pdfResult.pdfUrl && mobileNumber) {
+    await sendWhatsappIdCardTemplate({
+      toMobileNumber: mobileNumber,
+      pdfUrl: pdfResult.pdfUrl,
+      cardType: 'Journalist Press ID',
+      organizationName: orgName || 'Journalist Union',
+      documentType: 'Press ID Card',
+      pdfFilename: `Press_ID_${pressId || pdfResult.cardNumber || profileId}.pdf`,
+    });
+    whatsappSent = true;
+  }
+
+  const card = await p.journalistCard.findUnique({ where: { profileId } });
+  return { card, pdfResult, whatsappSent };
 }
 
 // ─── Swagger component schemas (declared once, reused by all endpoints) ────────
@@ -278,9 +449,15 @@ function buildMemberWhere(
  *       403:
  *         description: Forbidden — not a union admin
  */
-router.get('/dashboard', jwtAuth, requireUnionAdmin, async (req, res) => {
+const presidentDashboardHandler = async (req: Request, res: Response) => {
   try {
-    const baseWhere = buildMemberWhere(req, res);
+    const q = req.query as Record<string, string | undefined>;
+    const districtFilter = cleanText(q.district);
+    const mandalFilter = cleanText(q.mandal);
+    const baseWhere = buildMemberWhere(req, res, {
+      ...(districtFilter ? { district: districtFilter } : {}),
+      ...(mandalFilter ? { mandal: mandalFilter } : {}),
+    });
 
     // --- Core counts ---
     const [total, approved, kycVerified, pendingApplications] = await Promise.all([
@@ -290,6 +467,8 @@ router.get('/dashboard', jwtAuth, requireUnionAdmin, async (req, res) => {
       p.journalistProfile.count({ where: { ...baseWhere, approved: false, rejectedAt: null } }),
     ]);
     const rejected = await p.journalistProfile.count({ where: { ...baseWhere, rejectedAt: { not: null } } });
+    const activeMembers = approved;
+    const inactiveMembers = Math.max(0, total - activeMembers);
 
     // --- State-wise breakdown ---
     const [allByState, approvedByState] = await Promise.all([
@@ -324,9 +503,11 @@ router.get('/dashboard', jwtAuth, requireUnionAdmin, async (req, res) => {
     const mandalWise = mandalStats.map((r: any) => ({ mandal: r.mandal ?? '—', total: r._count._all }));
 
     // --- Post holders counts by level ---
-    const scope: { unionName?: string } | null = res.locals.unionScope;
+    const scope: { unionName?: string; state?: string } | null = res.locals.unionScope;
     const postWhere: Record<string, unknown> = { isActive: true };
     if (scope?.unionName) postWhere.unionName = scope.unionName;
+    if (cleanText(q.districtId)) postWhere.districtId = cleanText(q.districtId);
+    if (cleanText(q.mandalId)) postWhere.mandalId = cleanText(q.mandalId);
     const postStats = await p.journalistUnionPostHolder.groupBy({
       by: ['postId'],
       where: postWhere,
@@ -354,24 +535,118 @@ router.get('/dashboard', jwtAuth, requireUnionAdmin, async (req, res) => {
       // Insurance doesn't have unionName directly; filter via profile
       insWhere.profile = { unionName: scope.unionName };
     }
-    const [activeInsurance, expiredInsurance] = await Promise.all([
+    const [activeInsurance, expiredInsurance, activeAccidentalInsurance, activeHealthInsurance] = await Promise.all([
       p.journalistInsurance.count({ where: { ...insWhere, isActive: true, validTo: { gte: now } } }),
       p.journalistInsurance.count({ where: { ...insWhere, isActive: true, validTo: { lt: now } } }),
+      p.journalistInsurance.count({ where: { ...insWhere, isActive: true, validTo: { gte: now }, type: 'ACCIDENTAL' } }),
+      p.journalistInsurance.count({ where: { ...insWhere, isActive: true, validTo: { gte: now }, type: 'HEALTH' } }),
     ]);
 
+    // Claim-like metrics from complaint table (closest available model in current schema)
+    const complaintWhere: Record<string, unknown> = {
+      user: {
+        journalistProfile: {
+          is: {
+            ...(scope?.unionName ? { unionName: scope.unionName } : {}),
+            ...(scope?.state ? { state: scope.state } : {}),
+            ...(districtFilter ? { district: districtFilter } : {}),
+            ...(mandalFilter ? { mandal: mandalFilter } : {}),
+          },
+        },
+      },
+    };
+    const [claimsTotal, claimsOpen, claimsInProgress, claimsClosed] = await Promise.all([
+      p.journalistComplaint.count({ where: complaintWhere }),
+      p.journalistComplaint.count({ where: { ...complaintWhere, status: 'OPEN' } }),
+      p.journalistComplaint.count({ where: { ...complaintWhere, status: 'IN_PROGRESS' } }),
+      p.journalistComplaint.count({ where: { ...complaintWhere, status: 'CLOSED' } }),
+    ]);
+    const claims = {
+      supported: true,
+      total: claimsTotal,
+      open: claimsOpen,
+      inProgress: claimsInProgress,
+      closed: claimsClosed,
+      note: 'Counts are based on journalist complaints table',
+    };
+
+    // District-level election readiness for ELECTED posts
+    const electedPostWhere: Record<string, unknown> = { level: 'DISTRICT', type: 'ELECTED', isActive: true };
+    if (scope?.unionName) electedPostWhere.unionName = scope.unionName;
+    const districtElectedDefs = await p.journalistUnionPostDefinition.findMany({
+      where: electedPostWhere,
+      select: { id: true, title: true, nativeTitle: true, maxSeats: true, sortOrder: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    const holdersWhere: Record<string, unknown> = { isActive: true, postId: { in: districtElectedDefs.map((d: any) => d.id) } };
+    if (scope?.unionName) holdersWhere.unionName = scope.unionName;
+    if (cleanText(q.districtId)) holdersWhere.districtId = cleanText(q.districtId);
+    const filledByPost = await p.journalistUnionPostHolder.groupBy({
+      by: ['postId'],
+      where: holdersWhere,
+      _count: { _all: true },
+    });
+    const filledMap: Record<string, number> = {};
+    for (const row of filledByPost) filledMap[row.postId] = row._count._all;
+    const districtElectionReadiness = districtElectedDefs.map((d: any) => {
+      const filled = filledMap[d.id] || 0;
+      return {
+        postId: d.id,
+        title: d.title,
+        nativeTitle: d.nativeTitle,
+        maxSeats: d.maxSeats,
+        seatsFilled: filled,
+        seatsVacant: Math.max(0, d.maxSeats - filled),
+        electionRequired: filled < d.maxSeats,
+      };
+    });
+
+    const electionSummary = {
+      districtFilter: cleanText(q.districtId) || districtFilter || null,
+      totalDistrictElectedPosts: districtElectionReadiness.length,
+      postsNeedElection: districtElectionReadiness.filter((p: any) => p.electionRequired).length,
+      postsReady: districtElectionReadiness.filter((p: any) => !p.electionRequired).length,
+      posts: districtElectionReadiness,
+    };
+
     return res.json({
-      summary: { total, approved, pending: pendingApplications, rejected, kycVerified },
+      summary: {
+        total,
+        approved,
+        active: activeMembers,
+        inactive: inactiveMembers,
+        pending: pendingApplications,
+        rejected,
+        kycVerified,
+      },
+      filters: {
+        district: districtFilter,
+        mandal: mandalFilter,
+        districtId: cleanText(q.districtId),
+        mandalId: cleanText(q.mandalId),
+      },
       stateWise,
       districtWise,
       mandalWise,
       postsByLevel,
-      insurance: { active: activeInsurance, expired: expiredInsurance },
+      insurance: {
+        active: activeInsurance,
+        expired: expiredInsurance,
+        accidentalActive: activeAccidentalInsurance,
+        healthActive: activeHealthInsurance,
+      },
+      claims,
+      election: electionSummary,
     });
   } catch (e: any) {
     console.error('[president/dashboard]', e);
     return res.status(500).json({ error: 'Dashboard query failed', details: e.message });
   }
-});
+};
+
+router.get('/dashboard', jwtAuth, requireUnionAdmin, presidentDashboardHandler);
+router.get('/union-dashboard', jwtAuth, requireUnionAdmin, presidentDashboardHandler);
 
 // ─── 2. Members List (paginated + filtered) ───────────────────────────────────
 /**
@@ -1397,6 +1672,655 @@ router.get('/post-holders', jwtAuth, requireUnionAdmin, async (req, res) => {
   } catch (e: any) {
     console.error('[president/post-holders]', e);
     return res.status(500).json({ error: 'Failed to fetch post holders', details: e.message });
+  }
+});
+
+// ─── 12. District Election Readiness ─────────────────────────────────────────
+/**
+ * @swagger
+ * /journalist/president/elections/district-readiness:
+ *   get:
+ *     summary: District election readiness by post designations
+ *     description: Returns seat-filled vs seat-vacant status for DISTRICT-level ELECTED posts.
+ *     tags: [President Union APIs]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: districtId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: district
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Readiness data
+ */
+router.get('/elections/district-readiness', jwtAuth, requireUnionAdmin, async (req, res) => {
+  try {
+    const q = req.query as Record<string, string | undefined>;
+    const scope: { unionName?: string } | null = res.locals.unionScope;
+    const districtId = cleanText(q.districtId);
+
+    const postDefWhere: Record<string, unknown> = { level: 'DISTRICT', type: 'ELECTED', isActive: true };
+    if (scope?.unionName) postDefWhere.unionName = scope.unionName;
+    const defs = await p.journalistUnionPostDefinition.findMany({
+      where: postDefWhere,
+      select: { id: true, title: true, nativeTitle: true, maxSeats: true, sortOrder: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    const holdersWhere: Record<string, unknown> = {
+      isActive: true,
+      postId: { in: defs.map((d: any) => d.id) },
+      ...(scope?.unionName ? { unionName: scope.unionName } : {}),
+      ...(districtId ? { districtId } : {}),
+    };
+    const grouped = await p.journalistUnionPostHolder.groupBy({
+      by: ['postId'],
+      where: holdersWhere,
+      _count: { _all: true },
+    });
+
+    const filledMap: Record<string, number> = {};
+    for (const g of grouped) filledMap[g.postId] = g._count._all;
+
+    const posts = defs.map((d: any) => {
+      const filled = filledMap[d.id] || 0;
+      return {
+        postId: d.id,
+        title: d.title,
+        nativeTitle: d.nativeTitle,
+        maxSeats: d.maxSeats,
+        seatsFilled: filled,
+        seatsVacant: Math.max(0, d.maxSeats - filled),
+        electionRequired: filled < d.maxSeats,
+      };
+    });
+
+    return res.json({
+      districtId: districtId || null,
+      totalPosts: posts.length,
+      needElection: posts.filter((p: any) => p.electionRequired).length,
+      ready: posts.filter((p: any) => !p.electionRequired).length,
+      posts,
+    });
+  } catch (e: any) {
+    console.error('[president/elections/district-readiness]', e);
+    return res.status(500).json({ error: 'Failed to fetch district election readiness', details: e.message });
+  }
+});
+
+// ─── 13. Conduct District Election (appoint winners) ────────────────────────
+/**
+ * @swagger
+ * /journalist/president/elections/conduct-district:
+ *   post:
+ *     summary: Conduct district election and appoint winners for a post
+ *     description: |
+ *       Replaces existing active holders for given district/post and sets new winners.
+ *       Validates seat count and approved members.
+ *     tags: [President Union APIs]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [postId, districtId, winnerProfileIds, termStartDate]
+ *             properties:
+ *               postId: { type: string }
+ *               districtId: { type: string }
+ *               mandalId: { type: string }
+ *               winnerProfileIds:
+ *                 type: array
+ *                 items: { type: string }
+ *               termStartDate: { type: string, format: date }
+ *               termEndDate: { type: string, format: date }
+ *               notes: { type: string }
+ *     responses:
+ *       201:
+ *         description: Election result saved
+ */
+router.post('/elections/conduct-district', jwtAuth, requireUnionAdmin, async (req, res) => {
+  try {
+    const admin = currentUser(req);
+    const scope: { unionName?: string } | null = res.locals.unionScope;
+    const {
+      postId,
+      districtId,
+      mandalId,
+      winnerProfileIds,
+      termStartDate,
+      termEndDate,
+      notes,
+    } = req.body || {};
+
+    if (!postId || !districtId || !Array.isArray(winnerProfileIds) || winnerProfileIds.length === 0 || !termStartDate) {
+      return res.status(400).json({ error: 'postId, districtId, winnerProfileIds, termStartDate are required' });
+    }
+
+    const postDef = await p.journalistUnionPostDefinition.findUnique({ where: { id: postId } });
+    if (!postDef) return res.status(404).json({ error: 'Post definition not found' });
+    if (postDef.level !== 'DISTRICT' || postDef.type !== 'ELECTED') {
+      return res.status(400).json({ error: 'Only DISTRICT ELECTED posts are allowed in this endpoint' });
+    }
+    if (scope?.unionName && postDef.unionName !== scope.unionName) {
+      return res.status(403).json({ error: 'Access denied: post belongs to different union' });
+    }
+    if (winnerProfileIds.length > postDef.maxSeats) {
+      return res.status(400).json({ error: `Selected winners exceed maxSeats (${postDef.maxSeats})` });
+    }
+
+    const profiles = await p.journalistProfile.findMany({
+      where: {
+        id: { in: winnerProfileIds },
+        approved: true,
+        ...(scope?.unionName ? { unionName: scope.unionName } : {}),
+      },
+      select: { id: true, unionName: true, approved: true },
+    });
+    if (profiles.length !== winnerProfileIds.length) {
+      return res.status(400).json({ error: 'Some winnerProfileIds are invalid/not approved/not in your union scope' });
+    }
+
+    const startDate = new Date(termStartDate);
+    const endDate = termEndDate ? new Date(termEndDate) : null;
+    if (isNaN(startDate.getTime())) return res.status(400).json({ error: 'Invalid termStartDate format. Use YYYY-MM-DD.' });
+    if (endDate && isNaN(endDate.getTime())) return res.status(400).json({ error: 'Invalid termEndDate format. Use YYYY-MM-DD.' });
+
+    const result = await p.$transaction(async (tx: any) => {
+      await tx.journalistUnionPostHolder.updateMany({
+        where: {
+          postId,
+          districtId,
+          ...(mandalId ? { mandalId } : {}),
+          unionName: postDef.unionName,
+          isActive: true,
+        },
+        data: { isActive: false, termEndDate: new Date() },
+      });
+
+      const created: any[] = [];
+      for (const profileId of winnerProfileIds) {
+        const holder = await tx.journalistUnionPostHolder.create({
+          data: {
+            postId,
+            profileId,
+            unionName: postDef.unionName,
+            districtId,
+            mandalId: mandalId || null,
+            termStartDate: startDate,
+            termEndDate: endDate || null,
+            isActive: true,
+            appointedById: admin.id,
+            notes: notes || 'Elected via district election',
+          },
+          include: {
+            post: { select: { title: true, nativeTitle: true, level: true, type: true } },
+            profile: { select: { id: true, pressId: true, user: { select: { profile: { select: { fullName: true } } } } } },
+          },
+        });
+        created.push(holder);
+      }
+      return created;
+    });
+
+    return res.status(201).json({
+      message: 'District election conducted successfully',
+      post: {
+        id: postDef.id,
+        title: postDef.title,
+        nativeTitle: postDef.nativeTitle,
+        maxSeats: postDef.maxSeats,
+      },
+      districtId,
+      mandalId: mandalId || null,
+      winnersCount: result.length,
+      winners: result,
+    });
+  } catch (e: any) {
+    console.error('[president/elections/conduct-district]', e);
+    return res.status(500).json({ error: 'Failed to conduct district election', details: e.message });
+  }
+});
+
+// ─── 14. President Member Mobile Precheck ───────────────────────────────────
+/**
+ * @swagger
+ * /journalist/president/members/precheck:
+ *   get:
+ *     summary: President Member Precheck by mobile number
+ *     description: |
+ *       Checks mobile number before creating union member.
+ *       Response includes:
+ *       - `tenantReporter`: whether this mobile is already a tenant reporter
+ *       - `alreadyUnionMember`: whether this mobile already has journalist union membership
+ *       - Full details for both (if available)
+ *     tags: [President Union APIs]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: mobileNumber
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "9876543210"
+ *     responses:
+ *       200:
+ *         description: Precheck result
+ *       400:
+ *         description: mobileNumber missing
+ */
+router.get('/members/precheck', jwtAuth, requireUnionAdmin, async (req, res) => {
+  try {
+    const mobileNumber = cleanText(req.query.mobileNumber);
+    if (!mobileNumber) return res.status(400).json({ error: 'mobileNumber is required' });
+
+    const user = await p.user.findUnique({
+      where: { mobileNumber },
+      include: {
+        profile: { select: { fullName: true, profilePhotoUrl: true } },
+        reporterProfile: {
+          include: {
+            tenant: { select: { id: true, name: true } },
+            state: { select: { id: true, name: true } },
+            district: { select: { id: true, name: true } },
+            mandal: { select: { id: true, name: true } },
+            designation: { select: { id: true, name: true, nativeName: true } },
+          },
+        },
+        journalistProfile: {
+          include: {
+            card: { select: { id: true, cardNumber: true, status: true, expiryDate: true, pdfUrl: true } },
+          },
+        },
+      },
+    });
+
+    const tenantReporter = !!user?.reporterProfile;
+    const alreadyUnionMember = !!user?.journalistProfile;
+
+    return res.json({
+      mobileNumber,
+      tenantReporter,
+      alreadyUnionMember,
+      tenantReporterDetails: tenantReporter
+        ? {
+            reporterId: user!.reporterProfile!.id,
+            tenant: user!.reporterProfile!.tenant,
+            designation: user!.reporterProfile!.designation,
+            state: user!.reporterProfile!.state,
+            district: user!.reporterProfile!.district,
+            mandal: user!.reporterProfile!.mandal,
+            fullName: user!.profile?.fullName || null,
+            profilePhotoUrl: user!.reporterProfile!.profilePhotoUrl || user!.profile?.profilePhotoUrl || null,
+          }
+        : null,
+      unionMemberDetails: alreadyUnionMember
+        ? {
+            id: user!.journalistProfile!.id,
+            unionName: user!.journalistProfile!.unionName,
+            approved: user!.journalistProfile!.approved,
+            kycVerified: user!.journalistProfile!.kycVerified,
+            pressId: user!.journalistProfile!.pressId,
+            designation: user!.journalistProfile!.designation,
+            organization: user!.journalistProfile!.organization,
+            state: user!.journalistProfile!.state,
+            district: user!.journalistProfile!.district,
+            mandal: user!.journalistProfile!.mandal,
+            card: user!.journalistProfile!.card,
+          }
+        : null,
+    });
+  } catch (e: any) {
+    console.error('[president/members/precheck]', e);
+    return res.status(500).json({ error: 'Precheck failed', details: e.message });
+  }
+});
+
+// ─── 15. President Create Member (Reporter/Non-Reporter flow) ──────────────
+/**
+ * @swagger
+ * /journalist/president/members/create:
+ *   post:
+ *     summary: President creates union member and sends ID card
+ *     description: |
+ *       Two flows in one API:
+ *       1) If mobile belongs to existing tenant reporter (`tenantReporter=true`) -> mobile-only creation with internal auto-fill.
+ *       2) If no tenant reporter (`tenantReporter=false`) -> requires fullName, designation, and mapped location input.
+ *
+ *       Supports location by id OR name:
+ *       - stateId/stateName
+ *       - districtId/districtName
+ *       - mandalId/mandalName
+ *
+ *       Optional photo upload (multipart field: `photo`).
+ *       After successful creation:
+ *       - profile saved
+ *       - press card generated (if not existing)
+ *       - PDF generated
+ *       - ID card sent to WhatsApp
+ *     tags: [President Union APIs]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [mobileNumber]
+ *             properties:
+ *               mobileNumber:
+ *                 type: string
+ *                 example: "9876543210"
+ *               tenantReporter:
+ *                 type: boolean
+ *                 description: Optional explicit branch selector; validated against actual mobile status
+ *               unionName:
+ *                 type: string
+ *                 description: Required only for SUPER_ADMIN (scoped admins auto-use their union)
+ *               fullName:
+ *                 type: string
+ *               mpin:
+ *                 type: string
+ *                 description: 4-digit; if omitted for new user, last 4 digits of mobile are used
+ *               designation:
+ *                 type: string
+ *               organization:
+ *                 type: string
+ *               currentNewspaper:
+ *                 type: string
+ *               currentDesignation:
+ *                 type: string
+ *               stateId:
+ *                 type: string
+ *               stateName:
+ *                 type: string
+ *               districtId:
+ *                 type: string
+ *               districtName:
+ *                 type: string
+ *               mandalId:
+ *                 type: string
+ *               mandalName:
+ *                 type: string
+ *               aadhaarNumber:
+ *                 type: string
+ *                 description: Any format; backend stores only last 4 digits
+ *               nomineeName:
+ *                 type: string
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Optional image; if absent and tenant reporter has photo, existing photo is used
+ *     responses:
+ *       201:
+ *         description: Member created with ID card flow status
+ *       400:
+ *         description: Validation failed
+ *       409:
+ *         description: Mobile already has union membership
+ */
+router.post('/members/create', jwtAuth, requireUnionAdmin, uploadMemberPhoto.single('photo'), async (req, res) => {
+  try {
+    const mobileNumber = cleanText(req.body.mobileNumber);
+    if (!mobileNumber) return res.status(400).json({ error: 'mobileNumber is required' });
+
+    const scope: { unionName?: string; state?: string } | null = res.locals.unionScope;
+    const unionName = scope?.unionName || cleanText(req.body.unionName);
+    if (!unionName) {
+      return res.status(400).json({ error: 'unionName is required for SUPER_ADMIN' });
+    }
+
+    const userWithProfiles = await p.user.findUnique({
+      where: { mobileNumber },
+      include: {
+        profile: { select: { fullName: true, profilePhotoUrl: true } },
+        reporterProfile: {
+          include: {
+            tenant: { select: { id: true, name: true } },
+            state: { select: { id: true, name: true } },
+            district: { select: { id: true, name: true } },
+            mandal: { select: { id: true, name: true } },
+            designation: { select: { name: true } },
+          },
+        },
+        journalistProfile: { select: { id: true, unionName: true, approved: true, pressId: true } },
+      },
+    });
+
+    if (userWithProfiles?.journalistProfile) {
+      return res.status(409).json({
+        error: 'This mobile number already has a union member profile',
+        alreadyUnionMember: true,
+        unionMemberDetails: userWithProfiles.journalistProfile,
+      });
+    }
+
+    const detectedTenantReporter = !!userWithProfiles?.reporterProfile;
+    if (req.body.tenantReporter !== undefined) {
+      const requestedBranch = String(req.body.tenantReporter) === 'true';
+      if (requestedBranch !== detectedTenantReporter) {
+        return res.status(400).json({
+          error: 'tenantReporter branch mismatch with mobile precheck result',
+          detectedTenantReporter,
+        });
+      }
+    }
+
+    // Shared fields
+    const fullNameInput = cleanText(req.body.fullName);
+    const designationInput = cleanText(req.body.designation);
+    const organizationInput = cleanText(req.body.organization) || cleanText(req.body.currentNewspaper);
+    const currentDesignationInput = cleanText(req.body.currentDesignation);
+    const nomineeName = cleanText(req.body.nomineeName);
+    const aadhaarLast4 = maskAadhaarLast4(req.body.aadhaarNumber);
+
+    // Determine/create user
+    let user = userWithProfiles;
+    if (!user) {
+      const citizenRole = await p.role.findUnique({ where: { name: 'CITIZEN_REPORTER' } });
+      if (!citizenRole) return res.status(500).json({ error: 'Default role not configured' });
+
+      const lang = await p.language.findFirst({ where: { code: 'te' } }) || await p.language.findFirst();
+      if (!lang) return res.status(500).json({ error: 'No language configured in system' });
+
+      const mpinRaw = cleanText(req.body.mpin) || mobileNumber.slice(-4);
+      if (!/^\d{4}$/.test(mpinRaw)) {
+        return res.status(400).json({ error: 'mpin must be exactly 4 digits' });
+      }
+
+      const hashedMpin = await bcrypt.hash(mpinRaw, 10);
+      user = await p.user.create({
+        data: {
+          mobileNumber,
+          mpin: hashedMpin,
+          roleId: citizenRole.id,
+          languageId: lang.id,
+          status: 'PENDING',
+        },
+        include: {
+          profile: { select: { fullName: true, profilePhotoUrl: true } },
+          reporterProfile: {
+            include: {
+              tenant: { select: { id: true, name: true } },
+              state: { select: { id: true, name: true } },
+              district: { select: { id: true, name: true } },
+              mandal: { select: { id: true, name: true } },
+              designation: { select: { name: true } },
+            },
+          },
+          journalistProfile: { select: { id: true } },
+        },
+      });
+    }
+
+    let resolvedState: string | null = null;
+    let resolvedDistrict: string | null = null;
+    let resolvedMandal: string | null = null;
+    let profilePhotoUrl: string | null = null;
+    let finalFullName: string | null = null;
+    let finalDesignation: string | null = null;
+    let finalOrganization: string | null = null;
+    let linkedTenantId: string | null = null;
+    let linkedTenantName: string | null = null;
+
+    if (detectedTenantReporter && user.reporterProfile) {
+      // Reporter true branch: auto-fill from reporter profile
+      finalFullName = user.profile?.fullName || fullNameInput;
+      finalDesignation = designationInput || user.reporterProfile.designation?.name || 'Reporter';
+      finalOrganization = organizationInput || user.reporterProfile.tenant?.name || 'Reporter';
+
+      resolvedState = user.reporterProfile.state?.name || null;
+      resolvedDistrict = user.reporterProfile.district?.name || null;
+      resolvedMandal = user.reporterProfile.mandal?.name || null;
+
+      linkedTenantId = user.reporterProfile.tenantId || null;
+      linkedTenantName = user.reporterProfile.tenant?.name || null;
+
+      profilePhotoUrl = user.reporterProfile.profilePhotoUrl || user.profile?.profilePhotoUrl || null;
+    } else {
+      // Reporter false branch: require full details + location mapping
+      finalFullName = fullNameInput;
+      finalDesignation = designationInput;
+      finalOrganization = organizationInput || 'Independent';
+
+      if (!finalFullName) return res.status(400).json({ error: 'fullName is required when tenantReporter is false' });
+      if (!finalDesignation) return res.status(400).json({ error: 'designation is required when tenantReporter is false' });
+
+      const hasLocationInput =
+        !!cleanText(req.body.stateId) || !!cleanText(req.body.stateName) || !!cleanText(req.body.state) ||
+        !!cleanText(req.body.districtId) || !!cleanText(req.body.districtName) || !!cleanText(req.body.district) ||
+        !!cleanText(req.body.mandalId) || !!cleanText(req.body.mandalName) || !!cleanText(req.body.mandal);
+      if (!hasLocationInput) {
+        return res.status(400).json({
+          error: 'Provide at least one location input: stateId/stateName, districtId/districtName, or mandalId/mandalName',
+        });
+      }
+
+      const resolved = await resolveLocation({
+        stateId: cleanText(req.body.stateId),
+        stateName: cleanText(req.body.stateName),
+        state: cleanText(req.body.state),
+        districtId: cleanText(req.body.districtId),
+        districtName: cleanText(req.body.districtName),
+        district: cleanText(req.body.district),
+        mandalId: cleanText(req.body.mandalId),
+        mandalName: cleanText(req.body.mandalName),
+        mandal: cleanText(req.body.mandal),
+      });
+
+      resolvedState = resolved.state;
+      resolvedDistrict = resolved.district;
+      resolvedMandal = resolved.mandal;
+    }
+
+    // If president admin is state-scoped and member state is missing, default to president state.
+    if (scope?.state && !resolvedState) {
+      resolvedState = scope.state;
+    }
+
+    // If president admin is state-scoped, member state must match admin state.
+    if (scope?.state && resolvedState && scope.state.toLowerCase() !== resolvedState.toLowerCase()) {
+      return res.status(400).json({
+        error: 'Member state and president state mismatch',
+        presidentState: scope.state,
+        memberState: resolvedState,
+      });
+    }
+
+    if (!finalFullName) {
+      finalFullName = `Member ${mobileNumber.slice(-4)}`;
+    }
+    if (!finalDesignation) {
+      finalDesignation = 'Member';
+    }
+    if (!finalOrganization) {
+      finalOrganization = 'Journalist';
+    }
+
+    // Ensure user profile name
+    await p.userProfile.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        fullName: finalFullName,
+        ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+      },
+      update: {
+        fullName: finalFullName,
+        ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+      },
+    });
+
+    let profile = await p.journalistProfile.create({
+      data: {
+        userId: user.id,
+        designation: finalDesignation,
+        district: resolvedDistrict || 'Unknown',
+        state: resolvedState,
+        mandal: resolvedMandal,
+        organization: finalOrganization,
+        unionName,
+        linkedTenantId,
+        linkedTenantName,
+        currentNewspaper: linkedTenantName || finalOrganization,
+        currentDesignation: currentDesignationInput || finalDesignation,
+        nomineeName,
+        aadhaarNumber: aadhaarLast4,
+        approved: true,
+        approvedAt: new Date(),
+        kycVerified: true,
+        kycVerifiedAt: new Date(),
+      },
+      include: {
+        user: { select: { id: true, mobileNumber: true, email: true } },
+      },
+    });
+
+    // Upload provided photo (if any); else keep reporter photo/user profile photo
+    const uploadedPhoto = await uploadJournalistPhoto(profile.id, req.file);
+    const effectivePhoto = uploadedPhoto || profilePhotoUrl || user.profile?.profilePhotoUrl || null;
+    if (effectivePhoto) {
+      profile = await p.journalistProfile.update({
+        where: { id: profile.id },
+        data: { photoUrl: effectivePhoto },
+        include: {
+          user: { select: { id: true, mobileNumber: true, email: true } },
+        },
+      });
+    }
+
+    const cardFlow = await ensureCardAndSendWhatsapp(
+      profile.id,
+      profile.user?.mobileNumber || mobileNumber,
+      profile.linkedTenantName || profile.organization || null,
+      profile.pressId || null,
+    );
+
+    return res.status(201).json({
+      message: 'Union member created successfully. Union member ID card process started.',
+      tenantReporter: detectedTenantReporter,
+      member: profile,
+      card: cardFlow.card,
+      idCard: {
+        pdfGenerated: !!cardFlow.pdfResult?.ok,
+        pdfUrl: cardFlow.pdfResult?.pdfUrl || null,
+        whatsappSent: cardFlow.whatsappSent,
+      },
+    });
+  } catch (e: any) {
+    const message = String(e?.message || '');
+    if (message.startsWith('Invalid ')) {
+      return res.status(400).json({ error: message });
+    }
+    console.error('[president/members/create]', e);
+    return res.status(500).json({ error: 'Member creation failed', details: e.message });
   }
 });
 
