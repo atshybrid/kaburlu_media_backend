@@ -112,8 +112,8 @@ const defaultWhitelist = [
   'http://localhost:3000',
   'http://localhost:8080',
   'https://ai-kaburlu-backend.onrender.com',
-  'https://app.kaburlumedia.com'
-
+  'https://app.kaburlumedia.com',
+  'https://api.kaburlumedia.com',
 ];
 
 // Note: Core seeds are triggered from index.ts AFTER Prisma connects to avoid noisy
