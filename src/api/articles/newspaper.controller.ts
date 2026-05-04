@@ -1168,8 +1168,15 @@ export const getNewspaperArticle = async (req: Request, res: Response) => {
             // ignore
         }
 
+        const articleCover = (item as any)?.featuredImageUrl || null;
+        const baseCover = (item as any)?.baseArticle?.contentJson?.raw?.coverImageUrl
+            || (item as any)?.baseArticle?.contentJson?.coverImageUrl
+            || null;
+        const coverImageUrl = articleCover || baseCover || null;
+
         res.json({
             ...item,
+            coverImageUrl,
             viewCount: typeof (item as any)?.baseArticle?.viewCount === 'number' ? Number((item as any).baseArticle.viewCount) : null,
             sportLink,
             sportLinkDomain,
