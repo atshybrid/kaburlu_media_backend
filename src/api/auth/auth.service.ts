@@ -73,7 +73,7 @@ type TenantAdminLoginContext = {
   reporterId: string;
   tenantId: string;
   domainId?: string;
-  tenant?: { id: string; name: string; slug: string; nativeName?: string | null };
+  tenant?: { id: string; name: string; slug: string; nativeName?: string | null; logoUrl?: string | null };
   domain?: { id: string; domain: string; isPrimary: boolean; status: string };
   domainSettings?: { id: string; data: unknown; updatedAt: string };
   newspaperName?: string | null;
@@ -84,7 +84,7 @@ type ReporterLoginContext = {
   reporterId: string;
   tenantId: string;
   domainId?: string;
-  tenant?: { id: string; name: string; slug: string; prgiStatus?: string | null; nativeName?: string | null };
+  tenant?: { id: string; name: string; slug: string; prgiStatus?: string | null; nativeName?: string | null; logoUrl?: string | null };
   tenantEntity?: any;
   domain?: { id: string; domain: string; isPrimary: boolean; status: string; kind?: string | null; verifiedAt?: string | null };
   domainSettings?: { id: string; data: unknown; updatedAt: string };
@@ -155,6 +155,13 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
         .catch(() => null)
     : null;
 
+  const tenantThemeRow = await (prisma as any).tenantTheme
+    ?.findUnique?.({ where: { tenantId: reporter.tenantId }, select: { logoUrl: true } })
+    .catch(() => null);
+
+  const settingsLogoUrl = (domainSettingsRow as any)?.data?.branding?.logoUrl || (domainSettingsRow as any)?.data?.logoUrl || null;
+  const tenantLogoUrl = settingsLogoUrl || (tenantThemeRow as any)?.logoUrl || null;
+
   // Build tenant object with nativeName from entity
   const tenantEntity = (reporter.tenant as any)?.entity;
   const tenantWithNativeName = reporter.tenant ? {
@@ -162,6 +169,7 @@ export const getTenantAdminLoginContext = async (userId: string): Promise<Tenant
     name: reporter.tenant.name,
     slug: reporter.tenant.slug,
     nativeName: tenantEntity?.nativeName || null,
+    logoUrl: tenantLogoUrl,
   } : undefined;
 
   // Build newspaperName and language info
@@ -264,6 +272,13 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
         .findUnique({ where: { domainId: domain.id }, select: { id: true, data: true, updatedAt: true } })
         .catch(() => null)
     : null;
+
+  const tenantThemeRow = await (prisma as any).tenantTheme
+    ?.findUnique?.({ where: { tenantId: reporter.tenantId }, select: { logoUrl: true } })
+    .catch(() => null);
+
+  const settingsLogoUrl = (domainSettingsRow as any)?.data?.branding?.logoUrl || (domainSettingsRow as any)?.data?.logoUrl || null;
+  const tenantLogoUrl = settingsLogoUrl || (tenantThemeRow as any)?.logoUrl || null;
 
   const autoPublish = getAutoPublishFromKycData(reporter.kycData);
   const safeKycData = sanitizeKycDataForClient(reporter.kycData);
@@ -392,6 +407,7 @@ export const getReporterLoginContext = async (userId: string): Promise<ReporterL
           slug: reporter.tenant.slug,
           prgiStatus: (reporter.tenant as any).prgiStatus ?? undefined,
           nativeName: reporter.tenant?.entity?.nativeName || null,
+          logoUrl: tenantLogoUrl,
         }
       : undefined,
     tenantEntity: reporter.tenant?.entity || undefined,

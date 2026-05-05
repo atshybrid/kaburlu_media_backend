@@ -796,6 +796,7 @@ router.get('/reporter/overview', auth, async (req, res) => {
     myNewsDraft,
     myNewsPublished30d,
     paymentsPending,
+    tenantThemeRow,
   ] = await Promise.all([
     p.tenantWebArticle.count({ where: { tenantId, authorId: userId, status: 'DRAFT' } }).catch(() => 0),
     p.tenantWebArticle.count({ where: { tenantId, authorId: userId, status: 'PENDING' } }).catch(() => 0),
@@ -803,6 +804,7 @@ router.get('/reporter/overview', auth, async (req, res) => {
     p.newspaperArticle.count({ where: { tenantId, authorId: userId, status: 'DRAFT' } }).catch(() => 0),
     p.newspaperArticle.count({ where: { tenantId, authorId: userId, status: 'PUBLISHED', createdAt: { gte: days30 } } }).catch(() => 0),
     p.reporterPayment.count({ where: { reporterId: reporter.id, tenantId, status: 'PENDING' } }).catch(() => 0),
+    p.tenantTheme.findUnique({ where: { tenantId }, select: { logoUrl: true } }).catch(() => null),
   ]);
 
   let idCardStatus: 'NOT_ISSUED' | 'ACTIVE' | 'EXPIRED' = 'NOT_ISSUED';
@@ -816,6 +818,9 @@ router.get('/reporter/overview', auth, async (req, res) => {
   return res.json({
     kind: 'reporter_overview',
     tenant: reporter?.tenant || { id: tenantId },
+    branding: {
+      logoUrl: (tenantThemeRow as any)?.logoUrl || null,
+    },
     reporter: {
       id: reporter.id,
       tenantId,

@@ -895,11 +895,19 @@ router.get('/:id/detail', passport.authenticate('jwt', { session: false }), asyn
     }
     // Super Admin and Desk Editor can view any article (no additional checks)
 
+    const tenantLogoRow = article.tenant?.id
+      ? await (prisma as any).tenantTheme
+          ?.findUnique?.({ where: { tenantId: article.tenant.id }, select: { logoUrl: true } })
+          .catch(() => null)
+      : null;
+    const tenantLogoUrl = (tenantLogoRow as any)?.logoUrl || null;
+
     // Calculate character count
     const characterCount = article.content?.length || 0;
 
     return res.json({
       ...article,
+      tenant: article.tenant ? { ...article.tenant, logoUrl: tenantLogoUrl } : null,
       characterCount,
     });
   } catch (error: any) {

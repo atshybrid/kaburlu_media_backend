@@ -1698,10 +1698,20 @@ router.get('/:id', passport.authenticate('jwt', { session: false }), async (req,
 		const { id } = req.params as any;
 		const article = await prisma.article.findUnique({
 			where: { id },
-			include: { categories: true, author: true }
+			include: { categories: true, author: true, tenant: { select: { id: true, name: true, slug: true } } }
 		});
 		if (!article) return res.status(404).json({ error: 'Not found' });
-		return res.json(article);
+
+		const tenantLogoRow = article.tenant?.id
+			? await (prisma as any).tenantTheme
+				?.findUnique?.({ where: { tenantId: article.tenant.id }, select: { logoUrl: true } })
+				.catch(() => null)
+			: null;
+
+		return res.json({
+			...article,
+			tenant: article.tenant ? { ...article.tenant, logoUrl: (tenantLogoRow as any)?.logoUrl || null } : null,
+		});
 	} catch (e) {
 		console.error('GET /articles/:id error', e);
 		return res.status(500).json({ error: 'Failed to fetch article' });
