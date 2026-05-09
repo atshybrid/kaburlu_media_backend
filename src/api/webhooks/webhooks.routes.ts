@@ -563,6 +563,8 @@ const TRIGGER_KEYWORDS = [
 
 const MY_TEAM_KEYWORDS = ['my team', 'myteam', 'నా టీమ్', 'నా జట్టు', 'team members', 'team list'];
 
+const GREETING_KEYWORDS = ['hi', 'hello', 'hey', 'helo', 'hii', 'హలో', 'నమస్కారం', 'నమస్కారము', 'నమస్తే', 'నమస్తె'];
+
 const DESIGNATIONS = ['Reporter', 'Senior Reporter', 'Photographer', 'Videographer', 'Editor', 'Sub Editor', 'Correspondent', 'Anchor', 'Freelancer', 'Other'];
 
 async function reply(phone: string, text: string) {
@@ -639,12 +641,43 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       unionDisplayName = firstUnion?.displayName || firstUnion?.unionName ?? null;
     }
 
-    if (!TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
-      const welcomeUnion = unionDisplayName || 'జర్నలిస్ట్ యూనియన్';
-      await replyButtons(phone,
-        `👋 *${welcomeUnion}‌కు స్వాగతం!*\n\nమీ *${welcomeUnion} ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
-        [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
-      );
+    const isGreeting = GREETING_KEYWORDS.some(k => inputLower === k || inputLower.startsWith(k + ' '));
+    if (isGreeting || !TRIGGER_KEYWORDS.some(k => inputLower.includes(k))) {
+      const welcomeUnion = unionDisplayName || 'DJFW';
+      // Check if this WhatsApp number is already a registered member
+      const mob10 = phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone;
+      const existingUser = await prisma.user.findUnique({ where: { mobileNumber: mob10 }, select: { id: true } }).catch(() => null);
+      const existingProfile = existingUser
+        ? await (prisma as any).journalistProfile.findUnique({
+            where: { userId: existingUser.id },
+            select: { id: true, currentDesignation: true, designation: true, state: true, approved: true },
+          }).catch(() => null)
+        : null;
+
+      if (existingProfile) {
+        // Already a member — show their status and menu buttons
+        const statusLine = existingProfile.approved ? '✅ సభ్యత్వం అప్రూవ్ అయింది' : '⏳ అప్రూవల్ పెండింగ్';
+        const positionLine = existingProfile.currentDesignation || existingProfile.designation || '';
+        await replyButtons(phone,
+          `👋 స్వాగతం!
+
+${statusLine}
+${positionLine ? `🏷️ ${positionLine}` : ''}${existingProfile.state ? ` | 📍 ${existingProfile.state}` : ''}
+
+మీరు ఏమి చేయాలనుకుంటున్నారు?`,
+          [
+            { id: 'download_id_card', title: '📥 ID కార్డ్ డౌన్‌లోడ్' },
+            { id: 'update_kyc', title: '🔄 KYC అప్‌డేట్' },
+            { id: 'update_nominee', title: '📝 నామినీ అప్‌డేట్' },
+          ]
+        );
+      } else {
+        // New visitor — show join prompt
+        await replyButtons(phone,
+          `👋 *${welcomeUnion}‌కు స్వాగతం!*\n\nమీ *${welcomeUnion} ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
+          [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
+        );
+      }
       return;
     }
 
