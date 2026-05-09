@@ -537,11 +537,14 @@ const STEPS = [
   'AWAIT_NAME',
   'AWAIT_DESIGNATION',
   'AWAIT_NEWSPAPER',
+  'AWAIT_EXPERIENCE',
   'AWAIT_STATE_SELECT',
   'AWAIT_WORKING_AREA',
   'AWAIT_DOB',
   'AWAIT_MPIN',
   'CONFIRM',
+  'MEMBER_MENU',
+  'AWAIT_UPDATE_NOMINEE',
   'AWAIT_INSURANCE_OPT',
   'AWAIT_AADHAAR',
   'AWAIT_AADHAAR_BACK',
@@ -557,6 +560,8 @@ const TRIGGER_KEYWORDS = [
   'join', 'register', 'membership', 'member', 'union', 'djfw',
   'join union', 'సభ్యత్వం', 'సభ్యుడు', 'జాయిన్',
 ];
+
+const MY_TEAM_KEYWORDS = ['my team', 'myteam', 'నా టీమ్', 'నా జట్టు', 'team members', 'team list'];
 
 const DESIGNATIONS = ['Reporter', 'Senior Reporter', 'Photographer', 'Videographer', 'Editor', 'Sub Editor', 'Correspondent', 'Anchor', 'Freelancer', 'Other'];
 
@@ -592,6 +597,12 @@ async function uploadBotMedia(mediaId: string, prefix: string): Promise<string |
 async function processWhatsappBotMessage(phone: string, text: string, mediaId: string | null = null) {
   const input = text.trim();
   const inputLower = input.toLowerCase();
+
+  // "my team" command — works at any point (president/union admin feature)
+  if (MY_TEAM_KEYWORDS.some(k => inputLower.includes(k))) {
+    await handleMyTeamRequest(phone);
+    return;
+  }
 
   let session = await (prisma as any).whatsappBotSession.findUnique({ where: { phone } });
 
@@ -701,70 +712,45 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
         : null;
 
       if (existingJournalist) {
-        // Already union registered — re-download card + show insurance status (no re-registration)
-        await (prisma as any).whatsappBotSession.delete({ where: { phone } });
-
+        // Already DJFW member — show member action menu
         const p = existingUser?.profile as any;
         const fullName = p?.fullName || existingJournalist.organization || 'సభ్యుడు';
         const pressId = existingJournalist.pressId || existingJournalist.id.slice(-8).toUpperCase();
         const uCardName = (await (prisma as any).journalistUnionSettings.findFirst({
           where: { unionName: existingJournalist.unionName },
-          select: { displayName: true, unionName: true },
+          select: { displayName: true },
         }).catch(() => null))?.displayName || 'యూనియన్';
 
-        // Check insurance
+        const hasKyc = !!(existingJournalist.aadhaarUrl || existingJournalist.panCardUrl);
         const insurance = await (prisma as any).journalistInsurance.findFirst({
           where: { profileId: existingJournalist.id, isActive: true },
-          select: { policyNumber: true, insurer: true, type: true },
+          select: { policyNumber: true },
           orderBy: { createdAt: 'desc' },
         }).catch(() => null);
+        const kycLine = existingJournalist.kycVerified
+          ? `✅ KYC వెరిఫైడ్`
+          : hasKyc ? `⏳ KYC పరీక్షలో ఉంది` : `📋 KYC పెండింగ్`;
+        const insuranceLine = insurance?.policyNumber
+          ? `🛡️ ఇన్సూరెన్స్ యాక్టివ్`
+          : `🛡️ ఇన్సూరెన్స్ పెండింగ్`;
 
-        let insuranceMsg = '';
-        if (insurance?.policyNumber) {
-          insuranceMsg = `\n\n🛡️ *ఇన్సూరెన్స్ యాక్టివ్!*\n📋 పాలసీ నంబర్: *${insurance.policyNumber}*${insurance.insurer ? ` (${insurance.insurer})` : ''}`;
-        } else if (existingJournalist.aadhaarUrl || existingJournalist.panCardUrl) {
-          insuranceMsg = `\n\n🛡️ *ఇన్సూరెన్స్:* KYC వెరిఫికేషన్ పూర్తైన తర్వాత యాక్టివేట్ అవుతుంది.\n• అపఘాత బీమా: ₹5 లక్షలు\n• కుటుంబ ఆరోగ్య బీమా: ₹3 లక్షలు`;
-        } else {
-          insuranceMsg = `\n\n🛡️ *ఇన్సూరెన్స్ కోసం KYC పూర్తి చేయండి*\n• అపఘాత బీమా: ₹5 లక్షలు\n• కుటుంబ ఆరోగ్య బీమా: ₹3 లక్షలు\n\n*DJFW* పంపి KYC అప్‌డేట్ చేయవచ్చు.`;
-        }
+        await advanceStep('MEMBER_MENU', {
+          journalistProfileId: existingJournalist.id,
+          mobileNumber: mobile10,
+          fullName,
+          unionCardName: uCardName,
+        });
 
-        // Try to send existing / regenerate ID card
-        let pdfUrl: string | null = existingJournalist.card?.pdfUrl || null;
-        try {
-          if (!pdfUrl && existingJournalist.card) {
-            await reply(phone, `⏳ మీ *${uCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
-            const pdfResult = await generateAndUploadPressCardPdf(existingJournalist.id);
-            if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
-          } else if (!existingJournalist.card) {
-            // Card record doesn't exist yet — create one and generate
-            const expiry = new Date(); expiry.setFullYear(expiry.getFullYear() + 1);
-            await (prisma as any).journalistCard.create({
-              data: { profileId: existingJournalist.id, cardNumber: `JU-${Date.now()}`, expiryDate: expiry, status: 'ACTIVE' },
-            });
-            await reply(phone, `⏳ మీ *${uCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
-            const pdfResult = await generateAndUploadPressCardPdf(existingJournalist.id);
-            if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
-          }
-        } catch (cardErr: any) {
-          console.error('[WhatsApp Bot] Re-download card gen error:', cardErr?.message);
-        }
-
-        if (pdfUrl) {
-          const sendResult = await sendWhatsappIdCardTemplate({
-            toMobileNumber: phone, pdfUrl,
-            cardType: `${uCardName} ID`,
-            organizationName: existingJournalist.currentNewspaper || existingJournalist.organization || uCardName,
-            documentType: `${uCardName} ID Card`,
-            pdfFilename: `Press_ID_${existingJournalist.id.slice(-8).toUpperCase()}.pdf`,
-          });
-          if (!sendResult.ok) {
-            await reply(phone, `🪪 మీ ID కార్డ్ లింక్: ${pdfUrl}`);
-          }
-        }
-
-        await reply(phone,
+        await replyButtons(phone,
           `✅ *${uCardName} సభ్యత్వం యాక్టివ్!*\n\n` +
-          `👤 *${fullName}* | ప్రెస్ ID: *${pressId}*${insuranceMsg}`
+          `👤 *${fullName}* | ప్రెస్ ID: *${pressId}*\n` +
+          `${kycLine} | ${insuranceLine}\n\n` +
+          `మీరు ఏమి చేయాలనుకుంటున్నారు?`,
+          [
+            { id: 'download_id_card', title: '📥 ID కార్డ్ డౌన్‌లోడ్' },
+            { id: 'update_kyc', title: '🔄 KYC అప్‌డేట్' },
+            { id: 'update_nominee', title: '📝 నామినీ అప్‌డేట్' },
+          ]
         );
         return;
       }
@@ -924,13 +910,18 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       } else {
         newspaper = input;
       }
-      await advanceStep('AWAIT_STATE_SELECT', { newspaper, tenantId: tenantId || null, _awaitOtherNewspaper: undefined });
-      await replyButtons(phone,
-        `✅ వార్తాపత్రిక: *${newspaper || 'N/A'}*\n\n📍 *దశ 4/5* — మీరు ఏ రాష్ట్రంలో పని చేస్తున్నారు?`,
+      await advanceStep('AWAIT_EXPERIENCE', { newspaper, tenantId: tenantId || null, _awaitOtherNewspaper: undefined });
+      await replyList(phone,
+        `✅ వార్తాపత్రిక: *${newspaper || 'N/A'}*\n\n⏱️ *దశ 4/6* — మీ మొత్తం జర్నలిజం అనుభవం?`,
+        'అనుభవం ఎంచుకోండి',
         [
-          { id: 'state:Andhra Pradesh', title: '🏛️ ఆంధ్రప్రదేశ్' },
-          { id: 'state:Telangana', title: '🏛️ తెలంగాణ' },
-          { id: 'state:OTHER', title: '🗺️ ఇతర రాష్ట్రం' },
+          { id: 'exp:0', title: '1 సంవత్సరం కంటే తక్కువ' },
+          { id: 'exp:1', title: '1–3 సంవత్సరాలు' },
+          { id: 'exp:3', title: '3–5 సంవత్సరాలు' },
+          { id: 'exp:5', title: '5–10 సంవత్సరాలు' },
+          { id: 'exp:10', title: '10–20 సంవత్సరాలు' },
+          { id: 'exp:20', title: '20+ సంవత్సరాలు' },
+          { id: 'SKIP', title: 'వదిలివేయి' },
         ]
       );
       break;
@@ -1374,16 +1365,17 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
 
         const profile = await (prisma as any).journalistProfile.create({
           data: {
-            userId:             user.id,
-            designation:        data.designation || 'Member',
-            district:           data.district || '',
-            organization:       data.newspaper || '',
-            unionName:          session.unionName,
-            state:              data.state || null,
-            mandal:             data.mandal || null,
-            currentNewspaper:   data.newspaper || null,
-            currentDesignation: data.designation || null,
-            linkedTenantId:     data.tenantId || null,
+            userId:               user.id,
+            designation:          data.designation || 'Member',
+            district:             data.district || '',
+            organization:         data.newspaper || '',
+            unionName:            session.unionName,
+            state:                data.state || null,
+            mandal:               data.mandal || null,
+            currentNewspaper:     data.newspaper || null,
+            currentDesignation:   data.designation || null,
+            linkedTenantId:       data.tenantId || null,
+            totalExperienceYears: data.totalExperienceYears ?? null,
           },
         });
 
@@ -1582,6 +1574,123 @@ async function processWhatsappBotMessage(phone: string, text: string, mediaId: s
       break;
     }
 
+    // ── EXPERIENCE ─────────────────────────────────────────────────────────────
+    case 'AWAIT_EXPERIENCE': {
+      let expYears: number | null = null;
+      if (input.startsWith('exp:')) {
+        const parsed = parseInt(input.replace('exp:', ''), 10);
+        expYears = isNaN(parsed) ? null : parsed;
+      } else if (/^\d+$/.test(input)) {
+        expYears = parseInt(input, 10);
+      }
+      // SKIP or unrecognised → expYears stays null
+      await advanceStep('AWAIT_STATE_SELECT', { totalExperienceYears: expYears });
+      await replyButtons(phone,
+        `✅ అనుభవం: *${expYears !== null ? expYears + '+ సంవత్సరాలు' : 'N/A'}*\n\n📍 *దశ 5/6* — మీరు ఏ రాష్ట్రంలో పని చేస్తున్నారు?`,
+        [
+          { id: 'state:Andhra Pradesh', title: '🏛️ ఆంధ్రప్రదేశ్' },
+          { id: 'state:Telangana', title: '🏛️ తెలంగాణ' },
+          { id: 'state:OTHER', title: '🗺️ ఇతర రాష్ట్రం' },
+        ]
+      );
+      break;
+    }
+
+    // ── MEMBER MENU (registered member action hub) ────────────────────────────
+    case 'MEMBER_MENU': {
+      const profileId = data.journalistProfileId as string;
+      const uCardName = (data.unionCardName as string) || 'యూనియన్';
+
+      if (inputLower === 'download_id_card') {
+        const jp = await (prisma as any).journalistProfile.findUnique({
+          where: { id: profileId },
+          include: { card: { select: { id: true, pdfUrl: true, status: true } } },
+        }).catch(() => null);
+        let pdfUrl: string | null = jp?.card?.pdfUrl || null;
+        if (!pdfUrl) {
+          await reply(phone, `⏳ మీ *${uCardName} ID కార్డ్* తయారు చేస్తున్నాం...`);
+          let card = await (prisma as any).journalistCard.findUnique({ where: { profileId } }).catch(() => null);
+          if (!card) {
+            const expiry = new Date(); expiry.setFullYear(expiry.getFullYear() + 1);
+            card = await (prisma as any).journalistCard.create({
+              data: { profileId, cardNumber: `JU-${Date.now()}`, expiryDate: expiry, status: 'ACTIVE' },
+            });
+          }
+          const pdfResult = await generateAndUploadPressCardPdf(profileId);
+          if (pdfResult.ok && pdfResult.pdfUrl) pdfUrl = pdfResult.pdfUrl;
+        }
+        if (pdfUrl) {
+          const sendResult = await sendWhatsappIdCardTemplate({
+            toMobileNumber: phone, pdfUrl,
+            cardType: `${uCardName} ID`,
+            organizationName: jp?.currentNewspaper || jp?.organization || 'Journalist Union',
+            documentType: `${uCardName} ID Card`,
+            pdfFilename: `Press_ID_${profileId.slice(-8).toUpperCase()}.pdf`,
+          });
+          if (!sendResult.ok) await reply(phone, `🪪 మీ ID కార్డ్ లింక్: ${pdfUrl}`);
+        } else {
+          await reply(phone, `⚠️ ID కార్డ్ ఇప్పుడు జనరేట్ చేయడం సాధ్యం కాలేదు. అడ్మిన్‌ని సంప్రదించండి.`);
+        }
+        await replyButtons(phone, 'మరేమైనా చేయాలా?',
+          [{ id: 'update_kyc', title: '🔄 KYC అప్‌డేట్' }, { id: 'update_nominee', title: '📝 నామినీ అప్‌డేట్' }]
+        );
+        return;
+      }
+
+      if (inputLower === 'update_kyc') {
+        await advanceStep('AWAIT_AADHAAR', {});
+        await replyButtons(phone,
+          `🔄 *KYC అప్‌డేట్*\n\n📄 *దశ 1/4* — మీ *ఆధార్ కార్డ్ ముందు భాగం* ఫోటో పంపండి (ఇమేజ్‌గా):`,
+          [{ id: 'SKIP', title: 'ఆధార్ వదిలివేయి' }]
+        );
+        return;
+      }
+
+      if (inputLower === 'update_nominee') {
+        await advanceStep('AWAIT_UPDATE_NOMINEE', {});
+        await replyButtons(phone,
+          `📝 *నామినీ అప్‌డేట్*\n\nమీ *నామినీ పేరు* నమోదు చేయండి:\n(బీమా దావాలో ఈ వ్యక్తికి చెల్లింపు జరుగుతుంది)`,
+          [{ id: 'SKIP', title: 'రద్దు' }]
+        );
+        return;
+      }
+
+      // Default — show menu again
+      await replyButtons(phone, 'మీరు ఏమి చేయాలనుకుంటున్నారు?',
+        [
+          { id: 'download_id_card', title: '📥 ID కార్డ్ డౌన్‌లోడ్' },
+          { id: 'update_kyc', title: '🔄 KYC అప్‌డేట్' },
+          { id: 'update_nominee', title: '📝 నామినీ అప్‌డేట్' },
+        ]
+      );
+      break;
+    }
+
+    // ── UPDATE NOMINEE ────────────────────────────────────────────────────────
+    case 'AWAIT_UPDATE_NOMINEE': {
+      if (inputLower === 'skip' || inputLower === 'cancel' || inputLower === '\u0c30\u0c26\u0c4d\u0c26\u0c41') {
+        await (prisma as any).whatsappBotSession.delete({ where: { phone } }).catch(() => {});
+        await reply(phone, '✅ సరే! మళ్ళీ *DJFW* పంపి అప్‌డేట్ చేయవచ్చు.');
+        return;
+      }
+      if (input.length < 2) {
+        await replyButtons(phone,
+          '📝 *నామినీ అప్‌డేట్* — మీ నామినీ పేరు నమోదు చేయండి:',
+          [{ id: 'SKIP', title: 'రద్దు' }]
+        );
+        return;
+      }
+      if (data.journalistProfileId) {
+        await (prisma as any).journalistProfile.update({
+          where: { id: data.journalistProfileId },
+          data: { nomineeName: input },
+        }).catch((e: any) => console.error('[WhatsApp Bot] nominee update failed:', e?.message));
+      }
+      await (prisma as any).whatsappBotSession.delete({ where: { phone } }).catch(() => {});
+      await reply(phone, `✅ *నామినీ అప్‌డేట్ విజయవంతం!*\n\n👥 నామినీ: *${input}*\n\nమళ్ళీ మెనూ కోసం *DJFW* పంపండి.`);
+      break;
+    }
+
     case 'KYC_SUBMITTED':
     case 'DONE':
       await reply(phone,
@@ -1633,6 +1742,121 @@ async function kycSubmittedMessage(phone: string, data: Record<string, any>) {
     `⏳ సాధారణంగా *1–3 పని దినాలు* పడుతుంది.` +
     insuranceNote
   );
+}
+
+// ─── My Team handler (president/union-admin feature) ──────────────────────────
+async function handleMyTeamRequest(phone: string) {
+  const mobile10 = phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone;
+
+  const requestingUser = await prisma.user.findUnique({
+    where: { mobileNumber: mobile10 },
+    select: { id: true },
+  }).catch(() => null);
+
+  if (!requestingUser) {
+    await reply(phone, '⚠️ మీ నంబర్ నమోదు కాలేదు. ముందు *DJFW* పంపి సభ్యుడిగా నమోదు చేయండి.');
+    return;
+  }
+
+  const profile = await (prisma as any).journalistProfile.findUnique({
+    where: { userId: requestingUser.id },
+    select: { id: true, unionName: true, state: true },
+  }).catch(() => null);
+
+  if (!profile) {
+    await reply(phone, '⚠️ జర్నలిస్ట్ ప్రొఫైల్ కనుగొనలేదు. అడ్మిన్‌ని సంప్రదించండి.');
+    return;
+  }
+
+  // Check authority — post holder (President/Secretary) or union admin
+  const postHolder = await (prisma as any).journalistUnionPostHolder.findFirst({
+    where: {
+      profileId: profile.id,
+      isActive: true,
+      post: { title: { contains: 'President', mode: 'insensitive' } },
+    },
+    select: { id: true },
+  }).catch(() => null);
+
+  const unionAdmin = await (prisma as any).journalistUnionAdmin.findFirst({
+    where: { userId: requestingUser.id, unionName: profile.unionName },
+    select: { state: true, unionName: true },
+  }).catch(() => null);
+
+  if (!postHolder && !unionAdmin) {
+    await reply(phone, '⚠️ మీకు టీమ్ వివరాలు చూసే అనుమతి లేదు. అడ్మిన్‌ని సంప్రదించండి.');
+    return;
+  }
+
+  const state: string | null = unionAdmin?.state || profile.state || null;
+  const unionName: string = profile.unionName || '';
+
+  await reply(phone, `⏳ మీ టీమ్ వివరాలు సేకరిస్తున్నాం...`);
+
+  const stateFilter = state
+    ? { state: { contains: state, mode: 'insensitive' as const } }
+    : {};
+
+  const members: any[] = await (prisma as any).journalistProfile.findMany({
+    where: { unionName, ...stateFilter },
+    select: {
+      district: true,
+      mandal: true,
+      currentNewspaper: true,
+      organization: true,
+      currentDesignation: true,
+      designation: true,
+      approved: true,
+      user: {
+        select: {
+          mobileNumber: true,
+          profile: { select: { fullName: true } },
+        },
+      },
+    },
+    orderBy: [{ district: 'asc' }, { mandal: 'asc' }],
+    take: 300,
+  }).catch(() => []);
+
+  if (members.length === 0) {
+    await reply(phone, `ℹ️ ${state ? state + ' లో' : 'మీ యూనియన్‌లో'} సభ్యులు కనుగొనలేదు.`);
+    return;
+  }
+
+  // Group by district
+  const byDistrict: Record<string, any[]> = {};
+  for (const m of members) {
+    const dist = m.district || 'ఇతర';
+    if (!byDistrict[dist]) byDistrict[dist] = [];
+    byDistrict[dist].push(m);
+  }
+
+  await reply(phone,
+    `📋 *${unionName} — ${state || 'అన్ని రాష్ట్రాలు'} సభ్యుల జాబితా*\n` +
+    `🔢 మొత్తం: *${members.length}* మంది | జిల్లాలు: *${Object.keys(byDistrict).length}*`
+  );
+
+  for (const [district, distMembers] of Object.entries(byDistrict)) {
+    let chunk = `📍 *${district}* (${distMembers.length} మంది)\n`;
+    for (const m of distMembers) {
+      const name = m.user?.profile?.fullName || 'N/A';
+      const mob = m.user?.mobileNumber || '';
+      const paper = m.currentNewspaper || m.organization || '';
+      const position = m.currentDesignation || m.designation || '';
+      const mandalTag = m.mandal ? ` [${m.mandal}]` : '';
+      const status = m.approved ? '✅' : '⏳';
+      const line = `${status} ${name} | 📱${mob}${paper ? ` | ${paper}` : ''}${position ? ` | ${position}` : ''}${mandalTag}\n`;
+      if ((chunk + line).length > 3500) {
+        await reply(phone, chunk.trim());
+        chunk = line;
+      } else {
+        chunk += line;
+      }
+    }
+    if (chunk.trim()) await reply(phone, chunk.trim());
+  }
+
+  await reply(phone, `✅ జాబితా పూర్తైంది.\n📝 మళ్ళీ *my team* పంపి తాజా జాబితా చూడవచ్చు.`);
 }
 
 export default router;
