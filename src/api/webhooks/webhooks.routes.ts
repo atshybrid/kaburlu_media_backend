@@ -2305,22 +2305,64 @@ async function sendKycReviewDetail(phone: string, profileId: string) {
 }
 
 // ─── handleAdminMenuRequest (keyword shortcut) ────────────────────────────────
+// Checks mobile number → if president/admin: show admin menu
+//                       → if regular member: show member menu
+//                       → if unregistered: show join prompt
 async function handleAdminMenuRequest(phone: string) {
   const mobile10 = phone.startsWith('91') && phone.length === 12 ? phone.slice(2) : phone;
   const user = await prisma.user.findUnique({ where: { mobileNumber: mobile10 }, select: { id: true } }).catch(() => null);
-  if (!user) { await reply(phone, '⚠️ నమోదు కాలేదు. *DJFW* పంపి రిజిస్టర్ చేయండి.'); return; }
+
+  // Not registered at all — show join prompt
+  if (!user) {
+    const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({ select: { displayName: true, unionName: true } }).catch(() => null);
+    const displayName = firstUnion?.displayName || 'DJFW';
+    await replyButtons(phone,
+      `👋 *${displayName}‌కు స్వాగతం!*\n\nమీ *${displayName} ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.\n\n*JOIN* లేదా *DJFW* పంపండి.`,
+      [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
+    );
+    return;
+  }
+
   const profile = await (prisma as any).journalistProfile.findUnique({
     where: { userId: user.id },
-    select: { id: true, unionName: true, state: true },
+    select: { id: true, unionName: true, state: true, currentDesignation: true, designation: true, approved: true },
   }).catch(() => null);
-  if (!profile) { await reply(phone, '⚠️ ప్రొఫైల్ కనుగొనలేదు.'); return; }
-  const isAdmin = await checkIsAdminOrPresident(user.id, profile.id, profile.unionName || '');
-  if (!isAdmin) { await reply(phone, '⚠️ అడ్మిన్ అనుమతి లేదు.'); return; }
+
+  // No journalist profile — show join prompt
+  if (!profile) {
+    const firstUnion = await (prisma as any).journalistUnionSettings.findFirst({ select: { displayName: true, unionName: true } }).catch(() => null);
+    const displayName = firstUnion?.displayName || 'DJFW';
+    await replyButtons(phone,
+      `👋 *${displayName}‌కు స్వాగతం!*\n\nమీ *${displayName} ID కార్డ్* పొందడానికి సభ్యుడిగా చేరండి.`,
+      [{ id: 'JOIN', title: '📋 ఇప్పుడే నమోదు చేయండి' }]
+    );
+    return;
+  }
+
   const settings = await (prisma as any).journalistUnionSettings.findFirst({
     where: { unionName: profile.unionName },
     select: { displayName: true },
   }).catch(() => null);
-  await showPresidentMenu(phone, user.id, profile.id, profile.unionName || '', profile.state || null, settings?.displayName || 'DJFW');
+  const displayName = settings?.displayName || profile.unionName || 'DJFW';
+
+  // Check president / admin
+  const isAdmin = await checkIsAdminOrPresident(user.id, profile.id, profile.unionName || '');
+  if (isAdmin) {
+    await showPresidentMenu(phone, user.id, profile.id, profile.unionName || '', profile.state || null, displayName);
+    return;
+  }
+
+  // Regular member — show member menu
+  const statusLine = profile.approved ? '✅ సభ్యత్వం అప్రూవ్ అయింది' : '⏳ అప్రూవల్ పెండింగ్';
+  const positionLine = profile.currentDesignation || profile.designation || '';
+  await replyButtons(phone,
+    `👋 స్వాగతం!\n\n${statusLine}${positionLine ? `\n🏷️ ${positionLine}` : ''}${profile.state ? ` | 📍 ${profile.state}` : ''}\n\nమీరు ఏమి చేయాలనుకుంటున్నారు?`,
+    [
+      { id: 'download_id_card', title: '📥 ID కార్డ్ డౌన్‌లోడ్' },
+      { id: 'update_kyc', title: '🔄 KYC అప్‌డేట్' },
+      { id: 'update_nominee', title: '📝 నామినీ అప్‌డేట్' },
+    ]
+  );
 }
 
 // ─── My Team handler (president/union-admin feature) ──────────────────────────
