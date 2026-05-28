@@ -68,6 +68,9 @@ import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import prisma from '../../lib/prisma';
 import { getRazorpayClientForTenant, getRazorpayConfigForTenant } from '../reporterPayments/razorpay.service';
+import { upsertDeviceForUser } from '../../lib/deviceUpsert';
+import { subscribeDeviceToLanguageTopics } from '../../lib/smartPush';
+import { attachUnionMemberToLogin } from '../../lib/journalistUnionMember';
 
 type TenantAdminLoginContext = {
   reporterId: string;
@@ -771,6 +774,23 @@ export const login = async (loginDto: MpinLoginDto) => {
     console.error('[Auth] Failed to update lastLoginAt for user', user.id, e);
   }
 
+  if (loginDto.deviceId) {
+    try {
+      await upsertDeviceForUser({
+        userId: user.id,
+        deviceId: loginDto.deviceId,
+        deviceModel: loginDto.deviceModel,
+        pushToken: loginDto.pushToken,
+      });
+      if (loginDto.pushToken && user.languageId) {
+        const lang = await prisma.language.findUnique({ where: { id: user.languageId }, select: { code: true } });
+        await subscribeDeviceToLanguageTopics(loginDto.pushToken, lang?.code);
+      }
+    } catch (e) {
+      console.warn('[Auth] Device upsert on login failed (non-fatal):', (e as any)?.message || e);
+    }
+  }
+
   const payload = {
     sub: user.id,
     role: role?.name,
@@ -853,23 +873,55 @@ export const login = async (loginDto: MpinLoginDto) => {
     }
   } catch {}
 
-  // Journalist Union Admin context — appended for any role that has been assigned as union admin
+  // Journalist union context: union *admin* rows, and/or active STATE-level president post holdings.
+  // (State presidents are JournalistUnionPostHolder; they may not have a JournalistUnionAdmin row.)
   try {
     const unionAdmins = await (prisma as any).journalistUnionAdmin.findMany({
       where: { userId: user.id },
       select: { id: true, unionName: true, state: true },
     });
-    if (unionAdmins.length > 0) {
+
+    const statePresidentHoldings = await prisma.journalistUnionPostHolder.findMany({
+      where: {
+        isActive: true,
+        profile: { userId: user.id },
+        post: {
+          level: 'STATE',
+          title: { contains: 'President', mode: 'insensitive' },
+        },
+      },
+      include: { profile: { select: { state: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (unionAdmins.length > 0 || statePresidentHoldings.length > 0) {
+      const adminUnions = unionAdmins.map((u: any) => ({ id: u.id, unionName: u.unionName, state: u.state }));
+      const adminKeys = new Set(unionAdmins.map((u: any) => `${u.unionName}|${u.state ?? ''}`));
+      const extraFromPresident = statePresidentHoldings.filter(
+        (h) => !adminKeys.has(`${h.unionName}|${h.profile?.state ?? ''}`),
+      );
+      const presidentUnions = extraFromPresident.map((h) => ({
+        id: h.id,
+        unionName: h.unionName,
+        state: h.profile?.state ?? null,
+      }));
+
       (result as any).journalistUnion = {
-        isUnionAdmin: true,
-        unions: unionAdmins.map((u: any) => ({ id: u.id, unionName: u.unionName, state: u.state })),
+        isUnionAdmin: unionAdmins.length > 0,
+        isStatePresident: statePresidentHoldings.length > 0,
+        unions: [...adminUnions, ...presidentUnions],
       };
     }
   } catch (e) {
     console.warn('[Auth] Failed to attach journalist union admin context for user', user.id, e);
   }
 
-  console.log("result", result)
+  try {
+    await attachUnionMemberToLogin(result, user.id);
+  } catch (e) {
+    console.warn('[Auth] Failed to attach union member context for user', user.id, e);
+  }
+
   return result
 };
 

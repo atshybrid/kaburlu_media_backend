@@ -2578,6 +2578,18 @@ enum JournalistComplaintStatus {
   CLOSED
 }
 
+enum JournalistMemberType {
+  TENANT_REPORTER
+  NON_TENANT_REPORTER
+}
+
+enum JournalistDocumentApprovalStatus {
+  NOT_UPLOADED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 /// Journalist union membership application / profile
 model JournalistProfile {
   id           String    @id @default(cuid())
@@ -2587,9 +2599,23 @@ model JournalistProfile {
   district     String
   organization String                /// Media outlet / employer at time of application
   unionName    String?               /// Which journalist union (supports multi-union)
+  memberType              JournalistMemberType?
+  fatherName              String?
+  workingArea             String?   /// Working area / beat (text)
+  workingIdCardUrl        String?   /// Current working journalist ID card image (employer)
+  publisherMobileNumber   String?   /// Publisher contact mobile (non-tenant registrations)
   approved     Boolean   @default(false)
   approvedAt   DateTime?
   rejectedAt   DateTime?
+
+  photoApprovalStatus         JournalistDocumentApprovalStatus @default(NOT_UPLOADED)
+  aadhaarApprovalStatus       JournalistDocumentApprovalStatus @default(NOT_UPLOADED)
+  panApprovalStatus           JournalistDocumentApprovalStatus @default(NOT_UPLOADED)
+  workingIdCardApprovalStatus JournalistDocumentApprovalStatus @default(NOT_UPLOADED)
+  photoApprovedAt             DateTime?
+  aadhaarApprovedAt           DateTime?
+  panApprovedAt               DateTime?
+  workingIdCardApprovedAt     DateTime?
 
   // ── Geographic Area (where the journalist operates / covers) ──
   state             String?  /// State name (e.g. "Andhra Pradesh")
@@ -2622,7 +2648,9 @@ model JournalistProfile {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   card         JournalistCard?
   postHoldings JournalistUnionPostHolder[]
-  insurances   JournalistInsurance[]
+  insurances        JournalistInsurance[]
+  surveyProgress    UnionMemberSurveyProgress[]
+  benefitStatus     UnionMemberBenefitStatus?
 
   @@index([approved])
   @@index([district])
@@ -2823,6 +2851,11 @@ model JournalistUnionSettings {
   abbreviation          String?  /// Short form printed on card (e.g. "DJF(W)") — auto-derived from displayName if not set
   sloganText            String?  /// Tagline/motto for card footer (e.g. "అక్షర దివిటీలం...ప్రజాస్వామ్య వార్తలు")
 
+  // ── Member benefits (first membership free, insurance unlock rules) ─────
+  benefitFirstMembershipFree       Boolean @default(true)  /// First union membership fee waived
+  benefitAccidentalRequiresSurvey  Boolean @default(true)  /// ACCIDENTAL insurance only after survey tasks
+  benefitHealthRequiresAccidental Boolean @default(true) /// HEALTH insurance only after ACCIDENTAL is active
+
   // ── Signatory (shown on ALL press cards union-wide) ──────────────────────
   founderSignatureUrl   String?  /// Ink signature of founder / national president (shown on every card)
   signatoryName         String?  /// Printed name under signature (e.g. "T. Arunkumar")
@@ -2858,4 +2891,222 @@ model JournalistUnionStateSettings {
 
   @@unique([unionName, state])
   @@index([unionName])
+}
+
+// ─── Union Member Survey & Benefits (party tracks, insurance unlock) ─────────
+
+enum UnionPoliticalPartyCode {
+  BJP
+  CONGRESS
+  BRS
+  TRS
+  OTHER
+}
+
+enum UnionSurveyQuestionType {
+  SINGLE_CHOICE
+  MULTI_CHOICE
+  YES_NO
+  TEXT
+  VIDEO_UPLOAD
+}
+
+enum UnionMemberSurveyStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum UnionMemberSurveyType {
+  GENERAL          /// e.g. 2026 election prediction — options can list multiple parties
+  POLITICAL_PARTY  /// Ex-BJP / party-specific track — link politicalPartyId when possible
+}
+
+enum UnionMemberSurveyCampaignStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum UnionMemberSurveyReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Admin-configured survey campaign per party (e.g. Ex-BJP Telangana track)
+model UnionMemberSurveyCampaign {
+  id                       String                   @id @default(cuid())
+  unionName                String
+  state                    String?                  /// e.g. "Telangana"
+  surveyType               UnionMemberSurveyType    @default(POLITICAL_PARTY)
+  politicalPartyId         String?                  /// IndianPoliticalParty.id when surveyType = POLITICAL_PARTY
+  partyCode                UnionPoliticalPartyCode  @default(OTHER)
+  displayName              String                   /// "Ex-BJP Members Survey"
+  description              String?
+  logoUrl                  String?
+  frameImageUrl            String?                  /// Full frame overlay image for video recording UI
+  primaryColor             String                   @default("#0D47A1")
+  secondaryColor           String                   @default("#FFB300")
+  frameStyleKey            String?                  /// App frame template id (client renders overlay)
+  campaignStatus           UnionMemberSurveyCampaignStatus @default(DRAFT)
+  requiresReview           Boolean                  @default(true) /// Super Admin approves video/answers before insurance unlock
+  requiredForInsuranceType JournalistInsuranceType? /// Completing survey unlocks this insurance type
+  sortOrder                Int                      @default(0)
+  isActive                 Boolean                  @default(true)
+  endsAt                   DateTime?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  politicalParty           IndianPoliticalParty?    @relation(fields: [politicalPartyId], references: [id], onDelete: SetNull)
+  questions                UnionMemberSurveyQuestion[]
+  progress                 UnionMemberSurveyProgress[]
+
+  @@index([unionName, state, isActive])
+  @@index([partyCode])
+  @@index([surveyType])
+  @@index([politicalPartyId])
+  @@index([campaignStatus])
+}
+
+model UnionMemberSurveyQuestion {
+  id                 String                  @id @default(cuid())
+  campaignId         String
+  questionText       String
+  nativeQuestionText String?
+  questionType       UnionSurveyQuestionType
+  options            Json?                   /// [{ "id": "a", "label": "Option A" }]
+  required           Boolean                 @default(true)
+  sortOrder          Int                     @default(0)
+  videoMaxSeconds    Int?                    /// For VIDEO_UPLOAD type
+  yesCount           Int                     @default(0) /// Aggregated YES answers (YES_NO questions)
+  noCount            Int                     @default(0) /// Aggregated NO answers (YES_NO questions)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  campaign           UnionMemberSurveyCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  answers            UnionMemberSurveyAnswer[]
+
+  @@index([campaignId, sortOrder])
+}
+
+/// Per-member progress on a campaign
+model UnionMemberSurveyProgress {
+  id               String                        @id @default(cuid())
+  campaignId       String
+  profileId        String
+  status           UnionMemberSurveyStatus       @default(NOT_STARTED)
+  reviewStatus     UnionMemberSurveyReviewStatus?
+  reviewNote       String?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  campaign         UnionMemberSurveyCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  profile          JournalistProfile             @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  answers          UnionMemberSurveyAnswer[]
+
+  @@unique([campaignId, profileId])
+  @@index([profileId])
+  @@index([status])
+  @@index([reviewStatus])
+}
+
+model UnionMemberSurveyAnswer {
+  id         String   @id @default(cuid())
+  progressId String
+  questionId String
+  answerText String?
+  answerJson Json?    /// Multi-select, YES_NO: { "value": "YES" | "NO" }
+  yesNoValue String? /// Normalized YES | NO for fast analytics
+  videoUrl   String?
+  imageUrl   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  progress   UnionMemberSurveyProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  question   UnionMemberSurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([progressId, questionId])
+  @@index([questionId])
+}
+
+/// Denormalized benefit / unlock flags per member (1:1 with JournalistProfile)
+model UnionMemberBenefitStatus {
+  profileId                 String    @id
+  unionName                 String
+  firstMembershipWaived     Boolean   @default(true)
+  firstMembershipWaivedAt   DateTime?
+  accidentalUnlockedAt      DateTime?
+  healthUnlockedAt          DateTime?
+  accidentalInsuranceActive Boolean   @default(false)
+  healthInsuranceActive     Boolean   @default(false)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  profile                   JournalistProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([unionName])
+}
+
+/// Indian political parties — sourced from ECI gazette (name, symbol); brand colors AI/manual curated.
+model IndianPoliticalParty {
+  id                   String                    @id @default(cuid())
+  shortCode            String                    @unique /// BJP, INC, BRS — for APIs / surveys
+  name                 String                    /// Official ECI registered name
+  abbreviation         String?
+  recognition          PoliticalPartyRecognition
+  symbolName           String?                   /// ECI reserved symbol text e.g. "Lotus"
+  symbolImageUrl       String?                   /// CDN URL if symbol image uploaded
+  primaryColor         String                    @default("#1A237E")
+  secondaryColor       String                    @default("#FFFFFF")
+  states               String[]                  @default([]) /// States/UTs where recognized (state parties)
+  headquartersAddress  String?
+  eciSerialNumber      Int?
+  eciNotificationRef   String?                   /// e.g. 56/25/2024/PPS-II (NP)
+  eciSourceUrl         String?
+  colorSource          PoliticalPartyColorSource @default(MANUAL)
+  isActive             Boolean                   @default(true)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  surveyCampaigns      UnionMemberSurveyCampaign[]
+
+  @@index([name])
+  @@index([recognition])
+  @@index([isActive])
+  @@index([recognition, isActive])
+}
+
+enum PoliticalPartyRecognition {
+  NATIONAL
+  STATE
+  REGISTERED_UNRECOGNIZED
+}
+
+enum PoliticalPartyColorSource {
+  ECI
+  MANUAL
+  AI_CURATED
+}
+
+/// PRGI (Press Registrar General of India) registered newspaper titles — imported from official CSV exports.
+model PrgiRegisteredTitle {
+  id                  String    @id @default(cuid())
+  serialNumber        Int?
+  title               String
+  registrationNumber  String    @unique
+  registrationDate    DateTime? @db.Date
+  language            String?
+  periodicity         String?
+  publisher           String?
+  owner               String?
+  publicationState    String
+  publicationDistrict String?
+  sourceFile          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([publicationState])
+  @@index([publicationDistrict])
+  @@index([publicationState, publicationDistrict])
+  @@index([title])
+  @@index([registrationDate])
 }

@@ -1,6 +1,6 @@
 // src/api/journalist/president.routes.ts
 // President / Union Admin Dashboard APIs
-// Auth: SUPER_ADMIN OR JournalistUnionAdmin record
+// Auth: SUPER_ADMIN OR JournalistUnionAdmin OR active STATE-level "President" post holder
 // Mounts at: /journalist/president
 
 import { Router, Request, Response, NextFunction } from 'express';
@@ -56,11 +56,31 @@ async function requireUnionAdmin(req: Request, res: Response, next: NextFunction
       where: { userId: user.id },
       select: { unionName: true, state: true },
     });
-    if (!unionAdmin) {
-      return res.status(403).json({ error: 'Forbidden: no journalist union admin assignment' });
+    if (unionAdmin) {
+      res.locals.unionScope = { unionName: unionAdmin.unionName, state: unionAdmin.state };
+      return next();
     }
-    res.locals.unionScope = { unionName: unionAdmin.unionName, state: unionAdmin.state };
-    return next();
+    // State President (post holder) without a separate JournalistUnionAdmin row
+    const statePresidentHolder = await p.journalistUnionPostHolder.findFirst({
+      where: {
+        isActive: true,
+        profile: { userId: user.id },
+        post: {
+          level: 'STATE',
+          title: { contains: 'President', mode: 'insensitive' },
+        },
+      },
+      include: { profile: { select: { state: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (statePresidentHolder) {
+      res.locals.unionScope = {
+        unionName: statePresidentHolder.unionName,
+        state: statePresidentHolder.profile?.state ?? null,
+      };
+      return next();
+    }
+    return res.status(403).json({ error: 'Forbidden: no journalist union admin assignment' });
   } catch {
     return res.status(500).json({ error: 'Authorization check failed' });
   }
@@ -2188,7 +2208,7 @@ router.post('/members/create', jwtAuth, requireUnionAdmin, uploadMemberPhoto.sin
     if (detectedTenantReporter && user.reporterProfile) {
       // Reporter true branch: auto-fill from reporter profile
       finalFullName = user.profile?.fullName || fullNameInput;
-      finalDesignation = designationInput || user.reporterProfile.designation?.name || 'Reporter';
+      finalDesignation = designationInput || 'Union Member';
       finalOrganization = organizationInput || user.reporterProfile.tenant?.name || 'Reporter';
 
       resolvedState = user.reporterProfile.state?.name || null;
@@ -2202,7 +2222,7 @@ router.post('/members/create', jwtAuth, requireUnionAdmin, uploadMemberPhoto.sin
     } else {
       // Reporter false branch: require full details + location mapping
       finalFullName = fullNameInput;
-      finalDesignation = designationInput;
+      finalDesignation = designationInput || 'Union Member';
       finalOrganization = organizationInput || 'Independent';
 
       if (!finalFullName) return res.status(400).json({ error: 'fullName is required when tenantReporter is false' });
@@ -2253,7 +2273,7 @@ router.post('/members/create', jwtAuth, requireUnionAdmin, uploadMemberPhoto.sin
       finalFullName = `Member ${mobileNumber.slice(-4)}`;
     }
     if (!finalDesignation) {
-      finalDesignation = 'Member';
+      finalDesignation = 'Union Member';
     }
     if (!finalOrganization) {
       finalOrganization = 'Journalist';
@@ -2285,7 +2305,7 @@ router.post('/members/create', jwtAuth, requireUnionAdmin, uploadMemberPhoto.sin
         linkedTenantId,
         linkedTenantName,
         currentNewspaper: linkedTenantName || finalOrganization,
-        currentDesignation: currentDesignationInput || finalDesignation,
+        currentDesignation: currentDesignationInput || (detectedTenantReporter ? user.reporterProfile?.designation?.name || null : null),
         nomineeName,
         aadhaarNumber: aadhaarLast4,
         approved: true,

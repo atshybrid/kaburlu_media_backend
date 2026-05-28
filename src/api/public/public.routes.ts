@@ -5,6 +5,7 @@ import prisma from '../../lib/prisma';
 import { toWebArticleCardDto, toWebArticleDetailDto } from '../../lib/tenantWebArticleView';
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { hasEpaperJpegColumns } from '../../lib/epaperDbFeatures';
+import { normalizeEpaperEditionForPublic, resolveEpaperBrandColors } from '../../lib/epaperPublicBranding';
 import { saveBrowserPushSubscription, deactivateBrowserPushSubscription } from '../../lib/webPushBrowser';
 import { verifyToken } from '../../lib/tokenVerification';
 import jwtLib from 'jsonwebtoken';
@@ -394,7 +395,10 @@ router.get('/epaper/editions', requireVerifiedEpaperDomain, async (req, res) => 
     },
   });
 
-  return res.json({ tenant: { id: tenant.id, slug: tenant.slug }, editions });
+  return res.json({
+    tenant: { id: tenant.id, slug: tenant.slug },
+    editions: editions.map((ed: any) => normalizeEpaperEditionForPublic(ed)),
+  });
 });
 
 /**
@@ -758,12 +762,17 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
 
   const baseUrl = `https://${domain.domain}`;
 
-  // Branding (prefer domain settings, fallback to tenant theme)
+  const brandColors = resolveEpaperBrandColors({
+    tenantTheme: tenantTheme as any,
+    effectiveDomainSettings: effectiveDomainSettings as any,
+  });
+
+  // Branding (prefer domain settings, fallback to tenant theme; colors always strings for ePaper client Zod)
   const branding = {
     logoUrl: (effectiveDomainSettings as any)?.branding?.logoUrl ?? (tenantTheme as any)?.logoUrl ?? null,
     faviconUrl: (effectiveDomainSettings as any)?.branding?.faviconUrl ?? (tenantTheme as any)?.faviconUrl ?? null,
-    primaryColor: (tenantTheme as any)?.primaryColor ?? (effectiveDomainSettings as any)?.theme?.colors?.primary ?? null,
-    secondaryColor: (tenantTheme as any)?.secondaryColor ?? (effectiveDomainSettings as any)?.theme?.colors?.secondary ?? null,
+    primaryColor: brandColors.primaryColor,
+    secondaryColor: brandColors.secondaryColor,
     headerBgColor: (tenantTheme as any)?.headerBgColor ?? null,
     footerBgColor: (tenantTheme as any)?.footerBgColor ?? null,
     fontFamily: (tenantTheme as any)?.fontFamily ?? (effectiveDomainSettings as any)?.theme?.typography?.fontFamily ?? null,
@@ -789,9 +798,9 @@ router.get('/epaper/settings', requireVerifiedEpaperDomain, async (_req, res) =>
     organization: (seoBase as any)?.organization ?? null,
     socialLinks: (seoBase as any)?.socialLinks ?? null,
     colors: {
-      primary: (effectiveDomainSettings as any)?.theme?.colors?.primary ?? (tenantTheme as any)?.primaryColor ?? null,
-      secondary: (effectiveDomainSettings as any)?.theme?.colors?.secondary ?? (tenantTheme as any)?.secondaryColor ?? null,
-      accent: (effectiveDomainSettings as any)?.theme?.colors?.accent ?? null,
+      primary: brandColors.primaryColor,
+      secondary: brandColors.secondaryColor,
+      accent: brandColors.accentColor,
     },
     layout: {
       header: (effectiveDomainSettings as any)?.layout?.header ?? null,
@@ -1410,14 +1419,14 @@ router.get('/epaper/latest', requireVerifiedEpaperDomain, async (req, res) => {
         };
       }
 
-      return {
+      return normalizeEpaperEditionForPublic({
         ...ed,
         // Edition-level cover images can be null in DB; fall back to issue cover image so clients always have a cover.
         coverImageUrl: ed.coverImageUrl || editionIssueMeta?.coverImageUrl || null,
         coverImageUrlWebp: (ed as any).coverImageUrlWebp || editionIssueMeta?.coverImageUrlWebp || null,
         issue: editionIssueMeta,
         subEditions: mappedSub,
-      };
+      });
     })
     .filter(Boolean);
 

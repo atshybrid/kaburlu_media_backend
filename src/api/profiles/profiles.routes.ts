@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { validationMiddleware } from '../middlewares/validation.middleware';
-import { getProfileByUserId, createProfile, updateProfile, deleteProfile, listProfiles } from './profiles.service';
+import { getProfileByUserId, createProfile, updateProfile, deleteProfile, listProfiles, cleanupExternalReporterTestProfiles } from './profiles.service';
 import { CreateProfileDto, UpdateProfileDto } from './profiles.dto';
 
 const router = Router();
@@ -269,6 +269,68 @@ router.delete('/:userId', passport.authenticate('jwt', { session: false }), asyn
     return res.status(400).json({ error: 'Failed to delete profile.' });
   }
 });
+
+router.delete('/cleanup-external-reporters', passport.authenticate('jwt', { session: false }), async (req: any, res) => {
+  const authenticatedUser = req.user;
+  const isAdmin = authenticatedUser.role?.name === 'SUPERADMIN' || authenticatedUser.role?.name === 'LANGUAGE_ADMIN';
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+  try {
+    const { emailPattern } = req.query;
+    const result = await cleanupExternalReporterTestProfiles(emailPattern as string);
+    res.status(200).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /profiles/cleanup-external-reporters:
+ *   delete:
+ *     summary: Clean up external reporter test profiles (Admin only)
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: emailPattern
+ *         schema:
+ *           type: string
+ *         description: Optional email pattern to filter test profiles (e.g., 'test@' or 'example.com')
+ *     responses:
+ *       200:
+ *         description: Cleanup completed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 deletedCount:
+ *                   type: number
+ *                 message:
+ *                   type: string
+ *                 deletedProfiles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       email:
+ *                         type: string
+ *                       name:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       403:
+ *         description: Forbidden - Admin access required.
+ *       401:
+ *         description: Unauthorized.
+ */
 
 export default router;
 

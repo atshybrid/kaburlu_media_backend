@@ -8,7 +8,7 @@ const router = Router();
 /**
  * @swagger
  * tags:
- *   - name: KinRelations
+ *   - name: Kin Relations
  *     description: Kinship dictionary CRUD
  */
 
@@ -17,7 +17,7 @@ const router = Router();
  * /kin-relations:
  *   get:
  *     summary: List kin relations
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     parameters:
  *       - in: query
  *         name: category
@@ -41,7 +41,7 @@ router.get('/', listKinRelationsController);
  * /kin-relations/{code}:
  *   get:
  *     summary: Get kin relation by code
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     parameters:
  *       - in: path
  *         name: code
@@ -58,7 +58,7 @@ router.get('/:code', getKinRelationController);
  * /kin-relations/{code}/names:
  *   get:
  *     summary: List language-specific names for a kin relation code
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     parameters:
  *       - in: path
  *         name: code
@@ -75,7 +75,7 @@ router.get('/:code/names', listKinRelationNamesController);
  * /kin-relations:
  *   post:
  *     summary: Create kin relation
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -93,7 +93,7 @@ router.post('/', passport.authenticate('jwt', { session: false }), createKinRela
  * /kin-relations/{code}:
  *   put:
  *     summary: Update kin relation by code
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -117,7 +117,7 @@ router.put('/:code', passport.authenticate('jwt', { session: false }), updateKin
  * /kin-relations/{code}:
  *   delete:
  *     summary: Delete kin relation by code
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -135,7 +135,7 @@ router.delete('/:code', passport.authenticate('jwt', { session: false }), delete
  * /kin-relations/bulk-upsert:
  *   post:
  *     summary: Bulk upsert kin relations (fix Telugu labels)
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -154,7 +154,7 @@ router.post('/bulk-upsert', passport.authenticate('jwt', { session: false }), bu
  * /kin-relations/names/bulk-upsert:
  *   post:
  *     summary: Bulk upsert language-specific kin relation names
- *     tags: [KinRelations]
+ *     tags: [Kin Relations]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true

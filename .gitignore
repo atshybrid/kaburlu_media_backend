@@ -30,6 +30,9 @@ pids
 .DS_Store
 Thumbs.db
 
+# Droplet deploy defaults (host + SSH key path); never commit
+.deploy.env
+
 # Environment variables
 .env
 .env.*.local

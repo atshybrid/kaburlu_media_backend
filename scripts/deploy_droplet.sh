@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Optional repo-local defaults (see .deploy.env.example). File .deploy.env is gitignored.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$REPO_ROOT/.deploy.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.deploy.env"
+  set +a
+fi
+
 set -Eeuo pipefail
 trap 'echo "[deploy] ERROR: command failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
@@ -32,7 +41,10 @@ run_ssh() {
 
 if [[ "$SKIP_LOCAL_BUILD" != "true" ]]; then
   echo "[deploy] Installing dependencies and building locally..."
-  npm ci
+  if ! npm ci; then
+    echo "[deploy] npm ci failed (lock out of sync). Running npm install to refresh package-lock.json..."
+    npm install
+  fi
   npm run build
 else
   echo "[deploy] Skipping local build (SKIP_LOCAL_BUILD=true)."
@@ -40,6 +52,14 @@ fi
 
 echo "[deploy] Uploading dist/ to $USER_NAME@$HOST:$APP_DIR/dist_new/..."
 rsync -az --delete -e "ssh ${SSH_OPTS[*]}" dist/ "$USER_NAME@$HOST:$APP_DIR/dist_new/"
+
+echo "[deploy] Syncing prisma/schema + migrations (required for migrate deploy on server)..."
+rsync -az -e "ssh ${SSH_OPTS[*]}" \
+  "$REPO_ROOT/prisma/schema.prisma" \
+  "$USER_NAME@$HOST:$APP_DIR/prisma/schema.prisma"
+rsync -az -e "ssh ${SSH_OPTS[*]}" \
+  "$REPO_ROOT/prisma/migrations/" \
+  "$USER_NAME@$HOST:$APP_DIR/prisma/migrations/"
 
 if [[ -n "${DEPLOY_ENV_FILE:-}" ]]; then
   if [[ ! -f "$DEPLOY_ENV_FILE" ]]; then
@@ -69,16 +89,26 @@ rm -rf dist
 mv dist_new dist
 
 if [[ -f package-lock.json ]]; then
-  echo "[remote] Installing production dependencies"
-  rm -rf node_modules
-  npm ci --omit=dev
+  echo "[remote] Installing production dependencies (low-RAM: NODE_OPTIONS + npm install --omit=dev)"
+  export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
+  # Prefer npm install over npm ci on small droplets: npm ci wipes node_modules first and often OOMs.
+  if ! npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline; then
+    echo "[remote] npm install failed, retrying with npm ci..."
+    npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  fi
 else
   echo "[remote] package-lock.json not found, skipping npm ci"
 fi
 
 if [[ -d prisma ]]; then
   echo "[remote] Generating Prisma client"
-  npx prisma generate
+  npx prisma generate --schema prisma/schema.prisma
+  if [[ -f .env ]] && grep -q '^DATABASE_URL=' .env 2>/dev/null; then
+    echo "[remote] Applying pending Prisma migrations (migrate deploy)"
+    npx prisma migrate deploy --schema prisma/schema.prisma
+  else
+    echo "[remote] Skipping migrate deploy (no DATABASE_URL in $APP_DIR/.env)"
+  fi
 fi
 
 if [[ -f "/snap/bin/chromium" ]]; then

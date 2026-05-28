@@ -1,93 +1,192 @@
-import { Router } from 'express';
+/**
+ * WhatsApp Business API — templates (request, sync, approval) + send messages.
+ */
+import { Router, Request, Response, NextFunction } from 'express';
 import passport from 'passport';
-import axios from 'axios';
 import prisma from '../../lib/prisma';
 import { config } from '../../config/env';
+import { requireSuperAdmin } from '../middlewares/authz';
+import {
+  sendWhatsappOtpTemplate,
+  sendWhatsappIdCardTemplate,
+  sendWhatsappTextMessage,
+  uploadWhatsappMedia,
+} from '../../lib/whatsapp';
+import {
+  createMetaMessageTemplate,
+  deleteMetaMessageTemplate,
+  fetchMetaMessageTemplates,
+  getWhatsappMetaConfig,
+  sendMetaTemplateMessage,
+  type CreateTemplateInput,
+} from '../../lib/whatsappMeta';
+import {
+  getApprovedTemplate,
+  syncAllTemplatesFromMeta,
+  updateTemplateStatusByName,
+  upsertTemplateFromMeta,
+} from '../../lib/whatsappTemplateDb';
 
 const router = Router();
+const p: any = prisma;
+const jwtAuth = passport.authenticate('jwt', { session: false });
 
-/**
- * Fetch templates from Meta WhatsApp Business API
- * GET https://graph.facebook.com/v20.0/{WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates
- */
-async function fetchTemplatesFromMeta(): Promise<{
-  ok: boolean;
-  templates?: any[];
-  error?: string;
-  details?: any;
-}> {
-  const accessToken = config.whatsapp.accessToken;
-  const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-
-  if (!accessToken) {
-    return { ok: false, error: 'WHATSAPP_ACCESS_TOKEN not configured' };
-  }
-  if (!businessAccountId) {
-    return { ok: false, error: 'WHATSAPP_BUSINESS_ACCOUNT_ID not configured' };
-  }
-
-  try {
-    const url = `https://graph.facebook.com/v20.0/${businessAccountId}/message_templates`;
-    const resp = await axios.get(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: { limit: 100 },
-      timeout: 30000,
-    });
-
-    const templates = resp.data?.data || [];
-    console.log(`[WhatsApp] Fetched ${templates.length} templates from Meta API`);
-    return { ok: true, templates };
-  } catch (e: any) {
-    const details = e?.response?.data;
-    const msg = e?.message || 'Failed to fetch templates from Meta';
-    console.error('[WhatsApp] Fetch templates error:', msg, details);
-    return { ok: false, error: msg, details };
-  }
+function handleError(res: Response, e: any, fallback = 'Request failed') {
+  const msg = e?.message || fallback;
+  console.error('[whatsapp]', msg, e?.details || '');
+  return res.status(500).json({ success: false, error: msg, details: e?.details });
 }
 
-/**
- * Parse Meta template to our DB format
- */
-function parseMetaTemplate(t: any) {
-  const components = t.components || [];
-
-  // Find header, body, footer, buttons
-  const header = components.find((c: any) => c.type === 'HEADER');
-  const body = components.find((c: any) => c.type === 'BODY');
-  const footer = components.find((c: any) => c.type === 'FOOTER');
-  const buttons = components.find((c: any) => c.type === 'BUTTONS');
-
-  return {
-    templateId: String(t.id),
-    name: t.name,
-    language: t.language || 'en_US',
-    category: t.category || null,
-    status: t.status || 'UNKNOWN',
-    headerType: header?.format || null,
-    headerText: header?.text || null,
-    bodyText: body?.text || null,
-    footerText: footer?.text || null,
-    buttonsJson: buttons?.buttons || null,
-    componentsJson: components,
-    qualityScore: t.quality_score?.score || null,
-    rejectedReason: t.rejected_reason || null,
-    lastSyncedAt: new Date(),
-  };
+function requireAdminRole(req: Request, res: Response, next: NextFunction) {
+  const user = req.user as any;
+  const role = user?.role?.name?.toUpperCase() || '';
+  if (!['SUPER_ADMIN', 'ADMIN', 'TENANT_ADMIN'].includes(role)) {
+    return res.status(403).json({ success: false, error: 'Admin access required' });
+  }
+  return next();
 }
 
 /**
  * @swagger
  * tags:
- *   - name: WhatsApp Templates
- *     description: Manage WhatsApp message templates
+ *   - name: WhatsApp
+ *     description: |
+ *       WhatsApp Cloud API — template create/request, sync after Meta approval, send OTP/ID card/custom templates.
+ *       Requires env WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID.
  */
+
+/**
+ * @swagger
+ * /whatsapp/config:
+ *   get:
+ *     summary: WhatsApp configuration status (keys masked)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/config', jwtAuth, async (_req, res) => {
+  const c = getWhatsappMetaConfig();
+  res.json({
+    success: true,
+    enabled: c.enabled,
+    configured: !!(c.accessToken && c.phoneNumberId),
+    canManageTemplates: !!(c.accessToken && c.businessAccountId),
+    graphVersion: c.graphVersion,
+    phoneNumberId: c.phoneNumberId ? '***set***' : null,
+    businessAccountId: c.businessAccountId ? '***set***' : null,
+    appId: c.appId ? '***set***' : null,
+    defaultCountryCode: c.defaultCountryCode,
+    webhookVerifyToken: config.whatsapp.webhookVerifyToken ? '***set***' : null,
+    templates: {
+      otp: { name: config.whatsapp.otpTemplateName, language: config.whatsapp.otpTemplateLang },
+      idCard: { name: config.whatsapp.idCardTemplateName, language: config.whatsapp.idCardTemplateLang },
+    },
+  });
+});
+
+/**
+ * @swagger
+ * /whatsapp/templates/fetch-live:
+ *   get:
+ *     summary: Fetch templates directly from Meta (no DB save)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/templates/fetch-live', jwtAuth, requireAdminRole, async (_req, res) => {
+  const result = await fetchMetaMessageTemplates();
+  if (!result.ok) return res.status(400).json({ success: false, error: result.error, details: result.details });
+  return res.json({ success: true, count: result.data.length, templates: result.data });
+});
+
+/**
+ * @swagger
+ * /whatsapp/templates/sync:
+ *   post:
+ *     summary: Sync all templates from Meta into database (after approval in Meta Business)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/templates/sync', jwtAuth, requireAdminRole, async (_req, res) => {
+  try {
+    const result = await fetchMetaMessageTemplates();
+    if (!result.ok) return res.status(400).json({ success: false, error: result.error, details: result.details });
+    const sync = await syncAllTemplatesFromMeta(result.data);
+    return res.json({ success: true, ...sync });
+  } catch (e: any) {
+    return handleError(res, e);
+  }
+});
+
+/**
+ * @swagger
+ * /whatsapp/templates/request:
+ *   post:
+ *     summary: Submit new template to Meta for approval (Super Admin)
+ *     description: |
+ *       Creates template in Meta with status PENDING. After Meta approves, call POST /templates/sync
+ *       or wait for webhook `message_template_status_update`.
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             name: kaburlu_survey_reminder
+ *             language: en_US
+ *             category: UTILITY
+ *             components:
+ *               - type: BODY
+ *                 text: "Hi {{1}}, please complete your union survey by {{2}}."
+ *     responses:
+ *       201:
+ *         description: Submitted to Meta
+ */
+router.post('/templates/request', jwtAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const body = req.body as CreateTemplateInput;
+    if (!body?.name || !body?.category || !Array.isArray(body.components)) {
+      return res.status(400).json({
+        success: false,
+        error: 'name, category, and components[] are required',
+      });
+    }
+
+    const result = await createMetaMessageTemplate(body);
+    if (!result.ok) {
+      return res.status(400).json({ success: false, error: result.error, details: result.details });
+    }
+
+    const meta = result.data;
+    const row = await upsertTemplateFromMeta({
+      id: meta?.id || `pending_${body.name}`,
+      name: body.name.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+      language: body.language || 'en_US',
+      category: body.category,
+      status: meta?.status || 'PENDING',
+      components: body.components,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Template submitted to Meta. Status is usually PENDING until approved (24–48h).',
+      meta: result.data,
+      template: row,
+      nextSteps: [
+        'Subscribe webhook field message_template_status_update in Meta App',
+        'POST /whatsapp/templates/sync after approval',
+      ],
+    });
+  } catch (e: any) {
+    return handleError(res, e);
+  }
+});
 
 /**
  * @swagger
  * /whatsapp/templates:
  *   get:
- *     summary: List all WhatsApp templates from database
- *     tags: [WhatsApp Templates]
+ *     summary: List templates from database
+ *     tags: [WhatsApp]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -95,30 +194,18 @@ function parseMetaTemplate(t: any) {
  *         schema: { type: string, enum: [APPROVED, PENDING, REJECTED, DISABLED] }
  *       - in: query
  *         name: category
- *         schema: { type: string, enum: [AUTHENTICATION, MARKETING, UTILITY] }
- *     responses:
- *       200:
- *         description: List of templates
+ *         schema: { type: string }
  */
-router.get('/templates', passport.authenticate('jwt', { session: false }), async (req, res) => {
+router.get('/templates', jwtAuth, async (req, res) => {
   try {
     const { status, category } = req.query as { status?: string; category?: string };
     const where: any = {};
     if (status) where.status = status;
     if (category) where.category = category;
-
-    const templates = await (prisma as any).whatsappTemplate.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
-
-    res.json({
-      count: templates.length,
-      templates,
-    });
+    const templates = await p.whatsappTemplate.findMany({ where, orderBy: { name: 'asc' } });
+    return res.json({ success: true, count: templates.length, templates });
   } catch (e: any) {
-    console.error('[WhatsApp] List templates error:', e);
-    res.status(500).json({ error: 'Failed to list templates' });
+    return handleError(res, e);
   }
 });
 
@@ -126,180 +213,205 @@ router.get('/templates', passport.authenticate('jwt', { session: false }), async
  * @swagger
  * /whatsapp/templates/{name}:
  *   get:
- *     summary: Get a specific template by name
- *     tags: [WhatsApp Templates]
+ *     summary: Get template by name from DB
+ *     tags: [WhatsApp]
  *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: name
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Template details
- *       404:
- *         description: Template not found
+ *   delete:
+ *     summary: Delete template from Meta + DB (Super Admin)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
  */
-router.get('/templates/:name', passport.authenticate('jwt', { session: false }), async (req, res) => {
+router.get('/templates/:name', jwtAuth, async (req, res) => {
   try {
-    const template = await (prisma as any).whatsappTemplate.findUnique({
-      where: { name: req.params.name },
-    });
-
-    if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
-
-    res.json(template);
+    const template = await p.whatsappTemplate.findUnique({ where: { name: req.params.name } });
+    if (!template) return res.status(404).json({ success: false, error: 'Template not found' });
+    return res.json({ success: true, template });
   } catch (e: any) {
-    console.error('[WhatsApp] Get template error:', e);
-    res.status(500).json({ error: 'Failed to get template' });
+    return handleError(res, e);
+  }
+});
+
+router.delete('/templates/:name', jwtAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const name = req.params.name;
+    const del = await deleteMetaMessageTemplate(name);
+    if (!del.ok) {
+      return res.status(400).json({ success: false, error: del.error, details: del.details });
+    }
+    await p.whatsappTemplate.deleteMany({ where: { name } }).catch(() => null);
+    return res.json({ success: true, deleted: name });
+  } catch (e: any) {
+    return handleError(res, e);
   }
 });
 
 /**
  * @swagger
- * /whatsapp/templates/sync:
+ * /whatsapp/messages/template:
  *   post:
- *     summary: Sync templates from Meta WhatsApp Business API
- *     description: |
- *       Fetches all templates from Meta API and upserts them into the database.
- *       Requires WHATSAPP_BUSINESS_ACCOUNT_ID env variable.
- *     tags: [WhatsApp Templates]
+ *     summary: Send approved template message (Super Admin / manual test)
+ *     tags: [WhatsApp]
  *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: Sync completed
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 synced: { type: number }
- *                 created: { type: number }
- *                 updated: { type: number }
- *                 templates: { type: array }
- *       400:
- *         description: Configuration missing
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           example:
+ *             to: "9392010248"
+ *             templateName: kaburlu_app_otp
+ *             languageCode: en_US
+ *             bodyParams: ["123456", "Login", "10 minutes", "9392010248"]
+ *             urlButtonParam: "123456"
  */
-router.post('/templates/sync', passport.authenticate('jwt', { session: false }), async (req, res) => {
+router.post('/messages/template', jwtAuth, requireSuperAdmin, async (req, res) => {
   try {
-    // Check admin role
-    const user = req.user as any;
-    const role = user?.role?.name?.toUpperCase() || '';
-    if (!['SUPER_ADMIN', 'ADMIN', 'TENANT_ADMIN'].includes(role)) {
-      return res.status(403).json({ error: 'Admin access required' });
+    const {
+      to,
+      toMobileNumber,
+      templateName,
+      languageCode,
+      bodyParams,
+      header,
+      urlButtonParam,
+      urlButtonIndex,
+      skipApprovalCheck,
+    } = req.body || {};
+
+    const mobile = toMobileNumber || to;
+    if (!mobile || !templateName) {
+      return res.status(400).json({ success: false, error: 'to and templateName are required' });
     }
 
-    const result = await fetchTemplatesFromMeta();
-    if (!result.ok) {
-      return res.status(400).json({ error: result.error, details: result.details });
-    }
-
-    const templates = result.templates || [];
-    let created = 0;
-    let updated = 0;
-
-    for (const t of templates) {
-      const data = parseMetaTemplate(t);
-
-      const existing = await (prisma as any).whatsappTemplate.findUnique({
-        where: { templateId: data.templateId },
-      });
-
-      if (existing) {
-        await (prisma as any).whatsappTemplate.update({
-          where: { templateId: data.templateId },
-          data,
+    if (!skipApprovalCheck) {
+      const approved = await getApprovedTemplate(templateName, languageCode);
+      if (!approved) {
+        return res.status(400).json({
+          success: false,
+          error: `Template "${templateName}" is not APPROVED in DB. Sync templates or wait for Meta approval.`,
+          hint: 'POST /whatsapp/templates/sync',
         });
-        updated++;
-      } else {
-        await (prisma as any).whatsappTemplate.create({ data });
-        created++;
       }
     }
 
-    console.log(`[WhatsApp] Sync complete: ${created} created, ${updated} updated`);
-
-    // Return synced templates
-    const allTemplates = await (prisma as any).whatsappTemplate.findMany({
-      orderBy: { name: 'asc' },
+    const lang = languageCode || (await getApprovedTemplate(templateName))?.language || 'en_US';
+    const result = await sendMetaTemplateMessage({
+      toMobileNumber: mobile,
+      templateName,
+      languageCode: lang,
+      bodyParams: Array.isArray(bodyParams) ? bodyParams.map(String) : undefined,
+      header,
+      urlButtonParam,
+      urlButtonIndex,
     });
 
-    res.json({
-      synced: templates.length,
-      created,
-      updated,
-      templates: allTemplates,
-    });
-  } catch (e: any) {
-    console.error('[WhatsApp] Sync templates error:', e);
-    res.status(500).json({ error: 'Failed to sync templates' });
-  }
-});
-
-/**
- * @swagger
- * /whatsapp/templates/fetch-live:
- *   get:
- *     summary: Fetch templates directly from Meta API (without saving)
- *     tags: [WhatsApp Templates]
- *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: Live templates from Meta
- */
-router.get('/templates/fetch-live', passport.authenticate('jwt', { session: false }), async (req, res) => {
-  try {
-    const result = await fetchTemplatesFromMeta();
     if (!result.ok) {
-      return res.status(400).json({ error: result.error, details: result.details });
+      return res.status(400).json({ success: false, error: result.error, details: result.details });
     }
-
-    res.json({
-      count: result.templates?.length || 0,
-      templates: result.templates,
-    });
+    return res.json({ success: true, messageId: result.messageId });
   } catch (e: any) {
-    console.error('[WhatsApp] Fetch live templates error:', e);
-    res.status(500).json({ error: 'Failed to fetch templates' });
+    return handleError(res, e);
   }
 });
 
 /**
  * @swagger
- * /whatsapp/config:
- *   get:
- *     summary: Get WhatsApp configuration status
- *     tags: [WhatsApp Templates]
+ * /whatsapp/messages/otp:
+ *   post:
+ *     summary: Send OTP via configured WhatsApp template
+ *     tags: [WhatsApp]
  *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: Configuration status
  */
-router.get('/config', passport.authenticate('jwt', { session: false }), async (_req, res) => {
-  const hasAccessToken = !!config.whatsapp.accessToken;
-  const hasPhoneNumberId = !!config.whatsapp.phoneNumberId;
-  const hasBusinessAccountId = !!process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-
-  res.json({
-    enabled: config.whatsapp.enabled,
-    configured: hasAccessToken && hasPhoneNumberId,
-    canSyncTemplates: hasAccessToken && hasBusinessAccountId,
-    phoneNumberId: hasPhoneNumberId ? '***configured***' : null,
-    businessAccountId: hasBusinessAccountId ? '***configured***' : null,
-    defaultCountryCode: config.whatsapp.defaultCountryCode,
-    templates: {
-      otp: {
-        name: config.whatsapp.otpTemplateName,
-        language: config.whatsapp.otpTemplateLang,
-      },
-      idCard: {
-        name: config.whatsapp.idCardTemplateName,
-        language: config.whatsapp.idCardTemplateLang,
-      },
-    },
+router.post('/messages/otp', jwtAuth, requireSuperAdmin, async (req, res) => {
+  const { to, otp, purpose } = req.body || {};
+  if (!to || !otp) return res.status(400).json({ success: false, error: 'to and otp required' });
+  const result = await sendWhatsappOtpTemplate({
+    toMobileNumber: to,
+    otp: String(otp),
+    purpose: purpose || 'Login',
+    ttlText: config.whatsapp.ttlText,
+    supportMobile: config.whatsapp.supportMobile || to,
   });
+  if (!result.ok) return res.status(400).json({ success: false, ...result });
+  return res.json({ success: true, messageId: result.messageId });
+});
+
+/**
+ * @swagger
+ * /whatsapp/messages/id-card:
+ *   post:
+ *     summary: Send reporter ID card PDF via WhatsApp template
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/messages/id-card', jwtAuth, requireSuperAdmin, async (req, res) => {
+  const { to, pdfUrl, organizationName, cardType, documentType, pdfFilename } = req.body || {};
+  if (!to || !pdfUrl || !organizationName) {
+    return res.status(400).json({ success: false, error: 'to, pdfUrl, organizationName required' });
+  }
+  const result = await sendWhatsappIdCardTemplate({
+    toMobileNumber: to,
+    pdfUrl,
+    organizationName,
+    cardType,
+    documentType,
+    pdfFilename,
+  });
+  if (!result.ok) return res.status(400).json({ success: false, ...result });
+  return res.json({ success: true, messageId: result.messageId });
+});
+
+/**
+ * @swagger
+ * /whatsapp/messages/text:
+ *   post:
+ *     summary: Send plain text (24h window only — user must have messaged you first)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/messages/text', jwtAuth, requireSuperAdmin, async (req, res) => {
+  const { to, text } = req.body || {};
+  if (!to || !text) return res.status(400).json({ success: false, error: 'to and text required' });
+  const result = await sendWhatsappTextMessage({ to, text });
+  if (!result.ok) return res.status(400).json({ success: false, ...result });
+  return res.json({ success: true, messageId: result.messageId });
+});
+
+/**
+ * @swagger
+ * /whatsapp/media/upload:
+ *   post:
+ *     summary: Upload media URL to WhatsApp (get media_id for template header)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/media/upload', jwtAuth, requireSuperAdmin, async (req, res) => {
+  const { fileUrl, mimeType } = req.body || {};
+  if (!fileUrl || !mimeType) {
+    return res.status(400).json({ success: false, error: 'fileUrl and mimeType required' });
+  }
+  const result = await uploadWhatsappMedia({ fileUrl, mimeType });
+  if (!result.ok) return res.status(400).json({ success: false, ...result });
+  return res.json({ success: true, mediaId: result.mediaId });
+});
+
+/**
+ * @swagger
+ * /whatsapp/webhook-events:
+ *   get:
+ *     summary: Recent webhook events (debug delivery / incoming)
+ *     tags: [WhatsApp]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/webhook-events', jwtAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(100, parseInt(String(req.query.limit || 30), 10));
+    const events = await p.whatsappWebhookEvent.findMany({
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    });
+    return res.json({ success: true, count: events.length, events });
+  } catch (e: any) {
+    return handleError(res, e);
+  }
 });
 
 export default router;

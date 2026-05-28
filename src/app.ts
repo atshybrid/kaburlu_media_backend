@@ -53,6 +53,7 @@ import homepageSectionsRoutes from './api/homepageSections/homepageSections.rout
 import tenantAdsRoutes from './api/ads/tenantAds.routes';
 import tenantStaticPagesRoutes from './api/pages/tenantStaticPages.routes';
 import prgiRoutes from './api/prgi/prgi.routes';
+import prgiNewspaperRoutes from './api/prgi/prgiNewspaper.routes';
 import districtsRoutes from './api/districts/districts.routes';
 import mandalsRoutes from './api/mandals/mandals.routes';
 import assemblyConstituenciesRoutes from './api/assembly/assemblyConstituencies.routes';
@@ -88,6 +89,11 @@ import tenantAdminsRoutes from './api/tenantAdmins/tenantAdmins.routes';
 import newspaperArticlesRoutes from './api/newspaperArticles/newspaperArticles.routes';
 import journalistRoutes from './api/journalist/journalist.routes';
 import journalistPresidentRoutes from './api/journalist/president.routes';
+import unionMemberSurveyRoutes from './api/journalist/unionMemberSurvey.routes';
+import unionMemberSurveyAdminRoutes from './api/journalist/unionMemberSurvey.admin.routes';
+import unionMemberRoutes from './api/journalist/unionMember.routes';
+import unionMemberAdminRoutes from './api/journalist/unionMemberAdmin.routes';
+import politicalPartiesRoutes from './api/politicalParties/politicalParties.routes';
 
 const app = express();
 
@@ -265,14 +271,16 @@ app.use(
   noStore,
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
     swaggerOptions: {
-      url: '/api/docs/swagger.json',
-      docExpansion: 'list',  // Auto-expand all tags (was 'none')
-      persistAuthorization: true,  // Persist auth token across page refresh
-      filter: true,  // Enable search filter
-      displayRequestDuration: true  // Show request time
-    }
-  })
+      docExpansion: 'list',
+      persistAuthorization: true,
+      filter: true,
+      displayRequestDuration: true,
+      // Do not set `url` here — inline spec is passed above; url + spec breaks Swagger UI 5 BaseLayout.
+      // Do not use tagsSorter — swagger-ui-express embeds it in init.js with server imports that break in the browser.
+    },
+  }),
 );
 // Also expose docs under the versioned base for convenience
 // IMPORTANT: Swagger routes MUST come BEFORE settings router to avoid 404
@@ -281,14 +289,14 @@ app.use(
   noStore,
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
     swaggerOptions: {
-      url: '/api/v1/docs/swagger.json',
-      docExpansion: 'list',  // Auto-expand all tags (was 'none')
-      persistAuthorization: true,  // Persist auth token across page refresh
-      filter: true,  // Enable search filter
-      displayRequestDuration: true  // Show request time
-    }
-  })
+      docExpansion: 'list',
+      persistAuthorization: true,
+      filter: true,
+      displayRequestDuration: true,
+    },
+  }),
 );
 app.use('/api/v1', settingsRouter);
 
@@ -362,7 +370,12 @@ app.use('/analytics', analyticsRoutes);
 app.use('/tenant-admins', tenantAdminsRoutes);
 // Journalist Union Module
 app.use('/journalist', journalistRoutes);
+app.use('/journalist', unionMemberAdminRoutes);
+app.use('/journalist', unionMemberRoutes);
+app.use('/journalist/union-member-surveys', unionMemberSurveyRoutes);
+app.use('/journalist/admin/surveys', unionMemberSurveyAdminRoutes);
 app.use('/journalist/president', journalistPresidentRoutes);
+app.use('/journalist/president/union-member-surveys', unionMemberSurveyAdminRoutes);
 
 // API Routes mounted under /api/v1 (preferred)
 const apiV1: Router = Router();
@@ -437,13 +450,21 @@ apiV1.use('/reporters', reportersRoutes);
 apiV1.use('/tenant-admins', tenantAdminsRoutes);
 apiV1.use('/reporters/me', reportersMeIdCardRoutes);  // Journalist Union Module
 apiV1.use('/journalist', journalistRoutes);
-apiV1.use('/journalist/president', journalistPresidentRoutes);// Public helper: used by public join to list designation options
+apiV1.use('/journalist', unionMemberAdminRoutes);
+apiV1.use('/journalist', unionMemberRoutes);
+apiV1.use('/journalist/union-member-surveys', unionMemberSurveyRoutes);
+apiV1.use('/journalist/admin/surveys', unionMemberSurveyAdminRoutes);
+apiV1.use('/journalist/president', journalistPresidentRoutes);
+apiV1.use('/journalist/president/union-member-surveys', unionMemberSurveyAdminRoutes);
+// Public helper: used by public join to list designation options
 apiV1.use('/reporter-designations', reporterDesignationsPublicRoutes);
 apiV1.use('/reporter-payments', reporterPaymentsRoutes);
 apiV1.use('/tenant-theme', tenantThemeRoutes);
 apiV1.use('/homepage-sections', homepageSectionsRoutes);
 apiV1.use('/', tenantAdsRoutes);
 apiV1.use('/', tenantStaticPagesRoutes);
+apiV1.use('/political-parties', politicalPartiesRoutes);
+apiV1.use('/prgi/newspapers', prgiNewspaperRoutes);
 apiV1.use('/prgi', prgiRoutes);
 apiV1.use('/admin', adminRoutes);
 apiV1.use('/webhooks', webhooksRoutes);

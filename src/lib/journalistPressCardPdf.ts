@@ -1,5 +1,5 @@
 /**
- * Journalist Union Press Card – PDF Generator
+ * Journalist Union Membership Card – PDF Generator
  *
  * Credit-card size: 54 mm × 85.6 mm, two pages (front / back).
  * Designed to match reporter ID card quality:
@@ -115,11 +115,42 @@ async function toDataUri(url: string | null | undefined): Promise<string | null>
 
 // ─── Data loader ──────────────────────────────────────────────────────────────
 
+/** Photo for press card: union KYC photo → app user profile (tenant admin) → reporter profile photo. */
+export async function resolvePressCardPhotoUrl(profileId: string): Promise<string | null> {
+  const profile = await (prisma as any).journalistProfile
+    .findUnique({
+      where: { id: profileId },
+      select: {
+        photoUrl: true,
+        user: {
+          select: {
+            profile: { select: { profilePhotoUrl: true } },
+            reporterProfile: { select: { profilePhotoUrl: true } },
+          },
+        },
+      },
+    })
+    .catch(() => null);
+  if (!profile) return null;
+  return (
+    profile.photoUrl ||
+    profile.user?.profile?.profilePhotoUrl ||
+    profile.user?.reporterProfile?.profilePhotoUrl ||
+    null
+  );
+}
+
 async function buildPressCardData(profileId: string): Promise<PressCardData | null> {
   const profile = await (prisma as any).journalistProfile.findUnique({
     where: { id: profileId },
     include: {
-      user: { select: { mobileNumber: true, profile: { select: { fullName: true } } } },
+      user: {
+        select: {
+          mobileNumber: true,
+          profile: { select: { fullName: true, profilePhotoUrl: true } },
+          reporterProfile: { select: { profilePhotoUrl: true } },
+        },
+      },
       card: true,
       // Active post holdings → take the most senior (lowest sortOrder)
       postHoldings: {
@@ -183,7 +214,11 @@ async function buildPressCardData(profileId: string): Promise<PressCardData | nu
     websiteUrl:         settings?.websiteUrl ?? null,
     signatoryName:          settings?.signatoryName ?? null,
     signatoryTitle:         settings?.signatoryTitle ?? null,
-    photoUrl:               profile.photoUrl ?? null,
+    photoUrl:
+      profile.photoUrl ||
+      profile.user?.profile?.profilePhotoUrl ||
+      profile.user?.reporterProfile?.profilePhotoUrl ||
+      null,
     unionLogoUrl:           settings?.idCardLogoUrl ?? settings?.logoUrl ?? null,
     // Use state-specific stamp/signature when member state has configured overrides.
     stampImageUrl:          stateSettings?.stampImageUrl ?? settings?.stampImageUrl ?? null,
@@ -422,7 +457,7 @@ function buildPressCardHtml(data: PressCardData): string {
       background:${navy}; padding:0.7mm 0; text-align:center;
       flex-shrink:0; position:relative; z-index:1;
     ">
-      <span style="color:#c5cae9; font-size:5pt; font-weight:700; letter-spacing:1mm; text-transform:uppercase; font-family:${fontLatin};">JOURNALIST IDENTITY CARD</span>
+      <span style="color:#c5cae9; font-size:5pt; font-weight:700; letter-spacing:1mm; text-transform:uppercase; font-family:${fontLatin};">UNION MEMBERSHIP CARD</span>
     </div>
 
     <!-- ④ Certification text -->
@@ -602,7 +637,7 @@ async function renderToPdf(html: string): Promise<Buffer> {
 
 // ─── Public API ────────────────────────────────────────────────────────────────
 
-/** Generate a press card PDF using sample/mock data — useful for design preview. */
+/** Generate a membership card PDF using sample/mock data — useful for design preview. */
 export async function generateSamplePressCardBuffer(): Promise<Buffer> {
   const sampleData: PressCardData = {
     profileId:      'sample-profile-001',
@@ -662,13 +697,14 @@ export async function generateSamplePressCardBuffer(): Promise<Buffer> {
   return renderToPdf(html);
 }
 
-/** Stream a press card PDF buffer directly (no R2 upload). */
+/** Stream a membership card PDF buffer directly (no R2 upload). */
 export async function generatePressCardBuffer(profileId: string): Promise<{
   ok: boolean; pdfBuffer?: Buffer; cardNumber?: string; error?: string;
 }> {
   try {
     let data = await buildPressCardData(profileId);
-    if (!data) return { ok: false, error: 'Press card not found for this profile. Generate card first via admin.' };
+    if (!data) return { ok: false, error: 'Membership card not found for this profile. Generate card first via admin.' };
+    // Photo is optional: buildPressCardHtml uses an inline placeholder when no member photo.
     data = await inlineAssets(data);
     const html = buildPressCardHtml(data);
     const pdfBuffer = await renderToPdf(html);
@@ -679,12 +715,13 @@ export async function generatePressCardBuffer(profileId: string): Promise<{
   }
 }
 
-/** Generate press card PDF, upload to R2, persist pdfUrl on JournalistCard. */
+/** Generate membership card PDF, upload to R2, persist pdfUrl on JournalistCard. */
 export async function generateAndUploadPressCardPdf(profileId: string): Promise<PressCardPdfResult> {
   try {
     let data = await buildPressCardData(profileId);
-    if (!data) return { ok: false, error: 'Press card not found for this profile.' };
+    if (!data) return { ok: false, error: 'Membership card not found for this profile.' };
 
+    // Photo is optional: buildPressCardHtml uses an inline placeholder when no member photo.
     data = await inlineAssets(data);
     const html = buildPressCardHtml(data);
     const pdfBuffer = await renderToPdf(html);

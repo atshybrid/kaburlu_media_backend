@@ -1,6 +1,23 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '../../lib/prisma';
 import { subscribeToTopic, unsubscribeFromTopic } from '../../lib/fcm';
+import { subscribeDeviceToLanguageTopics } from '../../lib/smartPush';
+import { upsertDeviceForUser } from '../../lib/deviceUpsert';
+
+function getJwtUserId(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return null;
+  try {
+    const payload = jwt.verify(
+      auth.slice(7),
+      process.env.JWT_SECRET || 'your-default-secret',
+    ) as { sub?: string };
+    return payload.sub || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Update user preferences (location, language, FCM token)
@@ -48,12 +65,36 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
     });
 
     // Validate required parameters
-    if (!deviceId && !userId) {
+    const jwtUserId = getJwtUserId(req);
+    const resolvedUserId = userId || jwtUserId || undefined;
+
+    if (!deviceId && !resolvedUserId) {
       return res.status(400).json({
         success: false,
         message: 'Either deviceId or userId is required',
-        code: 'MISSING_IDENTIFIER'
+        code: 'MISSING_IDENTIFIER',
       });
+    }
+
+    if (userId && jwtUserId && userId !== jwtUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden',
+        code: 'USER_MISMATCH',
+      });
+    }
+
+    if (pushToken && !deviceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'deviceId is required when pushToken is provided',
+        code: 'MISSING_DEVICE_ID',
+      });
+    }
+
+    if (resolvedUserId && !userId) {
+      // Allow JWT-only requests (mobile may send userId in body; tolerate omission)
+      (req.body as any).userId = resolvedUserId;
     }
 
     // Validate language if provided
@@ -74,38 +115,34 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
     let isGuestUser = false;
 
     // Find user and device based on provided identifier
-    if (userId) {
+    const effectiveUserId = (req.body as any).userId as string | undefined;
+
+    if (effectiveUserId) {
       // Registered user case
       targetUser = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { 
+        where: { id: effectiveUserId },
+        include: {
           role: true,
           language: true,
-          devices: { where: { deviceId: deviceId || undefined } }
-        }
+        },
       });
 
       if (!targetUser) {
         return res.status(404).json({
           success: false,
           message: 'User not found',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         });
       }
 
-      // Find or create device for this user
       if (deviceId) {
-        targetDevice = await prisma.device.findUnique({ where: { deviceId } });
-        if (!targetDevice) {
-          targetDevice = await prisma.device.create({
-            data: {
-              deviceId,
-              deviceModel: deviceModel || 'unknown',
-              userId: targetUser.id,
-              pushToken
-            }
-          });
-        }
+        targetDevice = await upsertDeviceForUser({
+          userId: targetUser.id,
+          deviceId,
+          deviceModel,
+          pushToken: pushToken || undefined,
+          location: location?.latitude && location?.longitude ? location : undefined,
+        });
       }
     } else if (deviceId) {
       // Guest user case - find device first
@@ -164,11 +201,28 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
       }
     }
 
-    if (!targetUser || !targetDevice) {
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+      });
+    }
+
+    // Registered user without deviceId: language-only / user-level updates (no push sync)
+    if (!targetDevice && !isGuestUser) {
+      if (pushToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'deviceId is required when pushToken is provided',
+          code: 'MISSING_DEVICE_ID',
+        });
+      }
+    } else if (!targetUser || (!targetDevice && isGuestUser)) {
       return res.status(500).json({
         success: false,
         message: 'Failed to resolve user and device',
-        code: 'RESOLUTION_FAILED'
+        code: 'RESOLUTION_FAILED',
       });
     }
 
@@ -184,18 +238,18 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
     }
 
     // Handle push token update
-    if (pushToken && (forceUpdate || targetDevice.pushToken !== pushToken)) {
+    if (targetDevice && pushToken && (forceUpdate || targetDevice.pushToken !== pushToken)) {
       deviceUpdates.pushToken = pushToken;
       console.log(`[Update Preferences] Push token updated for device ${deviceId}`);
     }
 
     // Handle device model update
-    if (deviceModel && (forceUpdate || targetDevice.deviceModel !== deviceModel)) {
+    if (targetDevice && deviceModel && (forceUpdate || targetDevice.deviceModel !== deviceModel)) {
       deviceUpdates.deviceModel = deviceModel;
     }
 
     // Handle location update
-    if (location && location.latitude && location.longitude) {
+    if (targetDevice && location && location.latitude && location.longitude) {
       const shouldUpdateLocation = forceUpdate || 
         !targetDevice.latitude || 
         !targetDevice.longitude ||
@@ -241,12 +295,12 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
     }
 
     // Update device if needed
-    if (Object.keys(deviceUpdates).length > 0) {
+    if (targetDevice && Object.keys(deviceUpdates).length > 0) {
       promises.push(
         prisma.device.update({
           where: { id: targetDevice.id },
-          data: deviceUpdates
-        })
+          data: deviceUpdates,
+        }),
       );
     }
 
@@ -270,24 +324,34 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
       include: { role: true, language: true }
     });
     
-    const finalDevice = await prisma.device.findUnique({
-      where: { id: targetDevice.id }
-    });
+    const finalDevice = targetDevice
+      ? await prisma.device.findUnique({ where: { id: targetDevice.id } })
+      : null;
 
-    // Handle FCM topic subscriptions for language changes
-    if (pushToken && languageId && oldLanguageCode !== languageData?.code) {
+    // Handle FCM topic subscriptions for language changes + initial token registration
+    const effectivePushToken = pushToken || finalDevice?.pushToken || targetDevice?.pushToken;
+    const langForTopic = languageData?.code || finalUser?.language?.code || targetUser.language?.code;
+    if (effectivePushToken && langForTopic) {
+      try {
+        await subscribeDeviceToLanguageTopics(effectivePushToken, langForTopic);
+      } catch (topicErr) {
+        console.warn('[Update Preferences] Language topic subscribe failed (non-fatal):', topicErr);
+      }
+    }
+
+    if (effectivePushToken && languageId && oldLanguageCode !== languageData?.code) {
       try {
         // Unsubscribe from old language topic
-        if (oldLanguageCode) {
+        if (oldLanguageCode && effectivePushToken) {
           const oldTopic = `news-lang-${oldLanguageCode.toLowerCase()}`;
-          await unsubscribeFromTopic([pushToken], oldTopic);
+          await unsubscribeFromTopic([effectivePushToken], oldTopic);
           console.log(`[Update Preferences] Unsubscribed from topic: ${oldTopic}`);
         }
 
         // Subscribe to new language topic
-        if (languageData?.code) {
+        if (languageData?.code && effectivePushToken) {
           const newTopic = `news-lang-${languageData.code.toLowerCase()}`;
-          await subscribeToTopic([pushToken], newTopic);
+          await subscribeToTopic([effectivePushToken], newTopic);
           console.log(`[Update Preferences] Subscribed to topic: ${newTopic}`);
         }
       } catch (fcmError) {
@@ -305,21 +369,26 @@ export const updateUserPreferencesController = async (req: Request, res: Respons
         role: finalUser?.role?.name || targetUser.role?.name,
         isGuest: isGuestUser
       },
-      device: {
-        id: finalDevice?.id || targetDevice.id,
-        deviceId: finalDevice?.deviceId || targetDevice.deviceId,
-        deviceModel: finalDevice?.deviceModel || targetDevice.deviceModel,
-        hasPushToken: !!(finalDevice?.pushToken || targetDevice.pushToken),
-        location: (finalDevice?.latitude && finalDevice?.longitude) || (targetDevice.latitude && targetDevice.longitude) ? {
-          latitude: finalDevice?.latitude || targetDevice.latitude,
-          longitude: finalDevice?.longitude || targetDevice.longitude,
-          accuracyMeters: finalDevice?.accuracyMeters || targetDevice.accuracyMeters,
-          placeId: finalDevice?.placeId || targetDevice.placeId,
-          placeName: finalDevice?.placeName || targetDevice.placeName,
-          address: finalDevice?.address || targetDevice.address,
-          source: finalDevice?.source || targetDevice.source
-        } : null
-      },
+      device: finalDevice || targetDevice
+        ? {
+            id: (finalDevice || targetDevice)!.id,
+            deviceId: (finalDevice || targetDevice)!.deviceId,
+            deviceModel: (finalDevice || targetDevice)!.deviceModel,
+            hasPushToken: !!(finalDevice || targetDevice)!.pushToken,
+            location:
+              (finalDevice || targetDevice)!.latitude && (finalDevice || targetDevice)!.longitude
+                ? {
+                    latitude: (finalDevice || targetDevice)!.latitude,
+                    longitude: (finalDevice || targetDevice)!.longitude,
+                    accuracyMeters: (finalDevice || targetDevice)!.accuracyMeters,
+                    placeId: (finalDevice || targetDevice)!.placeId,
+                    placeName: (finalDevice || targetDevice)!.placeName,
+                    address: (finalDevice || targetDevice)!.address,
+                    source: (finalDevice || targetDevice)!.source,
+                  }
+                : null,
+          }
+        : null,
       updates: {
         languageChanged: !!updates.languageId,
         locationChanged: !!deviceUpdates.latitude,
@@ -375,26 +444,26 @@ export const getUserPreferencesController = async (req: Request, res: Response) 
         include: {
           role: true,
           language: true,
-          devices: { where: { deviceId: deviceId || undefined } }
-        }
+        },
       });
 
       if (!targetUser) {
         return res.status(404).json({
           success: false,
           message: 'User not found',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         });
       }
 
-      // Get user location
-      userLocation = await prisma.userLocation.findUnique({
-        where: { userId: targetUser.id }
-      });
-
-      // Get device if deviceId provided
       if (deviceId) {
-        targetDevice = targetUser.devices[0];
+        targetDevice = await prisma.device.findFirst({
+          where: { userId: targetUser.id, deviceId },
+        });
+      } else {
+        targetDevice = await prisma.device.findFirst({
+          where: { userId: targetUser.id },
+          orderBy: { updatedAt: 'desc' },
+        });
       }
     } else if (deviceId) {
       // Guest user case
@@ -416,6 +485,12 @@ export const getUserPreferencesController = async (req: Request, res: Response) 
       }
 
       targetUser = targetDevice.user;
+    }
+
+    if (targetUser && !userLocation) {
+      userLocation = await prisma.userLocation.findUnique({
+        where: { userId: targetUser.id },
+      });
     }
 
     if (!targetUser) {

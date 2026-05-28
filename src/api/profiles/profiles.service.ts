@@ -125,3 +125,60 @@ export async function listProfiles(page = 1, pageSize = 20) {
   const totalPages = Math.ceil(total / pageSize) || 1;
   return { items, total, page, pageSize, totalPages };
 }
+
+/**
+ * Safely delete external reporter profiles created for testing.
+ * Only deletes profiles where linkedTenantId is null (external reporters)
+ * and optionally filters by email pattern for test users.
+ */
+export async function cleanupExternalReporterTestProfiles(emailPattern?: string) {
+  try {
+    const whereClause: any = {
+      linkedTenantId: null, // Only external reporters
+    };
+
+    if (emailPattern) {
+      whereClause.user = {
+        email: {
+          contains: emailPattern,
+        },
+      };
+    }
+
+    // First, get the profiles to delete for logging
+    const profilesToDelete = await prisma.userProfile.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        fullName: true,
+        createdAt: true,
+        user: {
+          select: { email: true }
+        }
+      },
+    });
+
+    if (profilesToDelete.length === 0) {
+      return { success: true, deletedCount: 0, message: 'No external reporter test profiles found to delete.' };
+    }
+
+    // Delete the profiles
+    const deleteResult = await prisma.userProfile.deleteMany({
+      where: whereClause,
+    });
+
+    return {
+      success: true,
+      deletedCount: deleteResult.count,
+      message: `Successfully deleted ${deleteResult.count} external reporter test profiles.`,
+      deletedProfiles: profilesToDelete.map(p => ({
+        id: p.id,
+        email: p.user.email,
+        name: p.fullName,
+        createdAt: p.createdAt,
+      })),
+    };
+  } catch (error: any) {
+    throw new Error(`Failed to cleanup external reporter test profiles: ${error.message}`);
+  }
+}

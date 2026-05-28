@@ -21,7 +21,8 @@ const swaggerDefinition = {
   info: {
     title: 'Kaburlu News Platform API',
     version: '1.0.0',
-    description: 'REST API for Kaburlu platform. Note: Core roles and minimal seed bootstrap run automatically on server start to recover from empty databases.'
+    description:
+      'REST API for Kaburlu platform. Journalist Union: use tags "Journalist Union — Super Admin", "Tenant Admin", "Tenant Reporter", "Non-Tenant Reporter" (legacy union tags hidden). Login response includes unionMember with document URLs and approval status.',
   },
   servers: [
     {
@@ -55,7 +56,6 @@ const swaggerDefinition = {
     { name: 'ShortNews', description: 'Short news CRUD endpoints - Quick news snippets with location and metadata' },
     { name: 'ShortNews Options', description: 'Short news dropdown options - Categories, statuses, and configuration' },
     { name: 'Reactions' },
-    { name: 'Comments' },
     { name: 'Engagement', description: 'User engagement tracking - Reactions, comments, reads, and interactions' },
     { name: 'Engagement - Read Tracking', description: 'Article and ShortNews read progress tracking with time spent and scroll depth' },
     { name: 'Engagement - Comments', description: 'Article comments CRUD - Create, edit, delete, and moderate comments' },
@@ -93,6 +93,7 @@ const swaggerDefinition = {
     { name: 'Article Listing & Filters', description: 'Role-based article listing APIs with advanced filters - Super Admin, Tenant Admin, Reporter endpoints for article management and monitoring' },
     { name: 'Article Quota Management', description: 'Reporter daily article quota system - Admin quota settings and reporter self-service quota checking' },
     { name: 'PRGI Verification', description: 'Submit, verify or reject tenant PRGI compliance' },
+    { name: 'PRGI Newspaper', description: 'PRGI registered newspaper titles — public search; Super Admin create/update/CSV import' },
     { name: 'Public - Tenant', description: 'Public read endpoints filtered by domain (categories, articles)' },
     { name: 'Public - Website', description: 'Website-facing public APIs for theme, categories, articles, navigation, homepage, SEO' },
     { name: 'News Website API 2.0', description: 'Optimized News Website APIs - Best practice consolidated endpoints (config, articles, homepage, SEO)' },
@@ -110,7 +111,11 @@ const swaggerDefinition = {
     { name: 'Digital Daily Newspaper', description: 'Mobile app ePaper APIs - Swipeable newspaper gallery, all-tenants view, and issue pages for Digital Daily Newspaper app' },
     // Admin & WhatsApp
     { name: 'Admin', description: 'Administrative operations - Tenant admin management, system configuration' },
-    { name: 'WhatsApp Templates', description: 'WhatsApp Business API template management - Sync, list, and manage message templates' },
+    {
+      name: 'WhatsApp',
+      description:
+        'WhatsApp Cloud API — create/request templates (Meta approval), sync APPROVED templates, send OTP/ID card/custom template messages. Webhook at POST /webhooks/whatsapp.',
+    },
     // Tenant Subscription & Wallet System
     { name: 'Tenant Subscription - Wallet Management', description: 'Admin wallet operations - Top-up, bulk payments, adjustments, transaction history, and balance management' },
     { name: 'Tenant Subscription - Pricing Configuration', description: 'Admin pricing setup - Configure tenant-specific rates, minimum pages, discounts, and activation dates (effectiveFrom/effectiveUntil)' },
@@ -118,13 +123,44 @@ const swaggerDefinition = {
     { name: 'Tenant Subscription - Self-Service', description: 'Tenant self-service - Check balance, view transactions, current usage, invoices, and request top-ups' },
     // Epaper Designer
     { name: 'Epaper Designer', description: 'Block-wise newspaper article data for the Epaper Designer tool – list articles as layout blocks, assign block templates, and browse the template palette' },
-    // ── Journalist Union Module ──────────────────────────────────────────────
-    { name: 'Journalist Union - Public', description: 'Public endpoints (no auth required) — simple member registration, reporter mobile lookup (form pre-fill), membership application, journalist directory, committee list, union announcements, union settings, and post catalog' },
-    { name: 'Journalist Union - Member', description: 'Authenticated member endpoints — view & update profile, press card, complaints, reporter-link status, and current union posts' },
-    { name: 'Journalist Union - Admin', description: 'Union admin endpoints (UnionAdmin / SuperAdmin) — review applications, approve/reject, issue press cards, manage complaints, post announcements, and manage committee posts' },
-    { name: 'Journalist Union - Super Admin', description: 'SuperAdmin-only endpoints — assign union admins, manage union admin list, and seed default post hierarchy definitions for a union' },
-    // ── Journalist President Module ──────────────────────────────────────────
-    { name: 'Journalist President', description: 'Union President / Admin endpoints — dashboard, member management, KYC, insurance, elections, press card creation' }
+    // ── Journalist Union (2026) — use these tags; legacy union tags are hidden in Swagger UI ──
+    {
+      name: 'Journalist Union — Super Admin',
+      description:
+        'SUPER_ADMIN JWT required. Member list with survey + insurance status; pending approvals; create tenant/non-tenant members; assign accidental & health insurance; press cards; union admins; complaints; settings.',
+    },
+    {
+      name: 'Journalist Union — Tenant Admin',
+      description:
+        'TENANT_ADMIN — create union member for own-tenant reporters only (mobile + unionName). Same POST /journalist/admin/members/create as Super Admin.',
+    },
+    {
+      name: 'Journalist Union — Tenant Reporter',
+      description:
+        'REPORTER JWT — join union, download press ID when approved, reporter-link status. Login via POST /auth/login (role REPORTER).',
+    },
+    {
+      name: 'Journalist Union — Non-Tenant Reporter',
+      description:
+        'NON_TENANT_REPORTER — public join-union, document uploads, login (mobile + last 4 digits MPIN). unionMember block on login with document URLs & status.',
+    },
+    {
+      name: 'Journalist Union — Public',
+      description: 'No auth — public join-union (non-tenant), reporter mobile lookup, directory, committee, union settings.',
+    },
+    {
+      name: 'Journalist Union — Survey (Member)',
+      description: 'Union member JWT — party surveys, YES/NO answers, video upload, insurance eligibility.',
+    },
+    {
+      name: 'Journalist Union — Survey (Admin)',
+      description: 'Union admin / Super Admin — campaign YES/NO stats (other campaign CRUD returns 501).',
+    },
+    {
+      name: 'India Political Parties',
+      description:
+        'ECI registered parties (name, symbol). Public GET for apps. SUPER_ADMIN — list/create/update, set primary/secondary colors, symbol name, upload symbol PNG to CDN.',
+    },
   ],
   components: {
     securitySchemes: {
@@ -298,6 +334,142 @@ const options = {
   })()
 };
 
-const swaggerSpec = swaggerJSDoc(options);
+/** Legacy tags → hide (replaced by canonical paths under Journalist Union — * tags). */
+const HIDDEN_JOURNALIST_UNION_TAGS = new Set([
+  'Journalist Union - Public',
+  'Journalist Union - Member',
+  'Journalist President',
+  'Union Members Survey',
+]);
+
+/** Legacy `- Admin` routes that use `requireSuperAdmin` (not union-scoped admin). */
+const LEGACY_ADMIN_PATHS_SUPER_ADMIN = new Set([
+  '/journalist/admin/generate-card',
+  '/journalist/admin/cards/{profileId}',
+  '/journalist/admin/cards/{profileId}/generate-pdf',
+  '/journalist/admin/cards/renewal-due',
+  '/journalist/admin/cards/{profileId}/renew',
+  '/journalist/admin/complaints',
+  '/journalist/admin/complaints/{id}',
+  '/journalist/admin/updates',
+  '/journalist/admin/updates/{id}',
+  '/journalist/admin/posts/appoint',
+  '/journalist/admin/posts/holders/{id}',
+  '/journalist/admin/settings',
+  '/journalist/admin/settings/state',
+  '/journalist/admin/settings/upload',
+  '/journalist/admin/settings/state/upload',
+]);
+
+const CANONICAL_UNION_TAGS = new Set([
+  'Journalist Union — Super Admin',
+  'Journalist Union — Tenant Admin',
+  'Journalist Union — Tenant Reporter',
+  'Journalist Union — Non-Tenant Reporter',
+  'Journalist Union — Public',
+  'Journalist Union — Survey (Member)',
+  'Journalist Union — Survey (Admin)',
+]);
+
+const INDIA_POLITICAL_PARTIES_TAG = 'India Political Parties';
+
+const JOURNALIST_UNION_TAG_ORDER = [
+  'India Political Parties',
+  'Journalist Union — Super Admin',
+  'Journalist Union — Tenant Admin',
+  'Journalist Union — Tenant Reporter',
+  'Journalist Union — Non-Tenant Reporter',
+  'Journalist Union — Public',
+  'Journalist Union — Survey (Member)',
+  'Journalist Union — Survey (Admin)',
+];
+
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace']);
+
+function opKey(pathKey: string, method: string) {
+  return `${method.toLowerCase()}:${pathKey}`;
+}
+
+function hasCanonicalTag(tags: string[]) {
+  return tags.some((t) => CANONICAL_UNION_TAGS.has(t));
+}
+
+function migrateLegacyUnionTags(tags: string[], pathKey: string): string[] {
+  const out = tags.map((t) => {
+    if (t === 'Journalist Union - Super Admin') return 'Journalist Union — Super Admin';
+    if (t === 'Journalist Union - Admin') {
+      return LEGACY_ADMIN_PATHS_SUPER_ADMIN.has(pathKey)
+        ? 'Journalist Union — Super Admin'
+        : 'Journalist Union — Tenant Admin';
+    }
+    return t;
+  });
+  return [...new Set(out)];
+}
+
+function hideLegacyJournalistUnionOperations(spec: Record<string, unknown>): Record<string, unknown> {
+  const paths = spec.paths as Record<string, Record<string, { tags?: string[] }>> | undefined;
+  if (!paths) return spec;
+
+  const canonicalOps = new Set<string>();
+  for (const pathKey of Object.keys(paths)) {
+    const pathItem = paths[pathKey];
+    for (const method of Object.keys(pathItem)) {
+      if (!HTTP_METHODS.has(method.toLowerCase())) continue;
+      const op = pathItem[method];
+      if (!op || typeof op !== 'object' || !Array.isArray(op.tags)) continue;
+      if (hasCanonicalTag(op.tags)) canonicalOps.add(opKey(pathKey, method));
+    }
+  }
+
+  for (const pathKey of Object.keys(paths)) {
+    const pathItem = paths[pathKey];
+    for (const method of Object.keys(pathItem)) {
+      if (!HTTP_METHODS.has(method.toLowerCase())) continue;
+      const op = pathItem[method];
+      if (!op || typeof op !== 'object' || !Array.isArray(op.tags)) continue;
+      const key = opKey(pathKey, method);
+
+      if (op.tags.some((t) => HIDDEN_JOURNALIST_UNION_TAGS.has(t))) {
+        if (canonicalOps.has(key)) {
+          delete pathItem[method];
+          continue;
+        }
+        delete pathItem[method];
+        continue;
+      }
+
+      if (
+        op.tags.some(
+          (t) => t === 'Journalist Union - Super Admin' || t === 'Journalist Union - Admin',
+        )
+      ) {
+        if (canonicalOps.has(key)) {
+          delete pathItem[method];
+          continue;
+        }
+        op.tags = migrateLegacyUnionTags(op.tags, pathKey);
+      }
+    }
+    const hasOp = Object.keys(pathItem).some((k) => HTTP_METHODS.has(k.toLowerCase()));
+    if (!hasOp) delete paths[pathKey];
+  }
+
+  if (Array.isArray(spec.tags)) {
+    const orderMap = new Map(JOURNALIST_UNION_TAG_ORDER.map((n, i) => [n, i]));
+    (spec.tags as { name: string }[]).sort((a, b) => {
+      const ai = orderMap.has(a.name) ? orderMap.get(a.name)! : 999;
+      const bi = orderMap.has(b.name) ? orderMap.get(b.name)! : 999;
+      if (ai !== bi) return ai - bi;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  return spec;
+}
+
+const rawSwaggerSpec = swaggerJSDoc(options) as Record<string, unknown>;
+const swaggerSpec = hideLegacyJournalistUnionOperations(rawSwaggerSpec);
 
 export default swaggerSpec;
+export { JOURNALIST_UNION_TAG_ORDER, HIDDEN_JOURNALIST_UNION_TAGS, INDIA_POLITICAL_PARTIES_TAG };

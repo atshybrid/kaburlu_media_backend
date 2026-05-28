@@ -10,6 +10,10 @@ const router = Router();
  * /auth/login:
  *   post:
  *     summary: Login with mobile number and MPIN
+ *     description: |
+ *       Returns JWT, refresh token, and role-specific context (tenant, reporter, domain).
+ *       If the user has a Journalist Union profile, `data.unionMember` is included with membership status,
+ *       per-document approval URLs, and ID card download eligibility.
  *     tags:
  *       - Auth
  *     requestBody:
@@ -82,6 +86,26 @@ const router = Router();
  *                   currentMonth: { year: 2026, month: 1 }
  *                   currentMonthlyPayment: { id: <payment_id>, status: PAID }
  *                 autoPublish: true
+ *                 unionMember:
+ *                   profileId: clprof_union_001
+ *                   memberType: TENANT_REPORTER
+ *                   unionName: Democratic Journalist Federation (Working)
+ *                   membershipStatus: APPROVED
+ *                   approved: true
+ *                   pressId: DJF-2026-0042
+ *                   publisherMobileNumber: "9123456780"
+ *                   documents:
+ *                     photo: { url: "https://cdn.../photo.webp", status: APPROVED, uploaded: true }
+ *                     aadhaar: { url: "https://cdn.../aadhaar.webp", status: APPROVED, uploaded: true }
+ *                     pan: { url: "https://cdn.../pan.webp", status: APPROVED, uploaded: true }
+ *                     workingIdCard: { url: "https://cdn.../work-id.webp", status: APPROVED, uploaded: true }
+ *                   canDownloadIdCard: true
+ *                   idCardDownloadBlockedReason: null
+ *                   unionPressCard:
+ *                     cardNumber: DJF-2026-0042
+ *                     status: ACTIVE
+ *                     pdfUrl: "https://cdn.../press-card.pdf"
+ *                     expiryDate: "2027-12-31"
  *       402:
  *         description: Reporter payment required before login
  *         content:

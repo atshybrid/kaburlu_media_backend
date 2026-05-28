@@ -11,6 +11,7 @@ import { bunnyStoragePutObject, isBunnyStorageConfigured } from '../../lib/bunny
 import prisma from '../../lib/prisma';
 import { requireSuperOrTenantAdmin, requireSuperAdmin } from '../middlewares/authz';
 import { generatePressCardBuffer, generateAndUploadPressCardPdf } from '../../lib/journalistPressCardPdf';
+import { canDownloadUnionIdCard } from '../../lib/journalistUnionMember';
 import { sendWhatsappIdCardTemplate, sendWhatsappTextMessage } from '../../lib/whatsapp';
 
 // Multer for union asset uploads (memory storage, image-only)
@@ -329,7 +330,7 @@ router.post('/public/register', async (req: Request, res: Response) => {
     const profile = await (prisma as any).journalistProfile.create({
       data: {
         userId:           user.id,
-        designation:      designation ? (designation as string).trim() : 'Member',
+        designation:      designation ? (designation as string).trim() : 'Union Member',
         district:         district    ? (district    as string).trim() : '',
         organization:     currentNewspaper ? (currentNewspaper as string).trim() : '',
         unionName:        (unionName as string).trim(),
@@ -676,6 +677,15 @@ router.get('/my-card/pdf', jwtAuth, async (req: Request, res: Response) => {
 
     const card = await (prisma as any).journalistCard.findUnique({ where: { profileId: profile.id } });
     if (!card) return res.status(404).json({ error: 'No press card issued yet.' });
+
+    const download = canDownloadUnionIdCard(profile, card);
+    if (!download.allowed) {
+      return res.status(403).json({
+        error: 'Union ID card not available yet',
+        reason: download.reason,
+        hint: 'Complete document uploads and wait for super admin approval',
+      });
+    }
 
     const result = await generatePressCardBuffer(profile.id);
     if (!result.ok || !result.pdfBuffer) {
@@ -2529,13 +2539,14 @@ router.post(
       if (!profile) return res.status(404).json({ error: 'Journalist profile not found. Apply first.' });
 
       const field = req.body.field as string;
-      const KYC_FIELD_MAP: Record<string, string> = {
-        photo:       'photoUrl',
-        aadhaar:     'aadhaarUrl',
-        aadhaarBack: 'aadhaarBackUrl',
+      const KYC_FIELD_MAP: Record<string, { url: string; status: string; approvedAt: string }> = {
+        photo:       { url: 'photoUrl', status: 'photoApprovalStatus', approvedAt: 'photoApprovedAt' },
+        aadhaar:     { url: 'aadhaarUrl', status: 'aadhaarApprovalStatus', approvedAt: 'aadhaarApprovedAt' },
+        aadhaarBack: { url: 'aadhaarBackUrl', status: 'aadhaarApprovalStatus', approvedAt: 'aadhaarApprovedAt' },
+        pan:         { url: 'panCardUrl', status: 'panApprovalStatus', approvedAt: 'panApprovedAt' },
       };
       if (!KYC_FIELD_MAP[field]) {
-        return res.status(400).json({ error: 'field must be one of: photo, aadhaar, aadhaarBack' });
+        return res.status(400).json({ error: 'field must be one of: photo, aadhaar, aadhaarBack, pan' });
       }
 
       const file = req.file;
@@ -2551,11 +2562,16 @@ router.post(
 
       const key = `journalist-union/kyc/${profile.id}/${field}.${ext}`;
       const { publicUrl } = await putPublicObject({ key, body: outBuffer, contentType });
+      const m = KYC_FIELD_MAP[field];
       const updated = await (prisma as any).journalistProfile.update({
         where: { id: profile.id },
-        data:  { [KYC_FIELD_MAP[field]]: publicUrl },
+        data: {
+          [m.url]: publicUrl,
+          [m.status]: 'PENDING',
+          [m.approvedAt]: null,
+        },
       });
-      return res.json({ field, url: publicUrl, profile: updated });
+      return res.json({ field, url: publicUrl, status: 'PENDING', profile: updated });
     } catch (e: any) {
       console.error('[journalist/kyc/upload]', e);
       return res.status(500).json({ error: 'Upload failed', details: e.message });

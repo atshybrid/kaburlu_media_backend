@@ -15,7 +15,7 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
 /**
  * @swagger
  * tags:
- *   - name: AssemblyConstituencies
+ *   - name: Assembly Constituencies
  *     description: Manage assembly constituencies (SUPER_ADMIN only)
  */
 
@@ -24,7 +24,7 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
  * /assembly-constituencies:
  *   get:
  *     summary: List assembly constituencies (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -64,7 +64,7 @@ router.get('/assembly-constituencies', passport.authenticate('jwt', { session: f
  * /assembly-constituencies:
  *   post:
  *     summary: Create assembly constituency (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -101,7 +101,7 @@ router.post('/assembly-constituencies', passport.authenticate('jwt', { session: 
  * /assembly-constituencies/{id}:
  *   get:
  *     summary: Get assembly constituency (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -129,7 +129,7 @@ router.get('/assembly-constituencies/:id', passport.authenticate('jwt', { sessio
  * /assembly-constituencies/{id}:
  *   patch:
 *     summary: Update assembly constituency name or deletion flag (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -176,7 +176,7 @@ router.patch('/assembly-constituencies/:id', passport.authenticate('jwt', { sess
  * /assembly-constituencies/{id}:
  *   delete:
  *     summary: Soft delete assembly constituency (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -209,7 +209,7 @@ export default router;
  * /assembly-constituencies/{id}/restore:
  *   post:
  *     summary: Restore a soft-deleted assembly constituency (SUPER_ADMIN)
- *     tags: [AssemblyConstituencies]
+ *     tags: [Assembly Constituencies]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path

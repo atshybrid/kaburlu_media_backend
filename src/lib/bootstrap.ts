@@ -16,6 +16,7 @@ export async function ensureCoreSeeds() {
     { name: 'NEWS_MODERATOR', permissions: { moderation: ['ai_review', 'manual_review'] } },
     { name: 'ADMIN_EDITOR', permissions: { articles: ['edit', 'approve'], shortNews: ['edit', 'approve'], webArticles: ['edit', 'approve'] } },
     { name: 'CITIZEN_REPORTER', permissions: { shortNews: ['create', 'edit_own'] } },
+    { name: 'NON_TENANT_REPORTER', permissions: { journalistUnion: ['member'], shortNews: ['create', 'edit_own'] } },
     { name: 'PUBLIC_FIGURE', permissions: { shortNews: ['create', 'edit_own'] } },
 
     // --- Newspaper / tenant editorial ---

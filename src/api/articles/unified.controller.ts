@@ -4,6 +4,7 @@ import { sanitizeHtmlAllowlist, slugFromAnyLanguage, trimWords } from '../../lib
 import { buildNewsArticleJsonLd } from '../../lib/seo';
 import { notifyArticleStatusChange } from '../../lib/articleNotifications';
 import { triggerPublishedArticleWebPush } from '../../lib/webPushPublishTriggers';
+import { triggerPublishedArticleMobilePush } from '../../lib/mobilePushPublish';
 
 /**
  * UNIFIED ARTICLE CONTROLLER
@@ -830,6 +831,18 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
     }
 
     if (effectiveStatus === 'PUBLISHED' && result.tenantWebArticle) {
+      notifyArticleStatusChange({
+        id: result.tenantWebArticle.id,
+        title: result.tenantWebArticle.title,
+        authorId,
+        tenantId,
+        domainId,
+        status: 'PUBLISHED',
+        previousStatus: 'NEW',
+        isBreaking: Boolean((result.tenantWebArticle as any).isBreaking || payload.isBreaking),
+        coverImageUrl: result.tenantWebArticle.coverImageUrl || coverImageUrl || undefined,
+      }).catch(err => console.error('[ArticleNotify] Background notification failed:', err));
+
       triggerPublishedArticleWebPush({
         tenantId,
         domainId: result.tenantWebArticle.domainId || domainId || undefined,
@@ -840,6 +853,19 @@ export const createUnifiedArticle = async (req: Request, res: Response) => {
         coverImageUrl: result.tenantWebArticle.coverImageUrl || coverImageUrl || undefined,
         isBreaking: Boolean((result.tenantWebArticle as any).isBreaking || payload.isBreaking),
       }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+
+      triggerPublishedArticleMobilePush({
+        tenantId,
+        articleId: result.tenantWebArticle.id,
+        title: result.tenantWebArticle.title,
+        authorId,
+        languageId: result.tenantWebArticle.languageId || languageId || undefined,
+        coverImageUrl: result.tenantWebArticle.coverImageUrl || coverImageUrl || undefined,
+        isBreaking: Boolean((result.tenantWebArticle as any).isBreaking || payload.isBreaking),
+        districtId: payload.districtId || null,
+        mandalId: payload.mandalId || null,
+        stateId: payload.stateId || null,
+      }).catch(err => console.error('[MobilePush] Article publish push failed:', err));
     }
     
     return res.status(201).json({
@@ -1331,6 +1357,16 @@ export const updateUnifiedArticle = async (req: Request, res: Response) => {
             coverImageUrl: updateData.coverImageUrl || existing.coverImageUrl || undefined,
             isBreaking: Boolean(updateData.isBreaking ?? existing.isBreaking),
           }).catch(err => console.error('[WebPushPublish] Article publish push failed:', err));
+
+          triggerPublishedArticleMobilePush({
+            tenantId: existing.tenantId,
+            articleId: id,
+            title: updateData.title || existing.title,
+            authorId: existing.authorId,
+            languageId: existing.languageId || undefined,
+            coverImageUrl: updateData.coverImageUrl || existing.coverImageUrl || undefined,
+            isBreaking: Boolean(updateData.isBreaking ?? existing.isBreaking),
+          }).catch(err => console.error('[MobilePush] Article publish push failed:', err));
         }
       }
 

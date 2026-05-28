@@ -1,0 +1,223 @@
+{
+  "source": "Election Commission of India — Notification No.56/25/2024/PPS-II (National & State Parties, March 2024)",
+  "eciSourceUrl": "https://www.eci.gov.in/political-party",
+  "parties": [
+    {
+      "shortCode": "BJP",
+      "name": "Bharatiya Janata Party",
+      "recognition": "NATIONAL",
+      "symbolName": "Lotus",
+      "primaryColor": "#FF9933",
+      "secondaryColor": "#138808",
+      "headquartersAddress": "6-A, Deen Dayal Upadhyaya Marg, New Delhi-110002",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "INC",
+      "name": "Indian National Congress",
+      "abbreviation": "Congress",
+      "recognition": "NATIONAL",
+      "symbolName": "Hand",
+      "primaryColor": "#00AEEF",
+      "secondaryColor": "#FFFFFF",
+      "headquartersAddress": "24, Akbar Road, New Delhi-110001",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "AAP",
+      "name": "Aam Aadmi Party",
+      "recognition": "NATIONAL",
+      "symbolName": "Broom",
+      "primaryColor": "#0072B8",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "BSP",
+      "name": "Bahujan Samaj Party",
+      "recognition": "NATIONAL",
+      "symbolName": "Elephant",
+      "primaryColor": "#22409A",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "CPI",
+      "name": "Communist Party of India",
+      "recognition": "NATIONAL",
+      "symbolName": "Ears of Corn and Sickle",
+      "primaryColor": "#DE0000",
+      "secondaryColor": "#FFFF00",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "CPI_M",
+      "name": "Communist Party of India (Marxist)",
+      "recognition": "NATIONAL",
+      "symbolName": "Hammer, Sickle and Star",
+      "primaryColor": "#DE0000",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "NCP",
+      "name": "Nationalist Congress Party",
+      "recognition": "NATIONAL",
+      "symbolName": "Clock",
+      "primaryColor": "#00B0F0",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (NP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "TDP",
+      "name": "Telugu Desam Party",
+      "recognition": "STATE",
+      "symbolName": "Bicycle",
+      "states": ["Andhra Pradesh"],
+      "primaryColor": "#FFFF00",
+      "secondaryColor": "#DE0000",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "YSRCP",
+      "name": "Yuvajana Sramika Rythu Congress Party",
+      "recognition": "STATE",
+      "symbolName": "Ceiling Fan",
+      "states": ["Andhra Pradesh"],
+      "primaryColor": "#0260B4",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "JSP",
+      "name": "Jana Sena Party",
+      "recognition": "STATE",
+      "symbolName": "Glass Tumbler",
+      "states": ["Andhra Pradesh"],
+      "primaryColor": "#DE0000",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "BRS",
+      "name": "Bharat Rashtra Samithi",
+      "abbreviation": "BRS (formerly TRS)",
+      "recognition": "STATE",
+      "symbolName": "Car",
+      "states": ["Telangana"],
+      "primaryColor": "#E91E63",
+      "secondaryColor": "#FFFFFF",
+      "headquartersAddress": "Bharat Rashtra Samithi Headquarters, Hyderabad",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "TRS",
+      "name": "Telangana Rashtra Samithi",
+      "abbreviation": "Legacy TRS name",
+      "recognition": "STATE",
+      "symbolName": "Car",
+      "states": ["Telangana"],
+      "primaryColor": "#E91E63",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "AIMIM",
+      "name": "All India Majlis-E-Ittehadul Muslimeen",
+      "recognition": "STATE",
+      "symbolName": "Kite",
+      "states": ["Telangana"],
+      "primaryColor": "#006633",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "DMK",
+      "name": "Dravida Munnetra Kazhagam",
+      "recognition": "STATE",
+      "symbolName": "Rising Sun",
+      "states": ["Tamil Nadu"],
+      "primaryColor": "#DE0000",
+      "secondaryColor": "#000000",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "AIADMK",
+      "name": "All India Anna Dravida Munnetra Kazhagam",
+      "recognition": "STATE",
+      "symbolName": "Two Leaves",
+      "states": ["Tamil Nadu"],
+      "primaryColor": "#006600",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "SP",
+      "name": "Samajwadi Party",
+      "recognition": "STATE",
+      "symbolName": "Bicycle",
+      "states": ["Uttar Pradesh"],
+      "primaryColor": "#ED1B24",
+      "secondaryColor": "#00A651",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "RJD",
+      "name": "Rashtriya Janata Dal",
+      "recognition": "STATE",
+      "symbolName": "Hurricane Lamp",
+      "states": ["Bihar", "Jharkhand"],
+      "primaryColor": "#006633",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "JDU",
+      "name": "Janata Dal (United)",
+      "recognition": "STATE",
+      "symbolName": "Arrow",
+      "states": ["Bihar"],
+      "primaryColor": "#008000",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "SHIVSENA",
+      "name": "Shiv Sena",
+      "recognition": "STATE",
+      "symbolName": "Bow and Arrow",
+      "states": ["Maharashtra"],
+      "primaryColor": "#FF6600",
+      "secondaryColor": "#FFFFFF",
+      "eciNotificationRef": "56/25/2024/PPS-II (SP)",
+      "colorSource": "AI_CURATED"
+    },
+    {
+      "shortCode": "OTHER",
+      "name": "Other / Independent",
+      "recognition": "REGISTERED_UNRECOGNIZED",
+      "symbolName": null,
+      "primaryColor": "#607D8B",
+      "secondaryColor": "#FFFFFF",
+      "colorSource": "MANUAL"
+    }
+  ]
+}

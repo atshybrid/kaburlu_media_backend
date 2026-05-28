@@ -1,5 +1,10 @@
 import prisma from './prisma';
 import { aiGenerateText } from './aiProvider';
+import {
+  EPAPER_DEFAULT_ACCENT_COLOR,
+  EPAPER_DEFAULT_PRIMARY_COLOR,
+  EPAPER_DEFAULT_SECONDARY_COLOR,
+} from './epaperPublicBranding';
 
 function parseBool(v: string | undefined, def = true): boolean {
   if (typeof v === 'undefined') return def;
@@ -144,8 +149,9 @@ export async function ensureEpaperDomainSettings(
           },
           theme: {
             colors: {
-              primary: tenantTheme.primaryColor || null,
-              secondary: tenantTheme.secondaryColor || null,
+              primary: tenantTheme.primaryColor || EPAPER_DEFAULT_PRIMARY_COLOR,
+              secondary: tenantTheme.secondaryColor || EPAPER_DEFAULT_SECONDARY_COLOR,
+              accent: EPAPER_DEFAULT_ACCENT_COLOR,
               headerBgColor: tenantTheme.headerBgColor || null,
               footerBgColor: tenantTheme.footerBgColor || null,
             },

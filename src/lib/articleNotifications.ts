@@ -8,7 +8,9 @@
  * - CHANGES_REQUESTED: Notify article author (Reporter)
  */
 
-import { sendPush, sendPushToUser, broadcastPush, PushResult } from './push';
+import { sendPush, sendPushToUser, PushResult } from './push';
+import { sendSmartPush, resolveAuthorAudience } from './smartPush';
+import { triggerPublishedArticleMobilePush } from './mobilePushPublish';
 import prisma from './prisma';
 
 // Admin roles that should receive pending article notifications
@@ -122,17 +124,26 @@ export async function notifyArticlePublished(article: ArticleInfo): Promise<Push
   }
 
   try {
+    await triggerPublishedArticleMobilePush({
+      tenantId: article.tenantId || '',
+      articleId: article.id,
+      title: article.title,
+      authorId: article.authorId,
+      coverImageUrl: article.coverImageUrl,
+      isBreaking: false,
+    }).catch((err) => console.error('[ArticleNotify] Reader smart push failed:', err));
+
     const result = await sendPushToUser(article.authorId, {
       title: '🎉 Article Published!',
       body: `Your article "${truncate(article.title, 50)}" is now live!`,
       data: {
         type: 'article_published',
         articleId: article.id,
-        action: 'view'
-      }
+        action: 'view',
+      },
     });
 
-    console.log(`[ArticleNotify] PUBLISHED notification: success=${result.successCount}, failure=${result.failureCount}`);
+    console.log(`[ArticleNotify] PUBLISHED author push: success=${result.successCount}, failure=${result.failureCount}`);
     return result;
   } catch (e: any) {
     console.error('[ArticleNotify] Error sending PUBLISHED notification:', e);
@@ -249,20 +260,32 @@ export async function notifyBreakingNews(article: ArticleInfo): Promise<PushResu
   console.log(`[ArticleNotify] 🔴 BREAKING NEWS: ${article.id} - "${article.title}"`);
 
   try {
-    // Broadcast to all devices with push tokens
-    const result = await broadcastPush({
-      title: '🔴 BREAKING NEWS',
-      body: truncate(article.title, 100),
-      image: article.coverImageUrl, // Cover image in push notification
-      color: '#FF0000', // Red color for Android notification
-      data: {
-        type: 'breaking_news',
-        articleId: article.id,
-        action: 'view'
-      }
-    });
+    const audience = article.authorId
+      ? await resolveAuthorAudience(article.authorId, article.tenantId || undefined)
+      : { tenantId: article.tenantId, languageId: undefined };
 
-    console.log(`[ArticleNotify] BREAKING notification: success=${result.successCount}, failure=${result.failureCount}`);
+    const result = await sendSmartPush(
+      {
+        ...audience,
+        tenantId: article.tenantId ?? audience.tenantId ?? undefined,
+        isBreaking: true,
+        priority: 'breaking',
+      },
+      {
+        title: '🔴 బ్రేకింగ్ న్యూస్',
+        body: truncate(article.title, 100),
+        image: article.coverImageUrl,
+        color: '#FF0000',
+        data: {
+          type: 'breaking_news',
+          articleId: article.id,
+          action: 'view',
+        },
+      },
+      { dedupeKey: `breaking:${article.id}`, minScore: 40 },
+    );
+
+    console.log(`[ArticleNotify] BREAKING smart push: targeted=${(result as any).targeted}, success=${result.successCount}`);
     
     // Also notify the author that their article is published
     if (article.authorId) {

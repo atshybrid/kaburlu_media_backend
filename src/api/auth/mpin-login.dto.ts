@@ -19,10 +19,33 @@ export class MpinLoginDto {
   @IsString()
   ipAddress?: string;
 
-  constructor(mobileNumber: string, mpin: string, deviceInfo?: string, ipAddress?: string) {
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  pushToken?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceModel?: string;
+
+  constructor(
+    mobileNumber: string,
+    mpin: string,
+    deviceInfo?: string,
+    ipAddress?: string,
+    deviceId?: string,
+    pushToken?: string,
+    deviceModel?: string,
+  ) {
     this.mobileNumber = mobileNumber;
     this.mpin = mpin;
     this.deviceInfo = deviceInfo;
     this.ipAddress = ipAddress;
+    this.deviceId = deviceId;
+    this.pushToken = pushToken;
+    this.deviceModel = deviceModel;
   }
 }

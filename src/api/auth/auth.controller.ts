@@ -69,7 +69,15 @@ export const loginController = async (req: Request, res: Response) => {
     const deviceInfo = req.body.deviceInfo || req.headers['user-agent'] || null;
     const ipAddress = req.body.ipAddress || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
     
-    const loginDto = new MpinLoginDto(req.body.mobileNumber, req.body.mpin, deviceInfo, typeof ipAddress === 'string' ? ipAddress : undefined);
+    const loginDto = new MpinLoginDto(
+      req.body.mobileNumber,
+      req.body.mpin,
+      deviceInfo,
+      typeof ipAddress === 'string' ? ipAddress : undefined,
+      req.body.deviceId,
+      req.body.pushToken,
+      req.body.deviceModel,
+    );
     console.log("loginDto", loginDto);
     const errors = await validate(loginDto);
     if (errors.length > 0) {

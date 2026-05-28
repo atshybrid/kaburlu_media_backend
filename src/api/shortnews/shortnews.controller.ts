@@ -12,11 +12,56 @@ import { aiGenerateText } from '../../lib/aiProvider';
 import { generateAiShortNewsFromPrompt } from './shortnews.ai';
 import { detectLanguageCodeFromText, languageNameFromCode, normalizeLanguageCode } from '../../lib/languageDetect';
 import { sendToTopic } from '../../lib/fcm';
+import { triggerShortNewsMobilePush } from '../../lib/mobilePushPublish';
 import prismaClient from '../../lib/prisma';
 import { translateAndSaveCategoryInBackground } from '../categories/categories.service';
 
 type HeadingStyle = { text: string; color?: string; bgColor?: string; size?: number; tag?: 'h2' | 'h3' };
 type HeadingsPayload = { h2?: HeadingStyle; h3?: HeadingStyle };
+
+async function pushShortNewsToMobile(item: any, languageCode: string, canonicalUrl: string) {
+  const mediaUrls = Array.isArray(item.mediaUrls) ? item.mediaUrls : [];
+  const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
+  const primaryImage = imageUrls[0];
+  const titleText = item.title;
+  const bodyText = (item.content || '').slice(0, 120);
+
+  await triggerShortNewsMobilePush({
+    shortNewsId: item.id,
+    title: titleText,
+    body: bodyText,
+    image: primaryImage,
+    languageId: item.language || undefined,
+    categoryId: item.categoryId,
+    authorId: item.authorId,
+    latitude: item.latitude,
+    longitude: item.longitude,
+    placeName: item.placeName,
+    isBreaking: Boolean(item.isBreaking),
+    canonicalUrl,
+  }).catch((e) => console.warn('[ShortNews] Smart mobile push failed (non-fatal):', e));
+
+  try {
+    if (languageCode) {
+      await sendToTopic(`news-lang-${languageCode.toLowerCase()}`, {
+        title: titleText,
+        body: bodyText,
+        image: primaryImage,
+        data: { type: 'shortnews', shortNewsId: item.id, url: canonicalUrl },
+      });
+    }
+    if (item.categoryId) {
+      await sendToTopic(`news-cat-${String(item.categoryId).toLowerCase()}`, {
+        title: titleText,
+        body: bodyText,
+        image: primaryImage,
+        data: { type: 'shortnews', shortNewsId: item.id, url: canonicalUrl },
+      });
+    }
+  } catch (e) {
+    console.warn('[ShortNews] FCM topic send failed (non-fatal):', e);
+  }
+}
 
 /** Generate a unique 8-character alphanumeric short ID (URL-safe) */
 function generateShortId(): string {
@@ -494,18 +539,15 @@ export const createShortNews = async (req: Request, res: Response) => {
     try {
       if (initialStatus === 'AI_APPROVED') {
         const primaryImage = imageCandidates[0];
-        const titleText = titleToSave;
-        const bodyText = content.slice(0, 120);
-        const dataPayload = { type: 'shortnews', shortNewsId: shortNews.id, url: canonicalUrl } as Record<string, string>;
-        if (languageCode) {
-          await sendToTopic(`news-lang-${languageCode.toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
+        let languageCode = 'en';
+        if (languageId) {
+          const langRow = await prisma.language.findUnique({ where: { id: languageId } });
+          if (langRow?.code) languageCode = langRow.code;
         }
-        if (categoryId) {
-          await sendToTopic(`news-cat-${String(categoryId).toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
-        }
+        await pushShortNewsToMobile(shortNews, languageCode, canonicalUrl);
       }
     } catch (e) {
-      console.warn('FCM send failed on AI approval (non-fatal):', e);
+      console.warn('Push notification failed on AI approval (non-fatal):', e);
     }
     res.status(201).json({
       success: true,
@@ -717,31 +759,13 @@ export const updateShortNewsStatus = async (req: Request, res: Response) => {
     try {
       const approvedStatuses = new Set(['AI_APPROVED', 'DESK_APPROVED']);
       if (approvedStatuses.has(String(status))) {
-        // Build notification payload
-        const mediaUrls = Array.isArray((updated as any).mediaUrls) ? (updated as any).mediaUrls : [];
-        const imageUrls = mediaUrls.filter((u: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(u));
-        const primaryImage = imageUrls[0];
-        // Resolve language code for topics and canonical URL
         let languageCode = 'en';
         if (updated.language) {
           const lang = await prisma.language.findUnique({ where: { id: updated.language as any } });
           if (lang?.code) languageCode = lang.code;
         }
         const canonicalUrl = buildCanonicalUrl(languageCode, updated.slug || updated.id, 'short');
-        const titleText = updated.title;
-        const bodyText = (updated.content || '').slice(0, 120);
-        const dataPayload = { type: 'shortnews', shortNewsId: updated.id, url: canonicalUrl } as Record<string, string>;
-        // Send to language topic and category topic (best-effort)
-        try {
-          if (languageCode) {
-            await sendToTopic(`news-lang-${languageCode.toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
-          }
-          if ((updated as any).categoryId) {
-            await sendToTopic(`news-cat-${String((updated as any).categoryId).toLowerCase()}`, { title: titleText, body: bodyText, image: primaryImage, data: dataPayload });
-          }
-        } catch (e) {
-          console.warn('FCM send failed (non-fatal):', e);
-        }
+        await pushShortNewsToMobile(updated, languageCode, canonicalUrl);
       }
     } catch (e) {
       console.warn('Notification error (non-fatal):', e);
