@@ -107,6 +107,12 @@ const swaggerDefinition = {
     { name: 'EPF ePaper Clips - Admin', description: 'Article clip management for PDF issues - Create, update, delete article regions with coordinates (SUPER_ADMIN & DESK_EDITOR)' },
     { name: 'EPF ePaper - Public', description: 'Public ePaper endpoints - Latest issues, editions list, and PDF page delivery' },
     { name: 'Block ePaper - Admin', description: 'Block-based ePaper templates and layout generation (Admin only)' },
+    {
+      name: 'ePaper Smart Design',
+      description:
+        'Edition-wise ePaper design CRUD — header/sub-header styles, logos, volume/issue auto-number, PRGI context. Use instead of legacy /epaper/design-config. Requires admin JWT + X-Tenant-Id.',
+    },
+    { name: 'ePaper - Newspaper Config', description: 'Tenant-level newspaper page count, per-page cost, volume/issue seeds (legacy tenant config)' },
     // Digital Daily Newspaper (Mobile App)
     { name: 'Digital Daily Newspaper', description: 'Mobile app ePaper APIs - Swipeable newspaper gallery, all-tenants view, and issue pages for Digital Daily Newspaper app' },
     // Admin & WhatsApp

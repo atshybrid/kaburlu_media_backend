@@ -507,6 +507,7 @@ model Tenant {
   epaperDesignerDrafts         EpaperDesignerDraft[]         @relation("Tenant_EpaperDesignerDrafts")
   epaperMlTrainingSamples      EpaperMlTrainingSample[]      @relation("Tenant_EpaperMlTrainingSamples")
   epaperNewspaperConfig        EpaperNewspaperConfig?        @relation("Tenant_EpaperNewspaperConfig")
+  epaperSmartDesigns           EpaperSmartDesign[]           @relation("Tenant_EpaperSmartDesigns")
   homepageSectionConfigs       HomepageSectionConfig[]
   newsletterSubscriptions      NewsletterSubscription[]
   newspaperArticles            NewspaperArticle[]
@@ -561,6 +562,7 @@ model EpaperPublicationEdition {
   tenant         Tenant                        @relation("Tenant_EpaperPublicationEditions", fields: [tenantId], references: [id], onDelete: Cascade)
   subEditions    EpaperPublicationSubEdition[]
   designerDrafts EpaperDesignerDraft[]         @relation("Edition_EpaperDesignerDrafts")
+  smartDesigns   EpaperSmartDesign[]           @relation("Edition_EpaperSmartDesigns")
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -588,6 +590,7 @@ model EpaperPublicationSubEdition {
   district       District?                @relation("District_EpaperPublicationSubEditions", fields: [districtId], references: [id])
   edition        EpaperPublicationEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
   tenant         Tenant                   @relation("Tenant_EpaperPublicationSubEditions", fields: [tenantId], references: [id], onDelete: Cascade)
+  smartDesigns   EpaperSmartDesign[]      @relation("SubEdition_EpaperSmartDesigns")
 
   @@unique([editionId, slug])
   @@index([tenantId])
@@ -2301,6 +2304,83 @@ model EpaperNewspaperConfig {
   tenant                Tenant   @relation("Tenant_EpaperNewspaperConfig", fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+/// Canonical header/sub-header style catalog (seeded from headerStyleCatalog.ts).
+model EpaperHeaderStyle {
+  id                         Int     @id @default(autoincrement())
+  number                     Int
+  type                       String
+  key                        String  @unique
+  slug                       String
+  name                       String
+  nameTe                     String?
+  supportsCenterLogo         Boolean @default(false)
+  supportsLeftImage          Boolean @default(false)
+  supportsRightImage         Boolean @default(false)
+  supportsPaperNameImage     Boolean @default(false)
+  supportsSubHeaderCenterImage Boolean @default(false)
+
+  @@unique([type, number])
+  @@index([type])
+}
+
+/// Per-tenant ePaper Smart Design — one row per publication edition (or sub-edition).
+/// Replaces legacy design-config for new React Smart Design UI.
+model EpaperSmartDesign {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  publicationEditionId  String
+  /// Empty string = edition-level design; otherwise sub-edition id
+  subEditionScopeKey    String   @default("")
+  subEditionId          String?
+
+  paperType             String   @default("TABLOID")
+  totalPages            Int      @default(8)
+  perPageCostMonthly    Float?
+  paperSellCost         Float?
+
+  headerStyleNumber     Int      @default(1)
+  subHeaderStyleNumber  Int      @default(1)
+  headerStyleKey        String   @default("main_style1")
+  subHeaderStyleKey     String   @default("sub_header_style1")
+
+  headerData            String?
+  headerLogoUrl         String?
+  subHeaderLogoUrl      String?
+  paperNameImageUrl     String?
+  headerLeftImageUrl    String?
+  headerRightImageUrl   String?
+  publishedAreaText     String?
+  tagline               String?
+  websiteUrl            String?
+  runningCommentText    String?
+  runningCommentAuthor  String?
+  rightArticleTitle     String?
+  rightArticlePoints    String?
+  lastPageFooterText    String?
+
+  volumeStartNumber     Int      @default(1)
+  volumeStartYear       Int
+  issueStartNumber      Int      @default(1)
+  issueStartDate        DateTime @db.Date
+  issueCounterMode      String   @default("SEQUENTIAL")
+  newsCloseTime         String   @default("23:00")
+  languageCode          String   @default("te")
+
+  isActive              Boolean  @default(true)
+  isDeleted             Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant                   @relation("Tenant_EpaperSmartDesigns", fields: [tenantId], references: [id], onDelete: Cascade)
+  publicationEdition    EpaperPublicationEdition @relation("Edition_EpaperSmartDesigns", fields: [publicationEditionId], references: [id], onDelete: Cascade)
+  subEdition            EpaperPublicationSubEdition? @relation("SubEdition_EpaperSmartDesigns", fields: [subEditionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, publicationEditionId, subEditionScopeKey])
+  @@index([tenantId])
+  @@index([publicationEditionId])
+  @@index([subEditionId])
 }
 
 /// Proof request created by admin/editor for an article

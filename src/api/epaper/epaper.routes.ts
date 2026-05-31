@@ -102,6 +102,19 @@ import {
   getNewspaperConfig,
   upsertNewspaperConfig,
 } from './epaperNewspaperConfig.controller';
+import {
+  getHeaderStylesCatalog,
+  getSmartDesignContext,
+  listSmartDesigns,
+  listEditionsWithDesigns,
+  resolveSmartDesignByEdition,
+  getSmartDesignById,
+  createSmartDesign,
+  updateSmartDesign,
+  patchSmartDesign,
+  deleteSmartDesign,
+} from './epaperSmartDesign.controller';
+import { collectEpaperNews } from './epaperCollectNews.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -4524,5 +4537,59 @@ router.get('/newspaper-config', auth, getNewspaperConfig);
  *         description: Validation error
  */
 router.put('/newspaper-config', auth, upsertNewspaperConfig);
+
+// ============================================================================
+// EPAPER SMART DESIGN (edition-wise — use this instead of legacy design-config)
+// ============================================================================
+
+const smartDesignUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: Math.max(1, Math.floor(Number(process.env.MEDIA_MAX_IMAGE_MB || 10) * 1024 * 1024)) },
+});
+
+router.get('/smart-design/header-styles', auth, getHeaderStylesCatalog);
+router.get('/smart-design/context', auth, getSmartDesignContext);
+router.get('/smart-design/editions', auth, listEditionsWithDesigns);
+router.get('/smart-design/by-edition', auth, resolveSmartDesignByEdition);
+router.get('/smart-design/collect-news', auth, collectEpaperNews);
+router.get('/smart-design', auth, listSmartDesigns);
+router.get('/smart-design/:id', auth, getSmartDesignById);
+router.post(
+  '/smart-design',
+  auth,
+  smartDesignUpload.fields([
+    { name: 'headerLeftImage', maxCount: 1 },
+    { name: 'headerRightImage', maxCount: 1 },
+    { name: 'headerLogo', maxCount: 1 },
+    { name: 'subHeaderLogo', maxCount: 1 },
+    { name: 'paperNameImage', maxCount: 1 },
+  ]),
+  createSmartDesign,
+);
+router.put(
+  '/smart-design/:id',
+  auth,
+  smartDesignUpload.fields([
+    { name: 'headerLeftImage', maxCount: 1 },
+    { name: 'headerRightImage', maxCount: 1 },
+    { name: 'headerLogo', maxCount: 1 },
+    { name: 'subHeaderLogo', maxCount: 1 },
+    { name: 'paperNameImage', maxCount: 1 },
+  ]),
+  updateSmartDesign,
+);
+router.patch(
+  '/smart-design/:id',
+  auth,
+  smartDesignUpload.fields([
+    { name: 'headerLeftImage', maxCount: 1 },
+    { name: 'headerRightImage', maxCount: 1 },
+    { name: 'headerLogo', maxCount: 1 },
+    { name: 'subHeaderLogo', maxCount: 1 },
+    { name: 'paperNameImage', maxCount: 1 },
+  ]),
+  patchSmartDesign,
+);
+router.delete('/smart-design/:id', auth, deleteSmartDesign);
 
 export default router;

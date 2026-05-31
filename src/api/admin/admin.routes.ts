@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import prisma from '../../lib/prisma';
 import { requireSuperAdmin } from '../middlewares/authz';
+import { getHeaderStylesCatalog } from '../epaper/epaperSmartDesign.controller';
 import bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
 
@@ -1149,5 +1150,7 @@ router.put('/tenants/:tenantId/admins', auth, requireSuperAdmin, async (req, res
     res.status(500).json({ error: 'Failed to upsert tenant admin' });
   }
 });
+
+router.get('/epaper/header-styles', auth, requireSuperAdmin, getHeaderStylesCatalog);
 
 export default router;
