@@ -48,6 +48,41 @@ function cleanText(v: unknown): string | null {
   return s || null;
 }
 
+const TE_MONTHS = ['జనవరి', 'ఫిబ్రవరి', 'మార్చి', 'ఏప్రిల్', 'మే', 'జూన్', 'జూలై', 'ఆగస్టు', 'సెప్టెంబర్', 'అక్టోబర్', 'నవంబర్', 'డిసెంబర్'];
+
+/** Telugu-formatted IST date, e.g. "31 మే 2026". */
+function teluguDate(d: Date): string {
+  const ist = new Date(d.getTime() + 5.5 * 60 * 60_000);
+  return `${ist.getUTCDate()} ${TE_MONTHS[ist.getUTCMonth()]} ${ist.getUTCFullYear()}`;
+}
+
+/**
+ * Newspaper dateline = "<place> (<publisher native name>), <post date>".
+ * Keeps the reporter's place (first part of the stored dateline, else placeName),
+ * appends the publishing newspaper's native name in brackets, and always replaces
+ * the date part with the real post date (drops "తాజాగా" etc.).
+ */
+function buildDateline(
+  originalDateline: string | null | undefined,
+  placeName: string | null | undefined,
+  postedAt: Date,
+  publisherNativeName?: string | null,
+): string {
+  let place = '';
+  if (originalDateline && originalDateline.includes(',')) place = originalDateline.split(',')[0].trim();
+  else if (originalDateline) place = originalDateline.trim();
+  if (!place && placeName) place = placeName.trim();
+
+  const native = publisherNativeName ? publisherNativeName.trim() : '';
+  const dt = teluguDate(postedAt);
+
+  let prefix = place;
+  if (place && native) prefix = `${place} (${native})`;
+  else if (!place && native) prefix = native;
+
+  return prefix ? `${prefix}, ${dt}` : dt;
+}
+
 /** Build the issue-day news window [00:00 IST, newsCloseTime IST] as UTC Date bounds. */
 function buildNewsWindow(issueDateInput: string | null, newsCloseTime: string) {
   let y: number, m: number, d: number;
@@ -132,14 +167,26 @@ function fairDistribute(articles: ArticleRow[], capacity: number): ArticleRow[] 
 function shapeArticle(
   a: ArticleRow,
   districtNames: Map<string, string>,
-  opts?: { borrowed?: boolean; originalTenantName?: string | null; assignedReporter?: { reporterId: string; userId: string | null; name: string } | null },
+  opts?: {
+    borrowed?: boolean;
+    originalTenantName?: string | null;
+    sourceNativeName?: string | null;
+    assignedReporter?: { reporterId: string; userId: string | null; name: string } | null;
+    publisherNativeName?: string | null;
+  },
 ) {
   return {
     id: a.id,
     title: a.title,
     heading: a.heading,
     subTitle: a.subTitle,
-    dateline: a.dateline,
+    // Normalized newspaper dateline: "<place> (<publisher native name>), <post date>".
+    dateline: buildDateline(a.dateline, a.placeName, a.createdAt, opts?.publisherNativeName),
+    originalDateline: a.dateline,
+    // Publisher (newspaper) native name printed on the page = the tenant that PUBLISHES
+    // this paper (always THIS tenant), even for borrowed news. The source tenant is kept
+    // only in `borrowedFrom` for internal tracking.
+    publisherNativeName: opts?.publisherNativeName ?? null,
     content: a.content,
     placeName: a.placeName,
     wordCount: a.wordCount ?? (a.content ? a.content.trim().split(/\s+/).length : 0),
@@ -161,7 +208,11 @@ function shapeArticle(
     source: opts?.borrowed ? 'BORROWED' : 'TENANT',
     ...(opts?.borrowed
       ? {
-          borrowedFrom: { tenantId: a.tenantId, tenantName: opts.originalTenantName || null },
+          borrowedFrom: {
+            tenantId: a.tenantId,
+            tenantName: opts.originalTenantName || null,
+            tenantNativeName: opts.sourceNativeName || null,
+          },
           assignedReporter: opts.assignedReporter || null,
         }
       : {}),
@@ -206,6 +257,13 @@ export async function collectEpaperNews(req: Request, res: Response) {
     const districtScopeId = design.subEdition?.districtId || null;
     const { issueDate, close, fromUtc, toUtc } = buildNewsWindow(issueDateInput, design.newsCloseTime);
 
+    // This tenant's native (newspaper) name — printed on its own articles.
+    const thisTenant = await prisma.tenant.findUnique({
+      where: { id: ctx.tenantId },
+      select: { name: true, entity: { select: { nativeName: true } } },
+    });
+    const thisTenantNativeName = thisTenant?.entity?.nativeName || thisTenant?.name || null;
+
     const baseWhere = {
       status: 'PUBLISHED',
       createdAt: { gte: fromUtc, lte: toUtc },
@@ -224,9 +282,12 @@ export async function collectEpaperNews(req: Request, res: Response) {
     let selectedBorrowed: ArticleRow[] = [];
     let tenantReporterPool: Array<{ reporterId: string; userId: string | null; name: string }> = [];
     const originalTenantNames = new Map<string, string>();
+    const originalTenantNativeNames = new Map<string, string>();
 
+    // Cross-tenant borrow only kicks in when the tenant has published at least 1
+    // article of its own today. A tenant with zero articles gets an empty result.
     const remaining = maxArticles - selectedTenant.length;
-    if (allowCrossTenant && remaining > 0) {
+    if (allowCrossTenant && remaining > 0 && selectedTenant.length > 0) {
       const others = (await prisma.newspaperArticle.findMany({
         where: { tenantId: { not: ctx.tenantId }, ...baseWhere },
         select: ARTICLE_SELECT,
@@ -247,8 +308,14 @@ export async function collectEpaperNews(req: Request, res: Response) {
           .filter((r) => r.name);
 
         const tenantIds = [...new Set(selectedBorrowed.map((a) => a.tenantId))];
-        const tenants = await prisma.tenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, name: true } });
-        for (const t of tenants) originalTenantNames.set(t.id, t.name);
+        const tenants = await prisma.tenant.findMany({
+          where: { id: { in: tenantIds } },
+          select: { id: true, name: true, entity: { select: { nativeName: true } } },
+        });
+        for (const t of tenants) {
+          originalTenantNames.set(t.id, t.name);
+          originalTenantNativeNames.set(t.id, t.entity?.nativeName || t.name);
+        }
       }
     }
 
@@ -262,13 +329,18 @@ export async function collectEpaperNews(req: Request, res: Response) {
       for (const di of dists) districtNames.set(di.id, di.name);
     }
 
-    const shapedTenant = selectedTenant.map((a) => shapeArticle(a, districtNames));
+    const shapedTenant = selectedTenant.map((a) =>
+      shapeArticle(a, districtNames, { publisherNativeName: thisTenantNativeName }),
+    );
     const shapedBorrowed = selectedBorrowed.map((a, i) => {
       const assigned = tenantReporterPool.length ? tenantReporterPool[i % tenantReporterPool.length] : null;
       return shapeArticle(a, districtNames, {
         borrowed: true,
         originalTenantName: originalTenantNames.get(a.tenantId) || null,
+        sourceNativeName: originalTenantNativeNames.get(a.tenantId) || originalTenantNames.get(a.tenantId) || null,
         assignedReporter: assigned,
+        // Paper is published by THIS tenant → dateline/publisher uses this tenant's native name.
+        publisherNativeName: thisTenantNativeName,
       });
     });
 
@@ -301,6 +373,7 @@ export async function collectEpaperNews(req: Request, res: Response) {
       issueDate,
       newsCloseTime: close,
       languageCode: design.languageCode,
+      tenantNativeName: thisTenantNativeName,
       districtScopeId,
       window: { fromUtc: fromUtc.toISOString(), toUtc: toUtc.toISOString(), fromIST: `${issueDate}T00:00:00+05:30`, toIST: `${issueDate}T${close}:00+05:30` },
       capacity: { totalPages, excludeMainPage, contentPages, perPage, maxArticles },
@@ -308,6 +381,11 @@ export async function collectEpaperNews(req: Request, res: Response) {
         tenantArticlesAvailable: tenantArticles.length,
         collectedFromTenant: shapedTenant.length,
         borrowedFromOtherTenants: shapedBorrowed.length,
+        crossTenantEligible: selectedTenant.length > 0,
+        crossTenantSkippedReason:
+          allowCrossTenant && selectedTenant.length === 0
+            ? 'Tenant has no own article today; cross-tenant borrow requires at least 1 own article.'
+            : null,
         totalCollected: allSelected.length,
         shortBy: Math.max(0, maxArticles - allSelected.length),
         distinctReporters: reporterStats.size,

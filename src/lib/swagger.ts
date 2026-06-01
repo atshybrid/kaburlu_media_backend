@@ -112,6 +112,11 @@ const swaggerDefinition = {
       description:
         'Edition-wise ePaper design CRUD — header/sub-header styles, logos, volume/issue auto-number, PRGI context. Use instead of legacy /epaper/design-config. Requires admin JWT + X-Tenant-Id.',
     },
+    {
+      name: 'ePaper News Blocks',
+      description:
+        'Newspaper block layout engine — render articles into BLOCK-04A (and future blocks) HTML/CSS, store in EpaperNewsBlock table.',
+    },
     { name: 'ePaper - Newspaper Config', description: 'Tenant-level newspaper page count, per-page cost, volume/issue seeds (legacy tenant config)' },
     // Digital Daily Newspaper (Mobile App)
     { name: 'Digital Daily Newspaper', description: 'Mobile app ePaper APIs - Swipeable newspaper gallery, all-tenants view, and issue pages for Digital Daily Newspaper app' },

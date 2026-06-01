@@ -508,6 +508,7 @@ model Tenant {
   epaperMlTrainingSamples      EpaperMlTrainingSample[]      @relation("Tenant_EpaperMlTrainingSamples")
   epaperNewspaperConfig        EpaperNewspaperConfig?        @relation("Tenant_EpaperNewspaperConfig")
   epaperSmartDesigns           EpaperSmartDesign[]           @relation("Tenant_EpaperSmartDesigns")
+  epaperNewsBlocks             EpaperNewsBlock[]             @relation("Tenant_EpaperNewsBlocks")
   homepageSectionConfigs       HomepageSectionConfig[]
   newsletterSubscriptions      NewsletterSubscription[]
   newspaperArticles            NewspaperArticle[]
@@ -1664,6 +1665,7 @@ model NewspaperArticle {
   suggestedBlockTemplateId String?
   wordCount                Int?
   pageLayouts              EpaperPageLayout[]
+  epaperNewsBlocks         EpaperNewsBlock[]    @relation("Article_NewsBlocks")
   assignedBlockTemplate    EpaperBlockTemplate? @relation("Article_AssignedBlock", fields: [assignedBlockTemplateId], references: [id])
   author                   User                 @relation(fields: [authorId], references: [id])
   baseArticle              Article?             @relation("ArticleToNewspaper", fields: [baseArticleId], references: [id])
@@ -2106,11 +2108,61 @@ model EpaperBlockTemplate {
   settingsAsMainHeader  EpaperSettings[]       @relation("EpaperSettings_MainHeader")
   assignedToArticles    NewspaperArticle[]     @relation("Article_AssignedBlock")
   suggestedForArticles  NewspaperArticle[]     @relation("Article_SuggestedBlock")
+  newsBlocks            EpaperNewsBlock[]      @relation("BlockTemplate_NewsBlocks")
 
   @@index([category])
   @@index([subCategory])
   @@index([tenantId])
   @@index([status])
+}
+
+/// Rendered ePaper news block — stores article content fitted to a block template (HTML + CSS output).
+model EpaperNewsBlock {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  newspaperArticleId    String?
+  blockTemplateId       String
+  blockCode             String
+  publicationEditionId  String?
+  issueDate             DateTime? @db.Date
+  pageNumber            Int?
+  sortOrder             Int      @default(0)
+
+  /// Input snapshot used for render
+  title                 String
+  subtitle              String?
+  imageUrl              String?
+  highlights            String[] @default([])
+  content               String   @db.Text
+  dateline              String?
+
+  wordCount             Int?
+  charCount             Int?
+
+  /// Physical + render output
+  widthMm               Float
+  maxHeightMm           Float
+  estimatedHeightMm     Float?
+  html                  String   @db.Text
+  css                   String   @db.Text
+  isOverflow            Boolean  @default(false)
+  isRejected            Boolean  @default(false)
+  rejectReason          String?
+  renderMeta            Json?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant              @relation("Tenant_EpaperNewsBlocks", fields: [tenantId], references: [id], onDelete: Cascade)
+  newspaperArticle      NewspaperArticle?   @relation("Article_NewsBlocks", fields: [newspaperArticleId], references: [id], onDelete: SetNull)
+  blockTemplate         EpaperBlockTemplate @relation("BlockTemplate_NewsBlocks", fields: [blockTemplateId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([newspaperArticleId])
+  @@index([blockTemplateId])
+  @@index([blockCode])
+  @@index([issueDate])
+  @@index([publicationEditionId])
 }
 
 /// Per-tenant ePaper configuration: page size, padding, headers, footers, generation settings.

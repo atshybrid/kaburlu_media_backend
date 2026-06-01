@@ -115,6 +115,7 @@ import {
   deleteSmartDesign,
 } from './epaperSmartDesign.controller';
 import { collectEpaperNews } from './epaperCollectNews.controller';
+import { renderNewsBlock, listNewsBlocks, getNewsBlockById } from './epaperNewsBlock.controller';
 
 const router = Router();
 const auth = passport.authenticate('jwt', { session: false });
@@ -4552,6 +4553,12 @@ router.get('/smart-design/context', auth, getSmartDesignContext);
 router.get('/smart-design/editions', auth, listEditionsWithDesigns);
 router.get('/smart-design/by-edition', auth, resolveSmartDesignByEdition);
 router.get('/smart-design/collect-news', auth, collectEpaperNews);
+
+// ePaper news block render + storage
+router.post('/blocks/render', auth, renderNewsBlock);
+router.get('/news-blocks', auth, listNewsBlocks);
+router.get('/news-blocks/:id', auth, getNewsBlockById);
+
 router.get('/smart-design', auth, listSmartDesigns);
 router.get('/smart-design/:id', auth, getSmartDesignById);
 router.post(
