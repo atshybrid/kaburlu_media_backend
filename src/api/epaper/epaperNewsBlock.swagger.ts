@@ -142,5 +142,3 @@
  *       404:
  *         description: Not found
  */
-
-export {};
